@@ -1,18 +1,57 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.isFile) {
+    keystorePropertiesFile.inputStream().use(keystoreProperties::load)
+}
+
 android {
-    namespace = "cz.mates.skendopdf"
+    namespace = "com.majkeylab.scanit"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "cz.mates.skendopdf"
+        applicationId = "com.majkeylab.scanit"
         minSdk = 35
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0-preview.1"
+        versionCode = 2
+        versionName = "1.1.0-alpha.1"
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.isFile) {
+            create("release") {
+                storeFile =
+                    rootProject.file(
+                        requireNotNull(keystoreProperties.getProperty("storeFile")) {
+                            "storeFile is missing from keystore.properties"
+                        },
+                    )
+                storePassword =
+                    requireNotNull(keystoreProperties.getProperty("storePassword")) {
+                        "storePassword is missing from keystore.properties"
+                    }
+                keyAlias =
+                    requireNotNull(keystoreProperties.getProperty("keyAlias")) {
+                        "keyAlias is missing from keystore.properties"
+                    }
+                keyPassword =
+                    requireNotNull(keystoreProperties.getProperty("keyPassword")) {
+                        "keyPassword is missing from keystore.properties"
+                    }
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.findByName("release")
+        }
     }
 
     buildFeatures {

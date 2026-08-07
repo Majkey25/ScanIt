@@ -32,12 +32,14 @@ The API key is encrypted at rest with AES-GCM using a key stored in Android Keys
 
 Google's terms and privacy policy apply to Gemini requests.
 
+The user can delete the saved Gemini key in Advanced settings. Discarded AI previews remain only in the bounded app cache until Android, cache pruning, or uninstall removes them. Accepted `_AI` files saved to Gallery or Downloads remain until the user deletes them. ScanIt does not control Google's diagnostic or Gemini service retention.
+
 ## Backups
 
 Android backup and device-to-device transfer are disabled for app data. API-key ciphertext and settings are excluded from backup.
 
 ## Questions
 
-For a privacy problem, open a GitHub issue without attaching private documents, API keys, or other sensitive data. For a security vulnerability, use GitHub's private vulnerability reporting instead.
+For a privacy problem, contact [majkeylab@gmail.com](mailto:majkeylab@gmail.com) or open a GitHub issue without attaching private documents, API keys, or other sensitive data. For a security vulnerability, use GitHub's private vulnerability reporting instead.
 
-Last updated: 2026-08-06.
+Last updated: 2026-08-07.

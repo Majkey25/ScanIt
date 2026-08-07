@@ -73,6 +73,7 @@
     <string name="key_status_saving">Updating the key…</string>
     <string name="save_settings">Save settings</string>
     <string name="cancel">Cancel</string>
+    <string name="privacy_policy">Privacy policy</string>
     <string name="settings_save_failed">Could not save settings.</string>
 
     <string name="language">Language</string>

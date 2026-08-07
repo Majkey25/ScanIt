@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import android.app.Application
 import android.content.Intent

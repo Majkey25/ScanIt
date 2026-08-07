@@ -18,6 +18,7 @@ Include the affected version, Android version, reproduction steps, impact, and t
 ## Security boundaries
 
 - The repository never contains signing keys or Gemini API keys.
-- Preview APKs are debug-signed and are not production Google Play artifacts.
+- The frozen GitHub stable APK is a legacy debug-signed artifact and is not the Google Play build.
+- The Play upload key and local signing properties stay outside the repository; Google Play App Signing manages the delivery key.
 - Client-side Gemini credentials are suitable only for private, user-owned builds.
 - The experimental AI workflow sends every page in the current scan to a third-party cloud service only after explicit opt-in.

@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import android.graphics.Bitmap
 import android.net.Uri

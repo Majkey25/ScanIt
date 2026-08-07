@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import android.app.Activity
 import android.content.Intent
@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -69,6 +70,9 @@ internal enum class AppLanguage(val languageTag: String?) {
     English("en"),
     Czech("cs"),
 }
+
+private const val PRIVACY_POLICY_URL =
+    "https://github.com/Majkey25/ScanIt/blob/main/PRIVACY.md"
 
 private val LightColorScheme =
     lightColorScheme(
@@ -551,6 +555,7 @@ private fun SettingsScreen(
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     var apiKey by remember { mutableStateOf("") }
     var keyOperationPending by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(settings.emailSubject, defaultEmailSubjects) {
         emailSubject =
@@ -866,6 +871,12 @@ private fun SettingsScreen(
                 }
                 TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.cancel))
+                }
+                TextButton(
+                    onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.privacy_policy))
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }

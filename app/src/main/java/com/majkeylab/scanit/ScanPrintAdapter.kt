@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import android.content.Context
 import android.graphics.BitmapFactory

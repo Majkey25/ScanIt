@@ -75,6 +75,7 @@
     <string name="key_status_saving">Pracuji s klíčem…</string>
     <string name="save_settings">Uložit nastavení</string>
     <string name="cancel">Zrušit</string>
+    <string name="privacy_policy">Zásady ochrany osobních údajů</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
 
     <string name="language">Jazyk</string>

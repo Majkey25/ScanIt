@@ -63,11 +63,11 @@ Presentation images are based on the tested device workflow and were refined wit
 
 ## Install
 
-1. Open the [v1.0.0 preview release](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1).
+1. Open the [GitHub stable release](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1).
 2. Download `ScanIt-v1.0.0-preview.1.apk`.
 3. Allow installation from the app used to download the file, then open the APK.
 
-The preview APK is debug-signed and intended only for sideload testing. A future production-signed APK cannot update it in place: uninstalling this preview first will delete app-private settings, the API key, and temporary cache. Files already saved to Gallery, Downloads, or a selected folder remain. This is not the production-signed Google Play build.
+The GitHub stable APK is the frozen legacy sideload build. It remains debug-signed so its existing artifact and checksum do not change. The experimental Google Play build uses the permanent `com.majkeylab.scanit` package and installs separately; settings, API keys, and temporary cache do not migrate between the two. Files already saved to Gallery, Downloads, or a selected folder remain.
 
 Requirements:
 
@@ -117,22 +117,22 @@ Read the complete [privacy notes](PRIVACY.md) and [security policy](SECURITY.md)
 JDK 17 and Android SDK 36 are required.
 
 ```bash
-./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:bundleRelease
+./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease
 ```
 
 Windows users can run the checked helpers:
 
 ```powershell
 .\tools\build.ps1
-.\tools\verify-apk.ps1 .\app\build\outputs\apk\debug\app-debug.apk
+.\tools\verify-apk.ps1 .\app\build\outputs\apk\release\app-release.apk
 ```
 
 | CLI tool | Purpose |
 |---|---|
 | `tools/build.ps1` | Runs the full local test, lint, APK, and AAB gate with JDK 17 validation. |
-| `tools/verify-apk.ps1` | Prints manifest metadata, checks 16 KiB alignment/signature, and calculates SHA-256. |
+| `tools/verify-apk.ps1` | Verifies the non-debuggable signed Play package, 16 KiB alignment, signature, and SHA-256. |
 
-GitHub Actions runs the same test/lint/build gate on every push to `main` and every pull request. Dependabot checks Gradle and Actions dependencies weekly.
+Release signing reads the ignored local `keystore.properties` file when present. Signing keys and passwords never enter Git. GitHub Actions runs the test/lint/build gate with unsigned CI artifacts on every push to `main` and every pull request. Dependabot checks Gradle and Actions dependencies weekly.
 
 ## Technical choices
 
@@ -152,6 +152,7 @@ GitHub Actions runs the same test/lint/build gate on every push to `main` and ev
 - Android decides which compatible apps appear in the Sharesheet; it cannot guarantee an email-only list while also reliably attaching the file.
 - Android 17 has no `maxSdk` block and should remain installable, but it has not been device-tested yet.
 - The experimental Gemini workflow has not been live-verified with an API key.
+- The current Google Play build is an internal alpha and is not a public production release.
 - Hard process termination during multi-file AI publication can leave an already-published `_AI` file; the immutable original remains safe.
 - The repository does not contain a production signing key or Gemini API key.
 

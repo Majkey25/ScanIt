@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import java.io.ByteArrayInputStream
 import java.io.IOException

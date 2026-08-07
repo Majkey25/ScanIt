@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## [1.1.0-alpha.1] - 2026-08-07
+
+### Changed
+
+- Set the permanent Google Play package to `com.majkeylab.scanit`.
+- Added local release signing support without storing keys or passwords in Git.
+- Added an in-app Privacy Policy link and prepared an internal Google Play alpha.
+- Kept `v1.0.0-preview.1` as the immutable GitHub stable sideload release.
+
 ## [1.0.0-preview.1] - 2026-08-06
 
 ### Added
@@ -17,3 +26,4 @@ All notable changes are documented here.
 - Unit tests, Android lint, checksum-pinned Gradle wrapper, GitHub Actions, Dependabot, and local build/verification tools.
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
+[1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main

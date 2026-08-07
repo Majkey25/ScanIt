@@ -17,6 +17,7 @@ $tasks = @(
     ":app:testDebugUnitTest"
     ":app:lintDebug"
     ":app:assembleDebug"
+    ":app:assembleRelease"
     ":app:bundleRelease"
 )
 if (-not $SkipClean) {

@@ -1,4 +1,4 @@
-package cz.mates.skendopdf
+package com.majkeylab.scanit
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -29,7 +29,7 @@ private const val KEY_AI_ENABLED = "ai_enabled"
 private const val KEY_AI_CONSENT = "ai_consent"
 private const val KEY_GEMINI_CIPHERTEXT = "gemini_ciphertext"
 private const val KEY_GEMINI_IV = "gemini_iv"
-private const val GEMINI_KEY_ALIAS = "cz.mates.skendopdf.gemini_api_key"
+private const val GEMINI_KEY_ALIAS = "com.majkeylab.scanit.gemini_api_key"
 private const val ANDROID_KEYSTORE = "AndroidKeyStore"
 private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val GCM_TAG_LENGTH_BITS = 128

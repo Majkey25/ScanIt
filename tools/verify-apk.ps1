@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$ApkPath = "app\build\outputs\apk\debug\app-debug.apk",
+    [string]$ApkPath = "app\build\outputs\apk\release\app-release.apk",
 
     [string]$SdkRoot = $env:ANDROID_HOME
 )
@@ -38,19 +38,22 @@ $badging = & $aapt2 dump badging $apk
 if ($LASTEXITCODE -ne 0) {
     throw "aapt2 could not inspect the APK."
 }
-$badging | Select-String -Pattern '^package:', '^minSdkVersion', '^targetSdkVersion', '^uses-permission', 'application-debuggable'
+$badging | Select-String -Pattern '^package:', '^minSdkVersion', '^targetSdkVersion', '^uses-permission'
 $badgingText = $badging -join [Environment]::NewLine
 $expectations = [ordered]@{
-    package = "package: name='cz\.mates\.skendopdf'"
-    versionName = "versionName='1\.0\.0-preview\.1'"
+    package = "package: name='com\.majkeylab\.scanit'"
+    versionCode = "versionCode='2'"
+    versionName = "versionName='1\.1\.0-alpha\.1'"
     minSdk = "minSdkVersion:'35'"
     targetSdk = "targetSdkVersion:'36'"
-    debuggable = 'application-debuggable'
 }
 foreach ($expectation in $expectations.GetEnumerator()) {
     if ($badgingText -notmatch $expectation.Value) {
         throw "APK does not match expected $($expectation.Key)."
     }
+}
+if ($badgingText -match 'application-debuggable') {
+    throw "Release APK must not be debuggable."
 }
 
 & $zipalign -c -P 16 4 $apk
