@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem without attaching private documents or credentials.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting a problem. Remove private document content, file names, and API keys before submitting.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: 1.0.0-preview.1
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: Pixel 9, Android 16
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Scanner
+        - Saving PDF or images
+        - Sharing or email
+        - Printing
+        - Settings or folder access
+        - Optional AI cleanup
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the smallest sequence that reproduces the problem.
+      placeholder: |
+        1. Open the app
+        2. Scan two pages
+        3. Tap Share PDF
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed private documents, API keys, email addresses, and other sensitive data.
+          required: true

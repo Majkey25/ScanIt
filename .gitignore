@@ -1,0 +1,16 @@
+.gradle/
+.kotlin/
+.idea/
+.reference/
+build/
+# Local SDK path; keep out of source archives.
+local.properties
+docs/superpowers/
+*.apk
+*.aab
+*-source.zip
+*.jks
+*.keystore
+keystore.properties
+*.iml
+*.hprof

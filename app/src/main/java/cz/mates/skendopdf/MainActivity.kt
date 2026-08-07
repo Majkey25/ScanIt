@@ -1,0 +1,238 @@
+package cz.mates.skendopdf
+
+import android.app.Activity
+import android.app.LocaleManager
+import android.content.Context
+import android.content.Intent
+import android.content.res.Configuration
+import android.os.Bundle
+import android.os.LocaleList
+import android.print.PrintManager
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+
+internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null else 1
+
+class MainActivity : ComponentActivity() {
+    private val viewModel: ScanViewModel by viewModels()
+    private val scannerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            handleScannerResult(it)
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val defaultEmailSubjects = supportedDefaultEmailSubjects()
+        viewModel.localizeDefaultEmailSubject(
+            targetDefault = getString(R.string.default_email_subject),
+            supportedDefaults = defaultEmailSubjects,
+        )
+        setContent {
+            val state by viewModel.state.collectAsState()
+            val settings by viewModel.settings.collectAsState()
+            val aiKeyStatus by viewModel.aiKeyStatus.collectAsState()
+            ScanItApp(
+                state = state,
+                settings = settings,
+                language = currentAppLanguage(),
+                defaultEmailSubjects = defaultEmailSubjects,
+                aiKeyStatus = aiKeyStatus,
+                onScan = ::startScan,
+                onSaveSettings = viewModel::saveSettings,
+                onLanguageChange = ::setAppLanguage,
+                onPdfFolderSelected = viewModel::setPdfTreeUri,
+                onPdfFolderCleared = viewModel::clearPdfTreeUri,
+                onRefreshGeminiKey = viewModel::refreshGeminiKeyStatus,
+                onSaveGeminiKey = viewModel::saveGeminiApiKey,
+                onDeleteGeminiKey = viewModel::deleteGeminiApiKey,
+                onSharePdf = ::shareCurrentPdf,
+                onShareImages = ::shareCurrentImages,
+                onPrint = ::printCurrentScan,
+                onAiCleanup = viewModel::startAiCleanup,
+                onAiReviewPage = viewModel::selectAiReviewPage,
+                onAiReviewSource = viewModel::selectAiReviewSource,
+                onAcceptAi = viewModel::acceptAiCleanup,
+                onDiscardAi = viewModel::discardAiCleanup,
+                onUseOriginal = viewModel::useOriginal,
+            )
+        }
+        if (savedInstanceState == null) {
+            startScan()
+        } else {
+            viewModel.resumeScannerPreparation()?.let(::requestScannerIntent)
+        }
+    }
+
+    internal fun startScan() {
+        viewModel.beginScannerLaunch()?.let(::requestScannerIntent)
+    }
+
+    private fun requestScannerIntent(requestGeneration: Long) {
+        try {
+            val settings = viewModel.currentSettings()
+            val optionsBuilder =
+                GmsDocumentScannerOptions.Builder()
+                    .setGalleryImportAllowed(settings.allowGallery)
+                    .setResultFormats(
+                        GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
+                        GmsDocumentScannerOptions.RESULT_FORMAT_PDF,
+                    ).setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            scannerPageLimit(settings.multipage)?.let(optionsBuilder::setPageLimit)
+
+            GmsDocumentScanning.getClient(optionsBuilder.build())
+                .getStartScanIntent(this)
+                .addOnSuccessListener { intentSender ->
+                    if (isFinishing || isDestroyed) {
+                        return@addOnSuccessListener
+                    }
+                    if (!viewModel.isScannerLaunchCurrent(requestGeneration)) {
+                        return@addOnSuccessListener
+                    }
+                    try {
+                        scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+                        viewModel.scannerLaunched(requestGeneration)
+                    } catch (_: RuntimeException) {
+                        viewModel.scannerLaunchFailed(
+                            requestGeneration,
+                            UiMessage(R.string.scanner_launch_error),
+                        )
+                    }
+                }.addOnFailureListener {
+                    viewModel.scannerLaunchFailed(
+                        requestGeneration,
+                        UiMessage(R.string.scanner_launch_error),
+                    )
+                }
+        } catch (_: RuntimeException) {
+            viewModel.scannerLaunchFailed(
+                requestGeneration,
+                UiMessage(R.string.scanner_launch_error),
+            )
+        }
+    }
+
+    private fun handleScannerResult(activityResult: ActivityResult) {
+        when (activityResult.resultCode) {
+            Activity.RESULT_CANCELED -> viewModel.scannerCancelled()
+            Activity.RESULT_OK -> processScannerResult(activityResult.data)
+            else ->
+                viewModel.scannerResultFailed(
+                    UiMessage(R.string.scanner_unexpected_error),
+                )
+        }
+    }
+
+    private fun processScannerResult(data: Intent?) {
+        if (data == null) {
+            viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
+            return
+        }
+        try {
+            val result = GmsDocumentScanningResult.fromActivityResultIntent(data)
+            if (result == null) {
+                viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
+                return
+            }
+            val pages = result.pages
+            if (pages.isNullOrEmpty()) {
+                viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
+                return
+            }
+            val pdf = result.pdf
+            if (pdf == null) {
+                viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
+                return
+            }
+            viewModel.processScan(pages.map { it.imageUri }, pdf.uri)
+        } catch (_: RuntimeException) {
+            viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
+        }
+    }
+
+    private fun currentAppLanguage(): AppLanguage {
+        val localeManager = getSystemService(LocaleManager::class.java) ?: return AppLanguage.System
+        return when (localeManager.applicationLocales.get(0)?.language) {
+            AppLanguage.English.languageTag -> AppLanguage.English
+            AppLanguage.Czech.languageTag -> AppLanguage.Czech
+            else -> AppLanguage.System
+        }
+    }
+
+    private fun setAppLanguage(language: AppLanguage) {
+        val locales =
+            language.languageTag?.let(LocaleList::forLanguageTags)
+                ?: LocaleList.getEmptyLocaleList()
+        val localeManager = getSystemService(LocaleManager::class.java) ?: return
+        if (localeManager.applicationLocales != locales) {
+            localeManager.applicationLocales = locales
+        }
+    }
+
+    private fun supportedDefaultEmailSubjects(): Set<String> =
+        AppLanguage.entries.mapNotNull { it.languageTag }.mapTo(mutableSetOf()) { languageTag ->
+            val configuration = Configuration(resources.configuration)
+            configuration.setLocales(LocaleList.forLanguageTags(languageTag))
+            createConfigurationContext(configuration).getString(R.string.default_email_subject)
+        }
+
+    private fun shareCurrentPdf() {
+        shareCurrentScan(::pdfShareIntent)
+    }
+
+    private fun shareCurrentImages() {
+        shareCurrentScan(::imageShareIntent)
+    }
+
+    private fun shareCurrentScan(
+        createIntent: (Context, CachedScan, AppSettings) -> Intent,
+    ) {
+        val scan = (viewModel.state.value as? ScreenState.Result)?.scan?.cached
+        if (scan == null) {
+            showToast(R.string.share_failed)
+            return
+        }
+        try {
+            if (!launchShareChooser(createIntent(this, scan, viewModel.currentSettings()))) {
+                showToast(R.string.share_failed)
+            }
+        } catch (_: Exception) {
+            showToast(R.string.share_failed)
+        }
+    }
+
+    private fun printCurrentScan() {
+        val scan = (viewModel.state.value as? ScreenState.Result)?.scan?.cached
+        if (scan == null) {
+            showToast(R.string.print_open_failed)
+            return
+        }
+        try {
+            val printManager = getSystemService(PrintManager::class.java)
+            if (printManager == null) {
+                showToast(R.string.print_open_failed)
+                return
+            }
+            printManager.print(
+                scan.pdf.name,
+                ScanPrintAdapter(this, scan.pdf.name, scan.pages),
+                null,
+            )
+        } catch (_: RuntimeException) {
+            showToast(R.string.print_open_failed)
+        }
+    }
+
+    private fun showToast(message: Int) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+}
