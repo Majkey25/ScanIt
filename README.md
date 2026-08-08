@@ -163,3 +163,11 @@ Suggestions and reproducible bug reports are welcome through [GitHub Issues](htt
 ## License
 
 Released under the [MIT License](LICENSE).
+
+## ☕ Support Me
+
+If you like what I build and want to support my work:
+<br>
+<a href="https://www.buymeacoffee.com/majkey">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me a Coffee">
+</a>
