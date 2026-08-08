@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/hero.png" alt="ScanIt — document scanning on Android" width="100%">
-</p>
-
 <h1 align="center">ScanIt</h1>
 
 <p align="center">
