@@ -793,7 +793,6 @@ private fun CompactTopBar(
                     }
                 }
             }
-            HorizontalDivider()
         }
     }
 }
