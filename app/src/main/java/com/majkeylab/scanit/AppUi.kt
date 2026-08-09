@@ -266,7 +266,17 @@ private fun ResultScreen(
     val pageCount = scan.cached.pages.size
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
-    Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            CompactTopBar(
+                title = "",
+                onRecent = onRecent,
+                onSettings = onSettings,
+                actionsEnabled = !result.outputSaveInProgress,
+            )
+        },
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -289,38 +299,10 @@ private fun ResultScreen(
                 }
             }
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        pluralStringResource(R.plurals.page_count, pageCount, pageCount),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    IconButton(
-                        onClick = onRecent,
-                        enabled = !result.outputSaveInProgress,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_dashboard),
-                            contentDescription = stringResource(R.string.open_recent_scans),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    IconButton(
-                        onClick = onSettings,
-                        enabled = !result.outputSaveInProgress,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_settings),
-                            contentDescription = stringResource(R.string.open_settings),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
+                Text(
+                    pluralStringResource(R.plurals.page_count, pageCount, pageCount),
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
             item {
                 Button(
@@ -745,6 +727,7 @@ private fun CompactTopBar(
     onRecent: (() -> Unit)? = null,
     onScan: (() -> Unit)? = null,
     onSettings: (() -> Unit)? = null,
+    actionsEnabled: Boolean = true,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column {
@@ -771,7 +754,11 @@ private fun CompactTopBar(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 if (onRecent != null) {
-                    IconButton(onClick = onRecent, modifier = Modifier.size(48.dp)) {
+                    IconButton(
+                        onClick = onRecent,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_dashboard),
                             contentDescription = stringResource(R.string.open_recent_scans),
@@ -780,7 +767,11 @@ private fun CompactTopBar(
                     }
                 }
                 if (onScan != null) {
-                    IconButton(onClick = onScan, modifier = Modifier.size(48.dp)) {
+                    IconButton(
+                        onClick = onScan,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_camera),
                             contentDescription = stringResource(R.string.start_new_scan),
@@ -789,7 +780,11 @@ private fun CompactTopBar(
                     }
                 }
                 if (onSettings != null) {
-                    IconButton(onClick = onSettings, modifier = Modifier.size(48.dp)) {
+                    IconButton(
+                        onClick = onSettings,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_settings),
                             contentDescription = stringResource(R.string.open_settings),
