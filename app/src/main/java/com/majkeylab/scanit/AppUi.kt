@@ -94,7 +94,9 @@ internal enum class AppLanguage(val languageTag: String?) {
 }
 
 private const val PRIVACY_POLICY_URL =
-    "https://github.com/Majkey25/ScanIt/blob/main/PRIVACY.md"
+    "https://majkey25.github.io/ScanIt/privacy.html"
+private const val THIRD_PARTY_NOTICES_URL =
+    "https://github.com/Majkey25/ScanIt/blob/main/THIRD_PARTY_NOTICES.md"
 
 private val LightColorScheme =
     lightColorScheme(
@@ -1227,6 +1229,12 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.privacy_policy))
+                }
+                TextButton(
+                    onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.third_party_notices))
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }
