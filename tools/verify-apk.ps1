@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [string]$ApkPath = "app\build\outputs\apk\github\release\app-github-release.apk",
+    [string]$ApkPath,
 
     [string]$SdkRoot = $env:ANDROID_HOME
 )
@@ -14,6 +14,17 @@ if ([string]::IsNullOrWhiteSpace($SdkRoot) -or -not (Test-Path -LiteralPath $Sdk
     throw "Set ANDROID_HOME or ANDROID_SDK_ROOT to a valid Android SDK directory."
 }
 
+if ([string]::IsNullOrWhiteSpace($ApkPath)) {
+    $signedApkPath = "app\build\outputs\apk\github\release\app-github-release.apk"
+    $unsignedApkPath = "app\build\outputs\apk\github\release\app-github-release-unsigned.apk"
+    if (Test-Path -LiteralPath $signedApkPath -PathType Leaf) {
+        $ApkPath = $signedApkPath
+    } elseif (Test-Path -LiteralPath $unsignedApkPath -PathType Leaf) {
+        $ApkPath = $unsignedApkPath
+    } else {
+        throw "GitHub release APK was not found. Pass -ApkPath explicitly."
+    }
+}
 $apk = Resolve-Path -LiteralPath $ApkPath
 $buildToolsRoot = Join-Path $SdkRoot "build-tools"
 $buildTools =
@@ -52,23 +63,24 @@ foreach ($expectation in $expectations.GetEnumerator()) {
         throw "APK does not match expected $($expectation.Key)."
     }
 }
+$violations = [System.Collections.Generic.List[string]]::new()
 if ($badgingText -match 'application-debuggable') {
-    throw "Release APK must not be debuggable."
+    $violations.Add("Release APK must not be debuggable.")
 }
 if ($badgingText -match "uses-permission: name='android\.permission\.INTERNET'") {
-    throw "Public release APK must not request INTERNET."
+    $violations.Add("Public release APK must not request INTERNET.")
 }
 
 $archive = [System.IO.Compression.ZipFile]::OpenRead($apk)
 try {
-    $hasGeminiResidue = $false
+    $hasGeminiDexResidue = $false
     foreach ($entry in $archive.Entries | Where-Object Name -Match '\.dex$') {
         $stream = $entry.Open()
         try {
             $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::ASCII, $false)
             try {
                 if ($reader.ReadToEnd() -match 'generativelanguage\.googleapis\.com|Gemini') {
-                    $hasGeminiResidue = $true
+                    $hasGeminiDexResidue = $true
                     break
                 }
             } finally {
@@ -81,8 +93,16 @@ try {
 } finally {
     $archive.Dispose()
 }
-if ($hasGeminiResidue) {
-    throw "Public release APK contains Gemini residue."
+$resources = & $aapt2 dump resources $apk
+if ($LASTEXITCODE -ne 0) {
+    throw "aapt2 could not inspect APK resources."
+}
+$hasGeminiResourceResidue = ($resources -join [Environment]::NewLine) -match 'generativelanguage\.googleapis\.com|Gemini'
+if ($hasGeminiDexResidue -or $hasGeminiResourceResidue) {
+    $violations.Add("Public release APK contains Gemini residue.")
+}
+if ($violations.Count -gt 0) {
+    throw ($violations -join [Environment]::NewLine)
 }
 
 & $zipalign -c -P 16 4 $apk

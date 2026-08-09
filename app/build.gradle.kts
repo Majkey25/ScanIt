@@ -72,6 +72,7 @@ android {
         create("internal") {
             dimension = "distribution"
             applicationIdSuffix = ".internal"
+            versionNameSuffix = "-internal"
         }
     }
 
