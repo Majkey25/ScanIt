@@ -15,6 +15,32 @@ private const val KEY_EMAIL_SUBJECT = "email_subject"
 private const val KEY_EMAIL_BODY = "email_body"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
+private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
+private const val ACTIVE_RESULT_CHECKPOINT_PREFIX = "1:"
+private const val MAX_ACTIVE_RESULT_CACHE_ID_LENGTH = 128
+
+internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
+    cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
+
+internal fun encodeActiveResultCheckpoint(cacheId: String): String {
+    require(isSafeActiveResultCacheId(cacheId)) {
+        "Active result cache ID is unsafe"
+    }
+    return "$ACTIVE_RESULT_CHECKPOINT_PREFIX$cacheId"
+}
+
+internal fun decodeActiveResultCheckpoint(value: String?): String? {
+    if (
+        value == null ||
+            value.length >
+            ACTIVE_RESULT_CHECKPOINT_PREFIX.length + MAX_ACTIVE_RESULT_CACHE_ID_LENGTH ||
+            !value.startsWith(ACTIVE_RESULT_CHECKPOINT_PREFIX)
+    ) {
+        return null
+    }
+    return value.removePrefix(ACTIVE_RESULT_CHECKPOINT_PREFIX)
+        .takeIf(::isSafeActiveResultCacheId)
+}
 
 internal fun normalizeAlbumName(value: String): String {
     val trimmed = value.trim()
@@ -96,6 +122,42 @@ internal class SettingsStore(private val context: Context) {
             .putString(KEY_PDF_TREE_URI, settings.pdfTreeUri)
             .putString(KEY_PENDING_PDF_TREE_URI, pendingPdfTreeUriValue)
             .apply()
+    }
+
+    @Throws(IOException::class)
+    internal fun activeResultCacheId(): String? {
+        val storedValue =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
+            }
+        val cacheId = decodeActiveResultCheckpoint(storedValue)
+        if (cacheId == null && preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
+            clearActiveResult()
+        }
+        return cacheId
+    }
+
+    @Throws(IOException::class)
+    internal fun saveActiveResult(cacheId: String) {
+        val checkpoint = encodeActiveResultCheckpoint(cacheId)
+        val stored =
+            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, checkpoint).commit()
+        val verified =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
+            } == checkpoint
+        if (!stored || !verified) {
+            throw IOException("Active result could not be stored")
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun clearActiveResult() {
+        if (!preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) return
+        val cleared = preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
+        if (!cleared || preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
+            throw IOException("Active result could not be cleared")
+        }
     }
 
     internal fun pendingPdfTreeUri(): String? = pendingPdfTreeUriValue

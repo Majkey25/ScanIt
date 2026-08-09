@@ -507,7 +507,7 @@ private fun isCreatePendingDirectory(root: File, directory: File): Boolean =
         isDirectChild(root, directory) &&
         Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
 
-private fun isSafeCacheId(cacheId: String): Boolean =
+internal fun isSafeCacheId(cacheId: String): Boolean =
     cacheId.isNotBlank() &&
         cacheId != "." &&
         cacheId != ".." &&

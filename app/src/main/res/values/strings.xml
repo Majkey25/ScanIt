@@ -22,6 +22,7 @@
     <string name="print_no_pages">No page was selected.</string>
     <string name="print_failed">Could not prepare the document for printing.</string>
     <string name="new_scan">New scan</string>
+    <string name="start_new_scan">Start a new scan</string>
     <string name="file_details">File details</string>
     <string name="expand_file_details">Show file details</string>
     <string name="collapse_file_details">Hide file details</string>
@@ -32,6 +33,7 @@
     <string name="opening_document">Opening document…</string>
     <string name="recent_scan_unavailable">This recent scan is no longer available.</string>
     <string name="recent_history_unavailable">Recent scans could not be loaded.</string>
+    <string name="state_update_failed">Could not update ScanIt. Try again.</string>
     <string name="recent_delete_failed">The recent scan could not be deleted.</string>
     <string name="more_actions">More actions</string>
     <string name="open_scan">Open</string>

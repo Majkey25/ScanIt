@@ -60,6 +60,31 @@ internal fun restoredRoute(savedRoute: String?, cacheId: String?): RestoredRoute
         else -> RestoredRoute.Recent
     }
 
+internal data class InitialNavigation(
+    val route: RestoredRoute,
+    val cacheId: String?,
+)
+
+internal fun initialNavigation(
+    savedRoute: String?,
+    savedCacheId: String?,
+    activeResultCacheId: String?,
+): InitialNavigation {
+    if (savedRoute != null) {
+        val route = restoredRoute(savedRoute, savedCacheId)
+        return InitialNavigation(
+            route,
+            savedCacheId.takeIf { route == RestoredRoute.Result },
+        )
+    }
+    val durableCacheId = activeResultCacheId?.takeIf(::isSafeActiveResultCacheId)
+    return if (durableCacheId == null) {
+        InitialNavigation(RestoredRoute.Scanner, null)
+    } else {
+        InitialNavigation(RestoredRoute.Result, durableCacheId)
+    }
+}
+
 internal sealed interface ScreenState {
     data object Ready : ScreenState
 

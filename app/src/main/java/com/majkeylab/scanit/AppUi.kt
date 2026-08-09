@@ -396,6 +396,7 @@ private fun RecentScreen(
         onRecent = null,
         onSettings = onSettings,
         titleRes = R.string.recent_scans,
+        onScan = onNewScan,
     ) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
@@ -547,6 +548,7 @@ private fun MainScaffold(
     onRecent: (() -> Unit)?,
     onSettings: () -> Unit,
     titleRes: Int = R.string.app_name,
+    onScan: (() -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
@@ -555,6 +557,7 @@ private fun MainScaffold(
             CompactTopBar(
                 title = stringResource(titleRes),
                 onRecent = onRecent,
+                onScan = onScan,
                 onSettings = onSettings,
             )
         },
@@ -566,6 +569,7 @@ private fun CompactTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
     onRecent: (() -> Unit)? = null,
+    onScan: (() -> Unit)? = null,
     onSettings: (() -> Unit)? = null,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -597,6 +601,15 @@ private fun CompactTopBar(
                         Icon(
                             painter = painterResource(R.drawable.ic_dashboard),
                             contentDescription = stringResource(R.string.open_recent_scans),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                if (onScan != null) {
+                    IconButton(onClick = onScan, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_camera),
+                            contentDescription = stringResource(R.string.start_new_scan),
                             modifier = Modifier.size(24.dp),
                         )
                     }
@@ -683,7 +696,11 @@ private fun SettingsScreen(
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier =
+                Modifier.fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SectionTitle(stringResource(R.string.language)) }

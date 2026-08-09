@@ -34,6 +34,8 @@ private const val RECENT_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
+internal fun scannerPreparationMayResume(route: String?): Boolean = route == ROUTE_SCANNER
+
 internal enum class ScannerLaunchStage {
     Idle,
     Preparing,
@@ -176,13 +178,25 @@ internal class ScanViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
 ) : AndroidViewModel(application) {
-    private val initialRoute =
-        restoredRoute(
-            savedStateHandle[ROUTE_KEY],
-            savedStateHandle[ROUTE_CACHE_ID_KEY],
-        )
-    private val initialCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val settingsStore = SettingsStore(application)
+    private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
+    private val initialDestination =
+        initialNavigation(
+            savedRoute = savedRoute,
+            savedCacheId = savedStateHandle[ROUTE_CACHE_ID_KEY],
+            activeResultCacheId =
+                if (savedRoute == null) {
+                    try {
+                        settingsStore.activeResultCacheId()
+                    } catch (_: IOException) {
+                        null
+                    }
+                } else {
+                    null
+                },
+        )
+    private val initialRoute = initialDestination.route
+    private val initialCacheId = initialDestination.cacheId
     private val storage = ScanStorage(application)
     private val scannerLaunchGate =
         ScannerLaunchGate(
@@ -278,6 +292,10 @@ internal class ScanViewModel(
 
     fun beginScannerLaunch(): Long? {
         val request = scannerLaunchGate.begin(processingJob?.isActive == true) ?: return null
+        if (!clearActiveResultCheckpoint()) {
+            completeScannerLaunch()
+            return null
+        }
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         recentJob?.cancel()
@@ -292,6 +310,10 @@ internal class ScanViewModel(
     }
 
     fun resumeScannerPreparation(): Long? {
+        if (!scannerPreparationMayResume(savedStateHandle[ROUTE_KEY])) {
+            completeScannerLaunch()
+            return null
+        }
         val request =
             scannerLaunchGate.resumePreparing(processingJob?.isActive == true) ?: return null
         persistScannerStage()
@@ -315,6 +337,7 @@ internal class ScanViewModel(
     fun scannerLaunchFailed(requestGeneration: Long, message: UiMessage) {
         if (scannerLaunchGate.fail(requestGeneration)) {
             persistScannerStage()
+            if (!clearActiveResultCheckpoint()) return
             persistRoute(ROUTE_FAILURE)
             mutableState.value = ScreenState.Failure(message)
         }
@@ -330,6 +353,7 @@ internal class ScanViewModel(
     fun scannerResultFailed(message: UiMessage) {
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
+            if (!clearActiveResultCheckpoint()) return
             persistRoute(ROUTE_FAILURE)
             mutableState.value = ScreenState.Failure(message)
         }
@@ -393,6 +417,8 @@ internal class ScanViewModel(
                                     warnings += UiMessage(R.string.pdf_save_failed)
                                 }
                             }
+                            settingsStore.saveActiveResult(cachedScan.baseName)
+                            currentCoroutineContext().ensureActive()
                             ScreenState.Result(
                                 scan =
                                     SavedScan(
@@ -408,9 +434,11 @@ internal class ScanViewModel(
                     persistRoute(ROUTE_RESULT, result.scan.cached.baseName)
                     refreshRecentCache(result.scan.cached.baseName)
                 } catch (exception: CancellationException) {
+                    clearActiveResultCheckpoint()
                     cleanup(cached, galleryPages, savedPdfUri)
                     throw exception
                 } catch (exception: Exception) {
+                    clearActiveResultCheckpoint()
                     val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
                     val message =
                         if (cleanupComplete && exception.suppressed.isEmpty()) {
@@ -442,6 +470,7 @@ internal class ScanViewModel(
     }
 
     fun openRecentScan(cacheId: String) {
+        if (!clearActiveResultCheckpoint()) return
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         persistRoute(ROUTE_RECENT)
@@ -454,19 +483,16 @@ internal class ScanViewModel(
         recentJob =
             viewModelScope.launch {
                 val result = loadCachedResult(cacheId)
-                if (result == null) {
+                if (result == null || !activateCachedResult(cacheId, result)) {
                     showRecentResult(
                         message = UiMessage(R.string.recent_scan_unavailable),
                     )
-                } else {
-                    mutableState.value = result
-                    persistRoute(ROUTE_RESULT, cacheId)
-                    refreshRecentCache(cacheId)
                 }
             }
     }
 
     fun deleteRecentScan(cacheId: String) {
+        if (!clearActiveResultCheckpoint()) return
         recentActionGate.invalidate()
         val deletion = recentDeletionGate.begin(cacheId)
         recentJob?.cancel()
@@ -538,7 +564,12 @@ internal class ScanViewModel(
 
     private fun restoreNavigation() {
         when (initialRoute) {
-            RestoredRoute.Scanner -> refreshRecentCache()
+            RestoredRoute.Scanner -> {
+                if (savedRoute != null) {
+                    clearActiveResultCheckpoint()
+                }
+                refreshRecentCache()
+            }
             RestoredRoute.Recent -> refreshRecentScreen()
             RestoredRoute.Result -> restoreSavedResult()
         }
@@ -554,25 +585,23 @@ internal class ScanViewModel(
         recentJob =
             viewModelScope.launch {
                 val result = loadCachedResult(cacheId)
-                if (result == null) {
+                if (result == null || !activateCachedResult(cacheId, result)) {
                     showRecentResult(
                         message = UiMessage(R.string.recent_scan_unavailable),
                     )
-                } else {
-                    mutableState.value = result
-                    persistRoute(ROUTE_RESULT, cacheId)
-                    refreshRecentCache(cacheId)
                 }
             }
     }
 
-    private suspend fun loadCachedResult(cacheId: String): ScreenState.Result? =
-        try {
+    private suspend fun loadCachedResult(cacheId: String): ScreenState.Result? {
+        if (!isSafeActiveResultCacheId(cacheId)) return null
+        return try {
             withContext(Dispatchers.IO) {
                 val cached = storage.openCachedScan(cacheId) ?: return@withContext null
+                val thumbnail = storage.loadThumbnail(cached.pages.first())
                 ScreenState.Result(
                     scan = SavedScan(cached, galleryPages = emptyList(), savedPdf = null),
-                    thumbnail = storage.loadThumbnail(cached.pages.first()),
+                    thumbnail = thumbnail,
                 )
             }
         } catch (cancellation: CancellationException) {
@@ -580,8 +609,26 @@ internal class ScanViewModel(
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun activateCachedResult(cacheId: String, result: ScreenState.Result): Boolean {
+        try {
+            settingsStore.saveActiveResult(cacheId)
+        } catch (_: IOException) {
+            clearActiveResultCheckpoint()
+            return false
+        } catch (_: IllegalArgumentException) {
+            clearActiveResultCheckpoint()
+            return false
+        }
+        mutableState.value = result
+        persistRoute(ROUTE_RESULT, cacheId)
+        refreshRecentCache(cacheId)
+        return true
+    }
 
     private fun refreshRecentScreen(message: UiMessage? = null) {
+        if (!clearActiveResultCheckpoint()) return
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         persistRoute(ROUTE_RECENT)
@@ -594,6 +641,7 @@ internal class ScanViewModel(
     }
 
     private suspend fun showRecentResult(message: UiMessage? = null) {
+        if (!clearActiveResultCheckpoint()) return
         val scans = loadRecentScans()
         recentScans = scans ?: emptyList()
         val effectiveMessage =
@@ -628,6 +676,15 @@ internal class ScanViewModel(
         savedStateHandle[ROUTE_KEY] = route
         savedStateHandle[ROUTE_CACHE_ID_KEY] = cacheId
     }
+
+    private fun clearActiveResultCheckpoint(): Boolean =
+        try {
+            settingsStore.clearActiveResult()
+            true
+        } catch (_: IOException) {
+            mutableState.value = ScreenState.Failure(UiMessage(R.string.state_update_failed))
+            false
+        }
 
     private fun completeScannerLaunch() {
         scannerLaunchGate.complete()

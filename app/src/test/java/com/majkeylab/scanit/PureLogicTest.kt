@@ -6,6 +6,8 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -198,6 +200,85 @@ class PureLogicTest {
             initialScreenState(RestoredRoute.Result),
         )
         assertEquals(ScreenState.Recent(emptyList()), initialScreenState(RestoredRoute.Recent))
+    }
+
+    @Test
+    fun activeResultCheckpointRoundTripsOnlySafeVersionedCacheId() {
+        val cacheId = "Scan_2026-08-09_13-47-50"
+
+        assertEquals(cacheId, decodeActiveResultCheckpoint(encodeActiveResultCheckpoint(cacheId)))
+        assertNull(decodeActiveResultCheckpoint(null))
+        assertNull(decodeActiveResultCheckpoint(""))
+        assertNull(decodeActiveResultCheckpoint("2:$cacheId"))
+        assertNull(decodeActiveResultCheckpoint("1:../outside"))
+        assertNull(decodeActiveResultCheckpoint("1:..\\outside"))
+        assertNull(decodeActiveResultCheckpoint("1:.hidden"))
+        assertNull(decodeActiveResultCheckpoint("1:C:outside"))
+        assertNull(decodeActiveResultCheckpoint("1:Scan\u0000outside"))
+        assertNull(decodeActiveResultCheckpoint("1:${"a".repeat(129)}"))
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeActiveResultCheckpoint("../outside")
+        }
+    }
+
+    @Test
+    fun explicitSavedRoutePrecedesDurableActiveResultCheckpoint() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_saved"),
+            initialNavigation(
+                savedRoute = "result",
+                savedCacheId = "Scan_saved",
+                activeResultCacheId = "Scan_durable",
+            ),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Recent, null),
+            initialNavigation(
+                savedRoute = "recent",
+                savedCacheId = null,
+                activeResultCacheId = "Scan_durable",
+            ),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation("scanner", null, "Scan_durable"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Recent, null),
+            initialNavigation("result", null, "Scan_durable"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Recent, null),
+            initialNavigation("unknown", "Scan_saved", "Scan_durable"),
+        )
+    }
+
+    @Test
+    fun coldNavigationUsesOnlyValidDurableActiveResultCheckpoint() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            initialNavigation(null, null, "Scan_durable"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, null),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, "../outside"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, "a".repeat(129)),
+        )
+    }
+
+    @Test
+    fun scannerPreparationResumeUsesCurrentPersistedRoute() {
+        assertTrue(scannerPreparationMayResume("scanner"))
+        assertFalse(scannerPreparationMayResume("result"))
+        assertFalse(scannerPreparationMayResume("recent"))
+        assertFalse(scannerPreparationMayResume(null))
     }
 
     @Test
