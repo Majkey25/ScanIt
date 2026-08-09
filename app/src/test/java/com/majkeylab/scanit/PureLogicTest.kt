@@ -128,6 +128,48 @@ class PureLogicTest {
     }
 
     @Test
+    fun deletingPreviousResultBlocksBackUntilRevalidationCompletes() {
+        val gate = RecentDeletionGate()
+
+        gate.begin("Scan_1")
+
+        assertEquals(false, gate.canRestore("Scan_1"))
+    }
+
+    @Test
+    fun deletingAnotherCacheDoesNotBlockPreviousResultBack() {
+        val gate = RecentDeletionGate()
+
+        gate.begin("Scan_2")
+
+        assertEquals(true, gate.canRestore("Scan_1"))
+    }
+
+    @Test
+    fun laterDeleteDoesNotHideEarlierPreviousResultDeletion() {
+        val gate = RecentDeletionGate()
+        val previousResultDeletion = gate.begin("Scan_1")
+
+        gate.begin("Scan_2")
+
+        assertEquals(false, gate.canRestore("Scan_1"))
+        assertEquals(true, gate.complete(previousResultDeletion))
+        assertEquals(true, gate.canRestore("Scan_1"))
+    }
+
+    @Test
+    fun completedDeleteAllowsBackOnlyForRetainedPreviousResult() {
+        val gate = RecentDeletionGate()
+        val deletion = gate.begin("Scan_1")
+        val retained = retainedRecentResultCacheId("Scan_1", listOf("Scan_1"))
+        val removed = retainedRecentResultCacheId("Scan_1", emptyList())
+
+        assertEquals(true, gate.complete(deletion))
+        assertEquals(true, gate.canRestore(retained))
+        assertEquals(false, gate.canRestore(removed))
+    }
+
+    @Test
     fun restoredPreparingScannerLaunchCanResume() {
         val gate = ScannerLaunchGate(ScannerLaunchStage.Preparing)
 

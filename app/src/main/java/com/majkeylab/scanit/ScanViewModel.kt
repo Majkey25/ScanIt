@@ -126,6 +126,46 @@ internal class RecentActionGate {
     }
 }
 
+internal data class RecentDeletion(
+    val cacheId: String,
+    val generation: Long,
+)
+
+internal class RecentDeletionGate {
+    private var generation = 0L
+    private var current: RecentDeletion? = null
+    private val inFlight = mutableSetOf<RecentDeletion>()
+
+    fun begin(cacheId: String): RecentDeletion {
+        val deletion = RecentDeletion(cacheId, nextGeneration())
+        current = deletion
+        inFlight += deletion
+        return deletion
+    }
+
+    fun isCurrent(deletion: RecentDeletion): Boolean = current == deletion
+
+    fun complete(deletion: RecentDeletion): Boolean {
+        if (current == deletion) {
+            current = null
+        }
+        return inFlight.remove(deletion)
+    }
+
+    fun invalidateCurrent() {
+        current = null
+    }
+
+    fun canRestore(cacheId: String?): Boolean =
+        cacheId != null && inFlight.none { it.cacheId == cacheId }
+
+    private fun nextGeneration(): Long {
+        check(generation < Long.MAX_VALUE) { "Recent deletion generation exhausted" }
+        generation += 1L
+        return generation
+    }
+}
+
 internal fun retainedRecentResultCacheId(
     cacheId: String?,
     recentCacheIds: Iterable<String>?,
@@ -150,6 +190,7 @@ internal class ScanViewModel(
             } ?: ScannerLaunchStage.Idle,
         )
     private val recentActionGate = RecentActionGate()
+    private val recentDeletionGate = RecentDeletionGate()
     private val mutableState =
         MutableStateFlow<ScreenState>(
             if (initialRoute == RestoredRoute.Scanner) {
@@ -245,6 +286,7 @@ internal class ScanViewModel(
     fun beginScannerLaunch(): Long? {
         val request = scannerLaunchGate.begin(processingJob?.isActive == true) ?: return null
         recentActionGate.invalidate()
+        recentDeletionGate.invalidateCurrent()
         recentJob?.cancel()
         previousResult = null
         persistRoute(ROUTE_SCANNER)
@@ -389,7 +431,9 @@ internal class ScanViewModel(
         when (val current = mutableState.value) {
             is ScreenState.Recent -> {
                 val result = previousResult
-                if (current.canGoBack && result != null) {
+                val cacheId = result?.scan?.cached?.baseName
+                if (current.canGoBack && result != null && recentDeletionGate.canRestore(cacheId)) {
+                    recentDeletionGate.invalidateCurrent()
                     recentJob?.cancel()
                     previousResult = null
                     mutableState.value = result
@@ -407,6 +451,7 @@ internal class ScanViewModel(
 
     fun openRecentScan(cacheId: String) {
         recentActionGate.invalidate()
+        recentDeletionGate.invalidateCurrent()
         previousResult = null
         persistRoute(ROUTE_RECENT)
         mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_document))
@@ -429,22 +474,30 @@ internal class ScanViewModel(
 
     fun deleteRecentScan(cacheId: String) {
         recentActionGate.invalidate()
+        val deletion = recentDeletionGate.begin(cacheId)
         val canGoBack = previousResult != null
         recentJob?.cancel()
         recentJob =
             viewModelScope.launch {
-                val deleted =
-                    try {
-                        withContext(Dispatchers.IO) { storage.deleteRecentScan(cacheId) }
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Exception) {
-                        false
+                try {
+                    val deleted =
+                        try {
+                            withContext(Dispatchers.IO) { storage.deleteRecentScan(cacheId) }
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Exception) {
+                            false
+                        }
+                    if (!recentDeletionGate.isCurrent(deletion)) {
+                        return@launch
                     }
-                showRecentResult(
-                    canGoBack = canGoBack,
-                    message = if (deleted) null else UiMessage(R.string.recent_delete_failed),
-                )
+                    showRecentResult(
+                        canGoBack = canGoBack,
+                        message = if (deleted) null else UiMessage(R.string.recent_delete_failed),
+                    )
+                } finally {
+                    recentDeletionGate.complete(deletion)
+                }
             }
     }
 
@@ -552,6 +605,7 @@ internal class ScanViewModel(
         message: UiMessage? = null,
     ) {
         recentActionGate.invalidate()
+        recentDeletionGate.invalidateCurrent()
         val cacheId = previousResult?.scan?.cached?.baseName.takeIf { canGoBack }
         persistRoute(
             if (cacheId == null) ROUTE_RECENT else ROUTE_RECENT_WITH_RESULT_BACK,
