@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 onSharePdf = ::shareCurrentPdf,
                 onShareImages = ::shareCurrentImages,
                 onPrint = ::printCurrentScan,
+                onSaveNow = viewModel::saveCurrentOutputs,
             )
         }
         lifecycleScope.launch {

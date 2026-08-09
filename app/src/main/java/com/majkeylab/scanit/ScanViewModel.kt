@@ -190,6 +190,12 @@ private data class CheckpointReadResult(
     val cacheId: String? = null,
 )
 
+private data class OutputSaveResult(
+    val scan: SavedScan?,
+    val successful: Set<SavedOutputKind>,
+    val warnings: List<UiMessage>,
+)
+
 private enum class ResultActivation {
     Applied,
     Rejected,
@@ -228,6 +234,7 @@ internal class ScanViewModel(
         )
     private val recentActionGate = RecentActionGate()
     private val recentDeletionGate = RecentDeletionGate()
+    private val resultSaveGate = ResultSaveGate()
     private val routeMutationGate = RouteMutationGate()
     private val routeMutationMutex = Mutex()
     private val mutableState = MutableStateFlow(initialScreenState(null))
@@ -237,6 +244,7 @@ internal class ScanViewModel(
     private var processingJob: Job? = null
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
+    private var outputSaveJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
 
@@ -467,6 +475,7 @@ internal class ScanViewModel(
                                             savedPdf = savedPdfUri,
                                             savedPdfTree = savedPdfTreeUri,
                                             warnings = warnings,
+                                            outputMetadataValid = true,
                                         ),
                                     thumbnail = thumbnail,
                                 )
@@ -547,6 +556,65 @@ internal class ScanViewModel(
 
     fun showRecent() {
         refreshRecentScreen()
+    }
+
+    fun saveCurrentOutputs(target: SaveNowTarget) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
+        if (target !in saveNowTargets(current.scan)) return
+        val action = resultSaveGate.begin(current.scan.cached.baseName, entryId) ?: return
+        mutableState.value = current.copy(outputSaveInProgress = true)
+        outputSaveJob =
+            viewModelScope.launch {
+                try {
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            saveCurrentOutputs(current.scan, target)
+                        }
+                    val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                    val latestEntryId = latest.scan.cached.entryId ?: return@launch
+                    if (
+                        !resultSaveGate.isCurrent(
+                            action,
+                            latest.scan.cached.baseName,
+                            latestEntryId,
+                        )
+                    ) {
+                        return@launch
+                    }
+                    val saved = result.scan
+                    val warnings =
+                        mergeSaveNowWarnings(
+                            latest.scan.warnings,
+                            result.successful,
+                            result.warnings +
+                                listOfNotNull(
+                                    UiMessage(R.string.state_update_failed).takeIf { saved == null },
+                                ),
+                        )
+                    mutableState.value =
+                        latest.copy(
+                            scan = (saved ?: latest.scan).copy(warnings = warnings),
+                            outputSaveInProgress = false,
+                        )
+                    refreshRecentCache(action.cacheId)
+                } finally {
+                    val latest = mutableState.value as? ScreenState.Result
+                    val latestEntryId = latest?.scan?.cached?.entryId
+                    if (
+                        latest != null &&
+                            latestEntryId != null &&
+                            resultSaveGate.isCurrent(
+                                action,
+                                latest.scan.cached.baseName,
+                                latestEntryId,
+                            )
+                    ) {
+                        mutableState.value = latest.copy(outputSaveInProgress = false)
+                    }
+                    resultSaveGate.complete(action)
+                }
+            }
     }
 
     fun navigateBack() {
@@ -851,10 +919,59 @@ internal class ScanViewModel(
     }
 
     private fun beginRouteMutation(): Long {
+        resultSaveGate.invalidate()
+        outputSaveJob?.cancel()
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         recentJob?.cancel()
         return routeMutationGate.begin()
+    }
+
+    private suspend fun saveCurrentOutputs(
+        scan: SavedScan,
+        target: SaveNowTarget,
+    ): OutputSaveResult {
+        val settings = currentSettings()
+        val successful = mutableSetOf<SavedOutputKind>()
+        val warnings = mutableListOf<UiMessage>()
+        if (target == SaveNowTarget.Images || target == SaveNowTarget.Both) {
+            try {
+                storage.saveImages(scan.cached, settings.albumName)
+                successful += SavedOutputKind.Images
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: ImageSaveFailure) {
+                warnings += imageSaveFailureMessages(failure)
+            } catch (_: Exception) {
+                warnings += UiMessage(R.string.images_save_failed)
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        if (target == SaveNowTarget.Pdf || target == SaveNowTarget.Both) {
+            try {
+                val saved =
+                    storage.savePdf(scan.cached, settings.albumName, settings.pdfTreeUri)
+                successful += SavedOutputKind.Pdf
+                saved.warning?.let(warnings::add)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: PdfSaveFailure) {
+                warnings += pdfSaveFailureMessages(failure)
+            } catch (_: Exception) {
+                warnings += UiMessage(R.string.pdf_save_failed)
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        return OutputSaveResult(
+            scan =
+                try {
+                    storage.openSavedScan(scan.cached.baseName)
+                } catch (_: Exception) {
+                    null
+                },
+            successful = successful,
+            warnings = warnings.distinct(),
+        )
     }
 
     private suspend fun readActiveResultCheckpoint(generation: Long): CheckpointReadResult =

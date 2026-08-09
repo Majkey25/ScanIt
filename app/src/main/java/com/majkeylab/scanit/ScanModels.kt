@@ -46,7 +46,119 @@ internal data class SavedScan(
     val savedPdf: Uri?,
     val savedPdfTree: Uri? = null,
     val warnings: List<UiMessage> = emptyList(),
+    val outputMetadataValid: Boolean = false,
 )
+
+internal enum class SaveNowTarget {
+    Pdf,
+    Images,
+    Both,
+}
+
+internal enum class SavedOutputKind {
+    Pdf,
+    Images,
+}
+
+internal fun saveNowTargets(
+    metadata: OutputMetadata?,
+    expectedCacheId: String,
+    expectedEntryId: String,
+    pageCount: Int,
+): List<SaveNowTarget> {
+    val exact =
+        validatedSaveNowMetadata(metadata, expectedCacheId, expectedEntryId, pageCount)
+            ?: return emptyList()
+    return missingSaveNowTargets(exact.pdf == null, exact.images.isEmpty())
+}
+
+internal fun saveNowTargets(scan: SavedScan): List<SaveNowTarget> {
+    if (!scan.outputMetadataValid || scan.cached.entryId == null) return emptyList()
+    val pageCount = scan.cached.pages.size
+    if (
+        pageCount <= 0 ||
+            (scan.galleryPages.isNotEmpty() && scan.galleryPages.size != pageCount)
+    ) {
+        return emptyList()
+    }
+    return missingSaveNowTargets(scan.savedPdf == null, scan.galleryPages.isEmpty())
+}
+
+internal fun validatedSaveNowMetadata(
+    metadata: OutputMetadata?,
+    expectedCacheId: String,
+    expectedEntryId: String,
+    pageCount: Int,
+): OutputMetadata? {
+    if (
+        metadata == null ||
+            pageCount <= 0 ||
+            metadata.cacheId != expectedCacheId ||
+            metadata.entryId != expectedEntryId
+    ) {
+        return null
+    }
+    if (
+        metadata.images.isNotEmpty() &&
+            metadata.images.map(ImageOutputRef::page) != (1..pageCount).toList()
+    ) {
+        return null
+    }
+    return metadata
+}
+
+private fun missingSaveNowTargets(
+    pdfMissing: Boolean,
+    imagesMissing: Boolean,
+): List<SaveNowTarget> =
+    when {
+        pdfMissing && imagesMissing ->
+            listOf(SaveNowTarget.Pdf, SaveNowTarget.Images, SaveNowTarget.Both)
+        pdfMissing -> listOf(SaveNowTarget.Pdf)
+        imagesMissing -> listOf(SaveNowTarget.Images)
+        else -> emptyList()
+    }
+
+internal fun mergeSaveNowWarnings(
+    existing: List<UiMessage>,
+    successful: Set<SavedOutputKind>,
+    added: List<UiMessage>,
+): List<UiMessage> {
+    val cleared =
+        buildSet {
+            if (SavedOutputKind.Pdf in successful) add(R.string.pdf_save_failed)
+            if (SavedOutputKind.Images in successful) add(R.string.images_save_failed)
+        }
+    return (existing.filterNot { it.resourceId in cleared } + added).distinct()
+}
+
+internal data class ResultSaveAction(
+    val cacheId: String,
+    val entryId: String,
+    val generation: Long,
+)
+
+internal class ResultSaveGate {
+    private var generation = 0L
+    private var current: ResultSaveAction? = null
+
+    fun begin(cacheId: String, entryId: String): ResultSaveAction? {
+        if (current != null || cacheId.isBlank() || entryId.isBlank()) return null
+        check(generation < Long.MAX_VALUE) { "Result save generation exhausted" }
+        return ResultSaveAction(cacheId, entryId, ++generation).also { current = it }
+    }
+
+    fun isCurrent(action: ResultSaveAction, cacheId: String, entryId: String): Boolean =
+        current == action && action.cacheId == cacheId && action.entryId == entryId
+
+    fun complete(action: ResultSaveAction) {
+        if (current == action) current = null
+    }
+
+    fun invalidate() {
+        current = null
+    }
+}
 
 internal data class SavedPdfOutput(
     val uri: Uri,
@@ -148,6 +260,7 @@ internal sealed interface ScreenState {
     data class Result(
         val scan: SavedScan,
         val thumbnail: Bitmap?,
+        val outputSaveInProgress: Boolean = false,
     ) : ScreenState
 
     data class Recent(
@@ -173,6 +286,7 @@ internal fun appBackAction(
 ): AppBackAction =
     when {
         settingsOpen -> AppBackAction.CloseSettings
+        state is ScreenState.Result && state.outputSaveInProgress -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent -> AppBackAction.LaunchScanner

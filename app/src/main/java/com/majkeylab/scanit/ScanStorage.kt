@@ -719,6 +719,7 @@ internal class ScanStorage(
                 galleryPages = outputs?.images?.map { it.uri.toUri() }.orEmpty(),
                 savedPdf = outputs?.pdf?.uri?.toUri(),
                 savedPdfTree = outputs?.pdf?.treeUri?.toUri(),
+                outputMetadataValid = outputs != null,
             )
         }
 
@@ -768,6 +769,10 @@ internal class ScanStorage(
             val relativePath = "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(album)}"
             val saved = mutableListOf<Uri>()
             try {
+                val existing = requireCurrentOutputMetadata(cached).images
+                if (existing.isNotEmpty()) {
+                    return@synchronized existing.map { it.uri.toUri() }
+                }
                 cached.pages.forEachIndexed { index, source ->
                     val values =
                         pendingValues(
@@ -783,6 +788,9 @@ internal class ScanStorage(
                         )
                 }
                 rewriteCachedOutputMetadata(cached) { metadata ->
+                    if (metadata.images.isNotEmpty()) {
+                        throw IOException("Images were already saved")
+                    }
                     metadata.copy(
                         images =
                             saved.mapIndexed { index, uri ->
@@ -837,6 +845,13 @@ internal class ScanStorage(
             var failureWarning: UiMessage? = null
             var createdOutput: SavedPdfOutput? = null
             try {
+                requireCurrentOutputMetadata(cached).pdf?.let { existing ->
+                    return@synchronized SavedPdfOutput(
+                        uri = existing.uri.toUri(),
+                        treeUri = existing.treeUri?.toUri(),
+                        warning = null,
+                    )
+                }
                 val output =
                     if (pdfTreeUri != null) {
                         val (savedToTree, cleanupFailed) =
@@ -862,6 +877,9 @@ internal class ScanStorage(
                     }
                 createdOutput = output
                 rewriteCachedOutputMetadata(cached) { metadata ->
+                    if (metadata.pdf != null) {
+                        throw IOException("PDF was already saved")
+                    }
                     metadata.copy(
                         pdf =
                             PdfOutputRef(
@@ -911,6 +929,17 @@ internal class ScanStorage(
         cached: CachedScan,
         update: (OutputMetadata) -> OutputMetadata,
     ): OutputMetadata {
+        val current = requireCurrentOutputMetadata(cached)
+        return rewriteOutputMetadata(
+            directory = File(shareCacheRoot(), cached.baseName),
+            expectedCacheId = cached.baseName,
+            expectedEntryId = current.entryId,
+            pageCount = cached.pages.size,
+            update = update,
+        )
+    }
+
+    private fun requireCurrentOutputMetadata(cached: CachedScan): OutputMetadata {
         val entryId = cached.entryId ?: throw IOException("Cached scan output metadata is unavailable")
         val root = shareCacheRoot()
         val current = openCachedScanInRoot(root, cached.baseName)
@@ -922,13 +951,10 @@ internal class ScanStorage(
         ) {
             throw IOException("Cached scan belongs to another generation")
         }
-        return rewriteOutputMetadata(
-            directory = File(root, cached.baseName),
-            expectedCacheId = cached.baseName,
-            expectedEntryId = entryId,
-            pageCount = cached.pages.size,
-            update = update,
-        )
+        val metadata =
+            readOutputMetadata(File(root, cached.baseName), cached.baseName, cached.pages.size)
+        return validatedSaveNowMetadata(metadata, cached.baseName, entryId, cached.pages.size)
+            ?: throw IOException("Cached scan output metadata is incomplete")
     }
 
     private fun deleteRecursivelyOrSuppress(target: File, failure: Throwable) {

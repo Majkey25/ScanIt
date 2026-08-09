@@ -26,6 +26,12 @@
     <string name="file_details">File details</string>
     <string name="expand_file_details">Show file details</string>
     <string name="collapse_file_details">Hide file details</string>
+    <string name="automatic_saving_hint">You can enable automatic saving in Settings.</string>
+    <string name="save_now">Save now</string>
+    <string name="saving_now">Saving…</string>
+    <string name="save_pdf_now">PDF</string>
+    <string name="save_images_now">Images</string>
+    <string name="save_pdf_and_images_now">PDF and images</string>
     <string name="recent_scans">Recent scans</string>
     <string name="open_recent_scans">Open recent scans</string>
     <string name="recent_scans_temporary">Recent previews are temporary.</string>

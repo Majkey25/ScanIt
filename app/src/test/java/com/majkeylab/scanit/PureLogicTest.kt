@@ -318,6 +318,138 @@ class PureLogicTest {
     }
 
     @Test
+    fun saveNowTargetMatrixOnlyOffersMissingCompleteOutputs() {
+        val metadata = outputMetadata()
+
+        assertEquals(
+            listOf(SaveNowTarget.Pdf, SaveNowTarget.Images, SaveNowTarget.Both),
+            saveNowTargets(metadata, CACHE_ID, ENTRY_ID, pageCount = 2),
+        )
+        assertEquals(
+            listOf(SaveNowTarget.Images),
+            saveNowTargets(
+                metadata.copy(pdf = PdfOutputRef("content://downloads/document/1", null)),
+                CACHE_ID,
+                ENTRY_ID,
+                pageCount = 2,
+            ),
+        )
+        assertEquals(
+            listOf(SaveNowTarget.Pdf),
+            saveNowTargets(
+                metadata.copy(images = completeImageRefs()),
+                CACHE_ID,
+                ENTRY_ID,
+                pageCount = 2,
+            ),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(
+                metadata.copy(
+                    pdf = PdfOutputRef("content://downloads/document/1", null),
+                    images = completeImageRefs(),
+                ),
+                CACHE_ID,
+                ENTRY_ID,
+                pageCount = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun saveNowTargetsFailClosedForPartialLegacyOrWrongGenerationMetadata() {
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(
+                outputMetadata(
+                    images = listOf(ImageOutputRef(1, "content://media/images/1")),
+                ),
+                CACHE_ID,
+                ENTRY_ID,
+                pageCount = 2,
+            ),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(null, CACHE_ID, ENTRY_ID, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(outputMetadata(), "Scan_other", ENTRY_ID, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(outputMetadata(), CACHE_ID, OTHER_ENTRY_ID, pageCount = 2),
+        )
+    }
+
+    @Test
+    fun saveNowGateRejectsDoubleTapAndStaleResultCompletion() {
+        val gate = ResultSaveGate()
+        val action = gate.begin(CACHE_ID, ENTRY_ID)!!
+
+        assertNull(gate.begin(CACHE_ID, ENTRY_ID))
+        assertTrue(gate.isCurrent(action, CACHE_ID, ENTRY_ID))
+        assertFalse(gate.isCurrent(action, CACHE_ID, OTHER_ENTRY_ID))
+
+        gate.invalidate()
+
+        assertFalse(gate.isCurrent(action, CACHE_ID, ENTRY_ID))
+        assertTrue(gate.begin(CACHE_ID, ENTRY_ID)!!.generation > action.generation)
+    }
+
+    @Test
+    fun saveNowWarningMergeClearsOnlySuccessfulFormatFailure() {
+        val unrelated = UiMessage(R.string.saf_cleanup_warning)
+        val existing =
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+                unrelated,
+            )
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+                unrelated,
+                UiMessage(R.string.saf_fallback_warning),
+            ),
+            mergeSaveNowWarnings(
+                existing,
+                successful = setOf(SavedOutputKind.Pdf),
+                added = listOf(UiMessage(R.string.saf_fallback_warning)),
+            ),
+        )
+        assertEquals(
+            existing,
+            mergeSaveNowWarnings(existing, successful = emptySet(), added = emptyList()),
+        )
+    }
+
+    @Test
+    fun backNavigationIsConsumedWhileResultOutputIsSaving() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+                outputSaveInProgress = true,
+            )
+
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
     fun restoredPreparingScannerLaunchCanResume() {
         val gate = ScannerLaunchGate(ScannerLaunchStage.Preparing)
 
@@ -713,6 +845,28 @@ class PureLogicTest {
         assertThrows(IllegalArgumentException::class.java) {
             requestedPageIndexes(-1, listOf(0..1))
         }
+    }
+
+    private fun outputMetadata(
+        images: List<ImageOutputRef> = emptyList(),
+    ): OutputMetadata =
+        OutputMetadata(
+            entryId = ENTRY_ID,
+            cacheId = CACHE_ID,
+            createdAtEpochMs = 1L,
+            images = images,
+        )
+
+    private fun completeImageRefs(): List<ImageOutputRef> =
+        listOf(
+            ImageOutputRef(1, "content://media/images/1"),
+            ImageOutputRef(2, "content://media/images/2"),
+        )
+
+    private companion object {
+        const val CACHE_ID = "Scan_2026-08-09_12-12-00"
+        const val ENTRY_ID = "00000000-0000-0000-0000-000000000001"
+        const val OTHER_ENTRY_ID = "00000000-0000-0000-0000-000000000002"
     }
 
 }

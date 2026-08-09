@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -140,6 +141,7 @@ internal fun ScanItApp(
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
+    onSaveNow: (SaveNowTarget) -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
@@ -203,6 +205,7 @@ internal fun ScanItApp(
                         onPrint = onPrint,
                         fileDetailsExpanded = fileDetailsExpanded,
                         onFileDetailsChange = { fileDetailsExpanded = it },
+                        onSaveNow = onSaveNow,
                     )
             }
         }
@@ -257,12 +260,15 @@ private fun ResultScreen(
     onPrint: (() -> Unit)?,
     fileDetailsExpanded: Boolean,
     onFileDetailsChange: (Boolean) -> Unit,
+    onSaveNow: (SaveNowTarget) -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
-    MainScaffold(onRecent, onSettings) { modifier ->
+    val saveTargets = saveNowTargets(scan)
+    var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
         LazyColumn(
-            modifier = modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
@@ -283,15 +289,43 @@ private fun ResultScreen(
                 }
             }
             item {
-                Text(
-                    pluralStringResource(R.plurals.page_count, pageCount, pageCount),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        pluralStringResource(R.plurals.page_count, pageCount, pageCount),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    IconButton(
+                        onClick = onRecent,
+                        enabled = !result.outputSaveInProgress,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_dashboard),
+                            contentDescription = stringResource(R.string.open_recent_scans),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = onSettings,
+                        enabled = !result.outputSaveInProgress,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = stringResource(R.string.open_settings),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
             }
             item {
                 Button(
                     onClick = { onSharePdf?.invoke() },
-                    enabled = onSharePdf != null,
+                    enabled = onSharePdf != null && !result.outputSaveInProgress,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
                     Text(stringResource(R.string.send_pdf))
@@ -300,7 +334,7 @@ private fun ResultScreen(
             item {
                 OutlinedButton(
                     onClick = { onShareImages?.invoke() },
-                    enabled = onShareImages != null,
+                    enabled = onShareImages != null && !result.outputSaveInProgress,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.send_images))
@@ -309,14 +343,18 @@ private fun ResultScreen(
             item {
                 OutlinedButton(
                     onClick = { onPrint?.invoke() },
-                    enabled = onPrint != null,
+                    enabled = onPrint != null && !result.outputSaveInProgress,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.print_document))
                 }
             }
             item {
-                TextButton(onClick = onNewScan, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onNewScan,
+                    enabled = !result.outputSaveInProgress,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
                     Text(stringResource(R.string.new_scan))
                 }
             }
@@ -340,16 +378,36 @@ private fun ResultScreen(
                     )
                 }
                 if (fileDetailsExpanded) {
-                    FileDetails(scan)
+                    FileDetails(
+                        scan = scan,
+                        saveTargets = saveTargets,
+                        saveInProgress = result.outputSaveInProgress,
+                        onSaveNow = { showSaveDialog = true },
+                    )
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
+    if (showSaveDialog) {
+        SaveNowDialog(
+            targets = saveTargets,
+            onDismiss = { showSaveDialog = false },
+            onSave = { target ->
+                showSaveDialog = false
+                onSaveNow(target)
+            },
+        )
+    }
 }
 
 @Composable
-private fun FileDetails(scan: SavedScan) {
+private fun FileDetails(
+    scan: SavedScan,
+    saveTargets: List<SaveNowTarget>,
+    saveInProgress: Boolean,
+    onSaveNow: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -372,6 +430,25 @@ private fun FileDetails(scan: SavedScan) {
             },
             style = MaterialTheme.typography.bodySmall,
         )
+        if (scan.savedPdf == null || scan.galleryPages.size != scan.cached.pages.size) {
+            Text(
+                stringResource(R.string.automatic_saving_hint),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (saveTargets.isNotEmpty()) {
+            Button(
+                onClick = onSaveNow,
+                enabled = !saveInProgress,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(
+                        if (saveInProgress) R.string.saving_now else R.string.save_now,
+                    ),
+                )
+            }
+        }
         scan.warnings.forEach {
             Text(
                 it.resolve(),
@@ -380,6 +457,41 @@ private fun FileDetails(scan: SavedScan) {
             )
         }
     }
+}
+
+@Composable
+private fun SaveNowDialog(
+    targets: List<SaveNowTarget>,
+    onDismiss: () -> Unit,
+    onSave: (SaveNowTarget) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.save_now)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                targets.forEach { target ->
+                    OutlinedButton(
+                        onClick = { onSave(target) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                when (target) {
+                                    SaveNowTarget.Pdf -> R.string.save_pdf_now
+                                    SaveNowTarget.Images -> R.string.save_images_now
+                                    SaveNowTarget.Both -> R.string.save_pdf_and_images_now
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable

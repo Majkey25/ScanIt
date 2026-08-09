@@ -28,6 +28,12 @@
     <string name="file_details">Podrobnosti souborů</string>
     <string name="expand_file_details">Zobrazit podrobnosti souborů</string>
     <string name="collapse_file_details">Skrýt podrobnosti souborů</string>
+    <string name="automatic_saving_hint">Automatické ukládání můžete zapnout v Nastavení.</string>
+    <string name="save_now">Uložit nyní</string>
+    <string name="saving_now">Ukládám…</string>
+    <string name="save_pdf_now">PDF</string>
+    <string name="save_images_now">Obrázky</string>
+    <string name="save_pdf_and_images_now">PDF a obrázky</string>
     <string name="recent_scans">Nedávné skeny</string>
     <string name="open_recent_scans">Otevřít nedávné skeny</string>
     <string name="recent_scans_temporary">Náhledy nedávných skenů jsou dočasné.</string>
