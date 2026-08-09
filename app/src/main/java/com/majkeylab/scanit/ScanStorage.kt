@@ -13,8 +13,17 @@ import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.Clock
+import java.time.Instant
 import java.util.concurrent.CancellationException
+import java.util.UUID
 import kotlin.math.min
 
 private const val DEFAULT_THUMBNAIL_SIZE = 1024
@@ -81,9 +90,291 @@ internal fun shareCacheEntriesToPrune(children: List<File>, keep: Int): List<Fil
     return children
         .sortedWith(
             compareByDescending<File> { it.lastModified() }
-                .thenByDescending { it.name },
+                .thenBy { it.name },
         ).drop(keep)
 }
+
+private data class ParsedCacheEntry(
+    val directory: File,
+    val recent: RecentScan,
+    val cached: CachedScan,
+)
+
+internal fun nextDerivedCacheId(
+    sourceCacheId: String,
+    suffix: String,
+    existingCacheIds: Set<String>,
+): String {
+    require(isSafeCacheId(sourceCacheId)) { "Source cache ID is unsafe" }
+    require(isSafeCacheId(suffix)) { "Derived cache suffix is unsafe" }
+    val base = "${sourceCacheId}_$suffix"
+    require(isSafeCacheId(base)) { "Derived cache ID is unsafe" }
+    if (base !in existingCacheIds) return base
+    var number = 2
+    while (number < Int.MAX_VALUE) {
+        val candidate = "${base}_$number"
+        if (candidate !in existingCacheIds) return candidate
+        number++
+    }
+    throw IOException("No derived cache ID is available")
+}
+
+internal fun openCachedScanInRoot(root: File, cacheId: String): CachedScan? {
+    if (!isSafeCacheId(cacheId)) return null
+    val safeRoot = ensureShareRoot(root)
+    val directory = File(safeRoot, cacheId).absoluteFile
+    return readCacheEntry(safeRoot, directory, cacheId)?.cached
+}
+
+internal fun deleteRecentScanInRoot(root: File, cacheId: String): Boolean {
+    if (!isSafeCacheId(cacheId)) return false
+    val safeRoot = ensureShareRoot(root)
+    val directory = File(safeRoot, cacheId).absoluteFile
+    if (readCacheEntry(safeRoot, directory, cacheId) == null) {
+        return !Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+    }
+    return deleteTreeWithoutFollowingLinks(directory)
+}
+
+internal fun listRecentScansInRoot(
+    root: File,
+    protectedCacheIds: Set<String> = emptySet(),
+    maxEntries: Int = MAX_SHARE_CACHE_SCANS,
+): List<RecentScan> {
+    require(maxEntries >= 0) { "Recent scan retention must not be negative" }
+    require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
+    val safeRoot = ensureShareRoot(root)
+    cleanPendingDirectories(safeRoot)
+    return pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries).map(ParsedCacheEntry::recent)
+}
+
+internal fun publishCacheEntryInRoot(
+    root: File,
+    workDir: File,
+    finalDir: File,
+    protectedCacheIds: Set<String> = emptySet(),
+    maxEntries: Int = MAX_SHARE_CACHE_SCANS,
+): CachedScan {
+    require(maxEntries > 0) { "Recent scan retention must be positive for publishing" }
+    require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
+    val safeRoot = ensureShareRoot(root)
+    val work = workDir.absoluteFile
+    val final = finalDir.absoluteFile
+    val cacheId = final.name
+    if (
+        !isSafeCacheId(cacheId) ||
+            !isDirectChild(safeRoot, final) ||
+            final.exists() ||
+            !isPendingDirectory(safeRoot, work)
+    ) {
+        throw IOException("Cache publication path is unsafe")
+    }
+
+    var moved = false
+    try {
+        readCacheEntry(safeRoot, work, cacheId)
+            ?: throw IOException("Pending cache entry is incomplete")
+        cleanPendingDirectories(safeRoot, work)
+        pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries - 1)
+        Files.move(work.toPath(), final.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        moved = true
+        return readCacheEntry(safeRoot, final, cacheId)?.cached
+            ?: throw IOException("Published cache entry is incomplete")
+    } catch (failure: Throwable) {
+        val cleanupTarget = if (moved) final else work
+        if (
+            isDirectChild(safeRoot, cleanupTarget) &&
+                cleanupTarget.exists() &&
+                !deleteTreeWithoutFollowingLinks(cleanupTarget)
+        ) {
+            failure.addSuppressed(IOException("Incomplete cache publication could not be deleted"))
+        }
+        throw failure
+    }
+}
+
+private fun pruneRecentEntries(
+    root: File,
+    protectedCacheIds: Set<String>,
+    maxEntries: Int,
+): List<ParsedCacheEntry> {
+    val entries = readCacheEntries(root)
+    val protectedEntries = entries.filter { it.recent.cacheId in protectedCacheIds }
+    if (protectedEntries.size > maxEntries) {
+        throw IOException("Protected recent scans exceed cache capacity")
+    }
+    val unprotected = entries.filterNot { it.recent.cacheId in protectedCacheIds }
+    val unprotectedToKeep = maxEntries - protectedEntries.size
+    val directoriesToDelete =
+        shareCacheEntriesToPrune(unprotected.map(ParsedCacheEntry::directory), unprotectedToKeep)
+            .toSet()
+    entries.filter { it.directory in directoriesToDelete }.forEach { entry ->
+        if (!deleteRecentScanInRoot(root, entry.recent.cacheId)) {
+            throw IOException("Old recent scan could not be deleted")
+        }
+    }
+    return entries.filterNot { it.directory in directoriesToDelete }
+}
+
+private fun readCacheEntries(root: File): List<ParsedCacheEntry> {
+    val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
+    return children
+        .mapNotNull { child -> readCacheEntry(root, child.absoluteFile, child.name) }
+        .sortedWith(
+            compareByDescending<ParsedCacheEntry> { it.recent.createdAt }
+                .thenBy { it.recent.cacheId },
+        )
+}
+
+private fun readCacheEntry(
+    root: File,
+    directory: File,
+    cacheId: String,
+): ParsedCacheEntry? {
+    if (
+        !isSafeCacheId(cacheId) ||
+            !isDirectChild(root, directory) ||
+            !Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+    ) {
+        return null
+    }
+    val children = directory.listFiles() ?: return null
+    val pagePattern = Regex("${Regex.escape(cacheId)}_([0-9]+)\\.jpg")
+    val pagesByNumber = mutableMapOf<Int, File>()
+    var pdf: File? = null
+    children.forEach { child ->
+        val file = child.absoluteFile
+        if (
+            !isDirectChild(directory, file) ||
+                !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+                file.length() <= 0L
+        ) {
+            return null
+        }
+        when {
+            file.name == scanPdfFileName(cacheId) -> {
+                if (pdf != null) return null
+                pdf = file
+            }
+            else -> {
+                val match = pagePattern.matchEntire(file.name) ?: return null
+                val pageNumber = match.groupValues[1].toIntOrNull() ?: return null
+                if (
+                    pageNumber <= 0 ||
+                        file.name != scanPageFileName(cacheId, pageNumber) ||
+                        pagesByNumber.put(pageNumber, file) != null
+                ) {
+                    return null
+                }
+            }
+        }
+    }
+    val orderedPages = pagesByNumber.toSortedMap().values.toList()
+    if (
+        pdf == null ||
+            orderedPages.isEmpty() ||
+            pagesByNumber.keys.sorted() != (1..orderedPages.size).toList()
+    ) {
+        return null
+    }
+    val exactPdf = pdf
+    val recent =
+        RecentScan(
+            cacheId = cacheId,
+            displayName = cacheId,
+            createdAt = Instant.ofEpochMilli(directory.lastModified()),
+            pageCount = orderedPages.size,
+            pdfBytes = exactPdf.length(),
+            firstPage = orderedPages.first(),
+        )
+    return ParsedCacheEntry(
+        directory = directory,
+        recent = recent,
+        cached = CachedScan(cacheId, orderedPages, exactPdf),
+    )
+}
+
+private fun cleanPendingDirectories(root: File, keep: File? = null) {
+    val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
+    children.filter { child ->
+        child.absoluteFile != keep?.absoluteFile && isPendingDirectory(root, child.absoluteFile)
+    }.forEach { child ->
+        if (!deleteTreeWithoutFollowingLinks(child)) {
+            throw IOException("Stale pending cache entry could not be deleted")
+        }
+    }
+}
+
+private fun isPendingDirectory(root: File, directory: File): Boolean =
+    directory.name.startsWith(".pending-") &&
+        directory.name.length > ".pending-".length &&
+        isDirectChild(root, directory) &&
+        Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+
+private fun isSafeCacheId(cacheId: String): Boolean =
+    cacheId.isNotBlank() &&
+        cacheId != "." &&
+        cacheId != ".." &&
+        !cacheId.startsWith('.') &&
+        !File(cacheId).isAbsolute &&
+        cacheId.none { character ->
+            character == '/' ||
+                character == '\\' ||
+                character == ':' ||
+                character.isISOControl()
+        }
+
+private fun ensureShareRoot(root: File): File {
+    val absoluteRoot = root.absoluteFile
+    if (absoluteRoot.exists()) {
+        if (
+            absoluteRoot.canonicalFile != absoluteRoot ||
+                !Files.isDirectory(absoluteRoot.toPath(), LinkOption.NOFOLLOW_LINKS)
+        ) {
+            throw IOException("Share cache path is unsafe")
+        }
+    } else if (!absoluteRoot.mkdirs()) {
+        throw IOException("Share cache directory could not be created")
+    }
+    if (absoluteRoot.canonicalFile != absoluteRoot) {
+        throw IOException("Share cache path is unsafe")
+    }
+    return absoluteRoot
+}
+
+private fun isDirectChild(parent: File, child: File): Boolean =
+    try {
+        val absoluteChild = child.absoluteFile
+        absoluteChild.parentFile == parent && absoluteChild.canonicalFile == absoluteChild
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+private fun deleteTreeWithoutFollowingLinks(directory: File): Boolean =
+    try {
+        Files.walkFileTree(
+            directory.toPath(),
+            object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attributes: BasicFileAttributes): FileVisitResult {
+                    Files.delete(file)
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun postVisitDirectory(directory: Path, failure: IOException?): FileVisitResult {
+                    if (failure != null) throw failure
+                    Files.delete(directory)
+                    return FileVisitResult.CONTINUE
+                }
+            },
+        )
+        !Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
 
 internal class ScanStorage(
     private val context: Context,
@@ -100,27 +391,63 @@ internal class ScanStorage(
         synchronized(shareCacheLock) {
             require(pageUris.isNotEmpty()) { "Scanner returned no pages" }
             val baseName = scanBaseName(clock)
-            val shareRoot = prepareShareCache()
-            val scanDirectory = File(shareRoot, baseName)
-            if (!scanDirectory.mkdir()) {
-                throw IOException("Fresh scan cache directory could not be created")
+            val shareRoot = ensureShareRoot(shareCacheRoot())
+            val finalDirectory = File(shareRoot, baseName)
+            val workDirectory = File(shareRoot, ".pending-${UUID.randomUUID()}")
+            if (!workDirectory.mkdir()) {
+                throw IOException("Pending scan cache directory could not be created")
             }
 
             try {
-                val pages =
-                    pageUris.mapIndexed { index, uri ->
-                        File(scanDirectory, scanPageFileName(baseName, index + 1)).also {
-                            copyUriToFile(uri, it)
-                        }
+                pageUris.forEachIndexed { index, uri ->
+                    File(workDirectory, scanPageFileName(baseName, index + 1)).also {
+                        copyUriToFile(uri, it)
                     }
-                val pdf = File(scanDirectory, scanPdfFileName(baseName)).also {
+                }
+                File(workDirectory, scanPdfFileName(baseName)).also {
                     copyUriToFile(pdfUri, it)
                 }
-                CachedScan(baseName, pages, pdf)
+                publishCacheEntryInRoot(shareRoot, workDirectory, finalDirectory)
             } catch (failure: Throwable) {
-                deleteRecursivelyOrSuppress(scanDirectory, failure)
+                deleteRecursivelyOrSuppress(workDirectory, failure)
                 throw failure
             }
+        }
+
+    fun listRecentScans(protectedCacheIds: Set<String> = emptySet()): List<RecentScan> =
+        synchronized(shareCacheLock) {
+            listRecentScansInRoot(shareCacheRoot(), protectedCacheIds)
+        }
+
+    fun openCachedScan(cacheId: String): CachedScan? =
+        synchronized(shareCacheLock) {
+            openCachedScanInRoot(shareCacheRoot(), cacheId)
+        }
+
+    fun deleteRecentScan(cacheId: String): Boolean =
+        synchronized(shareCacheLock) {
+            deleteRecentScanInRoot(shareCacheRoot(), cacheId)
+        }
+
+    fun nextDerivedCacheId(sourceCacheId: String, suffix: String): String =
+        synchronized(shareCacheLock) {
+            val root = ensureShareRoot(shareCacheRoot())
+            val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
+            nextDerivedCacheId(sourceCacheId, suffix, children.mapTo(mutableSetOf(), File::getName))
+        }
+
+    fun publishCacheEntry(
+        workDir: File,
+        finalDir: File,
+        protectedCacheIds: Set<String> = emptySet(),
+    ): CachedScan =
+        synchronized(shareCacheLock) {
+            publishCacheEntryInRoot(
+                shareCacheRoot(),
+                workDir,
+                finalDir,
+                protectedCacheIds,
+            )
         }
 
     fun deleteCachedScan(cached: CachedScan): Boolean =
@@ -138,7 +465,7 @@ internal class ScanStorage(
                 ) {
                     false
                 } else {
-                    !directory.exists() || directory.deleteRecursively()
+                    !directory.exists() || deleteRecentScanInRoot(root, cached.baseName)
                 }
             } catch (_: IOException) {
                 false
@@ -237,32 +564,6 @@ internal class ScanStorage(
         return BitmapFactory.decodeFile(firstPage.path, options)
     }
 
-    private fun prepareShareCache(): File {
-        val root = shareCacheRoot()
-        if (root.exists()) {
-            if (!root.isDirectory) {
-                throw IOException("Share cache path is not a directory")
-            }
-        } else if (!root.mkdirs()) {
-            throw IOException("Share cache directory could not be created")
-        }
-        val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
-        val safeChildren = children.map { child ->
-            val absoluteChild = child.absoluteFile
-            if (absoluteChild.canonicalFile != absoluteChild || absoluteChild.parentFile != root) {
-                throw IOException("Unsafe share cache entry was not deleted")
-            }
-            absoluteChild
-        }
-        // ponytail: eight cached scans cover normal mail drafts; add persistent attachments only if measured usage needs longer retention.
-        shareCacheEntriesToPrune(safeChildren, MAX_SHARE_CACHE_SCANS - 1).forEach { child ->
-            if (!child.deleteRecursively()) {
-                throw IOException("Old share cache could not be deleted")
-            }
-        }
-        return root
-    }
-
     private fun shareCacheRoot(): File {
         val cacheRoot = context.cacheDir.canonicalFile
         val root = File(cacheRoot, "share").absoluteFile
@@ -274,7 +575,7 @@ internal class ScanStorage(
 
     private fun deleteRecursivelyOrSuppress(target: File, failure: Throwable) {
         try {
-            if (target.exists() && !target.deleteRecursively()) {
+            if (target.exists() && !deleteTreeWithoutFollowingLinks(target)) {
                 failure.addSuppressed(IOException("Incomplete scan cache could not be deleted"))
             }
         } catch (cleanupFailure: Exception) {
