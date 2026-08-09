@@ -57,10 +57,15 @@ internal data class SavedPdfOutput(
 internal class PdfSaveFailure(
     val warning: UiMessage?,
     cause: Exception,
+    val rollbackFailed: Boolean = false,
 ) : IOException("PDF save failed", cause)
 
 internal fun pdfSaveFailureMessages(failure: PdfSaveFailure): List<UiMessage> =
-    listOfNotNull(UiMessage(R.string.pdf_save_failed), failure.warning).distinct()
+    listOfNotNull(
+        UiMessage(R.string.pdf_save_failed),
+        failure.warning,
+        UiMessage(R.string.document_save_partial_failed).takeIf { failure.rollbackFailed },
+    ).distinct()
 
 internal fun safFallbackWarning(
     cleanupFailed: Boolean,

@@ -856,8 +856,9 @@ internal class ScanStorage(
                 createdOutput?.let { deleteCreatedOutput(it.uri, cancellation) }
                 throw cancellation
             } catch (exception: Exception) {
-                createdOutput?.let { deleteCreatedOutput(it.uri, exception) }
-                throw PdfSaveFailure(failureWarning, exception)
+                val rollbackFailed =
+                    createdOutput?.let { !deleteCreatedOutput(it.uri, exception) } ?: false
+                throw PdfSaveFailure(failureWarning, exception, rollbackFailed)
             }
         }
 
@@ -1090,31 +1091,40 @@ internal class ScanStorage(
         }
     }
 
-    private fun deleteMediaRow(uri: Uri, failure: Exception) {
+    private fun deleteMediaRow(uri: Uri, failure: Exception): Boolean =
         try {
             if (resolver.delete(uri, null, null) <= 0) {
                 failure.addSuppressed(IOException("Incomplete MediaStore row could not be deleted"))
+                false
+            } else {
+                true
             }
         } catch (cleanupFailure: Exception) {
             failure.addSuppressed(cleanupFailure)
+            false
         }
-    }
 
-    private fun deleteCreatedOutput(uri: Uri, failure: Exception) {
+    private fun deleteCreatedOutput(uri: Uri, failure: Exception): Boolean =
         try {
             when {
                 uri.authority == MediaStore.AUTHORITY -> deleteMediaRow(uri, failure)
                 DocumentsContract.isDocumentUri(context, uri) -> {
                     if (!deleteSafDocument(uri)) {
                         failure.addSuppressed(IOException("Incomplete SAF document could not be deleted"))
+                        false
+                    } else {
+                        true
                     }
                 }
-                else -> failure.addSuppressed(IOException("Incomplete provider output could not be deleted"))
+                else -> {
+                    failure.addSuppressed(IOException("Incomplete provider output could not be deleted"))
+                    false
+                }
             }
         } catch (cleanupFailure: Exception) {
             if (cleanupFailure !== failure) failure.addSuppressed(cleanupFailure)
+            false
         }
-    }
 
     private fun deleteSafDocument(uri: Uri): Boolean =
         try {

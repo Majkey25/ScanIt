@@ -32,13 +32,32 @@ class PureLogicTest {
     }
 
     @Test
-    fun pdfSaveFailureKeepsSafCleanupWarningForTheResult() {
+    fun pdfSaveFailureReportsSafAndProviderCleanupWarnings() {
         val warning = UiMessage(R.string.saf_cleanup_warning)
-        val failure = PdfSaveFailure(warning, IOException("metadata write failed"))
+        val failure =
+            PdfSaveFailure(
+                warning,
+                IOException("metadata write failed"),
+                rollbackFailed = true,
+            )
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                warning,
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            pdfSaveFailureMessages(failure),
+        )
+    }
+
+    @Test
+    fun pdfSaveFailureOmitsPartialWarningAfterSuccessfulRollback() {
+        val warning = UiMessage(R.string.saf_cleanup_warning)
 
         assertEquals(
             listOf(UiMessage(R.string.pdf_save_failed), warning),
-            pdfSaveFailureMessages(failure),
+            pdfSaveFailureMessages(PdfSaveFailure(warning, IOException("failed"))),
         )
     }
 
@@ -64,11 +83,13 @@ class PureLogicTest {
 
     @Test
     fun pdfSaveFailureMessagesAreDeduplicated() {
-        val warning = UiMessage(R.string.pdf_save_failed)
+        val warning = UiMessage(R.string.document_save_partial_failed)
 
         assertEquals(
-            listOf(warning),
-            pdfSaveFailureMessages(PdfSaveFailure(warning, IOException("failed"))),
+            listOf(UiMessage(R.string.pdf_save_failed), warning),
+            pdfSaveFailureMessages(
+                PdfSaveFailure(warning, IOException("failed"), rollbackFailed = true),
+            ),
         )
     }
 
