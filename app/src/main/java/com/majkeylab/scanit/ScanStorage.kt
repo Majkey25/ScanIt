@@ -674,6 +674,7 @@ internal class ScanStorage(
 
     private val resolver = context.contentResolver
     private val recentScanCache by lazy { RecentScanCache(shareCacheRoot(), shareCacheLock) }
+    private val outputDeleter by lazy { ExactOutputDeleter(context) }
 
     fun cacheScan(pageUris: List<Uri>, pdfUri: Uri): CachedScan =
         synchronized(shareCacheLock) {
@@ -736,6 +737,89 @@ internal class ScanStorage(
 
     fun deleteRecentScan(cacheId: String): Boolean =
         recentScanCache.delete(cacheId)
+
+    fun removeRecentPreview(request: OutputDeleteRequest): Boolean =
+        synchronized(shareCacheLock) {
+            if (request.target != RecentDeleteTarget.RemoveFromRecent) return@synchronized false
+            val cached = recentScanCache.open(request.cacheId) ?: return@synchronized false
+            if (cached.entryId != request.entryId) return@synchronized false
+            recentScanCache.delete(request.cacheId)
+        }
+
+    fun deleteDurableOutputs(
+        request: OutputDeleteRequest,
+        deleteRecentCache: Boolean,
+    ): Boolean =
+        synchronized(shareCacheLock) {
+            val cached = recentScanCache.open(request.cacheId) ?: return@synchronized false
+            val entryId = cached.entryId ?: return@synchronized false
+            if (entryId != request.entryId) return@synchronized false
+            val directory = File(shareCacheRoot(), cached.baseName)
+            val metadata =
+                matchingDeleteMetadata(
+                    readOutputMetadata(directory, cached.baseName, cached.pages.size),
+                    request,
+                ) ?: return@synchronized false
+            val selected =
+                buildList<Pair<String, () -> OutputDeleteStatus>> {
+                    if (
+                        request.target == RecentDeleteTarget.Pdf ||
+                            request.target == RecentDeleteTarget.Both
+                    ) {
+                        val pdf = metadata.pdf ?: return@synchronized false
+                        add(pdf.uri to { outputDeleter.deletePdf(cached, pdf) })
+                    }
+                    if (
+                        request.target == RecentDeleteTarget.Images ||
+                            request.target == RecentDeleteTarget.Both
+                    ) {
+                        if (metadata.images.isEmpty()) return@synchronized false
+                        metadata.images.forEach { image ->
+                            add(image.uri to { outputDeleter.deleteImage(cached, image) })
+                        }
+                    }
+                }
+            if (
+                request.target == RecentDeleteTarget.RemoveFromRecent ||
+                    selected.isEmpty() ||
+                    selected.map { it.first }.distinct().size != selected.size
+            ) {
+                return@synchronized false
+            }
+            val outcomes = selected.associate { (uri, delete) -> uri to delete() }
+            val reduction = reduceOutputDeletion(metadata, request.target, outcomes)
+            val committed =
+                try {
+                    rewriteOutputMetadata(
+                        directory = directory,
+                        expectedCacheId = request.cacheId,
+                        expectedEntryId = entryId,
+                        pageCount = cached.pages.size,
+                    ) { reduction.metadata }
+                    true
+                } catch (_: IOException) {
+                    false
+                } catch (_: SecurityException) {
+                    false
+                }
+            if (!mayDeleteRecentCache(reduction.allRequestedRemoved, committed)) {
+                return@synchronized false
+            }
+            !deleteRecentCache || recentScanCache.delete(request.cacheId)
+        }
+
+    fun livePdfTreeUris(): Set<String> =
+        synchronized(shareCacheLock) {
+            val root = ensureShareRoot(shareCacheRoot())
+            maintainPendingDirectories(root)
+            readCacheEntries(root).mapNotNullTo(mutableSetOf()) { entry ->
+                readOutputMetadata(
+                    entry.directory,
+                    entry.cached.baseName,
+                    entry.cached.pages.size,
+                )?.takeIf { it.entryId == entry.cached.entryId }?.pdf?.treeUri
+            }
+        }
 
     fun nextDerivedCacheId(sourceCacheId: String, suffix: String): String =
         recentScanCache.nextDerivedCacheId(sourceCacheId, suffix)

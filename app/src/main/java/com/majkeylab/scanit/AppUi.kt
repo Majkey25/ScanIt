@@ -135,7 +135,7 @@ internal fun ScanItApp(
     onRecent: () -> Unit,
     onOpenRecent: (String) -> Unit,
     onShareRecentPdf: (String) -> Unit,
-    onDeleteRecent: (String) -> Unit,
+    onDeleteRecent: (OutputDeleteRequest) -> Unit,
     onLoadRecentThumbnail: suspend (File) -> Bitmap?,
     onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
@@ -500,7 +500,7 @@ private fun RecentScreen(
     onNewScan: () -> Unit,
     onOpen: (String) -> Unit,
     onSharePdf: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (OutputDeleteRequest) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
     onSettings: () -> Unit,
 ) {
@@ -527,6 +527,7 @@ private fun RecentScreen(
                         onSharePdf = onSharePdf,
                         onDelete = onDelete,
                         onLoadThumbnail = onLoadThumbnail,
+                        deletionInProgress = state.deletionInProgress,
                     )
                     HorizontalDivider()
                 }
@@ -556,10 +557,18 @@ private fun RecentScanRow(
     scan: RecentScan,
     onOpen: (String) -> Unit,
     onSharePdf: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (OutputDeleteRequest) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
+    deletionInProgress: Boolean,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val deleteTargets =
+        recentDeleteTargets(
+            metadataValid = scan.entryId != null,
+            hasPdf = scan.hasSavedPdf,
+            savedImageCount = scan.savedImageCount,
+        )
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
     val formattedDate =
@@ -613,14 +622,67 @@ private fun RecentScanRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.delete_scan)) },
+                    enabled = !deletionInProgress,
                     onClick = {
                         menuExpanded = false
-                        onDelete(scan.cacheId)
+                        showDeleteDialog = true
                     },
                 )
             }
         }
     }
+    if (showDeleteDialog) {
+        RecentDeleteDialog(
+            targets = deleteTargets,
+            onDismiss = { showDeleteDialog = false },
+            onDelete = { target ->
+                showDeleteDialog = false
+                onDelete(OutputDeleteRequest(scan.cacheId, scan.entryId, target))
+            },
+        )
+    }
+}
+
+@Composable
+private fun RecentDeleteDialog(
+    targets: List<RecentDeleteTarget>,
+    onDismiss: () -> Unit,
+    onDelete: (RecentDeleteTarget) -> Unit,
+) {
+    val legacy = targets == listOf(RecentDeleteTarget.RemoveFromRecent)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_scan)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (legacy) {
+                    Text(stringResource(R.string.recent_delete_legacy_hint))
+                } else {
+                    Text(stringResource(R.string.recent_delete_saved_hint))
+                }
+                targets.forEach { target ->
+                    OutlinedButton(
+                        onClick = { onDelete(target) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                when (target) {
+                                    RecentDeleteTarget.Pdf -> R.string.delete_pdf
+                                    RecentDeleteTarget.Images -> R.string.delete_images
+                                    RecentDeleteTarget.Both -> R.string.delete_pdf_and_images
+                                    RecentDeleteTarget.RemoveFromRecent -> R.string.remove_from_recent
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable

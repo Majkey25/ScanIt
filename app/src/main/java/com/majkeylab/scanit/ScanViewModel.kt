@@ -657,9 +657,13 @@ internal class ScanViewModel(
             }
     }
 
-    fun deleteRecentScan(cacheId: String) {
+    fun deleteRecentScan(request: OutputDeleteRequest) {
+        val current = mutableState.value as? ScreenState.Recent ?: return
+        val scan = current.scans.firstOrNull { it.cacheId == request.cacheId } ?: return
+        if (!recentDeleteRequestAvailable(scan, request) || current.deletionInProgress) return
         val generation = beginRouteMutation()
-        val deletion = recentDeletionGate.begin(cacheId)
+        val deletion = recentDeletionGate.begin(request.cacheId)
+        mutableState.value = current.copy(deletionInProgress = true)
         recentJob =
             viewModelScope.launch {
                 try {
@@ -672,7 +676,20 @@ internal class ScanViewModel(
                     }
                     val deleted =
                         try {
-                            withContext(Dispatchers.IO) { storage.deleteRecentScan(cacheId) }
+                            withContext(Dispatchers.IO) {
+                                val result = if (request.target == RecentDeleteTarget.RemoveFromRecent) {
+                                    storage.removeRecentPreview(request)
+                                } else {
+                                    storage.deleteDurableOutputs(
+                                        request,
+                                        deleteRecentCache = true,
+                                    )
+                                }
+                                if (request.target != RecentDeleteTarget.RemoveFromRecent) {
+                                    reconcilePdfTreeGrantsAfterOutputChange()
+                                }
+                                result
+                            }
                         } catch (cancellation: CancellationException) {
                             throw cancellation
                         } catch (_: Exception) {
@@ -1067,10 +1084,24 @@ internal class ScanViewModel(
     }
 
     private fun retryPendingPdfTreeGrant(): UiMessage? {
-        val pending = settingsStore.pendingPdfTreeUri() ?: return null
-        if (releasePdfTreeGrant(pending) != null) {
+        val live =
+            try {
+                storage.livePdfTreeUris()
+            } catch (_: IOException) {
+                return UiMessage(R.string.pdf_tree_release_warning)
+            } catch (_: RuntimeException) {
+                return UiMessage(R.string.pdf_tree_release_warning)
+            }
+        if (
+            !reconcilePdfTreeGrants(
+                context = getApplication(),
+                current = mutableSettings.value.pdfTreeUri,
+                live = live,
+            )
+        ) {
             return UiMessage(R.string.pdf_tree_release_warning)
         }
+        if (settingsStore.pendingPdfTreeUri() == null) return null
         return try {
             settingsStore.savePdfTreeUris(
                 current = mutableSettings.value.pdfTreeUri,
@@ -1082,22 +1113,12 @@ internal class ScanViewModel(
         }
     }
 
-    private fun releasePdfTreeGrant(uriValue: String): UiMessage? {
-        val resolver = getApplication<Application>().contentResolver
-        val uri = Uri.parse(uriValue)
-        return try {
-            val permission =
-                resolver.persistedUriPermissions.firstOrNull { it.uri == uri } ?: return null
-            var flags = 0
-            if (permission.isReadPermission) flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            if (permission.isWritePermission) flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            if (flags == 0) return null
-            resolver.releasePersistableUriPermission(uri, flags)
-            null
-        } catch (_: SecurityException) {
-            UiMessage(R.string.pdf_tree_release_warning)
-        } catch (_: RuntimeException) {
-            UiMessage(R.string.pdf_tree_release_warning)
+    private fun reconcilePdfTreeGrantsAfterOutputChange() {
+        pdfGrantLock.lock()
+        try {
+            retryPendingPdfTreeGrant()
+        } finally {
+            pdfGrantLock.unlock()
         }
     }
 

@@ -320,6 +320,7 @@ internal sealed interface ScreenState {
     data class Recent(
         val scans: List<RecentScan>,
         val message: UiMessage? = null,
+        val deletionInProgress: Boolean = false,
     ) : ScreenState
 
     data class Failure(val message: UiMessage) : ScreenState

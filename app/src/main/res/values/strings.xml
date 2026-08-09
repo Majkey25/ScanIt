@@ -43,7 +43,13 @@
     <string name="recent_delete_failed">The recent scan could not be deleted.</string>
     <string name="more_actions">More actions</string>
     <string name="open_scan">Open</string>
-    <string name="delete_scan">Delete</string>
+    <string name="delete_scan">Delete…</string>
+    <string name="delete_pdf">PDF</string>
+    <string name="delete_images">Images</string>
+    <string name="delete_pdf_and_images">PDF and images</string>
+    <string name="remove_from_recent">Remove from Recent</string>
+    <string name="recent_delete_saved_hint">The selected saved files will be deleted from your device, then this scan will be removed from Recent.</string>
+    <string name="recent_delete_legacy_hint">Saved file details are unavailable, so ScanIt will not guess which files to delete. Only this recent preview can be removed.</string>
     <string name="recent_scan_preview">Recent scan preview</string>
     <string name="open_settings">Open settings</string>
     <string name="settings">Settings</string>
