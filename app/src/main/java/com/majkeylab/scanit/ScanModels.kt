@@ -54,11 +54,25 @@ internal data class SavedPdfOutput(
     val warning: UiMessage?,
 )
 
+internal class PendingMediaFailure(
+    val rollbackFailed: Boolean,
+    cause: Exception,
+) : IOException("Pending media write failed", cause)
+
 internal class PdfSaveFailure(
     val warning: UiMessage?,
     cause: Exception,
-    val rollbackFailed: Boolean = false,
-) : IOException("PDF save failed", cause)
+    rollbackFailed: Boolean = false,
+) : IOException("PDF save failed", cause) {
+    val rollbackFailed = outputRollbackFailed(cause, rollbackFailed)
+}
+
+internal class ImageSaveFailure(
+    cause: Exception,
+    rollbackFailed: Boolean = false,
+) : IOException("Image save failed", cause) {
+    val rollbackFailed = outputRollbackFailed(cause, rollbackFailed)
+}
 
 internal fun pdfSaveFailureMessages(failure: PdfSaveFailure): List<UiMessage> =
     listOfNotNull(
@@ -66,6 +80,15 @@ internal fun pdfSaveFailureMessages(failure: PdfSaveFailure): List<UiMessage> =
         failure.warning,
         UiMessage(R.string.document_save_partial_failed).takeIf { failure.rollbackFailed },
     ).distinct()
+
+internal fun imageSaveFailureMessages(failure: ImageSaveFailure): List<UiMessage> =
+    listOfNotNull(
+        UiMessage(R.string.images_save_failed),
+        UiMessage(R.string.document_save_partial_failed).takeIf { failure.rollbackFailed },
+    ).distinct()
+
+private fun outputRollbackFailed(cause: Exception, rollbackFailed: Boolean): Boolean =
+    rollbackFailed || (cause as? PendingMediaFailure)?.rollbackFailed == true
 
 internal fun safFallbackWarning(
     cleanupFailed: Boolean,

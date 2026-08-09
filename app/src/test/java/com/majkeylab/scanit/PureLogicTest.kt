@@ -6,9 +6,11 @@ import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,6 +93,94 @@ class PureLogicTest {
                 PdfSaveFailure(warning, IOException("failed"), rollbackFailed = true),
             ),
         )
+    }
+
+    @Test
+    fun pdfCurrentPendingRowCleanupFailureIsReported() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { false }) {
+                    throw IOException("copy failed")
+                }
+            }
+        val warning = UiMessage(R.string.saf_cleanup_warning)
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                warning,
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            pdfSaveFailureMessages(PdfSaveFailure(warning, pendingFailure)),
+        )
+    }
+
+    @Test
+    fun imageCurrentPendingRowCleanupFailureIsReported() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { false }) {
+                    throw IOException("publish failed")
+                }
+            }
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            imageSaveFailureMessages(ImageSaveFailure(pendingFailure)),
+        )
+    }
+
+    @Test
+    fun currentPendingRowCleanupSuccessDoesNotReportPartialOutput() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { true }) {
+                    throw IOException("publish failed")
+                }
+            }
+
+        assertFalse(pendingFailure.rollbackFailed)
+        assertEquals(
+            listOf(UiMessage(R.string.images_save_failed)),
+            imageSaveFailureMessages(ImageSaveFailure(pendingFailure)),
+        )
+    }
+
+    @Test
+    fun imagePriorRowCleanupFailureIsReported() {
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            imageSaveFailureMessages(
+                ImageSaveFailure(IOException("metadata failed"), rollbackFailed = true),
+            ),
+        )
+    }
+
+    @Test
+    fun pendingMediaCancellationCleanupFailureIsSuppressedAndRethrown() {
+        val cancellation = CancellationException("cancelled")
+        val cleanupFailure = IOException("cleanup failed")
+
+        val thrown =
+            assertThrows(CancellationException::class.java) {
+                pendingMediaWrite(
+                    rollback = { failure ->
+                        failure.addSuppressed(cleanupFailure)
+                        false
+                    },
+                ) {
+                    throw cancellation
+                }
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(listOf(cleanupFailure), thrown.suppressed.toList())
     }
 
     @Test

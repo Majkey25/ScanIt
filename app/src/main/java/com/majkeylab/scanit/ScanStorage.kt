@@ -36,6 +36,19 @@ private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
 private const val DELETE_PENDING_PREFIX = ".pending-delete-"
 private const val COMMITTED_PRUNE_PREFIX = ".committed-prune-"
 
+internal fun <T> pendingMediaWrite(
+    rollback: (Exception) -> Boolean,
+    operation: () -> T,
+): T =
+    try {
+        operation()
+    } catch (cancellation: CancellationException) {
+        rollback(cancellation)
+        throw cancellation
+    } catch (exception: Exception) {
+        throw PendingMediaFailure(!rollback(exception), exception)
+    }
+
 internal data class FitRect(
     val left: Float,
     val top: Float,
@@ -778,9 +791,15 @@ internal class ScanStorage(
                     )
                 }
                 saved.toList()
+            } catch (cancellation: CancellationException) {
+                saved.forEach { deleteMediaRow(it, cancellation) }
+                throw cancellation
             } catch (exception: Exception) {
-                saved.forEach { deleteMediaRow(it, exception) }
-                throw exception
+                var rollbackFailed = false
+                saved.forEach { uri ->
+                    if (!deleteMediaRow(uri, exception)) rollbackFailed = true
+                }
+                throw ImageSaveFailure(exception, rollbackFailed)
             }
         }
 
@@ -1003,7 +1022,7 @@ internal class ScanStorage(
         val destination =
             resolver.insert(collection, values)
                 ?: throw IOException("MediaStore row could not be created")
-        try {
+        return pendingMediaWrite(rollback = { deleteMediaRow(destination, it) }) {
             copyFileToUri(source, destination)
             val published =
                 resolver.update(
@@ -1015,10 +1034,7 @@ internal class ScanStorage(
             if (published != 1) {
                 throw IOException("MediaStore row could not be published")
             }
-            return destination
-        } catch (exception: Exception) {
-            deleteMediaRow(destination, exception)
-            throw exception
+            destination
         }
     }
 

@@ -432,6 +432,8 @@ internal class ScanViewModel(
                                         storage.saveImages(cachedScan, settings.albumName)
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
+                                } catch (failure: ImageSaveFailure) {
+                                    warnings += imageSaveFailureMessages(failure)
                                 } catch (_: Exception) {
                                     warnings += UiMessage(R.string.images_save_failed)
                                 }
