@@ -463,6 +463,8 @@ internal sealed interface ScreenState {
     data class Result(
         val scan: SavedScan,
         val thumbnail: Bitmap?,
+        val selectedPageIndex: Int = 0,
+        val pagePreviewLoading: Boolean = false,
         val outputSaveInProgress: Boolean = false,
     ) : ScreenState
 

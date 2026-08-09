@@ -31,7 +31,9 @@ private const val ROUTE_SCANNER = "scanner"
 private const val ROUTE_RECENT = "recent"
 private const val ROUTE_RESULT = "result"
 private const val ROUTE_FAILURE = "failure"
-private const val RECENT_THUMBNAIL_SIZE = 256
+private const val RESULT_PAGE_INDEX_KEY = "result_page_index"
+private const val RESULT_PREVIEW_SIZE = 1024
+private const val PAGE_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
@@ -249,6 +251,7 @@ internal class ScanViewModel(
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
+    private var resultPreviewJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
 
@@ -479,7 +482,11 @@ internal class ScanViewModel(
                             val settings = currentSettings()
                             val cachedScan = storage.cacheScan(pages, pdfUri)
                             cached = cachedScan
-                            val thumbnail = storage.loadThumbnail(cachedScan.pages.first())
+                            val thumbnail =
+                                storage.loadThumbnail(
+                                    cachedScan.pages.first(),
+                                    RESULT_PREVIEW_SIZE,
+                                )
                             val warnings = mutableListOf<UiMessage>()
                             if (settings.saveImages) {
                                 try {
@@ -605,6 +612,62 @@ internal class ScanViewModel(
 
     fun showRecent() {
         refreshRecentScreen()
+    }
+
+    fun selectResultPage(selectedPageIndex: Int) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.outputSaveInProgress) return
+        val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
+        if (
+            pageIndex == current.selectedPageIndex &&
+                (current.thumbnail != null || current.pagePreviewLoading)
+        ) {
+            return
+        }
+        val request =
+            ResultPageLoad(
+                cacheId = current.scan.cached.baseName,
+                entryId = current.scan.cached.entryId,
+                pageIndex = pageIndex,
+            )
+        resultPreviewJob?.cancel()
+        savedStateHandle[RESULT_PAGE_INDEX_KEY] = pageIndex
+        mutableState.value =
+            current.copy(
+                thumbnail = null,
+                selectedPageIndex = pageIndex,
+                pagePreviewLoading = true,
+            )
+        resultPreviewJob =
+            viewModelScope.launch {
+                val thumbnail =
+                    try {
+                        withContext(Dispatchers.IO) {
+                            storage.loadThumbnail(
+                                current.scan.cached.pages[pageIndex],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                if (
+                    request.isCurrent(
+                        cacheId = latest.scan.cached.baseName,
+                        entryId = latest.scan.cached.entryId,
+                        selectedPageIndex = latest.selectedPageIndex,
+                    )
+                ) {
+                    mutableState.value =
+                        latest.copy(
+                            thumbnail = thumbnail,
+                            pagePreviewLoading = false,
+                        )
+                }
+            }
     }
 
     fun saveCurrentOutputs(target: SaveNowTarget) {
@@ -821,9 +884,9 @@ internal class ScanViewModel(
         )
     }
 
-    suspend fun loadRecentThumbnail(firstPage: File): Bitmap? =
+    suspend fun loadThumbnail(page: File): Bitmap? =
         withContext(Dispatchers.IO) {
-            storage.loadThumbnail(firstPage, RECENT_THUMBNAIL_SIZE)
+            storage.loadThumbnail(page, PAGE_THUMBNAIL_SIZE)
         }
 
     private fun restoreNavigation() {
@@ -886,13 +949,27 @@ internal class ScanViewModel(
 
     private suspend fun loadCachedResult(cacheId: String): ScreenState.Result? {
         if (!isSafeActiveResultCacheId(cacheId)) return null
+        val savedResultCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
+        val savedPageIndex = savedStateHandle.get<Int>(RESULT_PAGE_INDEX_KEY)
         return try {
             withContext(Dispatchers.IO) {
                 val saved = storage.openSavedScan(cacheId) ?: return@withContext null
-                val thumbnail = storage.loadThumbnail(saved.cached.pages.first())
+                val pageIndex =
+                    restoredResultPageIndex(
+                        savedCacheId = savedResultCacheId,
+                        targetCacheId = cacheId,
+                        savedPageIndex = savedPageIndex,
+                        pageCount = saved.cached.pages.size,
+                    )
+                val thumbnail =
+                    storage.loadThumbnail(
+                        saved.cached.pages[pageIndex],
+                        RESULT_PREVIEW_SIZE,
+                    )
                 ScreenState.Result(
                     scan = saved,
                     thumbnail = thumbnail,
+                    selectedPageIndex = pageIndex,
                 )
             }
         } catch (cancellation: CancellationException) {
@@ -946,6 +1023,7 @@ internal class ScanViewModel(
     private fun publishResult(result: ScreenState.Result) {
         val cacheId = result.scan.cached.baseName
         mutableState.value = result
+        savedStateHandle[RESULT_PAGE_INDEX_KEY] = result.selectedPageIndex
         persistRoute(ROUTE_RESULT, cacheId)
         refreshRecentCache(cacheId)
     }
@@ -1015,6 +1093,7 @@ internal class ScanViewModel(
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         recentJob?.cancel()
+        resultPreviewJob?.cancel()
         return routeMutationGate.begin()
     }
 

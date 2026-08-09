@@ -4,6 +4,7 @@
     <string name="try_again">Try again</string>
     <string name="preview_unavailable">Preview unavailable</string>
     <string name="scan_preview">Scanned document preview</string>
+    <string name="page_position">Page %1$d of %2$d</string>
     <plurals name="page_count">
         <item quantity="one">%1$d page</item>
         <item quantity="other">%1$d pages</item>

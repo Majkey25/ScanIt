@@ -9,11 +9,13 @@ import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -29,7 +31,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -73,6 +77,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.io.File
@@ -139,7 +145,8 @@ internal fun ScanItApp(
     onOpenRecent: (String) -> Unit,
     onShareRecentPdf: (String) -> Unit,
     onDeleteRecent: (OutputDeleteRequest) -> Unit,
-    onLoadRecentThumbnail: suspend (File) -> Bitmap?,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onSelectResultPage: (Int) -> Unit,
     onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
@@ -194,7 +201,7 @@ internal fun ScanItApp(
                         onOpen = onOpenRecent,
                         onSharePdf = onShareRecentPdf,
                         onDelete = onDeleteRecent,
-                        onLoadThumbnail = onLoadRecentThumbnail,
+                        onLoadThumbnail = onLoadThumbnail,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
@@ -209,6 +216,8 @@ internal fun ScanItApp(
                         fileDetailsExpanded = fileDetailsExpanded,
                         onFileDetailsChange = { fileDetailsExpanded = it },
                         onSaveNow = onSaveNow,
+                        onSelectPage = onSelectResultPage,
+                        onLoadThumbnail = onLoadThumbnail,
                     )
             }
         }
@@ -264,9 +273,14 @@ private fun ResultScreen(
     fileDetailsExpanded: Boolean,
     onFileDetailsChange: (Boolean) -> Unit,
     onSaveNow: (SaveNowTarget) -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
+    val selectedPageIndex = resolvedPageIndex(result.selectedPageIndex, pageCount)
+    val pagePosition =
+        stringResource(R.string.page_position, selectedPageIndex + 1, pageCount)
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     Scaffold(
@@ -285,27 +299,49 @@ private fun ResultScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                if (result.thumbnail == null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(160.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(stringResource(R.string.preview_unavailable))
+                when {
+                    result.pagePreviewLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
-                } else {
-                    Image(
-                        bitmap = result.thumbnail.asImageBitmap(),
-                        contentDescription = stringResource(R.string.scan_preview),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
-                        contentScale = ContentScale.Fit,
-                    )
+                    result.thumbnail == null -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(stringResource(R.string.preview_unavailable))
+                        }
+                    }
+                    else -> {
+                        Image(
+                            bitmap = result.thumbnail.asImageBitmap(),
+                            contentDescription = pagePosition,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
                 }
             }
             item {
                 Text(
-                    pluralStringResource(R.plurals.page_count, pageCount, pageCount),
+                    pagePosition,
                     style = MaterialTheme.typography.titleMedium,
                 )
+            }
+            if (pageCount > 1) {
+                item {
+                    ResultPageStrip(
+                        pages = scan.cached.pages,
+                        selectedPageIndex = selectedPageIndex,
+                        enabled = !result.outputSaveInProgress,
+                        onSelectPage = onSelectPage,
+                        onLoadThumbnail = onLoadThumbnail,
+                    )
+                }
             }
             item {
                 Button(
@@ -382,6 +418,98 @@ private fun ResultScreen(
                 showSaveDialog = false
                 onSaveNow(target)
             },
+        )
+    }
+}
+
+@Composable
+private fun ResultPageStrip(
+    pages: List<File>,
+    selectedPageIndex: Int,
+    enabled: Boolean,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        itemsIndexed(
+            items = pages,
+            key = { _, page -> page.path },
+        ) { index, page ->
+            val isSelected = index == selectedPageIndex
+            val pageDescription = stringResource(R.string.page_position, index + 1, pages.size)
+            Surface(
+                onClick = { onSelectPage(index) },
+                enabled = enabled,
+                shape = MaterialTheme.shapes.small,
+                color =
+                    if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                border =
+                    BorderStroke(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color =
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                    ),
+                modifier =
+                    Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = pageDescription
+                        selected = isSelected
+                    },
+            ) {
+                Column(
+                    modifier = Modifier.padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    ResultPageThumbnail(page, onLoadThumbnail)
+                    Text((index + 1).toString(), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultPageThumbnail(
+    page: File,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    val thumbnail by produceState<Bitmap?>(null, page) {
+        value =
+            try {
+                onLoadThumbnail(page)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+    }
+    if (thumbnail == null) {
+        Box(
+            modifier = Modifier.width(64.dp).height(84.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                stringResource(R.string.preview_unavailable),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    } else {
+        Image(
+            bitmap = requireNotNull(thumbnail).asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.width(64.dp).height(84.dp),
+            contentScale = ContentScale.Fit,
         )
     }
 }
