@@ -60,6 +60,12 @@ internal fun Activity.launchShareChooser(
     cleanupRequest: ShareCleanupRequest? = null,
 ): Boolean =
     try {
+        if (
+            cleanupRequest != null &&
+                !SettingsStore(applicationContext).canSavePendingShareCleanup(cleanupRequest)
+        ) {
+            return false
+        }
         val chooser =
             if (cleanupRequest == null) {
                 Intent.createChooser(shareIntent, getString(R.string.app_name))
@@ -73,6 +79,8 @@ internal fun Activity.launchShareChooser(
         startActivity(chooser)
         true
     } catch (_: ActivityNotFoundException) {
+        false
+    } catch (_: IOException) {
         false
     }
 

@@ -34,12 +34,14 @@ internal enum class RecentDeleteTarget {
 internal enum class OutputDeleteStatus {
     Deleted,
     Absent,
+    IdentityMismatch,
     Failed,
 }
 
 internal enum class OutputDeleteOperationResult {
     Completed,
     Stale,
+    IdentityMismatch,
     Failed,
     Partial,
     MetadataFailed,
@@ -53,6 +55,7 @@ internal fun recentDeleteMessage(result: OutputDeleteOperationResult): UiMessage
         OutputDeleteOperationResult.MetadataFailed -> UiMessage(R.string.recent_delete_metadata_failed)
         OutputDeleteOperationResult.CacheFailed -> UiMessage(R.string.recent_delete_cache_failed)
         OutputDeleteOperationResult.Stale,
+        OutputDeleteOperationResult.IdentityMismatch,
         OutputDeleteOperationResult.Failed,
         -> UiMessage(R.string.recent_delete_failed)
     }
@@ -122,7 +125,7 @@ internal fun decodeShareCleanupRequest(
 
 internal data class ShareCleanupCompletionPolicy(
     val clear: Boolean,
-    val signal: Boolean,
+    val warn: Boolean,
 )
 
 internal fun shareCleanupCompletionPolicy(
@@ -131,9 +134,34 @@ internal fun shareCleanupCompletionPolicy(
     ShareCleanupCompletionPolicy(
         clear =
             result == OutputDeleteOperationResult.Completed ||
-                result == OutputDeleteOperationResult.Stale,
-        signal = true,
+                result == OutputDeleteOperationResult.Stale ||
+                result == OutputDeleteOperationResult.IdentityMismatch,
+        warn =
+            result != OutputDeleteOperationResult.Completed &&
+                result != OutputDeleteOperationResult.Stale,
     )
+
+internal class DirtyRefreshGate {
+    private var running = false
+    private var dirty = false
+
+    fun request(): Boolean {
+        dirty = true
+        if (running) return false
+        running = true
+        return true
+    }
+
+    fun consume(): Boolean {
+        if (!running) return false
+        if (dirty) {
+            dirty = false
+            return true
+        }
+        running = false
+        return false
+    }
+}
 
 internal data class OutputDeleteReduction(
     val metadata: OutputMetadata,
@@ -173,14 +201,19 @@ internal fun reduceOutputDeletion(
         }
     require(requestedUris.isNotEmpty()) { "Selected durable output is unavailable" }
     require(outcomes.keys == requestedUris.toSet()) { "Delete results do not match selected outputs" }
-    fun removed(uri: String) = outcomes.getValue(uri) != OutputDeleteStatus.Failed
+    fun removed(uri: String) =
+        outcomes.getValue(uri) == OutputDeleteStatus.Deleted ||
+            outcomes.getValue(uri) == OutputDeleteStatus.Absent
     return OutputDeleteReduction(
         metadata =
             metadata.copy(
                 pdf = metadata.pdf?.takeUnless { deletePdf && removed(it.uri) },
                 images = metadata.images.filterNot { deleteImages && removed(it.uri) },
             ),
-        allRequestedRemoved = outcomes.values.none { it == OutputDeleteStatus.Failed },
+        allRequestedRemoved =
+            outcomes.values.all {
+                it == OutputDeleteStatus.Deleted || it == OutputDeleteStatus.Absent
+            },
     )
 }
 
@@ -331,7 +364,7 @@ internal data class SavedMediaOutput(
     val uri: Uri,
     val displayName: String,
     val mimeType: String,
-    val ownerPackageName: String?,
+    val ownerPackageName: String,
     val byteLength: Long,
     val sha256: String,
 )

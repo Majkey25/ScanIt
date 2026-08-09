@@ -38,19 +38,19 @@ class ShareResultReceiver : BroadcastReceiver() {
                 intent.getStringExtra(EXTRA_SHARE_CLEANUP_KIND),
             ) ?: return
         try {
-            withStorageTransaction {
-                SettingsStore(context.applicationContext).savePendingShareCleanup(request)
-            }
+            SettingsStore(context.applicationContext).savePendingShareCleanup(request)
         } catch (_: IOException) {
+            Toast.makeText(context, R.string.shared_output_delete_failed, Toast.LENGTH_LONG).show()
             return
         } catch (_: RuntimeException) {
+            Toast.makeText(context, R.string.shared_output_delete_failed, Toast.LENGTH_LONG).show()
             return
         }
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val result = retryPendingShareCleanup(context.applicationContext)
-                if (result != null && !shareCleanupCompletionPolicy(result).clear) {
+                if (result != null && shareCleanupCompletionPolicy(result).warn) {
                     showShareCleanupFailure(context.applicationContext)
                 }
             } finally {
@@ -61,55 +61,70 @@ class ShareResultReceiver : BroadcastReceiver() {
 }
 
 internal fun retryPendingShareCleanup(context: Context): OutputDeleteOperationResult? {
-    val result =
-        try {
-            withStorageTransaction {
-                val store = SettingsStore(context)
-                val storage = ScanStorage(context)
-                processPendingShareCleanup(
-                    store = store,
-                    delete = { request ->
-                        storage.deleteDurableOutputs(
-                            request =
-                                OutputDeleteRequest(
-                                    cacheId = request.cacheId,
-                                    entryId = request.entryId,
-                                    target = request.kind.deleteTarget(),
-                                ),
-                            deleteRecentCache = false,
-                        )
-                    },
-                    afterDelete = {
-                        try {
-                            reconcilePdfTreeGrants(
-                                context = context,
-                                current = store.load().pdfTreeUri,
-                                live = storage.livePdfTreeUris(),
+    val store = SettingsStore(context)
+    val storage = ScanStorage(context)
+    var reported: OutputDeleteOperationResult? = null
+    var attempted = false
+    var remaining = MAX_PENDING_SHARE_CLEANUPS
+    while (remaining-- > 0) {
+        val attempt =
+            try {
+                withStorageTransaction {
+                    processPendingShareCleanup(
+                        store = store,
+                        delete = { request ->
+                            storage.deleteDurableOutputs(
+                                request =
+                                    OutputDeleteRequest(
+                                        cacheId = request.cacheId,
+                                        entryId = request.entryId,
+                                        target = request.kind.deleteTarget(),
+                                    ),
+                                deleteRecentCache = false,
                             )
-                        } catch (_: Exception) {
-                            // Tree grant cleanup is independently retried on app start.
-                        }
-                    },
-                )
-            }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Exception) {
-            OutputDeleteOperationResult.Failed
+                        },
+                        afterDelete = {
+                            try {
+                                reconcilePdfTreeGrants(
+                                    context = context,
+                                    current = canonicalPdfTreeUri(store),
+                                    live = storage.livePdfTreeUris(),
+                                )
+                            } catch (_: Exception) {
+                                // Tree grant cleanup is independently retried on app start.
+                            }
+                        },
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                PendingShareCleanupAttempt(OutputDeleteOperationResult.Failed, false)
+            } ?: break
+        attempted = true
+        if (reported == null || shareCleanupCompletionPolicy(attempt.result).warn) {
+            reported = attempt.result
         }
-    if (result != null) {
+        if (!attempt.queueAdvanced) break
+    }
+    if (attempted) {
         context.sendBroadcast(
             Intent(ACTION_SAVED_OUTPUTS_CHANGED).setPackage(context.packageName),
         )
     }
-    return result
+    return reported
 }
+
+internal data class PendingShareCleanupAttempt(
+    val result: OutputDeleteOperationResult,
+    val queueAdvanced: Boolean,
+)
 
 internal fun processPendingShareCleanup(
     store: SettingsStore,
     delete: (ShareCleanupRequest) -> OutputDeleteOperationResult,
     afterDelete: () -> Unit = {},
-): OutputDeleteOperationResult? {
+): PendingShareCleanupAttempt? {
     val request = store.pendingShareCleanup() ?: return null
     val result =
         try {
@@ -120,14 +135,16 @@ internal fun processPendingShareCleanup(
             OutputDeleteOperationResult.Failed
         }
     afterDelete()
+    var queueAdvanced = false
     if (shareCleanupCompletionPolicy(result).clear) {
         try {
             store.clearPendingShareCleanup(request)
+            queueAdvanced = store.pendingShareCleanup() != request
         } catch (_: IOException) {
             // Keeping the exact request makes the terminal cleanup retryable.
         }
     }
-    return result
+    return PendingShareCleanupAttempt(result, queueAdvanced)
 }
 
 internal suspend fun showShareCleanupFailure(context: Context) {

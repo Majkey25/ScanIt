@@ -92,7 +92,7 @@ class MainActivity : ComponentActivity() {
         viewModel.resumeScannerPreparation()
         lifecycleScope.launch(Dispatchers.IO) {
             val result = retryPendingShareCleanup(applicationContext)
-            if (result != null && !shareCleanupCompletionPolicy(result).clear) {
+            if (result != null && shareCleanupCompletionPolicy(result).warn) {
                 showShareCleanupFailure(applicationContext)
             }
         }

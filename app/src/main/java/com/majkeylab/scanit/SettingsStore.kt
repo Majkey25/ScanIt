@@ -3,6 +3,8 @@ package com.majkeylab.scanit
 import android.content.Context
 import android.content.SharedPreferences
 import java.io.IOException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 private const val MAX_ALBUM_NAME_LENGTH = 64
 private const val PREFERENCES_NAME = "settings"
@@ -29,6 +31,8 @@ private const val MAX_PENDING_SHARE_CLEANUP_LENGTH =
         MAX_ACTIVE_RESULT_CACHE_ID_LENGTH + 1 +
         CANONICAL_UUID_LENGTH + 1 +
         MAX_SHARE_CLEANUP_KIND_LENGTH
+internal const val MAX_PENDING_SHARE_CLEANUPS = 8
+private val shareCleanupQueueLock = ReentrantLock()
 
 internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
     cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
@@ -96,6 +100,8 @@ internal inline fun <T> readPreferenceOrDefault(default: T, read: () -> T): T =
         default
     }
 
+internal fun canonicalPdfTreeUri(store: SettingsStore): String? = store.currentPdfTreeUri()
+
 internal class SettingsStore(
     private val preferences: SharedPreferences,
     private val defaultEmailSubject: String,
@@ -159,7 +165,6 @@ internal class SettingsStore(
             .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
             .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
             .putString(KEY_EMAIL_BODY, settings.emailBody)
-            .putString(KEY_PDF_TREE_URI, settings.pdfTreeUri)
             .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
             .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
             .apply()
@@ -202,47 +207,83 @@ internal class SettingsStore(
     }
 
     @Throws(IOException::class)
-    internal fun pendingShareCleanup(): ShareCleanupRequest? {
+    internal fun pendingShareCleanups(): List<ShareCleanupRequest> =
+        shareCleanupQueueLock.withLock {
+            readPendingShareCleanups()
+        }
+
+    @Throws(IOException::class)
+    internal fun pendingShareCleanup(): ShareCleanupRequest? = pendingShareCleanups().firstOrNull()
+
+    @Throws(IOException::class)
+    internal fun canSavePendingShareCleanup(request: ShareCleanupRequest): Boolean =
+        shareCleanupQueueLock.withLock {
+            val pending = readPendingShareCleanups()
+            request in pending || pending.size < MAX_PENDING_SHARE_CLEANUPS
+        }
+
+    private fun readPendingShareCleanups(): List<ShareCleanupRequest> {
         val stored =
             readPreferenceOrDefault<String?>(null) {
                 preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
             }
-        val request = decodePendingShareCleanup(stored)
-        if (request == null && preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+        val requests =
+            stored?.split('\n')?.takeIf { it.size <= MAX_PENDING_SHARE_CLEANUPS }
+                ?.mapNotNull(::decodePendingShareCleanup)
+                ?.takeIf { it.size == stored.split('\n').size && it.distinct().size == it.size }
+        if (requests == null && preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
             val cleared = preferences.edit().remove(KEY_PENDING_SHARE_CLEANUP).commit()
             if (!cleared || preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
                 throw IOException("Invalid pending share cleanup could not be cleared")
             }
         }
-        return request
+        return requests.orEmpty()
     }
 
     @Throws(IOException::class)
-    internal fun savePendingShareCleanup(request: ShareCleanupRequest) {
-        val encoded = encodePendingShareCleanup(request)
-        val existing = pendingShareCleanup()
-        if (existing == request) return
-        if (existing != null) throw IOException("Another share cleanup is pending")
-        val stored = preferences.edit().putString(KEY_PENDING_SHARE_CLEANUP, encoded).commit()
-        val verified =
-            readPreferenceOrDefault<String?>(null) {
-                preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
-            } == encoded
-        if (!stored || !verified) throw IOException("Pending share cleanup could not be stored")
-    }
-
-    @Throws(IOException::class)
-    internal fun clearPendingShareCleanup(request: ShareCleanupRequest) {
-        if (pendingShareCleanup() != request) return
-        val cleared = preferences.edit().remove(KEY_PENDING_SHARE_CLEANUP).commit()
-        if (!cleared || preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
-            throw IOException("Pending share cleanup could not be cleared")
+    internal fun savePendingShareCleanup(request: ShareCleanupRequest) =
+        shareCleanupQueueLock.withLock {
+            val existing = readPendingShareCleanups()
+            if (request in existing) return@withLock
+            if (existing.size >= MAX_PENDING_SHARE_CLEANUPS) {
+                throw IOException("Pending share cleanup queue is full")
+            }
+            writePendingShareCleanups(existing + request)
         }
+
+    @Throws(IOException::class)
+    internal fun clearPendingShareCleanup(request: ShareCleanupRequest) =
+        shareCleanupQueueLock.withLock {
+            val pending = readPendingShareCleanups()
+            if (pending.firstOrNull() != request) return@withLock
+            writePendingShareCleanups(pending.drop(1))
+        }
+
+    private fun writePendingShareCleanups(requests: List<ShareCleanupRequest>) {
+        val encoded = requests.joinToString("\n", transform = ::encodePendingShareCleanup)
+        val editor = preferences.edit()
+        if (requests.isEmpty()) editor.remove(KEY_PENDING_SHARE_CLEANUP)
+        else editor.putString(KEY_PENDING_SHARE_CLEANUP, encoded)
+        val stored = editor.commit()
+        val verified =
+            if (requests.isEmpty()) {
+                !preferences.contains(KEY_PENDING_SHARE_CLEANUP)
+            } else {
+                readPreferenceOrDefault<String?>(null) {
+                    preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
+                } == encoded
+            }
+        if (!stored || !verified) throw IOException("Pending share cleanup could not be stored")
     }
 
     internal fun pendingPdfTreeUri(): String? =
         readPreferenceOrDefault<String?>(null) {
             preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
+        }
+
+    internal fun currentPdfTreeUri(): String? =
+        readPreferenceOrDefault<String?>(null) {
+            preferences.getString(KEY_PDF_TREE_URI, null)
         }
 
     @Throws(IOException::class)

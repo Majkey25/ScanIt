@@ -244,6 +244,40 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun metadataReadDistinguishesPermanentInvalidDataFromTransientIo() = withDirectory { directory ->
+        assertEquals(
+            OutputMetadataReadResult.Invalid,
+            readOutputMetadataResult(directory, cacheId, pageCount = 1),
+        )
+
+        val sidecar = File(directory, OUTPUT_METADATA_FILE_NAME)
+        sidecar.writeText("not json")
+        assertEquals(
+            OutputMetadataReadResult.Invalid,
+            readOutputMetadataResult(directory, cacheId, pageCount = 1),
+        )
+
+        sidecar.writeText(validJson(cacheId = "Scan_other"))
+        assertEquals(
+            OutputMetadataReadResult.Invalid,
+            readOutputMetadataResult(directory, cacheId, pageCount = 1),
+        )
+
+        val metadata = OutputMetadata(entryId, cacheId, createdAtEpochMs = 3L)
+        sidecar.writeBytes(encodeOutputMetadata(metadata, pageCount = 1))
+        assertEquals(
+            OutputMetadataReadResult.Valid(metadata),
+            readOutputMetadataResult(directory, cacheId, pageCount = 1),
+        )
+        assertEquals(
+            OutputMetadataReadResult.Failed,
+            readOutputMetadataResult(directory, cacheId, pageCount = 1) {
+                throw IOException("temporary read failure")
+            },
+        )
+    }
+
+    @Test
     fun duplicateOutOfRangeAndMismatchedMetadataAreUnavailable() {
         val duplicateImages =
             validJson(

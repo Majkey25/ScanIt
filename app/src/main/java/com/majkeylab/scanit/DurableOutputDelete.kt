@@ -31,7 +31,7 @@ internal data class ExpectedMediaItem(
     val id: Long,
     val displayName: String,
     val mimeType: String,
-    val ownerPackageName: String?,
+    val ownerPackageName: String,
 )
 
 internal data class MediaItemRow(
@@ -93,7 +93,7 @@ internal fun isExactMediaItem(row: MediaItemRow, expected: ExpectedMediaItem): B
     row.id == expected.id &&
         row.displayName == expected.displayName &&
         row.mimeType == expected.mimeType &&
-        (expected.ownerPackageName == null || row.ownerPackageName == expected.ownerPackageName)
+        row.ownerPackageName == expected.ownerPackageName
 
 internal fun mediaDeleteSucceeded(deletedRows: Int): Boolean = deletedRows == 1
 
@@ -104,7 +104,10 @@ internal fun outputDeleteOperationResult(
     cacheDeleted: Boolean,
 ): OutputDeleteOperationResult {
     require(outcomes.isNotEmpty()) { "Delete outcomes are required" }
-    val removed = outcomes.count { it != OutputDeleteStatus.Failed }
+    val removed =
+        outcomes.count {
+            it == OutputDeleteStatus.Deleted || it == OutputDeleteStatus.Absent
+        }
     if (!metadataCommitted) {
         return if (removed > 0) {
             OutputDeleteOperationResult.MetadataFailed
@@ -115,6 +118,8 @@ internal fun outputDeleteOperationResult(
     if (removed < outcomes.size) {
         return if (removed > 0) {
             OutputDeleteOperationResult.Partial
+        } else if (outcomes.all { it == OutputDeleteStatus.IdentityMismatch }) {
+            OutputDeleteOperationResult.IdentityMismatch
         } else {
             OutputDeleteOperationResult.Failed
         }
@@ -133,21 +138,18 @@ internal fun safMissingDocumentStatus(
     if (rootExact && !documentIsChild) OutputDeleteStatus.Absent else OutputDeleteStatus.Failed
 
 internal fun mediaDeleteSelectionArgs(expected: ExpectedMediaItem): Array<String> =
-    if (expected.ownerPackageName == null) {
-        arrayOf(expected.id.toString(), expected.displayName, expected.mimeType)
-    } else {
-        arrayOf(
-            expected.id.toString(),
-            expected.displayName,
-            expected.mimeType,
-            expected.ownerPackageName,
-        )
-    }
+    arrayOf(
+        expected.id.toString(),
+        expected.displayName,
+        expected.mimeType,
+        expected.ownerPackageName,
+    )
 
 internal enum class ExactItemQuery {
     Exact,
     Absent,
-    Invalid,
+    IdentityMismatch,
+    Failed,
 }
 
 internal fun deleteVerifiedMediaOutput(
@@ -159,20 +161,33 @@ internal fun deleteVerifiedMediaOutput(
     providerDeleteResult {
         when (query()) {
             ExactItemQuery.Absent -> OutputDeleteStatus.Absent
-            ExactItemQuery.Invalid -> OutputDeleteStatus.Failed
+            ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+            ExactItemQuery.Failed -> OutputDeleteStatus.Failed
             ExactItemQuery.Exact -> {
                 val input = open() ?: return@providerDeleteResult OutputDeleteStatus.Failed
-                if (!input.use { outputFingerprintMatches(it, fingerprint) }) {
-                    return@providerDeleteResult OutputDeleteStatus.Failed
+                when (input.use { checkOutputFingerprint(it, fingerprint) }) {
+                    OutputFingerprintCheck.Exact -> Unit
+                    OutputFingerprintCheck.Mismatch ->
+                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                    OutputFingerprintCheck.Failed ->
+                        return@providerDeleteResult OutputDeleteStatus.Failed
                 }
-                if (query() != ExactItemQuery.Exact) {
-                    return@providerDeleteResult OutputDeleteStatus.Failed
+                when (query()) {
+                    ExactItemQuery.Absent -> return@providerDeleteResult OutputDeleteStatus.Absent
+                    ExactItemQuery.IdentityMismatch ->
+                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                    ExactItemQuery.Failed -> return@providerDeleteResult OutputDeleteStatus.Failed
+                    ExactItemQuery.Exact -> Unit
                 }
                 val deleted = delete()
-                when {
-                    deleted == 1 -> OutputDeleteStatus.Deleted
-                    deleted == 0 && query() == ExactItemQuery.Absent -> OutputDeleteStatus.Absent
-                    else -> OutputDeleteStatus.Failed
+                if (deleted == 1) return@providerDeleteResult OutputDeleteStatus.Deleted
+                if (deleted != 0) return@providerDeleteResult OutputDeleteStatus.Failed
+                when (query()) {
+                    ExactItemQuery.Absent -> OutputDeleteStatus.Absent
+                    ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+                    ExactItemQuery.Exact,
+                    ExactItemQuery.Failed,
+                    -> OutputDeleteStatus.Failed
                 }
             }
         }
@@ -189,19 +204,35 @@ internal fun deleteVerifiedSafOutput(
     providerDeleteResult {
         when (query()) {
             ExactItemQuery.Absent -> confirmAbsent()
-            ExactItemQuery.Invalid -> OutputDeleteStatus.Failed
+            ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+            ExactItemQuery.Failed -> OutputDeleteStatus.Failed
             ExactItemQuery.Exact -> {
                 val input = open() ?: return@providerDeleteResult OutputDeleteStatus.Failed
-                if (!input.use { outputFingerprintMatches(it, fingerprint) }) {
-                    return@providerDeleteResult OutputDeleteStatus.Failed
+                when (input.use { checkOutputFingerprint(it, fingerprint) }) {
+                    OutputFingerprintCheck.Exact -> Unit
+                    OutputFingerprintCheck.Mismatch ->
+                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                    OutputFingerprintCheck.Failed ->
+                        return@providerDeleteResult OutputDeleteStatus.Failed
                 }
-                if (query() != ExactItemQuery.Exact || !isChild()) {
-                    return@providerDeleteResult OutputDeleteStatus.Failed
+                when (query()) {
+                    ExactItemQuery.Absent -> return@providerDeleteResult confirmAbsent()
+                    ExactItemQuery.IdentityMismatch ->
+                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                    ExactItemQuery.Failed -> return@providerDeleteResult OutputDeleteStatus.Failed
+                    ExactItemQuery.Exact -> Unit
                 }
-                try {
-                    if (delete()) OutputDeleteStatus.Deleted else confirmAbsent()
-                } catch (_: FileNotFoundException) {
-                    confirmAbsent()
+                if (!isChild()) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                val deleted =
+                    try {
+                        delete()
+                    } catch (_: FileNotFoundException) {
+                        false
+                    }
+                when (confirmAbsent()) {
+                    OutputDeleteStatus.Absent ->
+                        if (deleted) OutputDeleteStatus.Deleted else OutputDeleteStatus.Absent
+                    else -> OutputDeleteStatus.Failed
                 }
             }
         }
@@ -229,6 +260,7 @@ internal fun isExactSafDocument(
 internal fun matchingDeleteMetadata(
     metadata: OutputMetadata?,
     request: OutputDeleteRequest,
+    ownerPackageName: String,
 ): OutputMetadata? =
     metadata?.takeIf {
         isSafeCacheId(request.cacheId) &&
@@ -236,8 +268,44 @@ internal fun matchingDeleteMetadata(
             request.target != RecentDeleteTarget.RemoveFromRecent &&
             it.cacheId == request.cacheId &&
             it.entryId == request.entryId &&
-            it.hasVerifiedOutputFingerprints(request.target)
+            it.hasCompleteExactDeleteInventory(ownerPackageName) &&
+            it.hasVerifiedOutputFingerprints(request.target) &&
+            it.hasExactDeleteIdentity(request.target, ownerPackageName)
     }
+
+internal fun OutputMetadata.hasCompleteExactDeleteInventory(ownerPackageName: String): Boolean =
+    (pdf == null ||
+        pdf.outputFingerprint() != null && pdf.hasExactDeleteIdentity(ownerPackageName)) &&
+        images.all {
+            it.outputFingerprint() != null && it.hasExactDeleteIdentity(ownerPackageName)
+        }
+
+internal fun OutputMetadata.hasExactDeleteIdentity(
+    target: RecentDeleteTarget,
+    ownerPackageName: String,
+): Boolean {
+    return when (target) {
+        RecentDeleteTarget.Pdf -> pdf?.hasExactDeleteIdentity(ownerPackageName) == true
+        RecentDeleteTarget.Images ->
+            images.isNotEmpty() && images.all { it.hasExactDeleteIdentity(ownerPackageName) }
+        RecentDeleteTarget.Both ->
+            pdf?.hasExactDeleteIdentity(ownerPackageName) == true &&
+                images.isNotEmpty() &&
+                images.all { it.hasExactDeleteIdentity(ownerPackageName) }
+        RecentDeleteTarget.RemoveFromRecent -> false
+    }
+}
+
+private fun PdfOutputRef.hasExactDeleteIdentity(ownerPackageName: String): Boolean =
+    isProviderDisplayName(displayName) &&
+        mimeType == PDF_MIME_TYPE &&
+        if (treeUri == null) this.ownerPackageName == ownerPackageName
+        else this.ownerPackageName == null
+
+private fun ImageOutputRef.hasExactDeleteIdentity(ownerPackageName: String): Boolean =
+    isProviderDisplayName(displayName) &&
+        mimeType == JPEG_MIME_TYPE &&
+        this.ownerPackageName == ownerPackageName
 
 internal fun outputDeleteTargetIsAbsent(
     metadata: OutputMetadata,
@@ -320,7 +388,7 @@ internal fun reconcilePdfTreeGrants(
 internal class ExactOutputDeleter(private val context: Context) {
     private val resolver = context.contentResolver
 
-    fun deletePdf(cached: CachedScan, reference: PdfOutputRef): OutputDeleteStatus =
+    fun deletePdf(reference: PdfOutputRef): OutputDeleteStatus =
         reference.outputFingerprint()?.let { fingerprint ->
             if (reference.treeUri != null) return@let deleteSafPdf(reference, fingerprint)
             val identity =
@@ -328,9 +396,8 @@ internal class ExactOutputDeleter(private val context: Context) {
                     reference.displayName,
                     reference.mimeType,
                     reference.ownerPackageName,
-                    scanPdfFileName(cached.baseName),
                     PDF_MIME_TYPE,
-                ) ?: return OutputDeleteStatus.Failed
+                ) ?: return OutputDeleteStatus.IdentityMismatch
             deleteMediaItem(
                 uriValue = reference.uri,
                 collection = MediaOutputCollection.Downloads,
@@ -339,17 +406,36 @@ internal class ExactOutputDeleter(private val context: Context) {
             )
         } ?: OutputDeleteStatus.Failed
 
+    fun deleteMediaOutput(
+        output: SavedMediaOutput,
+        collection: MediaOutputCollection,
+    ): OutputDeleteStatus {
+        val identity =
+            expectedMediaIdentity(
+                output.displayName,
+                output.mimeType,
+                output.ownerPackageName,
+                when (collection) {
+                    MediaOutputCollection.Images -> JPEG_MIME_TYPE
+                    MediaOutputCollection.Downloads -> PDF_MIME_TYPE
+                },
+            ) ?: return OutputDeleteStatus.IdentityMismatch
+        val fingerprint =
+            outputFingerprintOrNull(output.byteLength, output.sha256)
+                ?: return OutputDeleteStatus.Failed
+        return deleteMediaItem(output.uri.toString(), collection, identity, fingerprint)
+    }
+
     fun deleteImage(cached: CachedScan, reference: ImageOutputRef): OutputDeleteStatus {
-        if (reference.page !in 1..cached.pages.size) return OutputDeleteStatus.Failed
+        if (reference.page !in 1..cached.pages.size) return OutputDeleteStatus.IdentityMismatch
         val fingerprint = reference.outputFingerprint() ?: return OutputDeleteStatus.Failed
         val identity =
             expectedMediaIdentity(
                 reference.displayName,
                 reference.mimeType,
                 reference.ownerPackageName,
-                scanPageFileName(cached.baseName, reference.page),
                 JPEG_MIME_TYPE,
-            ) ?: return OutputDeleteStatus.Failed
+            ) ?: return OutputDeleteStatus.IdentityMismatch
         return deleteMediaItem(
             uriValue = reference.uri,
             collection = MediaOutputCollection.Images,
@@ -362,18 +448,14 @@ internal class ExactOutputDeleter(private val context: Context) {
         displayName: String?,
         mimeType: String?,
         ownerPackageName: String?,
-        legacyDisplayName: String,
         requiredMimeType: String,
     ): MediaItemRow? {
-        if (displayName == null && mimeType == null && ownerPackageName == null) {
-            return MediaItemRow(0L, legacyDisplayName, requiredMimeType, null)
-        }
         val exactDisplayName = displayName ?: return null
         val exactMimeType = mimeType ?: return null
         if (
             !isProviderDisplayName(exactDisplayName) ||
                 exactMimeType != requiredMimeType ||
-                (ownerPackageName != null && ownerPackageName != context.packageName)
+                ownerPackageName != context.packageName
         ) {
             return null
         }
@@ -386,8 +468,8 @@ internal class ExactOutputDeleter(private val context: Context) {
         expectedIdentity: MediaItemRow,
         fingerprint: OutputFingerprint,
     ): OutputDeleteStatus {
-        val address = parseMediaItemAddress(uriValue) ?: return OutputDeleteStatus.Failed
-        if (address.collection != collection) return OutputDeleteStatus.Failed
+        val address = parseMediaItemAddress(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
+        if (address.collection != collection) return OutputDeleteStatus.IdentityMismatch
         val uri = Uri.parse(uriValue)
         val canonical =
             when (collection) {
@@ -396,13 +478,14 @@ internal class ExactOutputDeleter(private val context: Context) {
                 MediaOutputCollection.Downloads ->
                     MediaStore.Downloads.getContentUri(address.volume, address.id)
             }
-        if (canonical != uri) return OutputDeleteStatus.Failed
+        if (canonical != uri) return OutputDeleteStatus.IdentityMismatch
+        val owner = expectedIdentity.ownerPackageName ?: return OutputDeleteStatus.IdentityMismatch
         val expected =
             ExpectedMediaItem(
                 address.id,
                 expectedIdentity.displayName,
                 expectedIdentity.mimeType,
-                expectedIdentity.ownerPackageName,
+                owner,
             )
         return deleteVerifiedMediaOutput(
             fingerprint = fingerprint,
@@ -411,11 +494,7 @@ internal class ExactOutputDeleter(private val context: Context) {
             delete = {
                 resolver.delete(
                     uri,
-                    if (expected.ownerPackageName == null) {
-                        MEDIA_DELETE_SELECTION_WITHOUT_OWNER
-                    } else {
-                        MEDIA_DELETE_SELECTION
-                    },
+                    MEDIA_DELETE_SELECTION,
                     mediaDeleteSelectionArgs(expected),
                 )
             },
@@ -430,7 +509,7 @@ internal class ExactOutputDeleter(private val context: Context) {
                 null,
                 null,
                 null,
-            ) ?: return ExactItemQuery.Invalid
+            ) ?: return ExactItemQuery.Failed
         return cursor.use {
             if (!it.moveToFirst()) return@use ExactItemQuery.Absent
             val row =
@@ -441,7 +520,7 @@ internal class ExactOutputDeleter(private val context: Context) {
                     ownerPackageName = it.optionalString(MediaStore.MediaColumns.OWNER_PACKAGE_NAME),
                 )
             if (it.moveToNext() || !isExactMediaItem(row, expected)) {
-                ExactItemQuery.Invalid
+                ExactItemQuery.IdentityMismatch
             } else {
                 ExactItemQuery.Exact
             }
@@ -453,12 +532,12 @@ internal class ExactOutputDeleter(private val context: Context) {
         fingerprint: OutputFingerprint,
     ): OutputDeleteStatus {
         if (reference.mimeType != PDF_MIME_TYPE || reference.ownerPackageName != null) {
-            return OutputDeleteStatus.Failed
+            return OutputDeleteStatus.IdentityMismatch
         }
-        val tree = exactContentUri(reference.treeUri ?: return OutputDeleteStatus.Failed)
-            ?: return OutputDeleteStatus.Failed
-        val document = exactContentUri(reference.uri) ?: return OutputDeleteStatus.Failed
-        if (tree.authority != document.authority) return OutputDeleteStatus.Failed
+        val tree = exactContentUri(reference.treeUri ?: return OutputDeleteStatus.IdentityMismatch)
+            ?: return OutputDeleteStatus.IdentityMismatch
+        val document = exactContentUri(reference.uri) ?: return OutputDeleteStatus.IdentityMismatch
+        if (tree.authority != document.authority) return OutputDeleteStatus.IdentityMismatch
         return try {
             if (
                 !DocumentsContract.isTreeUri(tree) ||
@@ -467,7 +546,7 @@ internal class ExactOutputDeleter(private val context: Context) {
                         it.uri == tree && it.isReadPermission && it.isWritePermission
                     }
             ) {
-                return OutputDeleteStatus.Failed
+                return OutputDeleteStatus.IdentityMismatch
             }
             val rootId = DocumentsContract.getTreeDocumentId(tree)
             val documentId = DocumentsContract.getDocumentId(document)
@@ -485,9 +564,9 @@ internal class ExactOutputDeleter(private val context: Context) {
                             Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                     ) != PackageManager.PERMISSION_GRANTED
             ) {
-                return OutputDeleteStatus.Failed
+                return OutputDeleteStatus.IdentityMismatch
             }
-            val displayName = reference.displayName ?: return OutputDeleteStatus.Failed
+            val displayName = reference.displayName ?: return OutputDeleteStatus.IdentityMismatch
             deleteVerifiedSafOutput(
                 fingerprint = fingerprint,
                 query = { querySafDocument(document, documentId, displayName) },
@@ -538,7 +617,7 @@ internal class ExactOutputDeleter(private val context: Context) {
         displayName: String,
     ): ExactItemQuery {
         val cursor = resolver.query(uri, SAF_PROJECTION, null, null, null)
-            ?: return ExactItemQuery.Invalid
+            ?: return ExactItemQuery.Failed
         return cursor.use {
             if (!it.moveToFirst()) return@use ExactItemQuery.Absent
             val row =
@@ -549,7 +628,7 @@ internal class ExactOutputDeleter(private val context: Context) {
                     flags = it.requiredLong(DocumentsContract.Document.COLUMN_FLAGS).toInt(),
                 )
             if (it.moveToNext() || !isExactSafDocument(row, documentId, displayName)) {
-                ExactItemQuery.Invalid
+                ExactItemQuery.IdentityMismatch
             } else {
                 ExactItemQuery.Exact
             }
@@ -599,8 +678,7 @@ private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
 internal const val MEDIA_DELETE_SELECTION =
     "_id = ? AND _display_name = ? AND mime_type = ? AND owner_package_name = ?"
-internal const val MEDIA_DELETE_SELECTION_WITHOUT_OWNER =
-    "_id = ? AND _display_name = ? AND mime_type = ?"
+internal const val MEDIA_PUBLISH_SELECTION = "$MEDIA_DELETE_SELECTION AND is_pending = 1"
 private val MEDIA_PROJECTION =
     arrayOf(
         MediaStore.MediaColumns._ID,

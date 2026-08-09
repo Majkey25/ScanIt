@@ -240,6 +240,7 @@ internal class ScanViewModel(
     private val recentDeletionGate = RecentDeletionGate()
     private val resultSaveGate = ResultSaveGate()
     private val routeMutationGate = RouteMutationGate()
+    private val shareRefreshGate = DirtyRefreshGate()
     private val routeMutationMutex = Mutex()
     private val mutableState = MutableStateFlow(initialScreenState(null))
     private val mutableScannerRequest = MutableStateFlow<Long?>(null)
@@ -248,7 +249,6 @@ internal class ScanViewModel(
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
-    private var shareRefreshJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
 
@@ -272,12 +272,13 @@ internal class ScanViewModel(
     fun currentSettings(): AppSettings = mutableSettings.value
 
     fun refreshAfterShareCleanup() {
-        val snapshot = mutableState.value
-        if (snapshot !is ScreenState.Result && snapshot !is ScreenState.Recent) return
-        if (shareRefreshJob?.isActive == true) return
-        shareRefreshJob =
-            viewModelScope.launch {
-                when (snapshot) {
+        if (mutableState.value !is ScreenState.Result && mutableState.value !is ScreenState.Recent) {
+            return
+        }
+        if (!shareRefreshGate.request()) return
+        viewModelScope.launch {
+            while (shareRefreshGate.consume()) {
+                when (val snapshot = mutableState.value) {
                     is ScreenState.Result -> {
                         val cacheId = snapshot.scan.cached.baseName
                         val entryId = snapshot.scan.cached.entryId
@@ -289,7 +290,7 @@ internal class ScanViewModel(
                             } catch (_: Exception) {
                                 null
                             }
-                        val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                        val latest = mutableState.value as? ScreenState.Result ?: continue
                         val refreshed = saved?.takeIf { it.cached.entryId == entryId }
                         if (
                             latest.scan.cached.baseName == cacheId &&
@@ -303,14 +304,16 @@ internal class ScanViewModel(
                     }
                     is ScreenState.Recent -> {
                         val scans = loadRecentScans()
-                        val latest = mutableState.value as? ScreenState.Recent ?: return@launch
+                        val latest = mutableState.value as? ScreenState.Recent ?: continue
                         if (scans != null) {
                             recentScans = scans
                             mutableState.value = latest.copy(scans = scans)
                         }
                     }
+                    else -> Unit
                 }
             }
+        }
     }
 
     fun localizeDefaultEmailSubject(
@@ -345,7 +348,7 @@ internal class ScanViewModel(
                 "PDF destination must grant persisted read/write access"
             }
             val resolver = getApplication<Application>().contentResolver
-            val oldUri = mutableSettings.value.pdfTreeUri
+            val oldUri = canonicalPdfTreeUri(settingsStore)
             val newUri = uri.toString()
             if (oldUri == newUri) {
                 resolver.takePersistableUriPermission(uri, PDF_TREE_FLAGS)
@@ -361,7 +364,7 @@ internal class ScanViewModel(
     fun clearPdfTreeUri(): UiMessage? =
         withPdfGrantChange {
             retryPendingPdfTreeGrantOrThrow()
-            val oldUri = mutableSettings.value.pdfTreeUri ?: return@withPdfGrantChange null
+            val oldUri = canonicalPdfTreeUri(settingsStore) ?: return@withPdfGrantChange null
             settingsStore.savePdfTreeUris(current = null, pending = oldUri)
             mutableSettings.value = mutableSettings.value.copy(pdfTreeUri = null)
             retryPendingPdfTreeGrant()
@@ -1153,6 +1156,7 @@ internal class ScanViewModel(
     }
 
     private fun retryPendingPdfTreeGrant(): UiMessage? = withStorageTransaction {
+        val current = canonicalPdfTreeUri(settingsStore)
         val live =
             try {
                 storage.livePdfTreeUris()
@@ -1164,7 +1168,7 @@ internal class ScanViewModel(
         if (
             !reconcilePdfTreeGrants(
                 context = getApplication(),
-                current = mutableSettings.value.pdfTreeUri,
+                current = current,
                 live = live,
             )
         ) {
@@ -1173,7 +1177,7 @@ internal class ScanViewModel(
         if (settingsStore.pendingPdfTreeUri() == null) return@withStorageTransaction null
         try {
             settingsStore.savePdfTreeUris(
-                current = mutableSettings.value.pdfTreeUri,
+                current = current,
                 pending = null,
             )
             null
@@ -1197,9 +1201,18 @@ internal class ScanViewModel(
         savedPdf: Uri?,
     ): Boolean =
         withContext(NonCancellable + Dispatchers.IO) {
-            val outputsDeleted =
-                storage.deleteSavedOutputs(galleryPages + listOfNotNull(savedPdf))
-            val cacheDeleted = cached == null || storage.deleteCachedScan(cached)
-            outputsDeleted && cacheDeleted
+            if (cached == null) return@withContext true
+            val target =
+                when {
+                    savedPdf != null && galleryPages.isNotEmpty() -> RecentDeleteTarget.Both
+                    savedPdf != null -> RecentDeleteTarget.Pdf
+                    galleryPages.isNotEmpty() -> RecentDeleteTarget.Images
+                    else -> null
+                }
+            if (target == null) return@withContext storage.deleteCachedScan(cached)
+            storage.deleteDurableOutputs(
+                OutputDeleteRequest(cached.baseName, cached.entryId, target),
+                deleteRecentCache = true,
+            ) == OutputDeleteOperationResult.Completed
         }
 }

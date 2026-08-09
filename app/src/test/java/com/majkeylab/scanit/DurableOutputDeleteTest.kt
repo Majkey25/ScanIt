@@ -60,10 +60,29 @@ class DurableOutputDeleteTest {
         assertFalse(isExactMediaItem(exact.copy(displayName = "other.jpg"), expected))
         assertFalse(isExactMediaItem(exact.copy(mimeType = "image/png"), expected))
         assertFalse(isExactMediaItem(exact.copy(ownerPackageName = "other.app"), expected))
+        assertFalse(isExactMediaItem(exact.copy(ownerPackageName = null), expected))
+    }
 
-        val ownerOptional = expected.copy(ownerPackageName = null)
-        assertTrue(isExactMediaItem(exact.copy(ownerPackageName = null), ownerOptional))
-        assertTrue(isExactMediaItem(exact, ownerOptional))
+    @Test
+    fun reopenedOutputMustMatchTheSourceFingerprint() {
+        val source =
+            readOutputFingerprint(
+                ByteArrayInputStream("source".toByteArray()),
+                "source".length.toLong(),
+            )
+        val exact =
+            readOutputFingerprint(
+                ByteArrayInputStream("source".toByteArray()),
+                "source".length.toLong(),
+            )
+        val corrupted =
+            readOutputFingerprint(
+                ByteArrayInputStream("broken".toByteArray()),
+                "broken".length.toLong(),
+            )
+
+        assertTrue(savedOutputMatchesSource(source, exact))
+        assertFalse(savedOutputMatchesSource(source, corrupted))
     }
 
     @Test
@@ -73,7 +92,7 @@ class DurableOutputDeleteTest {
         var deleteCalls = 0
 
         assertEquals(
-            OutputDeleteStatus.Failed,
+            OutputDeleteStatus.IdentityMismatch,
             deleteVerifiedMediaOutput(
                 fingerprint = fingerprint,
                 query = { ExactItemQuery.Exact },
@@ -85,12 +104,16 @@ class DurableOutputDeleteTest {
 
         var queryCalls = 0
         assertEquals(
-            OutputDeleteStatus.Failed,
+            OutputDeleteStatus.IdentityMismatch,
             deleteVerifiedMediaOutput(
                 fingerprint = fingerprint,
                 query = {
                     queryCalls++
-                    if (queryCalls == 1) ExactItemQuery.Exact else ExactItemQuery.Invalid
+                    if (queryCalls == 1) {
+                        ExactItemQuery.Exact
+                    } else {
+                        ExactItemQuery.IdentityMismatch
+                    }
                 },
                 open = { ByteArrayInputStream(bytes) },
                 delete = { deleteCalls++; 1 },
@@ -118,7 +141,7 @@ class DurableOutputDeleteTest {
         )
         listOf<() -> ExactItemQuery>(
             { throw IOException("query") },
-            { ExactItemQuery.Invalid },
+            { ExactItemQuery.Failed },
         ).forEach { query ->
             assertEquals(
                 OutputDeleteStatus.Failed,
@@ -126,8 +149,28 @@ class DurableOutputDeleteTest {
             )
         }
         assertEquals(
+            OutputDeleteStatus.IdentityMismatch,
+            deleteVerifiedMediaOutput(
+                fingerprint,
+                { ExactItemQuery.IdentityMismatch },
+                { ByteArrayInputStream(bytes) },
+            ) { 1 },
+        )
+        assertEquals(
             OutputDeleteStatus.Failed,
             deleteVerifiedMediaOutput(fingerprint, { ExactItemQuery.Exact }, { throw IOException("open") }) { 1 },
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedMediaOutput(
+                fingerprint,
+                { ExactItemQuery.Exact },
+                {
+                    object : java.io.InputStream() {
+                        override fun read(): Int = throw IOException("read")
+                    }
+                },
+            ) { 1 },
         )
         assertEquals(
             OutputDeleteStatus.Failed,
@@ -165,7 +208,7 @@ class DurableOutputDeleteTest {
             ),
         )
         assertEquals(
-            OutputDeleteStatus.Failed,
+            OutputDeleteStatus.IdentityMismatch,
             deleteVerifiedSafOutput(
                 fingerprint,
                 query = { ExactItemQuery.Exact },
@@ -173,6 +216,17 @@ class DurableOutputDeleteTest {
                 isChild = { false },
                 delete = { true },
                 confirmAbsent = { OutputDeleteStatus.Absent },
+            ),
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedSafOutput(
+                fingerprint,
+                query = { ExactItemQuery.Exact },
+                open = { ByteArrayInputStream(bytes) },
+                isChild = { true },
+                delete = { true },
+                confirmAbsent = { OutputDeleteStatus.Failed },
             ),
         )
     }
@@ -232,6 +286,15 @@ class DurableOutputDeleteTest {
             ),
         )
         assertEquals(
+            OutputDeleteOperationResult.IdentityMismatch,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.IdentityMismatch),
+                metadataCommitted = true,
+                cacheDeletionRequested = false,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
             R.string.recent_delete_partial,
             recentDeleteMessage(OutputDeleteOperationResult.Partial)?.resourceId,
         )
@@ -263,9 +326,9 @@ class DurableOutputDeleteTest {
             arrayOf("12", expected.displayName, expected.mimeType, expected.ownerPackageName),
             mediaDeleteSelectionArgs(expected),
         )
-        assertArrayEquals(
-            arrayOf("12", expected.displayName, expected.mimeType),
-            mediaDeleteSelectionArgs(expected.copy(ownerPackageName = null)),
+        assertEquals(
+            "$MEDIA_DELETE_SELECTION AND is_pending = 1",
+            MEDIA_PUBLISH_SELECTION,
         )
     }
 
@@ -323,12 +386,29 @@ class DurableOutputDeleteTest {
         val metadata = metadata()
         val exact = OutputDeleteRequest(CACHE_ID, ENTRY_ID, RecentDeleteTarget.Pdf)
 
-        assertSame(metadata, matchingDeleteMetadata(metadata, exact))
-        assertNull(matchingDeleteMetadata(metadata.copy(entryId = OTHER_ENTRY_ID), exact))
+        assertSame(metadata, matchingDeleteMetadata(metadata, exact, PACKAGE_NAME))
+        assertNull(matchingDeleteMetadata(metadata.copy(entryId = OTHER_ENTRY_ID), exact, PACKAGE_NAME))
+        assertNull(
+            matchingDeleteMetadata(
+                metadata.copy(pdf = metadata.pdf?.copy(ownerPackageName = null)),
+                exact,
+                PACKAGE_NAME,
+            ),
+        )
+        assertNull(
+            matchingDeleteMetadata(
+                metadata.copy(
+                    images = listOf(ImageOutputRef(1, "content://media/external/images/media/2")),
+                ),
+                exact,
+                PACKAGE_NAME,
+            ),
+        )
         assertNull(
             matchingDeleteMetadata(
                 metadata,
                 exact.copy(cacheId = "../$CACHE_ID"),
+                PACKAGE_NAME,
             ),
         )
         assertTrue(outputDeleteTargetIsAbsent(metadata.copy(pdf = null), RecentDeleteTarget.Pdf))
@@ -533,6 +613,9 @@ class DurableOutputDeleteTest {
                 PdfOutputRef(
                     "content://media/external/downloads/1",
                     null,
+                    displayName = "Scan_2026-08-09_12-12-00.pdf",
+                    mimeType = "application/pdf",
+                    ownerPackageName = PACKAGE_NAME,
                     byteLength = 1L,
                     sha256 = "00".repeat(32),
                 ),
@@ -559,5 +642,6 @@ class DurableOutputDeleteTest {
         const val CACHE_ID = "Scan_2026-08-09_12-12-00"
         const val ENTRY_ID = "00000000-0000-0000-0000-000000000001"
         const val OTHER_ENTRY_ID = "00000000-0000-0000-0000-000000000002"
+        const val PACKAGE_NAME = "com.majkeylab.scanit.internal"
     }
 }

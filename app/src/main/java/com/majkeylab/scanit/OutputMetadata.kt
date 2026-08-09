@@ -52,6 +52,14 @@ internal data class OutputMetadata(
     val removeRecentPending: Boolean = false,
 )
 
+internal sealed interface OutputMetadataReadResult {
+    data class Valid(val metadata: OutputMetadata) : OutputMetadataReadResult
+
+    data object Invalid : OutputMetadataReadResult
+
+    data object Failed : OutputMetadataReadResult
+}
+
 internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): ByteArray {
     if (!isValidOutputMetadata(metadata, metadata.cacheId, pageCount)) {
         throw IllegalArgumentException("Output metadata is invalid")
@@ -202,7 +210,16 @@ internal fun readOutputMetadata(
     directory: File,
     cacheId: String,
     pageCount: Int,
-): OutputMetadata? {
+): OutputMetadata? =
+    (readOutputMetadataResult(directory, cacheId, pageCount) as? OutputMetadataReadResult.Valid)
+        ?.metadata
+
+internal fun readOutputMetadataResult(
+    directory: File,
+    cacheId: String,
+    pageCount: Int,
+    readBytes: (File) -> ByteArray = { it.readBytes() },
+): OutputMetadataReadResult {
     val file = File(directory, OUTPUT_METADATA_FILE_NAME).absoluteFile
     return try {
         if (
@@ -210,13 +227,15 @@ internal fun readOutputMetadata(
                 !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS) ||
                 file.length() !in 1..MAX_OUTPUT_METADATA_BYTES.toLong()
         ) {
-            return null
+            return OutputMetadataReadResult.Invalid
         }
-        decodeOutputMetadata(file.readBytes(), cacheId, pageCount)
+        decodeOutputMetadata(readBytes(file), cacheId, pageCount)
+            ?.let { OutputMetadataReadResult.Valid(it) }
+            ?: OutputMetadataReadResult.Invalid
     } catch (_: IOException) {
-        null
+        OutputMetadataReadResult.Failed
     } catch (_: SecurityException) {
-        null
+        OutputMetadataReadResult.Failed
     }
 }
 

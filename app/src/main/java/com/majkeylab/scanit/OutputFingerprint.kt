@@ -9,6 +9,12 @@ internal data class OutputFingerprint(
     val sha256: String,
 )
 
+internal enum class OutputFingerprintCheck {
+    Exact,
+    Mismatch,
+    Failed,
+}
+
 internal fun isValidOutputFingerprint(byteLength: Long?, sha256: String?): Boolean {
     if (byteLength == null && sha256 == null) return true
     return byteLength != null &&
@@ -30,10 +36,10 @@ internal fun readOutputFingerprint(input: InputStream, expectedLength: Long): Ou
     while (remaining > 0L) {
         val requested = minOf(buffer.size.toLong(), remaining).toInt()
         val read = input.read(buffer, 0, requested)
-        if (read < 0) throw IOException("Output is shorter than expected")
+        if (read < 0) throw OutputLengthMismatch("Output is shorter than expected")
         if (read == 0) {
             val value = input.read()
-            if (value < 0) throw IOException("Output is shorter than expected")
+            if (value < 0) throw OutputLengthMismatch("Output is shorter than expected")
             digest.update(value.toByte())
             remaining--
         } else {
@@ -41,18 +47,38 @@ internal fun readOutputFingerprint(input: InputStream, expectedLength: Long): Ou
             remaining -= read
         }
     }
-    if (input.read() >= 0) throw IOException("Output is longer than expected")
+    if (input.read() >= 0) throw OutputLengthMismatch("Output is longer than expected")
     return OutputFingerprint(expectedLength, digest.digest().toLowerHex())
 }
 
 internal fun outputFingerprintMatches(input: InputStream, expected: OutputFingerprint): Boolean {
-    if (!isValidOutputFingerprint(expected.byteLength, expected.sha256)) return false
+    return checkOutputFingerprint(input, expected) == OutputFingerprintCheck.Exact
+}
+
+internal fun checkOutputFingerprint(
+    input: InputStream,
+    expected: OutputFingerprint,
+): OutputFingerprintCheck {
+    if (!isValidOutputFingerprint(expected.byteLength, expected.sha256)) {
+        return OutputFingerprintCheck.Mismatch
+    }
     return try {
-        readOutputFingerprint(input, expected.byteLength) == expected
+        if (readOutputFingerprint(input, expected.byteLength) == expected) {
+            OutputFingerprintCheck.Exact
+        } else {
+            OutputFingerprintCheck.Mismatch
+        }
+    } catch (_: OutputLengthMismatch) {
+        OutputFingerprintCheck.Mismatch
     } catch (_: IOException) {
-        false
+        OutputFingerprintCheck.Failed
     }
 }
+
+internal fun savedOutputMatchesSource(
+    source: OutputFingerprint,
+    saved: OutputFingerprint,
+): Boolean = source == saved
 
 internal fun outputFingerprintOrNull(byteLength: Long?, sha256: String?): OutputFingerprint? =
     if (byteLength != null && sha256 != null && isValidOutputFingerprint(byteLength, sha256)) {
@@ -92,3 +118,4 @@ private fun ByteArray.toLowerHex(): String {
 
 private const val SHA_256_HEX_LENGTH = 64
 private const val HEX_DIGITS = "0123456789abcdef"
+private class OutputLengthMismatch(message: String) : IOException(message)

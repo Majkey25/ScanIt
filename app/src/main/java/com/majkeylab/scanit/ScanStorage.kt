@@ -852,7 +852,19 @@ internal class ScanStorage(
             if (!recentScanCache.recoverPendingRemovals()) {
                 throw IOException("Pending recent scan removal could not be completed")
             }
-            recentScanCache.list(protectedCacheIds)
+            recentScanCache.list(protectedCacheIds).map { scan ->
+                val metadata =
+                    readOutputMetadata(
+                        File(shareCacheRoot(), scan.cacheId),
+                        scan.cacheId,
+                        scan.pageCount,
+                    )
+                if (metadata?.hasCompleteExactDeleteInventory(context.packageName) == true) {
+                    scan
+                } else {
+                    scan.copy(hasSavedPdf = false, savedImageCount = 0)
+                }
+            }
         }
 
     fun openCachedScan(cacheId: String): CachedScan? =
@@ -869,17 +881,16 @@ internal class ScanStorage(
                         cached.pages.size,
                     )?.takeIf { it.entryId == entryId }
                 }
+            val deleteMetadata =
+                outputs?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
             SavedScan(
                 cached = cached,
                 galleryPages = outputs?.images?.map { it.uri.toUri() }.orEmpty(),
                 savedPdf = outputs?.pdf?.uri?.toUri(),
                 savedPdfTree = outputs?.pdf?.treeUri?.toUri(),
                 outputMetadataValid = outputs != null,
-                savedPdfDeleteVerified = outputs?.pdf?.outputFingerprint() != null,
-                savedImagesDeleteVerified =
-                    outputs?.images?.let { images ->
-                        images.isNotEmpty() && images.all { it.outputFingerprint() != null }
-                    } == true,
+                savedPdfDeleteVerified = deleteMetadata?.pdf != null,
+                savedImagesDeleteVerified = deleteMetadata?.images?.isNotEmpty() == true,
             )
         }
 
@@ -905,12 +916,22 @@ internal class ScanStorage(
                 ?: return@withLock OutputDeleteOperationResult.Stale
             if (entryId != request.entryId) return@withLock OutputDeleteOperationResult.Stale
             val directory = File(shareCacheRoot(), cached.baseName)
+            val metadataRead =
+                readOutputMetadataResult(directory, cached.baseName, cached.pages.size)
+            val decoded =
+                when (metadataRead) {
+                    is OutputMetadataReadResult.Valid -> metadataRead.metadata
+                    OutputMetadataReadResult.Invalid ->
+                        return@withLock OutputDeleteOperationResult.IdentityMismatch
+                    OutputMetadataReadResult.Failed ->
+                        return@withLock OutputDeleteOperationResult.Failed
+                }
             val current =
                 matchingOutputMetadata(
-                    readOutputMetadata(directory, cached.baseName, cached.pages.size),
+                    decoded,
                     request.cacheId,
                     entryId,
-                ) ?: return@withLock OutputDeleteOperationResult.Failed
+                ) ?: return@withLock OutputDeleteOperationResult.IdentityMismatch
             if (!deleteRecentCache && outputDeleteTargetIsAbsent(current, request.target)) {
                 return@withLock OutputDeleteOperationResult.Stale
             }
@@ -918,7 +939,8 @@ internal class ScanStorage(
                 matchingDeleteMetadata(
                     current,
                     request,
-                ) ?: return@withLock OutputDeleteOperationResult.Failed
+                    context.packageName,
+                ) ?: return@withLock OutputDeleteOperationResult.IdentityMismatch
             val selected =
                 buildList<Pair<String, () -> OutputDeleteStatus>> {
                     if (
@@ -927,7 +949,7 @@ internal class ScanStorage(
                     ) {
                         val pdf = metadata.pdf
                             ?: return@withLock OutputDeleteOperationResult.Failed
-                        add(pdf.uri to { outputDeleter.deletePdf(cached, pdf) })
+                        add(pdf.uri to { outputDeleter.deletePdf(pdf) })
                     }
                     if (
                         request.target == RecentDeleteTarget.Images ||
@@ -1001,7 +1023,10 @@ internal class ScanStorage(
                     val directory = child.absoluteFile
                     OutputMetadataInventoryEntry(
                         sidecarPresent = outputSidecarExists(directory),
-                        metadata = entries[directory]?.outputs,
+                        metadata =
+                            entries[directory]?.outputs?.takeIf {
+                                it.hasCompleteExactDeleteInventory(context.packageName)
+                            },
                     )
                 },
             ) ?: throw IOException("PDF tree grant inventory is incomplete")
@@ -1090,39 +1115,18 @@ internal class ScanStorage(
                 }
                 saved.map(SavedMediaOutput::uri)
             } catch (cancellation: CancellationException) {
-                saved.forEach { deleteMediaRow(it.uri, cancellation) }
+                saved.forEach { rollbackMediaOutput(it, MediaOutputCollection.Images, cancellation) }
                 throw cancellation
             } catch (exception: Exception) {
                 var rollbackFailed = false
                 saved.forEach { output ->
-                    if (!deleteMediaRow(output.uri, exception)) rollbackFailed = true
+                    if (!rollbackMediaOutput(output, MediaOutputCollection.Images, exception)) {
+                        rollbackFailed = true
+                    }
                 }
                 throw ImageSaveFailure(exception, rollbackFailed)
             }
         }
-
-    fun deleteSavedOutputs(uris: List<Uri>): Boolean {
-        var deletedAll = true
-        uris.forEach { uri ->
-            val deleted =
-                if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-                    false
-                } else {
-                    try {
-                        when {
-                            uri.authority == MediaStore.AUTHORITY ->
-                                resolver.delete(uri, null, null) > 0
-                            DocumentsContract.isDocumentUri(context, uri) -> deleteSafDocument(uri)
-                            else -> false
-                        }
-                    } catch (_: Exception) {
-                        false
-                    }
-                }
-            deletedAll = deleted && deletedAll
-        }
-        return deletedAll
-    }
 
     fun savePdf(
         cached: CachedScan,
@@ -1180,11 +1184,11 @@ internal class ScanStorage(
                 }
                 output
             } catch (cancellation: CancellationException) {
-                createdOutput?.let { deleteCreatedOutput(it.uri, cancellation) }
+                createdOutput?.let { rollbackPdfOutput(it, cancellation) }
                 throw cancellation
             } catch (exception: Exception) {
                 val rollbackFailed =
-                    createdOutput?.let { !deleteCreatedOutput(it.uri, exception) } ?: false
+                    createdOutput?.let { !rollbackPdfOutput(it, exception) } ?: false
                 throw PdfSaveFailure(failureWarning, exception, rollbackFailed)
             }
         }
@@ -1284,6 +1288,7 @@ internal class ScanStorage(
     ): Pair<SavedPdfOutput?, Boolean> {
         var createdDocument: Uri? = null
         try {
+            val sourceFingerprint = fingerprintFile(source)
             val treeUri = treeUriValue.toUri()
             if (
                 !DocumentsContract.isTreeUri(treeUri) ||
@@ -1303,8 +1308,14 @@ internal class ScanStorage(
                     ?: return null to false
             createdDocument = document
             copyFileToUri(source, document)
+            if (fingerprintFile(source) != sourceFingerprint) {
+                throw IOException("Source file changed while it was copied")
+            }
             val actualName = readSafPdfDisplayName(treeUri, document)
-            val fingerprint = fingerprintUri(document, source.length())
+            val fingerprint = fingerprintUri(document, sourceFingerprint.byteLength)
+            if (!savedOutputMatchesSource(sourceFingerprint, fingerprint)) {
+                throw IOException("Saved PDF differs from its source")
+            }
             return SavedPdfOutput(
                 uri = document,
                 treeUri = treeUri,
@@ -1315,34 +1326,14 @@ internal class ScanStorage(
                 sha256 = fingerprint.sha256,
             ) to false
         } catch (cancellation: CancellationException) {
-            createdDocument?.let { document ->
-                val deleted =
-                    try {
-                        deleteSafDocument(document)
-                    } catch (cleanupCancellation: CancellationException) {
-                        if (cleanupCancellation !== cancellation) {
-                            cancellation.addSuppressed(cleanupCancellation)
-                        }
-                        false
-                    }
-                if (!deleted) {
-                    cancellation.addSuppressed(
-                        IOException("Incomplete SAF document could not be deleted"),
-                    )
-                }
+            if (createdDocument != null) {
+                cancellation.addSuppressed(
+                    IOException("Unverified SAF document was left for safe manual cleanup"),
+                )
             }
             throw cancellation
         } catch (failure: Exception) {
-            val cleanupFailed =
-                createdDocument?.let { document ->
-                    try {
-                        !deleteSafDocument(document)
-                    } catch (cleanupCancellation: CancellationException) {
-                        cleanupCancellation.addSuppressed(failure)
-                        throw cleanupCancellation
-                    }
-                } ?: false
-            return null to cleanupFailed
+            return null to (createdDocument != null)
         }
     }
 
@@ -1413,18 +1404,56 @@ internal class ScanStorage(
         expectedMimeType: String,
     ): SavedMediaOutput {
         requireReadableFile(source)
-        val expectedLength = source.length()
+        val sourceFingerprint = fingerprintFile(source)
         val destination =
             resolver.insert(collection, values)
                 ?: throw IOException("MediaStore row could not be created")
-        return pendingMediaWrite(rollback = { deleteMediaRow(destination, it) }) {
+        var verifiedOutput: SavedMediaOutput? = null
+        return pendingMediaWrite(
+            rollback = { failure ->
+                val verified =
+                    verifiedOutput
+                        ?: try {
+                            readSavedMediaOutput(
+                                destination,
+                                expectedCollection,
+                                expectedMimeType,
+                                sourceFingerprint,
+                            )
+                        } catch (verificationFailure: Exception) {
+                            failure.addSuppressed(verificationFailure)
+                            null
+                        }
+                verified != null && rollbackMediaOutput(verified, expectedCollection, failure)
+            },
+        ) {
             copyFileToUri(source, destination)
+            if (fingerprintFile(source) != sourceFingerprint) {
+                throw IOException("Source file changed while it was copied")
+            }
+            val pendingOutput =
+                readSavedMediaOutput(
+                    destination,
+                    expectedCollection,
+                    expectedMimeType,
+                    sourceFingerprint,
+                )
+            verifiedOutput = pendingOutput
+            val address = parseMediaItemAddress(destination.toString())
+                ?: throw IOException("MediaStore item URI is invalid")
             val published =
                 resolver.update(
                     destination,
                     ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                    null,
-                    null,
+                    MEDIA_PUBLISH_SELECTION,
+                    mediaDeleteSelectionArgs(
+                        ExpectedMediaItem(
+                            id = address.id,
+                            displayName = pendingOutput.displayName,
+                            mimeType = pendingOutput.mimeType,
+                            ownerPackageName = pendingOutput.ownerPackageName,
+                        ),
+                    ),
                 )
             if (published != 1) {
                 throw IOException("MediaStore row could not be published")
@@ -1433,7 +1462,7 @@ internal class ScanStorage(
                 destination,
                 expectedCollection,
                 expectedMimeType,
-                expectedLength,
+                sourceFingerprint,
             )
         }
     }
@@ -1442,7 +1471,7 @@ internal class ScanStorage(
         uri: Uri,
         expectedCollection: MediaOutputCollection,
         expectedMimeType: String,
-        expectedLength: Long,
+        sourceFingerprint: OutputFingerprint,
     ): SavedMediaOutput {
         val address = parseMediaItemAddress(uri.toString())
             ?: throw IOException("MediaStore item URI is invalid")
@@ -1480,22 +1509,25 @@ internal class ScanStorage(
             val displayName = it.getString(nameIndex)
             val mimeType = it.getString(mimeIndex)
             val ownerPackageName =
-                if (ownerIndex < 0 || it.isNull(ownerIndex)) null else it.getString(ownerIndex)
+                if (it.isNull(ownerIndex)) null else it.getString(ownerIndex)
             if (
                 it.getLong(idIndex) != address.id ||
                     !isProviderDisplayName(displayName) ||
                     mimeType != expectedMimeType ||
-                    (ownerPackageName != null && ownerPackageName != context.packageName) ||
+                    ownerPackageName != context.packageName ||
                     it.moveToNext()
             ) {
                 throw IOException("MediaStore item identity changed")
             }
-            val fingerprint = fingerprintUri(uri, expectedLength)
+            val fingerprint = fingerprintUri(uri, sourceFingerprint.byteLength)
+            if (!savedOutputMatchesSource(sourceFingerprint, fingerprint)) {
+                throw IOException("Saved output differs from its source")
+            }
             SavedMediaOutput(
                 uri,
                 displayName,
                 mimeType,
-                ownerPackageName,
+                context.packageName,
                 fingerprint.byteLength,
                 fingerprint.sha256,
             )
@@ -1506,6 +1538,12 @@ internal class ScanStorage(
         val input = resolver.openInputStream(uri)
             ?: throw IOException("Saved output could not be reopened")
         return input.use { readOutputFingerprint(it, expectedLength) }
+    }
+
+    private fun fingerprintFile(file: File): OutputFingerprint {
+        requireReadableFile(file)
+        val expectedLength = file.length()
+        return file.inputStream().use { readOutputFingerprint(it, expectedLength) }
     }
 
     private fun copyUriToFile(source: Uri, destination: File) {
@@ -1577,51 +1615,46 @@ internal class ScanStorage(
         }
     }
 
-    private fun deleteMediaRow(uri: Uri, failure: Exception): Boolean =
+    private fun rollbackMediaOutput(
+        output: SavedMediaOutput,
+        collection: MediaOutputCollection,
+        failure: Exception,
+    ): Boolean =
         try {
-            if (resolver.delete(uri, null, null) <= 0) {
-                failure.addSuppressed(IOException("Incomplete MediaStore row could not be deleted"))
-                false
-            } else {
+            val status = outputDeleter.deleteMediaOutput(output, collection)
+            if (status == OutputDeleteStatus.Deleted || status == OutputDeleteStatus.Absent) {
                 true
-            }
-        } catch (cleanupFailure: Exception) {
-            failure.addSuppressed(cleanupFailure)
-            false
-        }
-
-    private fun deleteCreatedOutput(uri: Uri, failure: Exception): Boolean =
-        try {
-            when {
-                uri.authority == MediaStore.AUTHORITY -> deleteMediaRow(uri, failure)
-                DocumentsContract.isDocumentUri(context, uri) -> {
-                    if (!deleteSafDocument(uri)) {
-                        failure.addSuppressed(IOException("Incomplete SAF document could not be deleted"))
-                        false
-                    } else {
-                        true
-                    }
-                }
-                else -> {
-                    failure.addSuppressed(IOException("Incomplete provider output could not be deleted"))
-                    false
-                }
+            } else {
+                failure.addSuppressed(IOException("Verified MediaStore rollback failed"))
+                false
             }
         } catch (cleanupFailure: Exception) {
             if (cleanupFailure !== failure) failure.addSuppressed(cleanupFailure)
             false
         }
 
-    private fun deleteSafDocument(uri: Uri): Boolean =
+    private fun rollbackPdfOutput(output: SavedPdfOutput, failure: Exception): Boolean =
         try {
-            if (!DocumentsContract.deleteDocument(resolver, uri)) {
-                resolver.delete(uri, null, null) > 0
-            } else {
+            val status =
+                outputDeleter.deletePdf(
+                    PdfOutputRef(
+                        uri = output.uri.toString(),
+                        treeUri = output.treeUri?.toString(),
+                        displayName = output.displayName,
+                        mimeType = output.mimeType,
+                        ownerPackageName = output.ownerPackageName,
+                        byteLength = output.byteLength,
+                        sha256 = output.sha256,
+                    ),
+                )
+            if (status == OutputDeleteStatus.Deleted || status == OutputDeleteStatus.Absent) {
                 true
+            } else {
+                failure.addSuppressed(IOException("Verified PDF rollback failed"))
+                false
             }
-        } catch (cancellation: CancellationException) {
-            throw cancellation
-        } catch (_: Exception) {
+        } catch (cleanupFailure: Exception) {
+            if (cleanupFailure !== failure) failure.addSuppressed(cleanupFailure)
             false
         }
 }
