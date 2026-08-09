@@ -2,11 +2,13 @@ package com.majkeylab.scanit
 
 import android.app.Application
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.locks.ReentrantLock
@@ -22,6 +24,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val SCANNER_STAGE_KEY = "scanner_launch_stage"
+private const val ROUTE_KEY = "screen_route"
+private const val ROUTE_CACHE_ID_KEY = "screen_route_cache_id"
+private const val ROUTE_SCANNER = "scanner"
+private const val ROUTE_RECENT = "recent"
+private const val ROUTE_RECENT_WITH_RESULT_BACK = "recent_with_result_back"
+private const val ROUTE_RESULT_WITH_RECENT_BACK = "result_with_recent_back"
+private const val ROUTE_RESULT = "result"
+private const val ROUTE_FAILURE = "failure"
+private const val RECENT_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
@@ -95,6 +106,12 @@ internal class ScanViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
 ) : AndroidViewModel(application) {
+    private val initialRoute =
+        restoredRoute(
+            savedStateHandle[ROUTE_KEY],
+            savedStateHandle[ROUTE_CACHE_ID_KEY],
+        )
+    private val initialCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val settingsStore = SettingsStore(application)
     private val storage = ScanStorage(application)
     private val scannerLaunchGate =
@@ -103,10 +120,20 @@ internal class ScanViewModel(
                 it.name == savedStateHandle.get<String>(SCANNER_STAGE_KEY)
             } ?: ScannerLaunchStage.Idle,
         )
-    private val mutableState = MutableStateFlow<ScreenState>(ScreenState.Ready)
+    private val mutableState =
+        MutableStateFlow<ScreenState>(
+            if (initialRoute == RestoredRoute.Scanner) {
+                ScreenState.Ready
+            } else {
+                ScreenState.Recent(emptyList(), canGoBack = false)
+            },
+        )
     private val mutableSettings = MutableStateFlow(settingsStore.load())
     private val pdfGrantLock = ReentrantLock()
     private var processingJob: Job? = null
+    private var recentJob: Job? = null
+    private var recentScans: List<RecentScan> = emptyList()
+    private var previousResult: ScreenState.Result? = null
 
     val state: StateFlow<ScreenState> = mutableState.asStateFlow()
     val settings: StateFlow<AppSettings> = mutableSettings.asStateFlow()
@@ -124,7 +151,10 @@ internal class ScanViewModel(
                 pdfGrantLock.unlock()
             }
         }
+        restoreNavigation()
     }
+
+    fun shouldLaunchScannerOnCreate(): Boolean = initialRoute == RestoredRoute.Scanner
 
     fun currentSettings(): AppSettings = mutableSettings.value
 
@@ -184,6 +214,9 @@ internal class ScanViewModel(
 
     fun beginScannerLaunch(): Long? {
         val request = scannerLaunchGate.begin(processingJob?.isActive == true) ?: return null
+        recentJob?.cancel()
+        previousResult = null
+        persistRoute(ROUTE_SCANNER)
         persistScannerStage()
         mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_scanner))
         return request
@@ -209,6 +242,7 @@ internal class ScanViewModel(
     fun scannerLaunchFailed(requestGeneration: Long, message: UiMessage) {
         if (scannerLaunchGate.fail(requestGeneration)) {
             persistScannerStage()
+            persistRoute(ROUTE_FAILURE)
             mutableState.value = ScreenState.Failure(message)
         }
     }
@@ -216,13 +250,15 @@ internal class ScanViewModel(
     fun scannerCancelled() {
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
-            mutableState.value = ScreenState.Ready
+            previousResult = null
+            refreshRecentScreen(canGoBack = false)
         }
     }
 
     fun scannerResultFailed(message: UiMessage) {
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
+            persistRoute(ROUTE_FAILURE)
             mutableState.value = ScreenState.Failure(message)
         }
     }
@@ -289,6 +325,8 @@ internal class ScanViewModel(
                             )
                         }
                     mutableState.value = result
+                    persistRoute(ROUTE_RESULT)
+                    refreshRecentCache(result.scan.cached.baseName)
                 } catch (exception: CancellationException) {
                     cleanup(cached, galleryPages, savedPdfUri)
                     throw exception
@@ -301,11 +339,226 @@ internal class ScanViewModel(
                             UiMessage(R.string.document_save_partial_failed)
                         }
                     mutableState.value = ScreenState.Failure(message)
+                    persistRoute(ROUTE_FAILURE)
                 } finally {
                     processingJob = null
                 }
             }
         return true
+    }
+
+    fun showRecent() {
+        val result = (mutableState.value as? ScreenState.Result)?.takeUnless { it.returnToRecent }
+        previousResult = result
+        refreshRecentScreen(canGoBack = result != null)
+    }
+
+    fun navigateBack() {
+        when (val current = mutableState.value) {
+            is ScreenState.Recent -> {
+                val result = previousResult
+                if (current.canGoBack && result != null) {
+                    recentJob?.cancel()
+                    previousResult = null
+                    mutableState.value = result
+                    persistRoute(ROUTE_RESULT)
+                }
+            }
+            is ScreenState.Result -> {
+                if (current.returnToRecent) {
+                    refreshRecentScreen(canGoBack = false)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    fun openRecentScan(cacheId: String) {
+        previousResult = null
+        persistRoute(ROUTE_RECENT)
+        mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_document))
+        recentJob?.cancel()
+        recentJob =
+            viewModelScope.launch {
+                val result = loadCachedResult(cacheId, returnToRecent = true)
+                if (result == null) {
+                    showRecentResult(
+                        canGoBack = false,
+                        message = UiMessage(R.string.recent_scan_unavailable),
+                    )
+                } else {
+                    mutableState.value = result
+                    persistRoute(ROUTE_RESULT_WITH_RECENT_BACK, cacheId)
+                    refreshRecentCache(cacheId)
+                }
+            }
+    }
+
+    fun deleteRecentScan(cacheId: String) {
+        val previousCacheId = previousResult?.scan?.cached?.baseName
+        if (previousCacheId == cacheId) {
+            previousResult = null
+        }
+        val canGoBack = previousResult != null
+        recentJob?.cancel()
+        recentJob =
+            viewModelScope.launch {
+                val deleted =
+                    try {
+                        withContext(Dispatchers.IO) { storage.deleteRecentScan(cacheId) }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        false
+                    }
+                showRecentResult(
+                    canGoBack = canGoBack,
+                    message = if (deleted) null else UiMessage(R.string.recent_delete_failed),
+                )
+            }
+    }
+
+    suspend fun recentScanForShare(cacheId: String): CachedScan? {
+        val cached =
+            try {
+                withContext(Dispatchers.IO) { storage.openCachedScan(cacheId) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+        if (cached == null) {
+            refreshRecentScreen(
+                canGoBack = previousResult != null,
+                message = UiMessage(R.string.recent_scan_unavailable),
+            )
+        }
+        return cached
+    }
+
+    suspend fun loadRecentThumbnail(firstPage: File): Bitmap? =
+        withContext(Dispatchers.IO) {
+            storage.loadThumbnail(firstPage, RECENT_THUMBNAIL_SIZE)
+        }
+
+    private fun restoreNavigation() {
+        when (initialRoute) {
+            RestoredRoute.Scanner -> refreshRecentCache()
+            RestoredRoute.Recent -> refreshRecentScreen(canGoBack = false)
+            RestoredRoute.RecentWithResultBack -> restoreSavedResult(showRecent = true)
+            RestoredRoute.ResultWithRecentBack -> restoreSavedResult(showRecent = false)
+        }
+    }
+
+    private fun restoreSavedResult(showRecent: Boolean) {
+        val cacheId = initialCacheId
+        if (cacheId == null) {
+            refreshRecentScreen(canGoBack = false)
+            return
+        }
+        recentJob?.cancel()
+        recentJob =
+            viewModelScope.launch {
+                val result = loadCachedResult(cacheId, returnToRecent = !showRecent)
+                if (result == null) {
+                    showRecentResult(
+                        canGoBack = false,
+                        message = UiMessage(R.string.recent_scan_unavailable),
+                    )
+                } else if (showRecent) {
+                    previousResult = result
+                    showRecentResult(canGoBack = true)
+                } else {
+                    mutableState.value = result
+                    refreshRecentCache(cacheId)
+                }
+            }
+    }
+
+    private suspend fun loadCachedResult(
+        cacheId: String,
+        returnToRecent: Boolean,
+    ): ScreenState.Result? =
+        try {
+            withContext(Dispatchers.IO) {
+                val cached = storage.openCachedScan(cacheId) ?: return@withContext null
+                ScreenState.Result(
+                    scan = SavedScan(cached, galleryPages = emptyList(), savedPdf = null),
+                    thumbnail = storage.loadThumbnail(cached.pages.first()),
+                    returnToRecent = returnToRecent,
+                )
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun refreshRecentScreen(
+        canGoBack: Boolean,
+        message: UiMessage? = null,
+    ) {
+        val cacheId = previousResult?.scan?.cached?.baseName.takeIf { canGoBack }
+        persistRoute(
+            if (cacheId == null) ROUTE_RECENT else ROUTE_RECENT_WITH_RESULT_BACK,
+            cacheId,
+        )
+        mutableState.value = ScreenState.Recent(recentScans, canGoBack && cacheId != null, message)
+        recentJob?.cancel()
+        recentJob =
+            viewModelScope.launch {
+                showRecentResult(canGoBack = canGoBack, message = message)
+            }
+    }
+
+    private suspend fun showRecentResult(
+        canGoBack: Boolean,
+        message: UiMessage? = null,
+    ) {
+        val cacheId = previousResult?.scan?.cached?.baseName.takeIf { canGoBack }
+        val scans = loadRecentScans(cacheId)
+        recentScans = scans ?: emptyList()
+        val resultAvailable = cacheId != null && scans?.any { it.cacheId == cacheId } == true
+        if (cacheId != null && !resultAvailable) {
+            previousResult = null
+        }
+        val effectiveMessage =
+            message ?: when {
+                scans == null -> UiMessage(R.string.recent_history_unavailable)
+                cacheId != null && !resultAvailable -> UiMessage(R.string.recent_scan_unavailable)
+                else -> null
+            }
+        val effectiveCanGoBack = resultAvailable
+        mutableState.value =
+            ScreenState.Recent(recentScans, effectiveCanGoBack, effectiveMessage)
+        persistRoute(
+            if (effectiveCanGoBack) ROUTE_RECENT_WITH_RESULT_BACK else ROUTE_RECENT,
+            cacheId.takeIf { effectiveCanGoBack },
+        )
+    }
+
+    private suspend fun loadRecentScans(protectedCacheId: String? = null): List<RecentScan>? =
+        try {
+            withContext(Dispatchers.IO) {
+                storage.listRecentScans(protectedCacheId?.let(::setOf) ?: emptySet())
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun refreshRecentCache(protectedCacheId: String? = null) {
+        recentJob?.cancel()
+        recentJob =
+            viewModelScope.launch {
+                loadRecentScans(protectedCacheId)?.let { recentScans = it }
+            }
+    }
+
+    private fun persistRoute(route: String, cacheId: String? = null) {
+        savedStateHandle[ROUTE_KEY] = route
+        savedStateHandle[ROUTE_CACHE_ID_KEY] = cacheId
     }
 
     private fun completeScannerLaunch() {

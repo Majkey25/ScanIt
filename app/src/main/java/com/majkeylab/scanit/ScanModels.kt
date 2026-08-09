@@ -45,6 +45,27 @@ internal data class SavedScan(
     val warnings: List<UiMessage> = emptyList(),
 )
 
+internal enum class RestoredRoute {
+    Scanner,
+    Recent,
+    RecentWithResultBack,
+    ResultWithRecentBack,
+}
+
+internal fun restoredRoute(savedRoute: String?, cacheId: String?): RestoredRoute =
+    when (savedRoute) {
+        null -> RestoredRoute.Scanner
+        "scanner" -> RestoredRoute.Scanner
+        "recent_with_result_back" ->
+            if (cacheId.isNullOrBlank()) RestoredRoute.Recent
+            else RestoredRoute.RecentWithResultBack
+        "result_with_recent_back" ->
+            if (cacheId.isNullOrBlank()) RestoredRoute.Recent
+            else RestoredRoute.ResultWithRecentBack
+        "recent" -> RestoredRoute.Recent
+        else -> RestoredRoute.Recent
+    }
+
 internal sealed interface ScreenState {
     data object Ready : ScreenState
 
@@ -53,6 +74,13 @@ internal sealed interface ScreenState {
     data class Result(
         val scan: SavedScan,
         val thumbnail: Bitmap?,
+        val returnToRecent: Boolean = false,
+    ) : ScreenState
+
+    data class Recent(
+        val scans: List<RecentScan>,
+        val canGoBack: Boolean,
+        val message: UiMessage? = null,
     ) : ScreenState
 
     data class Failure(val message: UiMessage) : ScreenState

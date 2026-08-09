@@ -2,8 +2,10 @@ package com.majkeylab.scanit
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,10 +24,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -60,7 +69,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import java.io.File
 import java.io.IOException
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.CancellationException
 
 internal enum class AppLanguage(val languageTag: String?) {
     System(null),
@@ -116,27 +129,36 @@ internal fun ScanItApp(
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
+    onRecent: () -> Unit,
+    onOpenRecent: (String) -> Unit,
+    onShareRecentPdf: (String) -> Unit,
+    onDeleteRecent: (String) -> Unit,
+    onLoadRecentThumbnail: suspend (File) -> Bitmap?,
+    onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     BackHandler(showSettings) { showSettings = false }
-    val settingsOnly = state === ScreenState.Ready
+    BackHandler(
+        enabled =
+            !showSettings &&
+                ((state as? ScreenState.Recent)?.canGoBack == true ||
+                    (state as? ScreenState.Result)?.returnToRecent == true),
+        onBack = onNavigateBack,
+    )
 
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
-        if (showSettings || settingsOnly) {
+        if (showSettings) {
             SettingsScreen(
                 settings = settings,
                 language = language,
                 defaultEmailSubjects = defaultEmailSubjects,
                 onClose = {
                     showSettings = false
-                    if (settingsOnly) {
-                        onScan()
-                    }
                 },
                 onSave = onSaveSettings,
                 onLanguageChange = onLanguageChange,
@@ -151,12 +173,25 @@ internal fun ScanItApp(
                     FailureScreen(
                         message = state.message.resolve(),
                         onRetry = onScan,
+                        onRecent = onRecent,
+                        onSettings = { showSettings = true },
+                    )
+                is ScreenState.Recent ->
+                    RecentScreen(
+                        state = state,
+                        onNewScan = onScan,
+                        onOpen = onOpenRecent,
+                        onSharePdf = onShareRecentPdf,
+                        onDelete = onDeleteRecent,
+                        onLoadThumbnail = onLoadRecentThumbnail,
+                        onBack = onNavigateBack,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
                     ResultScreen(
                         result = state,
                         onNewScan = onScan,
+                        onRecent = onRecent,
                         onSettings = { showSettings = true },
                         onSharePdf = onSharePdf,
                         onShareImages = onShareImages,
@@ -186,9 +221,10 @@ private fun ProcessingScreen(message: String) {
 private fun FailureScreen(
     message: String,
     onRetry: () -> Unit,
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    MainScaffold(onSettings) { modifier ->
+    MainScaffold(onRecent, onSettings) { modifier ->
         Column(
             modifier = modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -207,6 +243,7 @@ private fun FailureScreen(
 private fun ResultScreen(
     result: ScreenState.Result,
     onNewScan: () -> Unit,
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
     onSharePdf: (() -> Unit)?,
     onShareImages: (() -> Unit)?,
@@ -214,7 +251,7 @@ private fun ResultScreen(
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
-    MainScaffold(onSettings) { modifier ->
+    MainScaffold(onRecent, onSettings) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -312,10 +349,208 @@ private fun ResultScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun RecentScreen(
+    state: ScreenState.Recent,
+    onNewScan: () -> Unit,
+    onOpen: (String) -> Unit,
+    onSharePdf: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onBack: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val backDescription = stringResource(R.string.back)
+    val settingsDescription = stringResource(R.string.open_settings)
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.recent_scans)) },
+                navigationIcon = {
+                    if (state.canGoBack) {
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.semantics {
+                                contentDescription = backDescription
+                            },
+                        ) {
+                            Text(
+                                stringResource(R.string.back_symbol),
+                                modifier = Modifier.clearAndSetSemantics {},
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = onSettings,
+                        modifier = Modifier.semantics {
+                            contentDescription = settingsDescription
+                        },
+                    ) {
+                        Text(
+                            stringResource(R.string.settings_symbol),
+                            modifier = Modifier.clearAndSetSemantics {},
+                        )
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Text(
+                    stringResource(R.string.recent_scans_temporary),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            item {
+                Button(
+                    onClick = onNewScan,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    Text(stringResource(R.string.new_scan))
+                }
+            }
+            state.message?.let { message ->
+                item { Text(message.resolve(), color = MaterialTheme.colorScheme.error) }
+            }
+            if (state.scans.isEmpty()) {
+                item { Text(stringResource(R.string.recent_scans_empty)) }
+            } else {
+                items(state.scans, key = RecentScan::cacheId) { scan ->
+                    RecentScanRow(
+                        scan = scan,
+                        onOpen = onOpen,
+                        onSharePdf = onSharePdf,
+                        onDelete = onDelete,
+                        onLoadThumbnail = onLoadThumbnail,
+                    )
+                    HorizontalDivider()
+                }
+            }
+            item { Spacer(Modifier.height(4.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun RecentScanRow(
+    scan: RecentScan,
+    onOpen: (String) -> Unit,
+    onSharePdf: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    val formattedDate =
+        remember(scan.createdAt, locale) {
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+                .format(Date.from(scan.createdAt))
+        }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RecentThumbnail(scan.firstPage, onLoadThumbnail)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(scan.displayName, style = MaterialTheme.typography.titleMedium)
+            Text(formattedDate, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "${pluralStringResource(R.plurals.page_count, scan.pageCount, scan.pageCount)} · " +
+                    Formatter.formatShortFileSize(context, scan.pdfBytes),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Box {
+            val overflowDescription = stringResource(R.string.more_actions)
+            IconButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.semantics {
+                    contentDescription = overflowDescription
+                },
+            ) {
+                Text(
+                    stringResource(R.string.more_actions_symbol),
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.open_scan)) },
+                    onClick = {
+                        menuExpanded = false
+                        onOpen(scan.cacheId)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.send_pdf)) },
+                    onClick = {
+                        menuExpanded = false
+                        onSharePdf(scan.cacheId)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete_scan)) },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete(scan.cacheId)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentThumbnail(
+    firstPage: File,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    val thumbnail by produceState<Bitmap?>(null, firstPage) {
+        value =
+            try {
+                onLoadThumbnail(firstPage)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+    }
+    if (thumbnail == null) {
+        Box(
+            modifier = Modifier.width(72.dp).height(96.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(stringResource(R.string.preview_unavailable))
+        }
+    } else {
+        Image(
+            bitmap = requireNotNull(thumbnail).asImageBitmap(),
+            contentDescription = stringResource(R.string.recent_scan_preview),
+            modifier = Modifier.width(72.dp).height(96.dp),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun MainScaffold(
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
     content: @Composable (Modifier) -> Unit,
 ) {
+    val recentDescription = stringResource(R.string.open_recent_scans)
     val settingsDescription = stringResource(R.string.open_settings)
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -323,6 +558,17 @@ private fun MainScaffold(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(
+                        onClick = onRecent,
+                        modifier = Modifier.semantics {
+                            contentDescription = recentDescription
+                        },
+                    ) {
+                        Text(
+                            stringResource(R.string.recent_scans_symbol),
+                            modifier = Modifier.clearAndSetSemantics {},
+                        )
+                    }
                     IconButton(
                         onClick = onSettings,
                         modifier = Modifier.semantics {

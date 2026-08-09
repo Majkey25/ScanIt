@@ -17,9 +17,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import kotlinx.coroutines.launch
 
 internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null else 1
 
@@ -50,12 +52,18 @@ class MainActivity : ComponentActivity() {
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
                 onPdfFolderCleared = viewModel::clearPdfTreeUri,
+                onRecent = viewModel::showRecent,
+                onOpenRecent = viewModel::openRecentScan,
+                onShareRecentPdf = ::shareRecentPdf,
+                onDeleteRecent = viewModel::deleteRecentScan,
+                onLoadRecentThumbnail = viewModel::loadRecentThumbnail,
+                onNavigateBack = viewModel::navigateBack,
                 onSharePdf = ::shareCurrentPdf,
                 onShareImages = ::shareCurrentImages,
                 onPrint = ::printCurrentScan,
             )
         }
-        if (savedInstanceState == null) {
+        if (savedInstanceState == null && viewModel.shouldLaunchScannerOnCreate()) {
             startScan()
         } else {
             viewModel.resumeScannerPreparation()?.let(::requestScannerIntent)
@@ -176,6 +184,23 @@ class MainActivity : ComponentActivity() {
 
     private fun shareCurrentPdf() {
         shareCurrentScan(::pdfShareIntent)
+    }
+
+    private fun shareRecentPdf(cacheId: String) {
+        lifecycleScope.launch {
+            val scan = viewModel.recentScanForShare(cacheId)
+            if (scan == null) {
+                showToast(R.string.share_failed)
+                return@launch
+            }
+            try {
+                if (!launchShareChooser(pdfShareIntent(this@MainActivity, scan, viewModel.currentSettings()))) {
+                    showToast(R.string.share_failed)
+                }
+            } catch (_: Exception) {
+                showToast(R.string.share_failed)
+            }
+        }
     }
 
     private fun shareCurrentImages() {

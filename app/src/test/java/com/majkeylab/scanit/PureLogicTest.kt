@@ -114,6 +114,40 @@ class PureLogicTest {
     }
 
     @Test
+    fun missingSavedRouteKeepsFreshLaunchScanFirst() {
+        assertEquals(RestoredRoute.Scanner, restoredRoute(null, null))
+    }
+
+    @Test
+    fun savedScannerRouteResumesScannerFlow() {
+        assertEquals(RestoredRoute.Scanner, restoredRoute("scanner", null))
+    }
+
+    @Test
+    fun malformedSavedRouteFallsBackToRecentWithoutLaunchingScanner() {
+        assertEquals(RestoredRoute.Recent, restoredRoute("unknown", "Scan_1"))
+    }
+
+    @Test
+    fun recentBackStackRequiresItsSavedCacheId() {
+        assertEquals(
+            RestoredRoute.RecentWithResultBack,
+            restoredRoute("recent_with_result_back", "Scan_1"),
+        )
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", null))
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", ""))
+    }
+
+    @Test
+    fun resultOpenedFromRecentRestoresOnlyWithItsSavedCacheId() {
+        assertEquals(
+            RestoredRoute.ResultWithRecentBack,
+            restoredRoute("result_with_recent_back", "Scan_1"),
+        )
+        assertEquals(RestoredRoute.Recent, restoredRoute("result_with_recent_back", null))
+    }
+
+    @Test
     fun albumNameIsTrimmedAndBlankFallsBack() {
         assertEquals("Rodinné skeny", normalizeAlbumName("  Rodinné skeny  "))
         assertEquals("Scan to PDF", normalizeAlbumName(" \t "))
