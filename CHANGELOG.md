@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Prepared the source-visible proprietary license for the first new release at `v1.2.0-beta.1` while preserving every historical MIT grant.
+- Removed cloud processing and app-owned network access from the public Google Play and GitHub variants.
+- Added a Recent scans dashboard for bounded, temporary working copies.
+- Added a static privacy, terms, support, and product site for GitHub Pages.
+- Updated Google Play listing and App Content/Data Safety worksheets for the public no-cloud build.
+
 ## [1.1.0-alpha.1] - 2026-08-07
 
 ### Changed
@@ -21,9 +31,11 @@ All notable changes are documented here.
 - JPEG/PDF persistence through MediaStore and the Storage Access Framework.
 - Automatic PDF saving enabled by default with a settings toggle.
 - PDF/image sharing, system printing, and configurable email subject/body.
-- Hidden advanced settings and optional experimental Gemini cleanup with encrypted user-owned key, explicit consent, immutable original, review, and separate `_AI` output.
 - Bounded cache retaining at most eight temporary scan directories.
 - Unit tests, Android lint, checksum-pinned Gradle wrapper, GitHub Actions, Dependabot, and local build/verification tools.
+
+Historical copies retain the license supplied with them. See
+[Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main

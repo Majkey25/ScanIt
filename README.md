@@ -1,134 +1,109 @@
 <h1 align="center">ScanIt</h1>
 
 <p align="center">
-  <strong>Scan → save → send.</strong><br>
+  <strong>Scan → save → share.</strong><br>
   A deliberately simple Android document scanner for people who do not want to manage files.
 </p>
 
 <p align="center">
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
   <a href="https://github.com/Majkey25/ScanIt/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt?include_prereleases&amp;sort=semver"></a>
-  <img alt="Android 15+" src="https://img.shields.io/badge/Android-15%2B-3DDC84?logo=android&amp;logoColor=white">
-  <img alt="Kotlin 2.2.10" src="https://img.shields.io/badge/Kotlin-2.2.10-7F52FF?logo=kotlin&amp;logoColor=white">
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-</p>
-
-<p align="center">
-  <img src="docs/images/promo.png" alt="ScanIt settings, scan result, and optional AI controls" width="100%">
+  <img alt="Android 15+" src="https://img.shields.io/badge/Android-15%2B-111111">
+  <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
 
 ## Why ScanIt exists
 
-Sending a scanned document should not require understanding folders, file managers, or export dialogs. Opening ScanIt launches the scanner directly. After capture, the result is ready to share as a PDF or images through Android's system share sheet.
+Sending a scanned document should not require understanding folders, file
+managers, or export dialogs. Open ScanIt and the scanner starts. Capture one or
+more pages, check the result, then share the PDF or images through Android.
 
-The monochrome interface follows the system language by default. English and Czech can also be selected in settings. Complete options stay behind the gear icon; experimental cloud AI stays under **Advanced** and is off by default.
+The interface is monochrome and follows the system language by default. English
+and Czech can also be selected in Settings. Less common choices stay out of the
+main scanning path.
 
-ScanIt was built with AI-assisted coding and design. The source, builds, and real-device workflows were reviewed and tested by its maintainer.
-
-## Interface
-
-Presentation images are based on the tested device workflow and were refined with OpenAI ImageGen for presentation. They use an original generated QA rhythm sheet; status bars are standardized to 12:12 and stripped of device-identifying icons.
-
-<p align="center">
-  <img src="docs/images/screenshots/settings.png" alt="ScanIt settings" width="45%">
-  <img src="docs/images/screenshots/result.png" alt="ScanIt scan result" width="45%">
-</p>
-
-<p align="center">
-  <img src="docs/images/screenshots/scanner-camera.png" alt="ML Kit camera scanning an original QA rhythm sheet for ScanIt" width="45%">
-  <img src="docs/images/screenshots/scanner-editor.png" alt="ML Kit scan editor opened by ScanIt" width="45%">
-</p>
-
-<p align="center">
-  <img src="docs/images/screenshots/advanced-ai.png" alt="ScanIt advanced optional AI settings" width="45%">
-</p>
+ScanIt was built with AI-assisted coding and design. The maintainer reviews the
+source, release artifacts, and real-device workflows.
 
 ## Features
 
-- Direct launch into Google ML Kit Document Scanner; no redundant home-screen button.
-- `SCANNER_MODE_FULL` for crop, perspective correction, rotation, filters, and document cleanup.
-- Single-page or multi-page scans with JPEG and PDF output.
-- JPEG pages saved to Gallery and PDFs saved to Downloads by default.
-- Automatic PDF saving is on by default and can be disabled in settings; a temporary PDF remains available for sharing.
-- Optional user-selected PDF folder through Android's Storage Access Framework.
-- One-tap PDF/image sharing with attachment, subject, and message prepared.
-- System printing with page-range support.
-- Monochrome light/dark UI, system/English/Czech language selection, safe insets, and accessible touch targets.
-- No account, first-party analytics, ads, user-visible history, database, or broad storage permission.
-- Optional Gemini image cleanup with explicit consent, encrypted user-owned API key, immutable original, and before/after review.
+- Opens Google ML Kit Document Scanner directly; no redundant landing-page tap.
+- Automatic capture, edge detection, crop, rotation, filters, shadow removal, and cleanup through the ML Kit scanner flow.
+- Single-page and multi-page PDF/JPEG output.
+- Recent scans dashboard for up to eight bounded temporary working copies.
+- Automatic PDF and Gallery saving, each configurable in Settings.
+- Optional PDF destination selected with Android's Storage Access Framework.
+- PDF/image sharing with configurable email subject and message.
+- Android system printing with page-range support.
+- Monochrome light/dark UI and system/English/Czech language selection.
+- No account, ads, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
+- No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
 
 ## Install
 
-1. Open the [GitHub stable release](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1).
-2. Download `ScanIt-v1.0.0-preview.1.apk`.
-3. Allow installation from the app used to download the file, then open the APK.
+The current GitHub stable download is the immutable historical
+[`v1.0.0-preview.1`](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1)
+APK. It keeps the MIT license and signature that accompanied that release. The
+new public `1.2.0-beta.1` Google Play and GitHub variants are being prepared and
+are not represented by that older APK.
 
-The GitHub stable APK is the frozen legacy sideload build. It remains debug-signed so its existing artifact and checksum do not change. The experimental Google Play build uses the permanent `com.majkeylab.scanit` package and installs separately; settings, API keys, and temporary cache do not migrate between the two. Files already saved to Gallery, Downloads, or a selected folder remain.
+Requirements for the current public code:
 
-Requirements:
-
-- Android 15 or newer (`minSdk 35`, `targetSdk 36`)
-- At least 1.7 GB total device RAM, required by ML Kit Document Scanner
-- Google Play services for the scanner module
-- Internet on first scanner use if Google Play services needs to download that module
+- Android 15 or newer (`minSdk 35`, `targetSdk 36`).
+- At least 1.7 GB total device RAM, required by ML Kit Document Scanner.
+- Google Play services for the scanner module.
+- A connection when Google Play services needs to download or update the scanner module.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A["Launch ML Kit scanner"] --> B["Private bounded cache"]
-    B --> C["Gallery + PDF"]
-    B --> D["Sharesheet / Print"]
-    B -. "optional" .-> E["Gemini AI copy"]
-    E --> F["Original vs AI review"]
-    F -->|Accept| G["Separate _AI files"]
-    F -->|Discard| B
+    A["Open ScanIt"] --> B["ML Kit scanner"]
+    B --> C["Bounded local working copy"]
+    C --> D["PDF / Gallery"]
+    C --> E["Share / Print"]
+    C --> F["Recent scans"]
 ```
 
-The original ML Kit scan is never overwritten. ScanIt retains at most eight temporary scan directories so an already-open mail draft does not immediately lose its attachment. It has no user-visible document history or document database.
-
-<details>
-<summary><strong>Advanced AI mode</strong></summary>
-
-AI cleanup is experimental, optional, disabled by default, and has not been live-verified with a Gemini API key. The user must enable it, accept the cloud-transfer warning, and provide a key. Every page in the current scan is sent to Gemini sequentially. The key is encrypted with Android Keystore, and requests use the stable Interactions API with `store=false`.
-
-Generated output can alter text, numbers, signatures, stamps, or layout. ScanIt therefore requires an explicit original/AI review before saving separate `_AI` files. A public Google Play release should replace the client-side key path with Firebase AI Logic plus App Check/Play Integrity or a backend.
-
-</details>
+The scanner processes document content on-device. ScanIt keeps at most eight
+temporary scan directories for Result and Recent scans. Android may clear these
+working copies. PDFs saved to Downloads or a selected folder and images saved to
+Gallery remain until the user deletes them.
 
 ## Privacy and security
 
-- Local copies are saved to Gallery and Downloads by default; sharing, printing, and optional AI transfer require an explicit action.
-- ScanIt includes no first-party analytics or advertising. Google Play services and ML Kit may collect diagnostic, usage, device, app, identifier, and API-configuration data described in [Google's ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure).
-- ScanIt does not send scanned content to its own server.
-- FileProvider exposes only the bounded `cache/share/` directory and grants read access to selected files.
-- No `CAMERA`, legacy storage, contacts, account, location, or notification permission is requested.
-- Android backup and device transfer are disabled for app data.
-- Gemini requests use explicit connect/read timeouts, do not follow redirects, and disconnect on cancellation.
+- The public Google Play and GitHub variants contain no app-owned `INTERNET` permission.
+- Google Play services and ML Kit may process diagnostic and usage telemetry; scanned input remains on-device according to Google's ML Kit documentation.
+- ScanIt does not send scanned content to a maintainer-operated server.
+- File sharing uses scoped content URIs with read access granted to the selected receiving app.
+- Android backup and device transfer are disabled for ScanIt app data.
+- Sharing and printing hand a user-selected document to another app or service under that recipient's terms.
 
-Read the complete [privacy notes](PRIVACY.md) and [security policy](SECURITY.md).
+Read the [Privacy Policy source](docs/privacy.html),
+[security policy](SECURITY.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
+The public policy deployment target is
+`https://majkey25.github.io/ScanIt/privacy.html`.
 
 ## Build
 
 JDK 17 and Android SDK 36 are required.
 
-```bash
-./gradlew clean :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease
-```
-
-Windows users can run the checked helpers:
-
 ```powershell
-.\tools\build.ps1
-.\tools\verify-apk.ps1 .\app\build\outputs\apk\release\app-release.apk
+.\gradlew.bat :app:testInternalDebugUnitTest :app:lintInternalDebug :app:assembleInternalDebug
+.\gradlew.bat :app:lintGithubRelease :app:assembleGithubRelease
+.\gradlew.bat :app:lintPlayRelease :app:bundlePlayRelease
 ```
 
-| CLI tool | Purpose |
-|---|---|
-| `tools/build.ps1` | Runs the full local test, lint, APK, and AAB gate with JDK 17 validation. |
-| `tools/verify-apk.ps1` | Verifies the non-debuggable signed Play package, 16 KiB alignment, signature, and SHA-256. |
+The public distributions share the same app features:
 
-Release signing reads the ignored local `keystore.properties` file when present. Signing keys and passwords never enter Git. GitHub Actions runs the test/lint/build gate with unsigned CI artifacts on every push to `main` and every pull request. Dependabot checks Gradle and Actions dependencies weekly.
+| Distribution | Application ID | Artifact |
+|---|---|---|
+| Google Play | `com.majkeylab.scanit` | AAB |
+| GitHub | `com.majkeylab.scanit.github` | APK |
+
+The separate internal debug flavor is not a public release artifact. Release
+signing reads an ignored local `keystore.properties` file; signing keys and
+passwords must never enter Git.
 
 ## Technical choices
 
@@ -140,30 +115,36 @@ Release signing reads the ignored local `keystore.properties` file when present.
 | PDF | Android `PdfDocument` / `PrintedPdfDocument` |
 | Sharing | Android Sharesheet + scoped `FileProvider` |
 | Settings | `SharedPreferences` |
-| Secret storage | AES-GCM key held by Android Keystore |
-| Optional AI | Gemini Interactions API, `store=false` |
 
 ## Known limits
 
-- Android decides which compatible apps appear in the Sharesheet; it cannot guarantee an email-only list while also reliably attaching the file.
-- Android 17 has no `maxSdk` block and should remain installable, but it has not been device-tested yet.
-- The experimental Gemini workflow has not been live-verified with an API key.
-- The current Google Play build is an internal alpha and is not a public production release.
-- Hard process termination during multi-file AI publication can leave an already-published `_AI` file; the immutable original remains safe.
-- The repository does not contain a production signing key or Gemini API key.
+- Android decides which compatible apps appear in the Sharesheet.
+- Recent scans are temporary working copies, not a permanent document library.
+- Android 17 has no `maxSdk` restriction but has not yet been device-tested.
+- Google Play publication is still in testing; do not describe the app as a production Play release yet.
+- The repository does not contain production signing material.
 
 ## Feedback
 
-Suggestions and reproducible bug reports are welcome through [GitHub Issues](https://github.com/Majkey25/ScanIt/issues) or at [majkeylab@gmail.com](mailto:majkeylab@gmail.com). Never send private documents, API keys, or other sensitive data.
+Suggestions and reproducible bug reports are welcome through
+[GitHub Issues](https://github.com/Majkey25/ScanIt/issues) or
+[majkeylab@gmail.com](mailto:majkeylab@gmail.com). Never send private documents,
+credentials, or device identifiers. Code pull requests are not currently
+accepted; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Current material is source-visible under the [ScanIt proprietary license](LICENSE),
+not open source. Unmodified official binaries may be installed and used under
+that license. Earlier copies distributed under MIT remain MIT-licensed; see
+[Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
-## ☕ Support Me
+## Support
 
-If you like what I build and want to support my work:
-<br>
-<a href="https://www.buymeacoffee.com/majkey">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me a Coffee">
-</a>
+ScanIt is free to use. If it saves you time, an optional tip helps fund future
+maintenance. It does not unlock features or change support priority.
+
+<p>
+  <a href="https://www.buymeacoffee.com/majkey">Buy Me a Coffee</a><br>
+  <a href="https://www.buymeacoffee.com/majkey"><img src="docs/assets/bmc_qr.png" width="112" height="112" alt="QR code for the Majkey Buy Me a Coffee page"></a>
+</p>
