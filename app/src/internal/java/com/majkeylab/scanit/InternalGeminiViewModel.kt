@@ -22,11 +22,16 @@ import kotlinx.coroutines.withContext
 
 private const val INTERNAL_GEMINI_MAX_SOURCE_BYTES = 32L * 1024L * 1024L
 private const val INTERNAL_GEMINI_INPUT_FILE = "internal-gemini-input"
+private const val INTERNAL_GEMINI_MAX_RESPONSE_DIMENSION = 8192
+private const val INTERNAL_GEMINI_MAX_RESPONSE_PIXELS = 32L * 1024L * 1024L
+private const val INTERNAL_GEMINI_MAX_PREVIEW_DIMENSION = 2048
+private const val INTERNAL_GEMINI_MAX_PREVIEW_PIXELS = 4L * 1024L * 1024L
 
 internal data class InternalGeminiState(
     val selectedImage: Uri? = null,
     val preview: Bitmap? = null,
     val keyStored: Boolean = false,
+    val keyClearAvailable: Boolean = false,
     val busy: Boolean = false,
     val message: Int? = null,
 )
@@ -51,6 +56,22 @@ internal fun copyInternalGeminiInput(
     }
 }
 
+@Throws(IOException::class)
+internal fun internalGeminiPreviewSampleSize(width: Int, height: Int): Int {
+    if (width <= 0 || height <= 0) {
+        throw IOException("Gemini preview dimensions are invalid")
+    }
+    val pixels = width.toLong() * height.toLong()
+    if (
+        width > INTERNAL_GEMINI_MAX_RESPONSE_DIMENSION ||
+            height > INTERNAL_GEMINI_MAX_RESPONSE_DIMENSION ||
+            pixels > INTERNAL_GEMINI_MAX_RESPONSE_PIXELS
+    ) {
+        throw IOException("Gemini preview dimensions are too large")
+    }
+    return thumbnailSampleSize(width, height, INTERNAL_GEMINI_MAX_PREVIEW_DIMENSION)
+}
+
 internal class InternalGeminiViewModel(application: Application) : AndroidViewModel(application) {
     private val keyStore = InternalGeminiKeyStore(application)
     private val mutableState = MutableStateFlow(InternalGeminiState(busy = true))
@@ -60,12 +81,31 @@ internal class InternalGeminiViewModel(application: Application) : AndroidViewMo
         viewModelScope.launch {
             mutableState.value =
                 try {
-                    val stored = withContext(Dispatchers.IO) { keyStore.load() != null }
-                    InternalGeminiState(keyStored = stored)
+                    withContext(Dispatchers.IO) {
+                        val keyLoaded = keyStore.load() != null
+                        InternalGeminiState(
+                            keyStored = keyLoaded,
+                            keyClearAvailable =
+                                internalGeminiKeyCanClear(
+                                    keyLoaded = keyLoaded,
+                                    encryptedMaterialPresent =
+                                        keyLoaded || keyStore.hasEncryptedMaterial(),
+                                    loadFailed = false,
+                                ),
+                        )
+                    }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Exception) {
-                    InternalGeminiState(message = R.string.internal_gemini_key_error)
+                    InternalGeminiState(
+                        keyClearAvailable =
+                            internalGeminiKeyCanClear(
+                                keyLoaded = false,
+                                encryptedMaterialPresent = false,
+                                loadFailed = true,
+                            ),
+                        message = R.string.internal_gemini_key_error,
+                    )
                 }
         }
     }
@@ -129,8 +169,31 @@ internal class InternalGeminiViewModel(application: Application) : AndroidViewMo
                         inputFile = file
                         copySelectedImage(uri, file)
                         val jpeg = requestGeminiCleanup(file, apiKey)
-                        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-                            ?: throw IOException("Gemini preview could not be decoded")
+                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+                        val sampleSize =
+                            internalGeminiPreviewSampleSize(bounds.outWidth, bounds.outHeight)
+                        val preview =
+                            BitmapFactory.decodeByteArray(
+                                jpeg,
+                                0,
+                                jpeg.size,
+                                BitmapFactory.Options().apply {
+                                    inSampleSize = sampleSize
+                                    inScaled = false
+                                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                                },
+                            ) ?: throw IOException("Gemini preview could not be decoded")
+                        val previewPixels = preview.width.toLong() * preview.height.toLong()
+                        if (
+                            preview.width > INTERNAL_GEMINI_MAX_PREVIEW_DIMENSION ||
+                                preview.height > INTERNAL_GEMINI_MAX_PREVIEW_DIMENSION ||
+                                previewPixels > INTERNAL_GEMINI_MAX_PREVIEW_PIXELS
+                        ) {
+                            preview.recycle()
+                            throw IOException("Gemini preview allocation is too large")
+                        }
+                        preview
                     }
                 mutableState.value =
                     mutableState.value.copy(preview = preview, busy = false, message = null)
@@ -156,7 +219,12 @@ internal class InternalGeminiViewModel(application: Application) : AndroidViewMo
         viewModelScope.launch {
             try {
                 val stored = withContext(Dispatchers.IO) { operationBlock() }
-                mutableState.value = mutableState.value.copy(keyStored = stored, busy = false)
+                mutableState.value =
+                    mutableState.value.copy(
+                        keyStored = stored,
+                        keyClearAvailable = stored,
+                        busy = false,
+                    )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: Exception) {

@@ -35,6 +35,12 @@ internal fun normalizeInternalGeminiApiKey(value: String): String {
     return normalized
 }
 
+internal fun internalGeminiKeyCanClear(
+    keyLoaded: Boolean,
+    encryptedMaterialPresent: Boolean,
+    loadFailed: Boolean,
+): Boolean = keyLoaded || encryptedMaterialPresent || loadFailed
+
 internal class InternalGeminiKeyStore(context: Context) {
     private val preferences =
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -95,6 +101,12 @@ internal class InternalGeminiKeyStore(context: Context) {
             keyStore.deleteEntry(GEMINI_KEY_ALIAS)
         }
     }
+
+    @Throws(GeneralSecurityException::class)
+    fun hasEncryptedMaterial(): Boolean =
+        preferences.contains(KEY_GEMINI_CIPHERTEXT) ||
+            preferences.contains(KEY_GEMINI_IV) ||
+            androidKeyStore().containsAlias(GEMINI_KEY_ALIAS)
 
     @Throws(GeneralSecurityException::class)
     private fun getOrCreateKey(): SecretKey {

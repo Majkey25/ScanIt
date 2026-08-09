@@ -116,7 +116,7 @@ private fun InternalGeminiHarness(
                     }
                     OutlinedButton(
                         onClick = onClearKey,
-                        enabled = state.keyStored && !state.busy,
+                        enabled = state.keyClearAvailable && !state.busy,
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(stringResource(R.string.internal_gemini_delete_key))
