@@ -1,7 +1,9 @@
 package com.majkeylab.scanit
 
+import android.content.SharedPreferences
 import java.io.File
 import java.io.IOException
+import java.lang.reflect.Proxy
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
@@ -28,9 +30,75 @@ class PureLogicTest {
                 emailSubject = "Scanned document",
                 emailBody = "",
                 pdfTreeUri = null,
+                deletePdfAfterShare = false,
+                deleteImagesAfterShare = false,
             ),
             AppSettings(),
         )
+    }
+
+    @Test
+    fun recentDeleteChoicesUseOnlyExactDurableReferences() {
+        assertEquals(
+            listOf(RecentDeleteTarget.Pdf, RecentDeleteTarget.Images, RecentDeleteTarget.Both),
+            recentDeleteTargets(metadataValid = true, hasPdf = true, savedImageCount = 2),
+        )
+        assertEquals(
+            listOf(RecentDeleteTarget.Images),
+            recentDeleteTargets(metadataValid = true, hasPdf = false, savedImageCount = 1),
+        )
+        assertEquals(
+            listOf(RecentDeleteTarget.RemoveFromRecent),
+            recentDeleteTargets(metadataValid = false, hasPdf = true, savedImageCount = 2),
+        )
+    }
+
+    @Test
+    fun outputDeleteReductionRemovesDeletedAndAbsentRefsButKeepsFailures() {
+        val metadata =
+            outputMetadata(
+                images =
+                    listOf(
+                        ImageOutputRef(1, "content://media/external/images/media/1"),
+                        ImageOutputRef(2, "content://media/external/images/media/2"),
+                    ),
+            ).copy(
+                pdf = PdfOutputRef("content://media/external/downloads/3", null),
+            )
+
+        val reduced =
+            reduceOutputDeletion(
+                metadata,
+                RecentDeleteTarget.Both,
+                mapOf(
+                    "content://media/external/downloads/3" to OutputDeleteStatus.Absent,
+                    "content://media/external/images/media/1" to OutputDeleteStatus.Deleted,
+                    "content://media/external/images/media/2" to OutputDeleteStatus.Failed,
+                ),
+            )
+
+        assertEquals(null, reduced.metadata.pdf)
+        assertEquals(listOf(metadata.images[1]), reduced.metadata.images)
+        assertFalse(reduced.allRequestedRemoved)
+    }
+
+    @Test
+    fun deleteAfterShareSettingsRoundTripAndWrongTypesFailClosed() {
+        val (preferences, values) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val enabled =
+            AppSettings(deletePdfAfterShare = true, deleteImagesAfterShare = true)
+
+        store.save(enabled)
+
+        assertTrue(store.load().deletePdfAfterShare)
+        assertTrue(store.load().deleteImagesAfterShare)
+
+        values["delete_pdf_after_share"] = "wrong"
+        values["delete_images_after_share"] = 1
+
+        assertFalse(store.load().deletePdfAfterShare)
+        assertFalse(store.load().deleteImagesAfterShare)
     }
 
     @Test
@@ -909,6 +977,43 @@ class PureLogicTest {
             savedPdf = null,
             outputMetadataValid = outputMetadataValid,
         )
+
+    private fun inMemoryPreferences(): Pair<SharedPreferences, MutableMap<String, Any?>> {
+        val values = mutableMapOf<String, Any?>()
+        lateinit var editor: SharedPreferences.Editor
+        editor =
+            Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences.Editor::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "putBoolean", "putString" -> editor.also { values[args!![0] as String] = args[1] }
+                    "remove" -> editor.also { values.remove(args!![0] as String) }
+                    "apply" -> null
+                    "commit" -> true
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as SharedPreferences.Editor
+        val preferences =
+            Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences::class.java),
+            ) { _, method, args ->
+                val key = args?.firstOrNull() as? String
+                when (method.name) {
+                    "getBoolean" ->
+                        values[key]?.let { it as? Boolean ?: throw ClassCastException() }
+                            ?: args!![1] as Boolean
+                    "getString" ->
+                        values[key]?.let { it as? String ?: throw ClassCastException() }
+                            ?: args!![1] as String?
+                    "contains" -> values.containsKey(key)
+                    "edit" -> editor
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as SharedPreferences
+        return preferences to values
+    }
 
     private companion object {
         const val CACHE_ID = "Scan_2026-08-09_12-12-00"

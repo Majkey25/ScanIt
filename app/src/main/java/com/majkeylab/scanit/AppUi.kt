@@ -763,6 +763,10 @@ private fun SettingsScreen(
     var allowGallery by rememberSaveable { mutableStateOf(settings.allowGallery) }
     var emailSubject by rememberSaveable { mutableStateOf(settings.emailSubject) }
     var emailBody by rememberSaveable { mutableStateOf(settings.emailBody) }
+    var deletePdfAfterShare by rememberSaveable { mutableStateOf(settings.deletePdfAfterShare) }
+    var deleteImagesAfterShare by rememberSaveable {
+        mutableStateOf(settings.deleteImagesAfterShare)
+    }
     var pdfTreeUri by rememberSaveable { mutableStateOf(settings.pdfTreeUri) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
@@ -929,6 +933,27 @@ private fun SettingsScreen(
             }
             item { SectionTitle(stringResource(R.string.sharing)) }
             item {
+                SettingsSwitch(
+                    label = stringResource(R.string.delete_pdf_after_share),
+                    checked = deletePdfAfterShare,
+                    onCheckedChange = { deletePdfAfterShare = it },
+                )
+            }
+            item {
+                SettingsSwitch(
+                    label = stringResource(R.string.delete_images_after_share),
+                    checked = deleteImagesAfterShare,
+                    onCheckedChange = { deleteImagesAfterShare = it },
+                )
+            }
+            item {
+                Text(
+                    stringResource(R.string.delete_after_share_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
                 OutlinedTextField(
                     value = emailSubject,
                     onValueChange = { emailSubject = it },
@@ -961,6 +986,8 @@ private fun SettingsScreen(
                                     emailSubject = emailSubject,
                                     emailBody = emailBody,
                                     pdfTreeUri = pdfTreeUri,
+                                    deletePdfAfterShare = deletePdfAfterShare,
+                                    deleteImagesAfterShare = deleteImagesAfterShare,
                                 ),
                             )
                             onClose()

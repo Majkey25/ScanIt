@@ -63,6 +63,9 @@
     <string name="multiple_pages">Multiple pages in one document</string>
     <string name="allow_gallery">Allow import from Gallery</string>
     <string name="sharing">Sharing</string>
+    <string name="delete_pdf_after_share">Delete saved PDF after sharing</string>
+    <string name="delete_images_after_share">Delete saved images after sharing</string>
+    <string name="delete_after_share_hint">Files are deleted only after you choose a sharing app. Opening or closing the share menu does not delete them.</string>
     <string name="email_subject">Default email subject</string>
     <string name="email_body">Default message text</string>
     <string name="save_settings">Save settings</string>

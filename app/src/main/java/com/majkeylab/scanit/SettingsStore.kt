@@ -13,6 +13,8 @@ private const val KEY_MULTIPAGE = "multipage"
 private const val KEY_ALLOW_GALLERY = "allow_gallery"
 private const val KEY_EMAIL_SUBJECT = "email_subject"
 private const val KEY_EMAIL_BODY = "email_body"
+private const val KEY_DELETE_PDF_AFTER_SHARE = "delete_pdf_after_share"
+private const val KEY_DELETE_IMAGES_AFTER_SHARE = "delete_images_after_share"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
 private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
@@ -64,9 +66,15 @@ internal inline fun <T> readPreferenceOrDefault(default: T, read: () -> T): T =
         default
     }
 
-internal class SettingsStore(private val context: Context) {
-    private val preferences: SharedPreferences =
-        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+internal class SettingsStore(
+    private val preferences: SharedPreferences,
+    private val defaultEmailSubject: String,
+) {
+    constructor(context: Context) : this(
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
+        context.getString(R.string.default_email_subject),
+    )
+
     @Volatile
     private var pendingPdfTreeUriValue =
         readPreferenceOrDefault<String?>(null) {
@@ -74,8 +82,7 @@ internal class SettingsStore(private val context: Context) {
     }
 
     fun load(): AppSettings {
-        val defaults =
-            AppSettings(emailSubject = context.getString(R.string.default_email_subject))
+        val defaults = AppSettings(emailSubject = defaultEmailSubject)
         return AppSettings(
             savePdf = readPreferenceOrDefault(defaults.savePdf) {
                 preferences.getBoolean(KEY_SAVE_PDF, defaults.savePdf)
@@ -106,6 +113,15 @@ internal class SettingsStore(private val context: Context) {
             pdfTreeUri = readPreferenceOrDefault(defaults.pdfTreeUri) {
                 preferences.getString(KEY_PDF_TREE_URI, defaults.pdfTreeUri)
             },
+            deletePdfAfterShare = readPreferenceOrDefault(defaults.deletePdfAfterShare) {
+                preferences.getBoolean(KEY_DELETE_PDF_AFTER_SHARE, defaults.deletePdfAfterShare)
+            },
+            deleteImagesAfterShare = readPreferenceOrDefault(defaults.deleteImagesAfterShare) {
+                preferences.getBoolean(
+                    KEY_DELETE_IMAGES_AFTER_SHARE,
+                    defaults.deleteImagesAfterShare,
+                )
+            },
         )
     }
 
@@ -120,6 +136,8 @@ internal class SettingsStore(private val context: Context) {
             .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
             .putString(KEY_EMAIL_BODY, settings.emailBody)
             .putString(KEY_PDF_TREE_URI, settings.pdfTreeUri)
+            .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
+            .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
             .putString(KEY_PENDING_PDF_TREE_URI, pendingPdfTreeUriValue)
             .apply()
     }

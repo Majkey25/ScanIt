@@ -20,7 +20,69 @@ internal data class AppSettings(
     val emailSubject: String = "Scanned document",
     val emailBody: String = "",
     val pdfTreeUri: String? = null,
+    val deletePdfAfterShare: Boolean = false,
+    val deleteImagesAfterShare: Boolean = false,
 )
+
+internal enum class RecentDeleteTarget {
+    Pdf,
+    Images,
+    Both,
+    RemoveFromRecent,
+}
+
+internal enum class OutputDeleteStatus {
+    Deleted,
+    Absent,
+    Failed,
+}
+
+internal data class OutputDeleteReduction(
+    val metadata: OutputMetadata,
+    val allRequestedRemoved: Boolean,
+)
+
+internal fun recentDeleteTargets(
+    metadataValid: Boolean,
+    hasPdf: Boolean,
+    savedImageCount: Int,
+): List<RecentDeleteTarget> {
+    if (!metadataValid || (!hasPdf && savedImageCount == 0)) {
+        return listOf(RecentDeleteTarget.RemoveFromRecent)
+    }
+    return when {
+        hasPdf && savedImageCount > 0 ->
+            listOf(RecentDeleteTarget.Pdf, RecentDeleteTarget.Images, RecentDeleteTarget.Both)
+        hasPdf -> listOf(RecentDeleteTarget.Pdf)
+        else -> listOf(RecentDeleteTarget.Images)
+    }
+}
+
+internal fun reduceOutputDeletion(
+    metadata: OutputMetadata,
+    target: RecentDeleteTarget,
+    outcomes: Map<String, OutputDeleteStatus>,
+): OutputDeleteReduction {
+    require(target != RecentDeleteTarget.RemoveFromRecent) { "No durable output was selected" }
+    val deletePdf = target == RecentDeleteTarget.Pdf || target == RecentDeleteTarget.Both
+    val deleteImages = target == RecentDeleteTarget.Images || target == RecentDeleteTarget.Both
+    val requestedUris =
+        buildList {
+            if (deletePdf) metadata.pdf?.let { add(it.uri) }
+            if (deleteImages) metadata.images.forEach { add(it.uri) }
+        }
+    require(requestedUris.isNotEmpty()) { "Selected durable output is unavailable" }
+    require(outcomes.keys == requestedUris.toSet()) { "Delete results do not match selected outputs" }
+    fun removed(uri: String) = outcomes.getValue(uri) != OutputDeleteStatus.Failed
+    return OutputDeleteReduction(
+        metadata =
+            metadata.copy(
+                pdf = metadata.pdf?.takeUnless { deletePdf && removed(it.uri) },
+                images = metadata.images.filterNot { deleteImages && removed(it.uri) },
+            ),
+        allRequestedRemoved = outcomes.values.none { it == OutputDeleteStatus.Failed },
+    )
+}
 
 internal fun localizedDefaultEmailSubject(
     current: String,

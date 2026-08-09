@@ -65,6 +65,9 @@
     <string name="multiple_pages">Více stránek v jednom dokumentu</string>
     <string name="allow_gallery">Povolit import z Galerie</string>
     <string name="sharing">Sdílení</string>
+    <string name="delete_pdf_after_share">Po sdílení smazat uložené PDF</string>
+    <string name="delete_images_after_share">Po sdílení smazat uložené obrázky</string>
+    <string name="delete_after_share_hint">Soubory se smažou až po výběru aplikace pro sdílení. Pouhé otevření nebo zavření nabídky je nesmaže.</string>
     <string name="email_subject">Výchozí předmět e-mailu</string>
     <string name="email_body">Výchozí text zprávy</string>
     <string name="save_settings">Uložit nastavení</string>
