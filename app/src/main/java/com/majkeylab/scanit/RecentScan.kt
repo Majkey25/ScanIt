@@ -10,4 +10,7 @@ internal data class RecentScan(
     val pageCount: Int,
     val pdfBytes: Long,
     val firstPage: File,
+    val entryId: String? = null,
+    val hasSavedPdf: Boolean = false,
+    val savedImageCount: Int = 0,
 )

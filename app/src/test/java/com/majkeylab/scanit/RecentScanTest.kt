@@ -34,6 +34,96 @@ class RecentScanTest {
         assertEquals("${id}_01.jpg", recent.firstPage.name)
         assertEquals((1..10).map { scanPageFileName(id, it) }, cached.pages.map(File::getName))
         assertEquals(scanPdfFileName(id), cached.pdf.name)
+        assertNull(recent.entryId)
+        assertFalse(recent.hasSavedPdf)
+        assertEquals(0, recent.savedImageCount)
+        assertNull(cached.entryId)
+    }
+
+    @Test
+    fun validMetadataControlsRecentTimeAndExposesOnlyOutputKindKnowledge() =
+        withShareRoot { root ->
+            val id = "Scan_with_outputs"
+            val directory = createEntry(root, id, pageCount = 2)
+            assertTrue(directory.setLastModified(999L))
+            val entryId = "123e4567-e89b-12d3-a456-426614174000"
+            initializeOutputMetadata(directory, id, 2, 100L, entryId)
+            rewriteOutputMetadata(directory, id, entryId, 2) {
+                it.copy(
+                    pdf = PdfOutputRef("content://media/downloads/1", null),
+                    images = listOf(ImageOutputRef(1, "content://media/images/1")),
+                )
+            }
+
+            val recent = listRecentScansInRoot(root).single()
+            val cached = openCachedScanInRoot(root, id)!!
+
+            assertEquals(Instant.ofEpochMilli(100L), recent.createdAt)
+            assertEquals(entryId, recent.entryId)
+            assertTrue(recent.hasSavedPdf)
+            assertEquals(1, recent.savedImageCount)
+            assertEquals(entryId, cached.entryId)
+        }
+
+    @Test
+    fun fixedMetadataTempCompanionDoesNotInvalidateCoreEntry() = withShareRoot { root ->
+        val id = "Scan_with_temp"
+        val directory = createEntry(root, id)
+        File(directory, OUTPUT_METADATA_TEMP_FILE_NAME).writeText("interrupted rewrite")
+
+        assertEquals(id, openCachedScanInRoot(root, id)?.baseName)
+        assertEquals(listOf(id), listRecentScansInRoot(root).map(RecentScan::cacheId))
+    }
+
+    @Test
+    fun corruptMetadataKeepsCoreEntryOpenWithUnknownOutputs() = withShareRoot { root ->
+        val id = "Scan_corrupt_outputs"
+        val directory = createEntry(root, id)
+        File(directory, OUTPUT_METADATA_FILE_NAME).writeText("not json")
+
+        val recent = listRecentScansInRoot(root).single()
+        val cached = openCachedScanInRoot(root, id)!!
+
+        assertNull(recent.entryId)
+        assertFalse(recent.hasSavedPdf)
+        assertEquals(0, recent.savedImageCount)
+        assertNull(cached.entryId)
+    }
+
+    @Test
+    fun everyInvalidMetadataVariantKeepsItsCoreEntryOpen() = withShareRoot { root ->
+        val variants =
+            listOf(
+                "unknown" to
+                    """{"version":2,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_unknown","createdAtEpochMs":1,"images":[]}"""
+                        .toByteArray(),
+                "duplicate" to
+                    """{"version":1,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_duplicate","createdAtEpochMs":1,"images":[{"page":1,"uri":"content://media/images/1"},{"page":1,"uri":"content://media/images/2"}]}"""
+                        .toByteArray(),
+                "out_of_range" to
+                    """{"version":1,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_out_of_range","createdAtEpochMs":1,"images":[{"page":2,"uri":"content://media/images/2"}]}"""
+                        .toByteArray(),
+                "cache_mismatch" to
+                    """{"version":1,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_other","createdAtEpochMs":1,"images":[]}"""
+                        .toByteArray(),
+                "entry_mismatch" to
+                    """{"version":1,"entryId":"not-a-uuid","cacheId":"Scan_entry_mismatch","createdAtEpochMs":1,"images":[]}"""
+                        .toByteArray(),
+                "oversize" to ByteArray(MAX_OUTPUT_METADATA_BYTES + 1),
+            )
+        variants.forEach { (suffix, bytes) ->
+            val id = "Scan_$suffix"
+            File(createEntry(root, id), OUTPUT_METADATA_FILE_NAME).writeBytes(bytes)
+        }
+
+        val listed = listRecentScansInRoot(root).associateBy(RecentScan::cacheId)
+
+        assertEquals(variants.size, listed.size)
+        variants.forEach { (suffix, _) ->
+            val id = "Scan_$suffix"
+            assertNull(listed.getValue(id).entryId)
+            assertNull(openCachedScanInRoot(root, id)?.entryId)
+        }
     }
 
     @Test
@@ -168,7 +258,27 @@ class RecentScanTest {
         assertFalse(pending.exists())
         assertTrue(finalDirectory.isDirectory)
         assertEquals(finalId, cached.baseName)
+        assertTrue(cached.entryId != null)
+        assertTrue(File(finalDirectory, OUTPUT_METADATA_FILE_NAME).isFile)
         assertEquals(listOf(finalId), listRecentScansInRoot(root).map(RecentScan::cacheId))
+    }
+
+    @Test
+    fun pruningNeverDeletesDurableOutputsOutsideTheCache() = withShareRoot { root ->
+        val durableOutput = File(root.parentFile, "durable-output.pdf").apply {
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        try {
+            createEntry(root, "Scan_old").apply { assertTrue(setLastModified(1L)) }
+            createEntry(root, "Scan_new").apply { assertTrue(setLastModified(2L)) }
+
+            listRecentScansInRoot(root, maxEntries = 1)
+
+            assertTrue(durableOutput.isFile)
+            assertEquals(3L, durableOutput.length())
+        } finally {
+            assertTrue(durableOutput.delete())
+        }
     }
 
     @Test

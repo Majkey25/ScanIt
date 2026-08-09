@@ -36,13 +36,21 @@ internal data class CachedScan(
     val baseName: String,
     val pages: List<File>,
     val pdf: File,
+    val entryId: String? = null,
 )
 
 internal data class SavedScan(
     val cached: CachedScan,
     val galleryPages: List<Uri>,
     val savedPdf: Uri?,
+    val savedPdfTree: Uri? = null,
     val warnings: List<UiMessage> = emptyList(),
+)
+
+internal data class SavedPdfOutput(
+    val uri: Uri,
+    val treeUri: Uri?,
+    val warning: UiMessage?,
 )
 
 internal enum class RestoredRoute {

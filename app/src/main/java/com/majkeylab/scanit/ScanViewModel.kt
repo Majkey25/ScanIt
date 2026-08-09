@@ -416,6 +416,7 @@ internal class ScanViewModel(
                 var cached: CachedScan? = null
                 var galleryPages: List<Uri> = emptyList()
                 var savedPdfUri: Uri? = null
+                var savedPdfTreeUri: Uri? = null
                 var completedResult: ScreenState.Result? = null
                 try {
                     val result =
@@ -440,13 +441,13 @@ internal class ScanViewModel(
                                 try {
                                     val savedPdf =
                                         storage.savePdf(
-                                            cachedScan.pdf,
-                                            cachedScan.baseName,
+                                            cachedScan,
                                             settings.albumName,
                                             settings.pdfTreeUri,
                                         )
-                                    savedPdfUri = savedPdf.first
-                                    savedPdf.second?.let(warnings::add)
+                                    savedPdfUri = savedPdf.uri
+                                    savedPdfTreeUri = savedPdf.treeUri
+                                    savedPdf.warning?.let(warnings::add)
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
                                 } catch (_: Exception) {
@@ -460,6 +461,7 @@ internal class ScanViewModel(
                                             cached = cachedScan,
                                             galleryPages = galleryPages,
                                             savedPdf = savedPdfUri,
+                                            savedPdfTree = savedPdfTreeUri,
                                             warnings = warnings,
                                         ),
                                     thumbnail = thumbnail,
@@ -723,10 +725,10 @@ internal class ScanViewModel(
         if (!isSafeActiveResultCacheId(cacheId)) return null
         return try {
             withContext(Dispatchers.IO) {
-                val cached = storage.openCachedScan(cacheId) ?: return@withContext null
-                val thumbnail = storage.loadThumbnail(cached.pages.first())
+                val saved = storage.openSavedScan(cacheId) ?: return@withContext null
+                val thumbnail = storage.loadThumbnail(saved.cached.pages.first())
                 ScreenState.Result(
-                    scan = SavedScan(cached, galleryPages = emptyList(), savedPdf = null),
+                    scan = saved,
                     thumbnail = thumbnail,
                 )
             }
