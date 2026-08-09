@@ -61,51 +61,31 @@ internal enum class SavedOutputKind {
 }
 
 internal fun saveNowTargets(
-    metadata: OutputMetadata?,
-    expectedCacheId: String,
-    expectedEntryId: String,
+    pdfMissing: Boolean,
+    savedImageCount: Int,
     pageCount: Int,
 ): List<SaveNowTarget> {
-    val exact =
-        validatedSaveNowMetadata(metadata, expectedCacheId, expectedEntryId, pageCount)
-            ?: return emptyList()
-    return missingSaveNowTargets(exact.pdf == null, exact.images.isEmpty())
+    if (pageCount <= 0 || savedImageCount !in 0..pageCount) return emptyList()
+    return missingSaveNowTargets(pdfMissing, savedImageCount == 0)
 }
 
 internal fun saveNowTargets(scan: SavedScan): List<SaveNowTarget> {
     if (!scan.outputMetadataValid || scan.cached.entryId == null) return emptyList()
-    val pageCount = scan.cached.pages.size
-    if (
-        pageCount <= 0 ||
-            (scan.galleryPages.isNotEmpty() && scan.galleryPages.size != pageCount)
-    ) {
-        return emptyList()
-    }
-    return missingSaveNowTargets(scan.savedPdf == null, scan.galleryPages.isEmpty())
+    return saveNowTargets(
+        pdfMissing = scan.savedPdf == null,
+        savedImageCount = scan.galleryPages.size,
+        pageCount = scan.cached.pages.size,
+    )
 }
 
-internal fun validatedSaveNowMetadata(
+internal fun matchingOutputMetadata(
     metadata: OutputMetadata?,
     expectedCacheId: String,
     expectedEntryId: String,
-    pageCount: Int,
-): OutputMetadata? {
-    if (
-        metadata == null ||
-            pageCount <= 0 ||
-            metadata.cacheId != expectedCacheId ||
-            metadata.entryId != expectedEntryId
-    ) {
-        return null
+): OutputMetadata? =
+    metadata?.takeIf {
+        it.cacheId == expectedCacheId && it.entryId == expectedEntryId
     }
-    if (
-        metadata.images.isNotEmpty() &&
-            metadata.images.map(ImageOutputRef::page) != (1..pageCount).toList()
-    ) {
-        return null
-    }
-    return metadata
-}
 
 private fun missingSaveNowTargets(
     pdfMissing: Boolean,
@@ -122,12 +102,14 @@ private fun missingSaveNowTargets(
 internal fun mergeSaveNowWarnings(
     existing: List<UiMessage>,
     successful: Set<SavedOutputKind>,
+    reloadSucceeded: Boolean,
     added: List<UiMessage>,
 ): List<UiMessage> {
     val cleared =
         buildSet {
             if (SavedOutputKind.Pdf in successful) add(R.string.pdf_save_failed)
             if (SavedOutputKind.Images in successful) add(R.string.images_save_failed)
+            if (reloadSucceeded) add(R.string.state_update_failed)
         }
     return (existing.filterNot { it.resourceId in cleared } + added).distinct()
 }
@@ -137,6 +119,14 @@ internal data class ResultSaveAction(
     val entryId: String,
     val generation: Long,
 )
+
+internal fun matchingSavedScan(
+    scan: SavedScan?,
+    action: ResultSaveAction,
+): SavedScan? =
+    scan?.takeIf {
+        it.cached.baseName == action.cacheId && it.cached.entryId == action.entryId
+    }
 
 internal class ResultSaveGate {
     private var generation = 0L

@@ -582,12 +582,14 @@ internal class ScanViewModel(
                     ) {
                         return@launch
                     }
-                    val saved = result.scan
+                    val saved = matchingSavedScan(result.scan, action)
                     val warnings =
                         mergeSaveNowWarnings(
                             latest.scan.warnings,
                             result.successful,
-                            result.warnings +
+                            reloadSucceeded = saved != null,
+                            added =
+                                result.warnings +
                                 listOfNotNull(
                                     UiMessage(R.string.state_update_failed).takeIf { saved == null },
                                 ),

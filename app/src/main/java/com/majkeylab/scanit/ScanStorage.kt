@@ -49,6 +49,17 @@ internal fun <T> pendingMediaWrite(
         throw PendingMediaFailure(!rollback(exception), exception)
     }
 
+internal fun existingCompleteImagesForSave(
+    metadata: OutputMetadata,
+    pageCount: Int,
+): List<ImageOutputRef>? =
+    when {
+        pageCount <= 0 -> throw IOException("Scan has no pages")
+        metadata.images.isEmpty() -> null
+        metadata.images.map(ImageOutputRef::page) == (1..pageCount).toList() -> metadata.images
+        else -> throw IOException("Cached image output metadata is incomplete")
+    }
+
 internal data class FitRect(
     val left: Float,
     val top: Float,
@@ -769,8 +780,10 @@ internal class ScanStorage(
             val relativePath = "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(album)}"
             val saved = mutableListOf<Uri>()
             try {
-                val existing = requireCurrentOutputMetadata(cached).images
-                if (existing.isNotEmpty()) {
+                existingCompleteImagesForSave(
+                    requireCurrentOutputMetadata(cached),
+                    cached.pages.size,
+                )?.let { existing ->
                     return@synchronized existing.map { it.uri.toUri() }
                 }
                 cached.pages.forEachIndexed { index, source ->
@@ -788,9 +801,6 @@ internal class ScanStorage(
                         )
                 }
                 rewriteCachedOutputMetadata(cached) { metadata ->
-                    if (metadata.images.isNotEmpty()) {
-                        throw IOException("Images were already saved")
-                    }
                     metadata.copy(
                         images =
                             saved.mapIndexed { index, uri ->
@@ -877,9 +887,6 @@ internal class ScanStorage(
                     }
                 createdOutput = output
                 rewriteCachedOutputMetadata(cached) { metadata ->
-                    if (metadata.pdf != null) {
-                        throw IOException("PDF was already saved")
-                    }
                     metadata.copy(
                         pdf =
                             PdfOutputRef(
@@ -953,7 +960,7 @@ internal class ScanStorage(
         }
         val metadata =
             readOutputMetadata(File(root, cached.baseName), cached.baseName, cached.pages.size)
-        return validatedSaveNowMetadata(metadata, cached.baseName, entryId, cached.pages.size)
+        return matchingOutputMetadata(metadata, cached.baseName, entryId)
             ?: throw IOException("Cached scan output metadata is incomplete")
     }
 

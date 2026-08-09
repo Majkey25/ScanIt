@@ -319,68 +319,67 @@ class PureLogicTest {
 
     @Test
     fun saveNowTargetMatrixOnlyOffersMissingCompleteOutputs() {
-        val metadata = outputMetadata()
-
         assertEquals(
             listOf(SaveNowTarget.Pdf, SaveNowTarget.Images, SaveNowTarget.Both),
-            saveNowTargets(metadata, CACHE_ID, ENTRY_ID, pageCount = 2),
+            saveNowTargets(pdfMissing = true, savedImageCount = 0, pageCount = 2),
         )
         assertEquals(
             listOf(SaveNowTarget.Images),
-            saveNowTargets(
-                metadata.copy(pdf = PdfOutputRef("content://downloads/document/1", null)),
-                CACHE_ID,
-                ENTRY_ID,
-                pageCount = 2,
-            ),
+            saveNowTargets(pdfMissing = false, savedImageCount = 0, pageCount = 2),
         )
         assertEquals(
             listOf(SaveNowTarget.Pdf),
-            saveNowTargets(
-                metadata.copy(images = completeImageRefs()),
-                CACHE_ID,
-                ENTRY_ID,
-                pageCount = 2,
-            ),
+            saveNowTargets(pdfMissing = true, savedImageCount = 2, pageCount = 2),
         )
         assertEquals(
             emptyList<SaveNowTarget>(),
-            saveNowTargets(
-                metadata.copy(
-                    pdf = PdfOutputRef("content://downloads/document/1", null),
-                    images = completeImageRefs(),
-                ),
-                CACHE_ID,
-                ENTRY_ID,
-                pageCount = 2,
-            ),
+            saveNowTargets(pdfMissing = false, savedImageCount = 2, pageCount = 2),
         )
     }
 
     @Test
-    fun saveNowTargetsFailClosedForPartialLegacyOrWrongGenerationMetadata() {
+    fun partialImagesBlockImageTargetsButLeaveIndependentPdfAvailable() {
+        assertEquals(
+            listOf(SaveNowTarget.Pdf),
+            saveNowTargets(pdfMissing = true, savedImageCount = 1, pageCount = 2),
+        )
         assertEquals(
             emptyList<SaveNowTarget>(),
-            saveNowTargets(
-                outputMetadata(
-                    images = listOf(ImageOutputRef(1, "content://media/images/1")),
-                ),
-                CACHE_ID,
-                ENTRY_ID,
+            saveNowTargets(pdfMissing = false, savedImageCount = 1, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(pdfMissing = true, savedImageCount = 3, pageCount = 2),
+        )
+    }
+
+    @Test
+    fun saveNowTargetsFailClosedForLegacyOrUnreadableOutputMetadata() {
+        val legacy = savedScan(entryId = null, outputMetadataValid = false)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
+
+        assertEquals(emptyList<SaveNowTarget>(), saveNowTargets(legacy))
+        assertEquals(emptyList<SaveNowTarget>(), saveNowTargets(unreadable))
+    }
+
+    @Test
+    fun storagePolicyAllowsPdfButRejectsImageCreationForPartialMetadata() {
+        val partial =
+            outputMetadata(images = listOf(ImageOutputRef(1, "content://media/images/1")))
+
+        assertSame(partial, matchingOutputMetadata(partial, CACHE_ID, ENTRY_ID))
+        assertNull(matchingOutputMetadata(partial, "Scan_other", ENTRY_ID))
+        assertNull(matchingOutputMetadata(partial, CACHE_ID, OTHER_ENTRY_ID))
+        assertThrows(IOException::class.java) {
+            existingCompleteImagesForSave(partial, pageCount = 2)
+        }
+        assertNull(existingCompleteImagesForSave(outputMetadata(), pageCount = 2))
+        assertEquals(
+            completeImageRefs(),
+            existingCompleteImagesForSave(
+                outputMetadata(images = completeImageRefs()),
                 pageCount = 2,
             ),
-        )
-        assertEquals(
-            emptyList<SaveNowTarget>(),
-            saveNowTargets(null, CACHE_ID, ENTRY_ID, pageCount = 2),
-        )
-        assertEquals(
-            emptyList<SaveNowTarget>(),
-            saveNowTargets(outputMetadata(), "Scan_other", ENTRY_ID, pageCount = 2),
-        )
-        assertEquals(
-            emptyList<SaveNowTarget>(),
-            saveNowTargets(outputMetadata(), CACHE_ID, OTHER_ENTRY_ID, pageCount = 2),
         )
     }
 
@@ -420,12 +419,41 @@ class PureLogicTest {
             mergeSaveNowWarnings(
                 existing,
                 successful = setOf(SavedOutputKind.Pdf),
+                reloadSucceeded = false,
                 added = listOf(UiMessage(R.string.saf_fallback_warning)),
             ),
         )
         assertEquals(
             existing,
-            mergeSaveNowWarnings(existing, successful = emptySet(), added = emptyList()),
+            mergeSaveNowWarnings(
+                existing,
+                successful = emptySet(),
+                reloadSucceeded = false,
+                added = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun exactReloadClearsStaleStateFailureAndRejectsAnotherGeneration() {
+        val action = ResultSaveAction(CACHE_ID, ENTRY_ID, generation = 1L)
+        val exact = savedScan(entryId = ENTRY_ID, outputMetadataValid = true)
+        val replacement = savedScan(entryId = OTHER_ENTRY_ID, outputMetadataValid = true)
+
+        assertSame(exact, matchingSavedScan(exact, action))
+        assertNull(matchingSavedScan(replacement, action))
+        assertEquals(
+            emptyList<UiMessage>(),
+            mergeSaveNowWarnings(
+                existing =
+                    listOf(
+                        UiMessage(R.string.state_update_failed),
+                        UiMessage(R.string.pdf_save_failed),
+                    ),
+                successful = setOf(SavedOutputKind.Pdf),
+                reloadSucceeded = true,
+                added = emptyList(),
+            ),
         )
     }
 
@@ -861,6 +889,23 @@ class PureLogicTest {
         listOf(
             ImageOutputRef(1, "content://media/images/1"),
             ImageOutputRef(2, "content://media/images/2"),
+        )
+
+    private fun savedScan(
+        entryId: String?,
+        outputMetadataValid: Boolean,
+    ): SavedScan =
+        SavedScan(
+            cached =
+                CachedScan(
+                    baseName = CACHE_ID,
+                    pages = listOf(File("page-1.jpg"), File("page-2.jpg")),
+                    pdf = File("scan.pdf"),
+                    entryId = entryId,
+                ),
+            galleryPages = emptyList(),
+            savedPdf = null,
+            outputMetadataValid = outputMetadataValid,
         )
 
     private companion object {
