@@ -815,7 +815,7 @@ internal class ScanStorage(
         synchronized(shareCacheLock) {
             requireReadableFile(cached.pdf)
             val displayName = scanPdfFileName(cached.baseName)
-            var warning: UiMessage? = null
+            var failureWarning: UiMessage? = null
             var createdOutput: SavedPdfOutput? = null
             try {
                 val output =
@@ -825,18 +825,13 @@ internal class ScanStorage(
                         if (savedToTree != null) {
                             SavedPdfOutput(savedToTree, pdfTreeUri.toUri(), warning = null)
                         } else {
-                            warning =
-                                UiMessage(
-                                    if (cleanupFailed) {
-                                        R.string.saf_incomplete_warning
-                                    } else {
-                                        R.string.saf_fallback_warning
-                                    },
-                                )
+                            failureWarning =
+                                safFallbackWarning(cleanupFailed, savedToDownloads = false)
                             SavedPdfOutput(
                                 savePdfToDownloads(cached.pdf, displayName, album),
                                 treeUri = null,
-                                warning = warning,
+                                warning =
+                                    safFallbackWarning(cleanupFailed, savedToDownloads = true),
                             )
                         }
                     } else {
@@ -862,7 +857,7 @@ internal class ScanStorage(
                 throw cancellation
             } catch (exception: Exception) {
                 createdOutput?.let { deleteCreatedOutput(it.uri, exception) }
-                throw PdfSaveFailure(warning, exception)
+                throw PdfSaveFailure(failureWarning, exception)
             }
         }
 

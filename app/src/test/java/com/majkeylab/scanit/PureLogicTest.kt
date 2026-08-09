@@ -33,12 +33,32 @@ class PureLogicTest {
 
     @Test
     fun pdfSaveFailureKeepsSafCleanupWarningForTheResult() {
-        val warning = UiMessage(R.string.saf_incomplete_warning)
+        val warning = UiMessage(R.string.saf_cleanup_warning)
         val failure = PdfSaveFailure(warning, IOException("metadata write failed"))
 
         assertEquals(
             listOf(UiMessage(R.string.pdf_save_failed), warning),
             pdfSaveFailureMessages(failure),
+        )
+    }
+
+    @Test
+    fun safCleanupWarningClaimsDownloadsOnlyAfterSuccessfulFallback() {
+        assertEquals(
+            null,
+            safFallbackWarning(cleanupFailed = false, savedToDownloads = false),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_fallback_warning),
+            safFallbackWarning(cleanupFailed = false, savedToDownloads = true),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_cleanup_warning),
+            safFallbackWarning(cleanupFailed = true, savedToDownloads = false),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_incomplete_warning),
+            safFallbackWarning(cleanupFailed = true, savedToDownloads = true),
         )
     }
 

@@ -85,4 +85,5 @@
     <string name="document_save_partial_failed">Dokument se nepodařilo uložit. Některé soubory mohly zůstat uložené.</string>
     <string name="saf_fallback_warning">Vybraná složka není dostupná. PDF bylo uloženo do Stažených souborů.</string>
     <string name="saf_incomplete_warning">Vybraná složka není dostupná. PDF bylo uloženo do Stažených souborů. Ve vybrané složce mohl zůstat neúplný soubor.</string>
+    <string name="saf_cleanup_warning">Ve vybrané složce mohl zůstat neúplný soubor PDF.</string>
 </resources>

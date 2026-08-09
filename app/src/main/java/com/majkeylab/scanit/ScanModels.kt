@@ -62,6 +62,17 @@ internal class PdfSaveFailure(
 internal fun pdfSaveFailureMessages(failure: PdfSaveFailure): List<UiMessage> =
     listOfNotNull(UiMessage(R.string.pdf_save_failed), failure.warning).distinct()
 
+internal fun safFallbackWarning(
+    cleanupFailed: Boolean,
+    savedToDownloads: Boolean,
+): UiMessage? =
+    when {
+        cleanupFailed && savedToDownloads -> UiMessage(R.string.saf_incomplete_warning)
+        cleanupFailed -> UiMessage(R.string.saf_cleanup_warning)
+        savedToDownloads -> UiMessage(R.string.saf_fallback_warning)
+        else -> null
+    }
+
 internal enum class RestoredRoute {
     Scanner,
     Recent,
