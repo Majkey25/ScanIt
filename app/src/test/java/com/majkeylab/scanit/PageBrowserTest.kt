@@ -1,0 +1,25 @@
+package com.majkeylab.scanit
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
+
+class PageBrowserTest {
+    @Test
+    fun selectedPageInsideBoundsIsPreserved() {
+        assertEquals(2, resolvedPageIndex(selectedIndex = 2, pageCount = 4))
+    }
+
+    @Test
+    fun selectedPageOutsideBoundsIsClamped() {
+        assertEquals(0, resolvedPageIndex(selectedIndex = -1, pageCount = 4))
+        assertEquals(3, resolvedPageIndex(selectedIndex = 4, pageCount = 4))
+    }
+
+    @Test
+    fun selectingFromEmptyPagesIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolvedPageIndex(selectedIndex = 0, pageCount = 0)
+        }
+    }
+}
