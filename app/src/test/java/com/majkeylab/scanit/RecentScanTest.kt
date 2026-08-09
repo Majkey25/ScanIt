@@ -163,7 +163,7 @@ class RecentScanTest {
         val pending = createEntry(root, ".pending-test", fileBaseName = finalId)
         val finalDirectory = File(root, finalId)
 
-        val cached = publishCacheEntryInRoot(root, pending, finalDirectory)
+        val cached = RecentScanCache(root).publish(pending, finalDirectory)
 
         assertFalse(pending.exists())
         assertTrue(finalDirectory.isDirectory)
@@ -181,23 +181,26 @@ class RecentScanTest {
         val finalId = "Scan_new"
         val pending = createEntry(root, ".pending-new", fileBaseName = finalId)
         val finalDirectory = File(root, finalId)
-        val cache = RecentScanCache(root)
         var moveCount = 0
-
-        assertThrows(IOException::class.java) {
-            cache.publish(
-                pending,
-                finalDirectory,
-                maxEntries = 2,
+        val cache =
+            RecentScanCache(
+                root,
                 moveEntry = { source, target ->
                     moveCount++
                     if (moveCount == 3) throw IOException("Forced prune staging failure")
                     Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
                 },
             )
+
+        assertThrows(IOException::class.java) {
+            cache.publish(
+                pending,
+                finalDirectory,
+                maxEntries = 2,
+            )
         }
 
-        assertEquals(3, moveCount)
+        assertEquals(4, moveCount)
         assertFalse(finalDirectory.exists())
         assertFalse(pending.exists())
         assertEquals(oldIds.toSet(), root.listFiles()!!.map(File::getName).toSet())
@@ -228,15 +231,123 @@ class RecentScanTest {
     }
 
     @Test
+    fun failedInitialAtomicMoveKeepsOldHistoryAndCleansPending() = withShareRoot { root ->
+        val oldIds = setOf("Scan_old_1", "Scan_old_2")
+        oldIds.forEach { createEntry(root, it) }
+        val finalId = "Scan_new"
+        val pending = createEntry(root, ".pending-initial-failure", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        val cache =
+            RecentScanCache(
+                root,
+                moveEntry = { _, _ -> throw IOException("Forced initial move failure") },
+            )
+
+        assertThrows(IOException::class.java) {
+            cache.publish(pending, finalDirectory, maxEntries = 2)
+        }
+
+        assertFalse(pending.exists())
+        assertFalse(finalDirectory.exists())
+        assertEquals(oldIds, RecentScanCache(root).list(maxEntries = 2).map(RecentScan::cacheId).toSet())
+        assertEquals(oldIds, root.listFiles()!!.map(File::getName).toSet())
+    }
+
+    @Test
+    fun moverThatMovesThenThrowsDoesNotExposeNewOrLoseOldHistory() = withShareRoot { root ->
+        val oldIds = setOf("Scan_old_1", "Scan_old_2")
+        oldIds.forEach { createEntry(root, it) }
+        val finalId = "Scan_ambiguous"
+        val pending = createEntry(root, ".pending-ambiguous", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        val cache =
+            RecentScanCache(
+                root,
+                moveEntry = { source, target ->
+                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                    throw IOException("Forced ambiguous move result")
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            cache.publish(pending, finalDirectory, maxEntries = 2)
+        }
+
+        assertFalse(pending.exists())
+        assertFalse(finalDirectory.exists())
+        assertEquals(oldIds, RecentScanCache(root).list(maxEntries = 2).map(RecentScan::cacheId).toSet())
+        assertEquals(oldIds, root.listFiles()!!.map(File::getName).toSet())
+    }
+
+    @Test
+    fun failedRollbackRemainsRecoverableAndMaintenanceRestoresOldEntry() = withShareRoot { root ->
+        val oldIds = (1..3).map { index ->
+            "Scan_old_$index".also { id ->
+                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+            }
+        }
+        val finalId = "Scan_new"
+        val pending = createEntry(root, ".pending-recovery", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        var moveCount = 0
+        val cache =
+            RecentScanCache(
+                root,
+                moveEntry = { source, target ->
+                    moveCount++
+                    if (moveCount == 3 || moveCount == 4) {
+                        throw IOException("Forced move failure $moveCount")
+                    }
+                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                },
+            )
+
+        val failure =
+            assertThrows(IOException::class.java) {
+                cache.publish(pending, finalDirectory, maxEntries = 2)
+            }
+
+        assertTrue(failure.message.orEmpty().contains("recovery", ignoreCase = true))
+        assertFalse(pending.exists())
+        assertFalse(finalDirectory.exists())
+        assertTrue(root.listFiles()!!.any { it.name.startsWith(".pending-recovery-") })
+
+        val recovered = RecentScanCache(root).list(maxEntries = 3)
+
+        assertEquals(oldIds.toSet(), recovered.map(RecentScan::cacheId).toSet())
+        assertFalse(root.listFiles()!!.any { it.name.startsWith(".pending-recovery-") })
+    }
+
+    @Test
+    fun committedPruneTrashIsDeletedWithoutRestoringOldEntry() = withShareRoot { root ->
+        val trash = File(root, ".pending-delete-test").apply { assertTrue(mkdir()) }
+        createEntry(trash, "Scan_pruned")
+        File(root, ".committed-prune-test").apply { assertTrue(createNewFile()) }
+
+        assertEquals(emptyList<RecentScan>(), RecentScanCache(root).list())
+        assertFalse(trash.exists())
+        assertFalse(File(root, ".committed-prune-test").exists())
+        assertFalse(File(root, "Scan_pruned").exists())
+    }
+
+    @Test
     fun listWaitsForAtomicPublishAndNeverReturnsPendingEntry() = withShareRoot { root ->
         val finalId = "Scan_coordinated"
         val pending = createEntry(root, ".pending-coordinated", fileBaseName = finalId)
         val finalDirectory = File(root, finalId)
-        val cache = RecentScanCache(root)
         val moveStarted = CountDownLatch(1)
         val allowMove = CountDownLatch(1)
         val listStarted = CountDownLatch(1)
         val listThread = AtomicReference<Thread>()
+        val cache =
+            RecentScanCache(
+                root,
+                moveEntry = { source, target ->
+                    moveStarted.countDown()
+                    assertTrue(allowMove.await(5, TimeUnit.SECONDS))
+                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                },
+            )
         val executor = Executors.newFixedThreadPool(2)
         try {
             val publish =
@@ -244,11 +355,6 @@ class RecentScanTest {
                     cache.publish(
                         pending,
                         finalDirectory,
-                        moveEntry = { source, target ->
-                            moveStarted.countDown()
-                            assertTrue(allowMove.await(5, TimeUnit.SECONDS))
-                            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
-                        },
                     )
                 }
             assertTrue(moveStarted.await(5, TimeUnit.SECONDS))
@@ -284,7 +390,7 @@ class RecentScanTest {
         val finalDirectory = File(root, finalId)
 
         assertThrows(IOException::class.java) {
-            publishCacheEntryInRoot(root, pending, finalDirectory)
+            RecentScanCache(root).publish(pending, finalDirectory)
         }
         assertFalse(finalDirectory.exists())
         listRecentScansInRoot(root)

@@ -31,6 +31,9 @@ private const val PDF_MAX_BITMAP_SIDE = 3508
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
 private const val MAX_SHARE_CACHE_SCANS = 8
+private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
+private const val DELETE_PENDING_PREFIX = ".pending-delete-"
+private const val COMMITTED_PRUNE_PREFIX = ".committed-prune-"
 
 internal data class FitRect(
     val left: Float,
@@ -122,6 +125,7 @@ internal fun nextDerivedCacheId(
 internal fun openCachedScanInRoot(root: File, cacheId: String): CachedScan? {
     if (!isSafeCacheId(cacheId)) return null
     val safeRoot = ensureShareRoot(root)
+    maintainPendingDirectories(safeRoot)
     val directory = File(safeRoot, cacheId).absoluteFile
     return readCacheEntry(safeRoot, directory, cacheId)?.cached
 }
@@ -129,6 +133,7 @@ internal fun openCachedScanInRoot(root: File, cacheId: String): CachedScan? {
 internal fun deleteRecentScanInRoot(root: File, cacheId: String): Boolean {
     if (!isSafeCacheId(cacheId)) return false
     val safeRoot = ensureShareRoot(root)
+    maintainPendingDirectories(safeRoot)
     val directory = File(safeRoot, cacheId).absoluteFile
     if (readCacheEntry(safeRoot, directory, cacheId) == null) {
         return !Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
@@ -144,17 +149,17 @@ internal fun listRecentScansInRoot(
     require(maxEntries >= 0) { "Recent scan retention must not be negative" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
     val safeRoot = ensureShareRoot(root)
-    cleanPendingDirectories(safeRoot)
+    maintainPendingDirectories(safeRoot)
     return pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries).map(ParsedCacheEntry::recent)
 }
 
-internal fun publishCacheEntryInRoot(
+private fun publishCacheEntryInRoot(
     root: File,
     workDir: File,
     finalDir: File,
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
-    moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
+    moveEntry: (Path, Path) -> Unit,
 ): CachedScan {
     require(maxEntries > 0) { "Recent scan retention must be positive for publishing" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
@@ -166,39 +171,71 @@ internal fun publishCacheEntryInRoot(
         !isSafeCacheId(cacheId) ||
             !isDirectChild(safeRoot, final) ||
             final.exists() ||
-            !isPendingDirectory(safeRoot, work)
+            !isCreatePendingDirectory(safeRoot, work)
     ) {
         throw IOException("Cache publication path is unsafe")
     }
 
-    val stagedEntries = mutableListOf<Pair<File, File>>()
+    val recoveryDirectory = File(safeRoot, "$RECOVERY_PENDING_PREFIX$cacheId")
+    val deleteDirectory = File(safeRoot, "$DELETE_PENDING_PREFIX$cacheId")
+    val commitMarker = File(safeRoot, "$COMMITTED_PRUNE_PREFIX$cacheId")
     var published = false
+    var committed = false
     try {
+        maintainPendingDirectories(safeRoot, work)
         val entriesToPrune = entriesToPrune(safeRoot, protectedCacheIds, maxEntries - 1)
         readCacheEntry(safeRoot, work, cacheId)
             ?: throw IOException("Pending cache entry is incomplete")
-        cleanPendingDirectories(safeRoot, work)
+        cleanDisposablePendingDirectories(safeRoot, work)
         moveEntry(work.toPath(), final.toPath())
         published = true
         val cached = readCacheEntry(safeRoot, final, cacheId)?.cached
             ?: throw IOException("Published cache entry is incomplete")
-        entriesToPrune.forEach { entry ->
-            if (readCacheEntry(safeRoot, entry.directory, entry.recent.cacheId) == null) {
-                if (!entry.directory.exists()) return@forEach
-                throw IOException("Recent scan changed before pruning")
+        if (entriesToPrune.isNotEmpty()) {
+            if (
+                recoveryDirectory.exists() ||
+                    deleteDirectory.exists() ||
+                    commitMarker.exists() ||
+                    !recoveryDirectory.mkdir()
+            ) {
+                throw IOException("Recent scan recovery directory could not be created")
             }
-            val staged = File(safeRoot, ".pending-prune-${UUID.randomUUID()}")
-            moveEntry(entry.directory.toPath(), staged.toPath())
-            stagedEntries += entry.directory to staged
+            entriesToPrune.forEach { entry ->
+                if (readCacheEntry(safeRoot, entry.directory, entry.recent.cacheId) == null) {
+                    if (!entry.directory.exists()) return@forEach
+                    throw IOException("Recent scan changed before pruning")
+                }
+                moveEntry(
+                    entry.directory.toPath(),
+                    File(recoveryDirectory, entry.recent.cacheId).toPath(),
+                )
+            }
+            moveEntry(recoveryDirectory.toPath(), deleteDirectory.toPath())
+            if (!commitMarker.createNewFile()) {
+                throw IOException("Recent scan prune could not be committed")
+            }
+            committed = true
+            deleteCommittedPrune(deleteDirectory, commitMarker)
         }
-        stagedEntries.forEach { (_, staged) -> deleteTreeWithoutFollowingLinks(staged) }
         return cached
     } catch (failure: Throwable) {
-        stagedEntries.asReversed().forEach { (original, staged) ->
+        var reportedFailure = failure
+        if (!committed) {
+            val recoverySource =
+                when {
+                    recoveryDirectory.exists() -> recoveryDirectory
+                    deleteDirectory.exists() -> deleteDirectory
+                    else -> null
+                }
             try {
-                moveCacheEntryAtomically(staged.toPath(), original.toPath())
+                recoverySource?.let {
+                    restoreRecoveryDirectory(safeRoot, it, cacheId, moveEntry)
+                }
             } catch (restoreFailure: Exception) {
-                failure.addSuppressed(restoreFailure)
+                reportedFailure =
+                    IOException("Recent scan recovery is pending", restoreFailure).also {
+                        it.addSuppressed(failure)
+                    }
             }
         }
         val cleanupTarget = if (published || (!work.exists() && final.exists())) final else work
@@ -207,9 +244,11 @@ internal fun publishCacheEntryInRoot(
                 cleanupTarget.exists() &&
                 !deleteTreeWithoutFollowingLinks(cleanupTarget)
         ) {
-            failure.addSuppressed(IOException("Incomplete cache publication could not be deleted"))
+            reportedFailure.addSuppressed(
+                IOException("Incomplete cache publication could not be deleted"),
+            )
         }
-        throw failure
+        throw reportedFailure
     }
 }
 
@@ -327,19 +366,143 @@ private fun readCacheEntry(
     )
 }
 
-private fun cleanPendingDirectories(root: File, keep: File? = null) {
+private fun maintainPendingDirectories(root: File, keepCreate: File? = null) {
+    recoverPendingDirectories(root)
+    cleanDisposablePendingDirectories(root, keepCreate)
+}
+
+private fun recoverPendingDirectories(root: File) {
     val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
     children.filter { child ->
-        child.absoluteFile != keep?.absoluteFile && isPendingDirectory(root, child.absoluteFile)
+        child.name.startsWith(RECOVERY_PENDING_PREFIX) ||
+            child.name.startsWith(DELETE_PENDING_PREFIX)
     }.forEach { child ->
-        if (!deleteTreeWithoutFollowingLinks(child)) {
-            throw IOException("Stale pending cache entry could not be deleted")
+        val recovery = child.absoluteFile
+        val prefix =
+            if (recovery.name.startsWith(RECOVERY_PENDING_PREFIX)) {
+                RECOVERY_PENDING_PREFIX
+            } else {
+                DELETE_PENDING_PREFIX
+            }
+        val cacheId = recovery.name.removePrefix(prefix)
+        if (
+            !isSafeCacheId(cacheId) ||
+                !isDirectChild(root, recovery) ||
+                !Files.isDirectory(recovery.toPath(), LinkOption.NOFOLLOW_LINKS)
+        ) {
+            throw IOException("Recent scan recovery directory is unsafe")
+        }
+        val commitMarker = File(root, "$COMMITTED_PRUNE_PREFIX$cacheId").absoluteFile
+        if (prefix == DELETE_PENDING_PREFIX && commitMarker.exists()) {
+            if (
+                !isDirectChild(root, commitMarker) ||
+                    !Files.isRegularFile(commitMarker.toPath(), LinkOption.NOFOLLOW_LINKS)
+            ) {
+                throw IOException("Recent scan commit marker is unsafe")
+            }
+            return@forEach
+        }
+        restoreRecoveryDirectory(root, recovery, cacheId, ::moveCacheEntryAtomically)
+    }
+}
+
+private fun restoreRecoveryDirectory(
+    root: File,
+    recovery: File,
+    publishedCacheId: String,
+    moveEntry: (Path, Path) -> Unit,
+) {
+    val staged = recovery.listFiles() ?: throw IOException("Recent scan recovery could not be listed")
+    val entries =
+        staged.map { child ->
+            val cacheId = child.name
+            readCacheEntry(recovery, child.absoluteFile, cacheId)
+                ?: throw IOException("Recent scan recovery entry is incomplete")
+        }
+    val published = File(root, publishedCacheId).absoluteFile
+    if (published.exists()) {
+        if (!deleteTreeWithoutFollowingLinks(published)) {
+            throw IOException("Rolled-back recent scan could not be deleted")
+        }
+    }
+    entries.forEach { entry ->
+        val original = File(root, entry.recent.cacheId).absoluteFile
+        if (original.exists()) {
+            throw IOException("Recent scan recovery destination already exists")
+        }
+        try {
+            moveEntry(entry.directory.toPath(), original.toPath())
+        } catch (failure: Exception) {
+            throw IOException("Recent scan recovery move failed", failure)
+        }
+    }
+    if (!deleteTreeWithoutFollowingLinks(recovery)) {
+        throw IOException("Recent scan recovery directory could not be removed")
+    }
+}
+
+private fun cleanDisposablePendingDirectories(root: File, keepCreate: File? = null) {
+    val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
+    children.filter { child ->
+        val directory = child.absoluteFile
+        val isRecovery = directory.name.startsWith(RECOVERY_PENDING_PREFIX)
+        val isDelete = directory.name.startsWith(DELETE_PENDING_PREFIX)
+        directory != keepCreate?.absoluteFile &&
+            directory.name.startsWith(".pending-") &&
+            !isRecovery &&
+            !isDelete &&
+            isDirectChild(root, directory) &&
+            Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+    }.forEach { directory ->
+        if (!deleteTreeWithoutFollowingLinks(directory)) {
+            throw IOException("Stale disposable cache entry could not be deleted")
+        }
+    }
+    children.filter { it.name.startsWith(DELETE_PENDING_PREFIX) }.forEach { child ->
+        val directory = child.absoluteFile
+        val cacheId = directory.name.removePrefix(DELETE_PENDING_PREFIX)
+        val commitMarker = File(root, "$COMMITTED_PRUNE_PREFIX$cacheId").absoluteFile
+        if (commitMarker.exists() && !deleteCommittedPrune(directory, commitMarker)) {
+            throw IOException("Committed recent scan prune could not be deleted")
+        }
+    }
+    val remaining = root.listFiles() ?: throw IOException("Share cache could not be listed")
+    remaining.filter { it.name.startsWith(COMMITTED_PRUNE_PREFIX) }.forEach { child ->
+        val marker = child.absoluteFile
+        val cacheId = marker.name.removePrefix(COMMITTED_PRUNE_PREFIX)
+        val deleteDirectory = File(root, "$DELETE_PENDING_PREFIX$cacheId").absoluteFile
+        if (
+            !isSafeCacheId(cacheId) ||
+                !isDirectChild(root, marker) ||
+                !Files.isRegularFile(marker.toPath(), LinkOption.NOFOLLOW_LINKS)
+        ) {
+            throw IOException("Recent scan commit marker is unsafe")
+        }
+        if (!deleteDirectory.exists()) {
+            try {
+                Files.delete(marker.toPath())
+            } catch (failure: Exception) {
+                throw IOException("Stale recent scan commit marker could not be deleted", failure)
+            }
         }
     }
 }
 
-private fun isPendingDirectory(root: File, directory: File): Boolean =
+private fun deleteCommittedPrune(directory: File, commitMarker: File): Boolean =
+    try {
+        if (directory.exists() && !deleteTreeWithoutFollowingLinks(directory)) return false
+        Files.deleteIfExists(commitMarker.toPath())
+        true
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+private fun isCreatePendingDirectory(root: File, directory: File): Boolean =
     directory.name.startsWith(".pending-") &&
+        !directory.name.startsWith(RECOVERY_PENDING_PREFIX) &&
+        !directory.name.startsWith(DELETE_PENDING_PREFIX) &&
         directory.name.length > ".pending-".length &&
         isDirectChild(root, directory) &&
         Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
@@ -412,6 +575,7 @@ private fun deleteTreeWithoutFollowingLinks(directory: File): Boolean =
 internal class RecentScanCache(
     private val root: File,
     private val lock: Any = Any(),
+    private val moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
 ) {
     fun list(
         protectedCacheIds: Set<String> = emptySet(),
@@ -434,6 +598,7 @@ internal class RecentScanCache(
     fun nextDerivedCacheId(sourceCacheId: String, suffix: String): String =
         synchronized(lock) {
             val safeRoot = ensureShareRoot(root)
+            maintainPendingDirectories(safeRoot)
             val children = safeRoot.listFiles() ?: throw IOException("Share cache could not be listed")
             nextDerivedCacheId(sourceCacheId, suffix, children.mapTo(mutableSetOf(), File::getName))
         }
@@ -443,7 +608,6 @@ internal class RecentScanCache(
         finalDir: File,
         protectedCacheIds: Set<String> = emptySet(),
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
-        moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
     ): CachedScan =
         synchronized(lock) {
             publishCacheEntryInRoot(
@@ -475,7 +639,7 @@ internal class ScanStorage(
             val baseName = scanBaseName(clock)
             val shareRoot = ensureShareRoot(shareCacheRoot())
             val finalDirectory = File(shareRoot, baseName)
-            val workDirectory = File(shareRoot, ".pending-${UUID.randomUUID()}")
+            val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
             if (!workDirectory.mkdir()) {
                 throw IOException("Pending scan cache directory could not be created")
             }
