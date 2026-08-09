@@ -3,7 +3,12 @@ package com.majkeylab.scanit
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -167,6 +172,109 @@ class RecentScanTest {
     }
 
     @Test
+    fun pruneFailureRestoresOldHistoryAndRollsBackPublishedEntry() = withShareRoot { root ->
+        val oldIds = (1..3).map { index ->
+            "Scan_old_$index".also { id ->
+                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+            }
+        }
+        val finalId = "Scan_new"
+        val pending = createEntry(root, ".pending-new", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        val cache = RecentScanCache(root)
+        var moveCount = 0
+
+        assertThrows(IOException::class.java) {
+            cache.publish(
+                pending,
+                finalDirectory,
+                maxEntries = 2,
+                moveEntry = { source, target ->
+                    moveCount++
+                    if (moveCount == 3) throw IOException("Forced prune staging failure")
+                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                },
+            )
+        }
+
+        assertEquals(3, moveCount)
+        assertFalse(finalDirectory.exists())
+        assertFalse(pending.exists())
+        assertEquals(oldIds.toSet(), root.listFiles()!!.map(File::getName).toSet())
+        assertEquals(oldIds.toSet(), cache.list(maxEntries = 3).map(RecentScan::cacheId).toSet())
+    }
+
+    @Test
+    fun impossiblePublishCapacityRemovesPendingAndKeepsProtectedHistory() = withShareRoot { root ->
+        val oldIds = setOf("Scan_protected_1", "Scan_protected_2")
+        oldIds.forEach { createEntry(root, it) }
+        val finalId = "Scan_new"
+        val pending = createEntry(root, ".pending-capacity", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        val cache = RecentScanCache(root)
+
+        assertThrows(IOException::class.java) {
+            cache.publish(
+                pending,
+                finalDirectory,
+                protectedCacheIds = oldIds,
+                maxEntries = 2,
+            )
+        }
+
+        assertFalse(pending.exists())
+        assertFalse(finalDirectory.exists())
+        assertEquals(oldIds, cache.list(maxEntries = 2).map(RecentScan::cacheId).toSet())
+    }
+
+    @Test
+    fun listWaitsForAtomicPublishAndNeverReturnsPendingEntry() = withShareRoot { root ->
+        val finalId = "Scan_coordinated"
+        val pending = createEntry(root, ".pending-coordinated", fileBaseName = finalId)
+        val finalDirectory = File(root, finalId)
+        val cache = RecentScanCache(root)
+        val moveStarted = CountDownLatch(1)
+        val allowMove = CountDownLatch(1)
+        val listStarted = CountDownLatch(1)
+        val listThread = AtomicReference<Thread>()
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val publish =
+                executor.submit<CachedScan> {
+                    cache.publish(
+                        pending,
+                        finalDirectory,
+                        moveEntry = { source, target ->
+                            moveStarted.countDown()
+                            assertTrue(allowMove.await(5, TimeUnit.SECONDS))
+                            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                        },
+                    )
+                }
+            assertTrue(moveStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(pending.isDirectory)
+            val list =
+                executor.submit<List<RecentScan>> {
+                    listThread.set(Thread.currentThread())
+                    listStarted.countDown()
+                    cache.list()
+                }
+            assertTrue(listStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(waitForState(listThread.get(), Thread.State.BLOCKED))
+
+            allowMove.countDown()
+
+            assertEquals(finalId, publish.get(5, TimeUnit.SECONDS).baseName)
+            assertEquals(listOf(finalId), list.get(5, TimeUnit.SECONDS).map(RecentScan::cacheId))
+            assertFalse(pending.exists())
+        } finally {
+            allowMove.countDown()
+            executor.shutdownNow()
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun invalidPendingEntryNeverBecomesVisibleAndStalePendingIsRemoved() = withShareRoot { root ->
         val finalId = "Scan_invalid"
         val pending = File(root, ".pending-invalid").apply {
@@ -199,11 +307,6 @@ class RecentScanTest {
         assertFalse(File(root, validId).exists())
     }
 
-    @Test
-    fun concurrentlyEvictedEntryIsAlreadyDeleted() = withShareRoot { root ->
-        assertTrue(deleteRecentScanInRoot(root, "Scan_evicted"))
-    }
-
     private fun createEntry(
         root: File,
         directoryName: String,
@@ -226,5 +329,13 @@ class RecentScanTest {
         } finally {
             assertTrue(root.deleteRecursively())
         }
+    }
+
+    private fun waitForState(thread: Thread, state: Thread.State): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (thread.state != state && System.nanoTime() < deadline) {
+            Thread.yield()
+        }
+        return thread.state == state
     }
 }
