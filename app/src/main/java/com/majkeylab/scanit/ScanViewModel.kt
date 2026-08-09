@@ -102,6 +102,35 @@ internal class ScannerLaunchGate(
     }
 }
 
+internal data class RecentAction(
+    val cacheId: String,
+    val generation: Long,
+)
+
+internal class RecentActionGate {
+    private var generation = 0L
+
+    fun begin(cacheId: String): RecentAction = RecentAction(cacheId, nextGeneration())
+
+    fun invalidate() {
+        nextGeneration()
+    }
+
+    fun isCurrent(action: RecentAction, cacheIds: Iterable<String>): Boolean =
+        action.generation == generation && cacheIds.any { it == action.cacheId }
+
+    private fun nextGeneration(): Long {
+        check(generation < Long.MAX_VALUE) { "Recent action generation exhausted" }
+        generation += 1L
+        return generation
+    }
+}
+
+internal fun retainedRecentResultCacheId(
+    cacheId: String?,
+    recentCacheIds: Iterable<String>?,
+): String? = cacheId?.takeIf { id -> recentCacheIds?.any { it == id } == true }
+
 internal class ScanViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
@@ -120,6 +149,7 @@ internal class ScanViewModel(
                 it.name == savedStateHandle.get<String>(SCANNER_STAGE_KEY)
             } ?: ScannerLaunchStage.Idle,
         )
+    private val recentActionGate = RecentActionGate()
     private val mutableState =
         MutableStateFlow<ScreenState>(
             if (initialRoute == RestoredRoute.Scanner) {
@@ -214,6 +244,7 @@ internal class ScanViewModel(
 
     fun beginScannerLaunch(): Long? {
         val request = scannerLaunchGate.begin(processingJob?.isActive == true) ?: return null
+        recentActionGate.invalidate()
         recentJob?.cancel()
         previousResult = null
         persistRoute(ROUTE_SCANNER)
@@ -354,6 +385,7 @@ internal class ScanViewModel(
     }
 
     fun navigateBack() {
+        recentActionGate.invalidate()
         when (val current = mutableState.value) {
             is ScreenState.Recent -> {
                 val result = previousResult
@@ -374,6 +406,7 @@ internal class ScanViewModel(
     }
 
     fun openRecentScan(cacheId: String) {
+        recentActionGate.invalidate()
         previousResult = null
         persistRoute(ROUTE_RECENT)
         mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_document))
@@ -395,10 +428,7 @@ internal class ScanViewModel(
     }
 
     fun deleteRecentScan(cacheId: String) {
-        val previousCacheId = previousResult?.scan?.cached?.baseName
-        if (previousCacheId == cacheId) {
-            previousResult = null
-        }
+        recentActionGate.invalidate()
         val canGoBack = previousResult != null
         recentJob?.cancel()
         recentJob =
@@ -418,22 +448,45 @@ internal class ScanViewModel(
             }
     }
 
-    suspend fun recentScanForShare(cacheId: String): CachedScan? {
-        val cached =
-            try {
-                withContext(Dispatchers.IO) { storage.openCachedScan(cacheId) }
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Exception) {
-                null
-            }
-        if (cached == null) {
-            refreshRecentScreen(
-                canGoBack = previousResult != null,
-                message = UiMessage(R.string.recent_scan_unavailable),
-            )
+    fun beginRecentShare(cacheId: String): RecentAction? {
+        val current = mutableState.value as? ScreenState.Recent ?: return null
+        if (current.scans.none { it.cacheId == cacheId }) {
+            return null
         }
-        return cached
+        return recentActionGate.begin(cacheId)
+    }
+
+    suspend fun recentScanForShare(action: RecentAction): CachedScan? =
+        try {
+            withContext(Dispatchers.IO) { storage.openCachedScan(action.cacheId) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    fun claimRecentShare(action: RecentAction): Boolean {
+        if (!isRecentShareCurrent(action)) {
+            return false
+        }
+        recentActionGate.invalidate()
+        return true
+    }
+
+    fun recentShareUnavailable(action: RecentAction): Boolean {
+        if (!claimRecentShare(action)) {
+            return false
+        }
+        refreshRecentScreen(
+            canGoBack = previousResult != null,
+            message = UiMessage(R.string.recent_scan_unavailable),
+        )
+        return true
+    }
+
+    private fun isRecentShareCurrent(action: RecentAction): Boolean {
+        val current = mutableState.value as? ScreenState.Recent ?: return false
+        return recentActionGate.isCurrent(action, current.scans.map(RecentScan::cacheId))
     }
 
     suspend fun loadRecentThumbnail(firstPage: File): Bitmap? =
@@ -498,6 +551,7 @@ internal class ScanViewModel(
         canGoBack: Boolean,
         message: UiMessage? = null,
     ) {
+        recentActionGate.invalidate()
         val cacheId = previousResult?.scan?.cached?.baseName.takeIf { canGoBack }
         persistRoute(
             if (cacheId == null) ROUTE_RECENT else ROUTE_RECENT_WITH_RESULT_BACK,
@@ -518,7 +572,9 @@ internal class ScanViewModel(
         val cacheId = previousResult?.scan?.cached?.baseName.takeIf { canGoBack }
         val scans = loadRecentScans(cacheId)
         recentScans = scans ?: emptyList()
-        val resultAvailable = cacheId != null && scans?.any { it.cacheId == cacheId } == true
+        val retainedCacheId =
+            retainedRecentResultCacheId(cacheId, scans?.map(RecentScan::cacheId))
+        val resultAvailable = retainedCacheId != null
         if (cacheId != null && !resultAvailable) {
             previousResult = null
         }
@@ -533,7 +589,7 @@ internal class ScanViewModel(
             ScreenState.Recent(recentScans, effectiveCanGoBack, effectiveMessage)
         persistRoute(
             if (effectiveCanGoBack) ROUTE_RECENT_WITH_RESULT_BACK else ROUTE_RECENT,
-            cacheId.takeIf { effectiveCanGoBack },
+            retainedCacheId,
         )
     }
 

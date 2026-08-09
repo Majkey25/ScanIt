@@ -95,6 +95,39 @@ class PureLogicTest {
     }
 
     @Test
+    fun recentActionGateRejectsShareAfterLaterAction() {
+        val gate = RecentActionGate()
+        val share = gate.begin("Scan_1")
+
+        gate.invalidate()
+
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_1")))
+    }
+
+    @Test
+    fun recentActionGateRequiresCurrentRowIdentity() {
+        val gate = RecentActionGate()
+        val share = gate.begin("Scan_1")
+
+        assertEquals(true, gate.isCurrent(share, listOf("Scan_1", "Scan_2")))
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_2")))
+    }
+
+    @Test
+    fun failedDeleteRetainsResultBackWhenCacheIsStillListed() {
+        assertEquals(
+            "Scan_1",
+            retainedRecentResultCacheId("Scan_1", listOf("Scan_2", "Scan_1")),
+        )
+    }
+
+    @Test
+    fun deletedOrMissingResultCacheRemovesResultBack() {
+        assertEquals(null, retainedRecentResultCacheId("Scan_1", listOf("Scan_2")))
+        assertEquals(null, retainedRecentResultCacheId("Scan_1", null))
+    }
+
+    @Test
     fun restoredPreparingScannerLaunchCanResume() {
         val gate = ScannerLaunchGate(ScannerLaunchStage.Preparing)
 

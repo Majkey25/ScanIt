@@ -21,7 +21,10 @@ import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null else 1
 
@@ -187,17 +190,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareRecentPdf(cacheId: String) {
+        val action = viewModel.beginRecentShare(cacheId)
+        if (action == null) {
+            showToast(R.string.share_failed)
+            return
+        }
+        val settings = viewModel.currentSettings()
         lifecycleScope.launch {
-            val scan = viewModel.recentScanForShare(cacheId)
-            if (scan == null) {
-                showToast(R.string.share_failed)
+            val shareIntent =
+                try {
+                    withContext(Dispatchers.IO) {
+                        val scan = viewModel.recentScanForShare(action) ?: return@withContext null
+                        pdfShareIntent(this@MainActivity, scan, settings)
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+            if (shareIntent == null) {
+                if (viewModel.recentShareUnavailable(action)) {
+                    showToast(R.string.share_failed)
+                }
+                return@launch
+            }
+            if (!viewModel.claimRecentShare(action)) {
                 return@launch
             }
             try {
-                if (!launchShareChooser(pdfShareIntent(this@MainActivity, scan, viewModel.currentSettings()))) {
+                if (!launchShareChooser(shareIntent)) {
                     showToast(R.string.share_failed)
                 }
-            } catch (_: Exception) {
+            } catch (_: RuntimeException) {
                 showToast(R.string.share_failed)
             }
         }
