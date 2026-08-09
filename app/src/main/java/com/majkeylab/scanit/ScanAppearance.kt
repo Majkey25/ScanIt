@@ -3,7 +3,6 @@ package com.majkeylab.scanit
 private const val DEFAULT_FILTER_INTENSITY = 100
 private const val DEFAULT_SHADOWS = 50
 private const val BACKGROUND_GRID_SIZE = 8
-private const val MAX_THRESHOLD_SHIFT = 48
 
 internal enum class ScanColorMode(val wireValue: String) {
     Color("color"),
@@ -81,28 +80,42 @@ internal fun processScanPixels(
     val intensity = clampAppearancePercent(appearance.intensity)
     val rawLuma = IntArray(pixels.size) { argbLuma(pixels[it]) }
     val correctedLuma = correctLocalShadows(rawLuma, width, height, appearance.shadows)
+    fun shadowCorrectedPixel(index: Int): Int =
+        scaleColorToLuma(
+            pixel = pixels[index],
+            sourceLuma = rawLuma[index],
+            targetLuma = correctedLuma[index],
+        )
     return when (appearance.colorMode) {
         ScanColorMode.Color ->
             IntArray(pixels.size) { index ->
-                scaleColorToLuma(
-                    pixel = pixels[index],
-                    sourceLuma = rawLuma[index],
-                    targetLuma = contrastLuma(correctedLuma[index], intensity),
-                )
+                val correctedPixel = shadowCorrectedPixel(index)
+                val target =
+                    scaleColorToLuma(
+                        pixel = correctedPixel,
+                        sourceLuma = correctedLuma[index],
+                        targetLuma = contrastLuma(correctedLuma[index]),
+                    )
+                blendPixel(correctedPixel, target, intensity)
             }
 
         ScanColorMode.Grayscale ->
             IntArray(pixels.size) { index ->
-                grayPixel(pixels[index], contrastLuma(correctedLuma[index], intensity))
+                val correctedPixel = shadowCorrectedPixel(index)
+                blendPixel(
+                    correctedPixel,
+                    grayPixel(correctedPixel, correctedLuma[index]),
+                    intensity,
+                )
             }
 
         ScanColorMode.BlackWhite -> {
-            val threshold =
-                (otsuThreshold(correctedLuma) +
-                    (intensity - 50) * (MAX_THRESHOLD_SHIFT * 2) / 100)
-                    .coerceIn(0, 255)
+            val threshold = otsuThreshold(correctedLuma)
             IntArray(pixels.size) { index ->
-                grayPixel(pixels[index], if (correctedLuma[index] <= threshold) 0 else 255)
+                val correctedPixel = shadowCorrectedPixel(index)
+                val target =
+                    grayPixel(correctedPixel, if (correctedLuma[index] <= threshold) 0 else 255)
+                blendPixel(correctedPixel, target, intensity)
             }
         }
     }
@@ -212,8 +225,8 @@ private fun argbLuma(pixel: Int): Int =
         blue = pixel and 0xFF,
     )
 
-private fun contrastLuma(value: Int, intensity: Int): Int =
-    (128 + (value - 128) * (100 + intensity) / 100).coerceIn(0, 255)
+private fun contrastLuma(value: Int): Int =
+    (128 + (value - 128) * 2).coerceIn(0, 255)
 
 private fun scaleColorToLuma(pixel: Int, sourceLuma: Int, targetLuma: Int): Int {
     if (sourceLuma == targetLuma) return pixel
@@ -225,6 +238,19 @@ private fun scaleColorToLuma(pixel: Int, sourceLuma: Int, targetLuma: Int): Int 
         (scale(pixel ushr 16 and 0xFF) shl 16) or
         (scale(pixel ushr 8 and 0xFF) shl 8) or
         scale(pixel and 0xFF)
+}
+
+private fun blendPixel(source: Int, target: Int, intensity: Int): Int {
+    if (intensity == 0) return source
+    fun blend(shift: Int): Int {
+        val start = source ushr shift and 0xFF
+        val end = target ushr shift and 0xFF
+        return start + (end - start) * intensity / 100
+    }
+    return (source and 0xFF000000.toInt()) or
+        (blend(16) shl 16) or
+        (blend(8) shl 8) or
+        blend(0)
 }
 
 private fun grayPixel(pixel: Int, value: Int): Int =

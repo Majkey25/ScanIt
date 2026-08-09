@@ -96,7 +96,7 @@ class ScanAppearanceTest {
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Color, 0, 0)),
         )
         assertArrayEquals(
-            intArrayOf(argb(alpha = 128, red = 50, green = 76, blue = 101)),
+            intArrayOf(argb(alpha = 128, red = 51, green = 76, blue = 101)),
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Color, 50, 0)),
         )
         assertArrayEquals(
@@ -106,25 +106,25 @@ class ScanAppearanceTest {
     }
 
     @Test
-    fun grayscaleIntensityAlwaysReturnsNeutralPixels() {
+    fun grayscaleIntensityBlendsFromSourceColorToNeutral() {
         val source = intArrayOf(argb(alpha = 128, red = 64, green = 96, blue = 128))
 
         assertArrayEquals(
-            intArrayOf(gray(alpha = 128, value = 90)),
+            source,
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Grayscale, 0, 0)),
         )
         assertArrayEquals(
-            intArrayOf(gray(alpha = 128, value = 71)),
+            intArrayOf(argb(alpha = 128, red = 77, green = 93, blue = 109)),
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Grayscale, 50, 0)),
         )
         assertArrayEquals(
-            intArrayOf(gray(alpha = 128, value = 52)),
+            intArrayOf(gray(alpha = 128, value = 90)),
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Grayscale, 100, 0)),
         )
     }
 
     @Test
-    fun blackWhiteIntensityMovesTheMeasuredThresholdWithoutGrayBlending() {
+    fun blackWhiteIntensityBlendsTowardTheMeasuredBitonalTarget() {
         val source = intArrayOf(gray(32), gray(96), gray(160), gray(224))
 
         val low =
@@ -149,24 +149,68 @@ class ScanAppearanceTest {
                 ScanAppearance(ScanColorMode.BlackWhite, 100, 0),
             )
 
-        assertArrayEquals(intArrayOf(gray(0), gray(255), gray(255), gray(255)), low)
-        assertArrayEquals(intArrayOf(gray(0), gray(0), gray(255), gray(255)), medium)
-        assertArrayEquals(intArrayOf(gray(0), gray(0), gray(0), gray(255)), high)
-        assertTrue((low + medium + high).all(::isOpaqueBlackOrWhite))
+        assertArrayEquals(source, low)
+        assertArrayEquals(intArrayOf(gray(16), gray(48), gray(207), gray(239)), medium)
+        assertArrayEquals(intArrayOf(gray(0), gray(0), gray(255), gray(255)), high)
+        assertTrue(high.all(::isOpaqueBlackOrWhite))
+    }
+
+    @Test
+    fun zeroFilterIntensityWithNoShadowsReturnsExactSourceForEveryMode() {
+        val source =
+            intArrayOf(
+                argb(alpha = 17, red = 31, green = 127, blue = 223),
+                argb(alpha = 231, red = 240, green = 80, blue = 16),
+            )
+
+        ScanColorMode.entries.forEach { mode ->
+            assertArrayEquals(
+                source,
+                processScanPixels(
+                    source,
+                    2,
+                    1,
+                    ScanAppearance(mode, intensity = 0, shadows = 0),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun everyModePreservesAlphaAtZeroHalfAndFullIntensity() {
+        val source = intArrayOf(argb(alpha = 37, red = 64, green = 96, blue = 128))
+
+        ScanColorMode.entries.forEach { mode ->
+            listOf(0, 50, 100).forEach { intensity ->
+                val result =
+                    processScanPixels(
+                        source,
+                        1,
+                        1,
+                        ScanAppearance(mode, intensity = intensity, shadows = 50),
+                    )
+
+                assertEquals(37, result.single() ushr 24)
+            }
+        }
     }
 
     @Test
     fun shadowsRemainIndependentFromFilterIntensity() {
-        val source = intArrayOf(gray(64), gray(96), gray(128), gray(160))
+        val source = intArrayOf(argb(red = 64, green = 96, blue = 128))
+        val shadowCorrected = intArrayOf(argb(red = 181, green = 255, blue = 255))
 
-        assertArrayEquals(
-            source,
-            processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.Color, 0, 0)),
-        )
-        assertArrayEquals(
-            IntArray(source.size) { gray(255) },
-            processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.Color, 0, 100)),
-        )
+        ScanColorMode.entries.forEach { mode ->
+            assertArrayEquals(
+                shadowCorrected,
+                processScanPixels(
+                    source,
+                    1,
+                    1,
+                    ScanAppearance(mode, intensity = 0, shadows = 100),
+                ),
+            )
+        }
     }
 
     @Test
