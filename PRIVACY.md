@@ -13,6 +13,8 @@ diagnostic and usage telemetry as described in the canonical policy and
 
 Temporary scan working copies are kept in a bounded app-private cache. Durable
 PDFs and images are stored only according to the user's settings and actions.
+ScanIt can delete exact tracked outputs after explicit Recent-screen confirmation
+or after a sharing app is selected when the matching default-off option is enabled.
 Sharing and printing send a selected document to an external app or service only
 after a user action.
 

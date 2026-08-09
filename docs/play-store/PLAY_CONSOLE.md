@@ -208,7 +208,7 @@ does not state that all metrics are processed only in memory.
 
 - App-private working copies: at most eight scan directories; Android may clear them; removing a Recent item removes its temporary working copy; uninstall removes the remaining app-private cache.
 - App settings: retained locally until changed, cleared, or the app is uninstalled; Android backup and transfer are disabled.
-- Gallery, Downloads, and selected-folder files: retained until the user deletes them from the corresponding storage provider; uninstall does not delete them.
+- Gallery, Downloads, and selected-folder files: retained until the user deletes them through ScanIt or the corresponding storage provider. Optional default-off settings can delete the matching saved format after a sharing app is selected. Uninstall does not delete saved files outside app-private storage.
 - External share/print destination: retention is controlled by the app or service selected by the user.
 - Google ML Kit telemetry: retention and deletion are controlled by Google under Google's policies, not by ScanIt.
 
