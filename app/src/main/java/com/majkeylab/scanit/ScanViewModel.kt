@@ -381,6 +381,7 @@ internal class ScanViewModel(
                 var cached: CachedScan? = null
                 var galleryPages: List<Uri> = emptyList()
                 var savedPdfUri: Uri? = null
+                var completedResult: ScreenState.Result? = null
                 try {
                     val result =
                         withContext(Dispatchers.IO) {
@@ -417,37 +418,46 @@ internal class ScanViewModel(
                                     warnings += UiMessage(R.string.pdf_save_failed)
                                 }
                             }
+                            val result =
+                                ScreenState.Result(
+                                    scan =
+                                        SavedScan(
+                                            cached = cachedScan,
+                                            galleryPages = galleryPages,
+                                            savedPdf = savedPdfUri,
+                                            warnings = warnings,
+                                        ),
+                                    thumbnail = thumbnail,
+                                )
+                            completedResult = result
                             settingsStore.saveActiveResult(cachedScan.baseName)
                             currentCoroutineContext().ensureActive()
-                            ScreenState.Result(
-                                scan =
-                                    SavedScan(
-                                        cached = cachedScan,
-                                        galleryPages = galleryPages,
-                                        savedPdf = savedPdfUri,
-                                        warnings = warnings,
-                                    ),
-                                thumbnail = thumbnail,
-                            )
+                            result
                         }
-                    mutableState.value = result
-                    persistRoute(ROUTE_RESULT, result.scan.cached.baseName)
-                    refreshRecentCache(result.scan.cached.baseName)
+                    publishResult(result)
                 } catch (exception: CancellationException) {
-                    clearActiveResultCheckpoint()
-                    cleanup(cached, galleryPages, savedPdfUri)
+                    val retainedResult = completedResult
+                    if (!clearActiveResultCheckpoint() && retainedResult != null) {
+                        publishResult(retainedResult)
+                    } else {
+                        cleanup(cached, galleryPages, savedPdfUri)
+                    }
                     throw exception
                 } catch (exception: Exception) {
-                    clearActiveResultCheckpoint()
-                    val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
-                    val message =
-                        if (cleanupComplete && exception.suppressed.isEmpty()) {
-                            UiMessage(R.string.document_save_failed)
-                        } else {
-                            UiMessage(R.string.document_save_partial_failed)
-                        }
-                    mutableState.value = ScreenState.Failure(message)
-                    persistRoute(ROUTE_FAILURE)
+                    val retainedResult = completedResult
+                    if (!clearActiveResultCheckpoint() && retainedResult != null) {
+                        publishResult(retainedResult)
+                    } else {
+                        val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
+                        val message =
+                            if (cleanupComplete && exception.suppressed.isEmpty()) {
+                                UiMessage(R.string.document_save_failed)
+                            } else {
+                                UiMessage(R.string.document_save_partial_failed)
+                            }
+                        mutableState.value = ScreenState.Failure(message)
+                        persistRoute(ROUTE_FAILURE)
+                    }
                 } finally {
                     processingJob = null
                 }
@@ -621,10 +631,15 @@ internal class ScanViewModel(
             clearActiveResultCheckpoint()
             return false
         }
+        publishResult(result)
+        return true
+    }
+
+    private fun publishResult(result: ScreenState.Result) {
+        val cacheId = result.scan.cached.baseName
         mutableState.value = result
         persistRoute(ROUTE_RESULT, cacheId)
         refreshRecentCache(cacheId)
-        return true
     }
 
     private fun refreshRecentScreen(message: UiMessage? = null) {
