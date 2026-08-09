@@ -438,9 +438,11 @@ class PureLogicTest {
     fun exactReloadClearsStaleStateFailureAndRejectsAnotherGeneration() {
         val action = ResultSaveAction(CACHE_ID, ENTRY_ID, generation = 1L)
         val exact = savedScan(entryId = ENTRY_ID, outputMetadataValid = true)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
         val replacement = savedScan(entryId = OTHER_ENTRY_ID, outputMetadataValid = true)
 
         assertSame(exact, matchingSavedScan(exact, action))
+        assertNull(matchingSavedScan(unreadable, action))
         assertNull(matchingSavedScan(replacement, action))
         assertEquals(
             emptyList<UiMessage>(),

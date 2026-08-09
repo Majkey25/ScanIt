@@ -125,7 +125,9 @@ internal fun matchingSavedScan(
     action: ResultSaveAction,
 ): SavedScan? =
     scan?.takeIf {
-        it.cached.baseName == action.cacheId && it.cached.entryId == action.entryId
+        it.outputMetadataValid &&
+            it.cached.baseName == action.cacheId &&
+            it.cached.entryId == action.entryId
     }
 
 internal class ResultSaveGate {
