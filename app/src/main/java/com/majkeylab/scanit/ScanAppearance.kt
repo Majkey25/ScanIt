@@ -2,7 +2,7 @@ package com.majkeylab.scanit
 
 private const val DEFAULT_FILTER_INTENSITY = 100
 private const val DEFAULT_SHADOWS = 50
-private const val BACKGROUND_GRID_SIZE = 8
+internal const val LOCAL_SHADOW_GRID_SIZE = 8
 
 internal enum class ScanColorMode(val wireValue: String) {
     Color("color"),
@@ -49,24 +49,22 @@ internal fun correctLocalShadows(
     val normalizedStrength = clampAppearancePercent(strength)
     if (normalizedStrength == 0) return luma.copyOf()
 
-    val columns = minOf(BACKGROUND_GRID_SIZE, width)
-    val rows = minOf(BACKGROUND_GRID_SIZE, height)
+    val columns = minOf(LOCAL_SHADOW_GRID_SIZE, width)
+    val rows = minOf(LOCAL_SHADOW_GRID_SIZE, height)
     val backgrounds = IntArray(columns * rows)
     luma.forEachIndexed { index, value ->
         val x = index % width
         val y = index / width
-        val tile = tileCoordinate(y, height, rows) * columns + tileCoordinate(x, width, columns)
+        val tile = localShadowTileIndex(x, y, width, height, columns, rows)
         backgrounds[tile] = maxOf(backgrounds[tile], value)
     }
     return IntArray(luma.size) { index ->
         val x = index % width
         val y = index / width
         val value = luma[index]
-        val background = interpolatedBackground(backgrounds, columns, rows, x, y, width, height)
-        val normalized =
-            (if (background == 0) value else (value * 255 + background / 2) / background)
-                .coerceIn(0, 255)
-        (value + (normalized - value) * normalizedStrength / 100).coerceIn(0, 255)
+        val background =
+            localShadowBackgroundAt(backgrounds, columns, rows, x, y, width, height)
+        correctShadowLuma(value, background, normalizedStrength)
     }
 }
 
@@ -80,56 +78,65 @@ internal fun processScanPixels(
     val intensity = clampAppearancePercent(appearance.intensity)
     val rawLuma = IntArray(pixels.size) { argbLuma(pixels[it]) }
     val correctedLuma = correctLocalShadows(rawLuma, width, height, appearance.shadows)
-    fun shadowCorrectedPixel(index: Int): Int =
-        scaleColorToLuma(
+    val blackWhiteThreshold =
+        if (appearance.colorMode == ScanColorMode.BlackWhite) otsuThreshold(correctedLuma) else 127
+    val normalizedAppearance = appearance.copy(intensity = intensity)
+    return IntArray(pixels.size) { index ->
+        processAppearancePixel(
             pixel = pixels[index],
-            sourceLuma = rawLuma[index],
-            targetLuma = correctedLuma[index],
+            correctedLuma = correctedLuma[index],
+            appearance = normalizedAppearance,
+            blackWhiteThreshold = blackWhiteThreshold,
         )
-    return when (appearance.colorMode) {
-        ScanColorMode.Color ->
-            IntArray(pixels.size) { index ->
-                val correctedPixel = shadowCorrectedPixel(index)
-                val target =
-                    scaleColorToLuma(
-                        pixel = correctedPixel,
-                        sourceLuma = correctedLuma[index],
-                        targetLuma = contrastLuma(correctedLuma[index]),
-                    )
-                blendPixel(correctedPixel, target, intensity)
-            }
-
-        ScanColorMode.Grayscale ->
-            IntArray(pixels.size) { index ->
-                val correctedPixel = shadowCorrectedPixel(index)
-                blendPixel(
-                    correctedPixel,
-                    grayPixel(correctedPixel, correctedLuma[index]),
-                    intensity,
-                )
-            }
-
-        ScanColorMode.BlackWhite -> {
-            val threshold = otsuThreshold(correctedLuma)
-            IntArray(pixels.size) { index ->
-                val correctedPixel = shadowCorrectedPixel(index)
-                val target =
-                    grayPixel(correctedPixel, if (correctedLuma[index] <= threshold) 0 else 255)
-                blendPixel(correctedPixel, target, intensity)
-            }
-        }
     }
+}
+
+internal fun processAppearancePixel(
+    pixel: Int,
+    correctedLuma: Int,
+    appearance: ScanAppearance,
+    blackWhiteThreshold: Int,
+): Int {
+    val intensity = clampAppearancePercent(appearance.intensity)
+    val correctedPixel =
+        scaleColorToLuma(
+            pixel = pixel,
+            sourceLuma = argbLuma(pixel),
+            targetLuma = correctedLuma,
+        )
+    if (intensity == 0) return correctedPixel
+    val target =
+        when (appearance.colorMode) {
+            ScanColorMode.Color ->
+                scaleColorToLuma(
+                    pixel = correctedPixel,
+                    sourceLuma = correctedLuma,
+                    targetLuma = contrastLuma(correctedLuma),
+                )
+            ScanColorMode.Grayscale -> grayPixel(correctedPixel, correctedLuma)
+            ScanColorMode.BlackWhite ->
+                grayPixel(correctedPixel, if (correctedLuma <= blackWhiteThreshold) 0 else 255)
+        }
+    return blendPixel(correctedPixel, target, intensity)
 }
 
 internal fun otsuThreshold(luma: IntArray): Int {
     require(luma.isNotEmpty()) { "Luma input must not be empty" }
     val histogram = IntArray(256)
-    var totalSum = 0L
     luma.forEach { value ->
         require(value in 0..255) { "Luma values must be between 0 and 255" }
         histogram[value]++
-        totalSum += value
     }
+    return otsuThresholdFromHistogram(histogram)
+}
+
+internal fun otsuThresholdFromHistogram(histogram: IntArray): Int {
+    require(histogram.size == 256 && histogram.all { it >= 0 }) {
+        "Histogram must have 256 non-negative bins"
+    }
+    val pixelCount = histogram.sumOf { it.toLong() }
+    require(pixelCount > 0L) { "Histogram must contain at least one pixel" }
+    val totalSum = histogram.indices.sumOf { it.toLong() * histogram[it] }
 
     var backgroundWeight = 0L
     var backgroundSum = 0L
@@ -139,7 +146,7 @@ internal fun otsuThreshold(luma: IntArray): Int {
     for (threshold in 0 until 255) {
         backgroundWeight += histogram[threshold]
         backgroundSum += threshold.toLong() * histogram[threshold]
-        val foregroundWeight = luma.size.toLong() - backgroundWeight
+        val foregroundWeight = pixelCount - backgroundWeight
         if (backgroundWeight == 0L || foregroundWeight == 0L) continue
         val backgroundMean = backgroundSum.toDouble() / backgroundWeight
         val foregroundMean = (totalSum - backgroundSum).toDouble() / foregroundWeight
@@ -176,7 +183,7 @@ private fun requireImageShape(size: Int, width: Int, height: Int) {
     }
 }
 
-private fun interpolatedBackground(
+internal fun localShadowBackgroundAt(
     backgrounds: IntArray,
     columns: Int,
     rows: Int,
@@ -210,6 +217,22 @@ private fun interpolatedBackground(
     return interpolate(topBackground, bottomBackground, y - yStart, yEnd - yStart)
 }
 
+internal fun localShadowTileIndex(
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+    columns: Int,
+    rows: Int,
+): Int = tileCoordinate(y, height, rows) * columns + tileCoordinate(x, width, columns)
+
+internal fun correctShadowLuma(value: Int, background: Int, strength: Int): Int {
+    val normalized =
+        (if (background == 0) value else (value * 255 + background / 2) / background)
+            .coerceIn(0, 255)
+    return (value + (normalized - value) * strength / 100).coerceIn(0, 255)
+}
+
 private fun tileCoordinate(position: Int, size: Int, tileCount: Int): Int =
     (position.toLong() * tileCount / size).toInt()
 
@@ -218,7 +241,7 @@ private fun interpolate(start: Int, end: Int, numerator: Int, denominator: Int):
         denominator)
         .toInt()
 
-private fun argbLuma(pixel: Int): Int =
+internal fun argbLuma(pixel: Int): Int =
     rgbLuma(
         red = pixel ushr 16 and 0xFF,
         green = pixel ushr 8 and 0xFF,
