@@ -19,8 +19,6 @@ internal data class AppSettings(
     val emailSubject: String = "Scanned document",
     val emailBody: String = "",
     val pdfTreeUri: String? = null,
-    val aiEnabled: Boolean = false,
-    val aiConsent: Boolean = false,
 )
 
 internal fun localizedDefaultEmailSubject(
@@ -45,13 +43,7 @@ internal data class SavedScan(
     val galleryPages: List<Uri>,
     val savedPdf: Uri?,
     val warnings: List<UiMessage> = emptyList(),
-    val isAiCopy: Boolean = false,
 )
-
-internal enum class AiReviewSource {
-    Original,
-    Ai,
-}
 
 internal sealed interface ScreenState {
     data object Ready : ScreenState
@@ -61,24 +53,9 @@ internal sealed interface ScreenState {
     data class Result(
         val scan: SavedScan,
         val thumbnail: Bitmap?,
-        val original: SavedScan? = null,
-        val message: UiMessage? = null,
-    ) : ScreenState
-
-    data class AiReview(
-        val original: SavedScan,
-        val ai: CachedScan,
-        val pageIndex: Int,
-        val source: AiReviewSource,
-        val preview: Bitmap?,
     ) : ScreenState
 
     data class Failure(val message: UiMessage) : ScreenState
-}
-
-internal fun aiReviewPageIndex(requested: Int, pageCount: Int): Int {
-    require(pageCount > 0) { "AI review needs at least one page" }
-    return requested.coerceIn(0, pageCount - 1)
 }
 
 private val scanNameFormatter =

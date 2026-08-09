@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,8 +59,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import java.io.IOException
 
@@ -114,24 +111,14 @@ internal fun ScanItApp(
     settings: AppSettings,
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
-    aiKeyStatus: AiKeyStatus,
     onScan: () -> Unit,
     onSaveSettings: (AppSettings) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
-    onRefreshGeminiKey: () -> Unit,
-    onSaveGeminiKey: (String) -> Unit,
-    onDeleteGeminiKey: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
-    onAiCleanup: () -> Unit,
-    onAiReviewPage: (Int) -> Unit,
-    onAiReviewSource: (AiReviewSource) -> Unit,
-    onAcceptAi: () -> Unit,
-    onDiscardAi: () -> Unit,
-    onUseOriginal: () -> Unit,
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     BackHandler(showSettings) { showSettings = false }
@@ -145,7 +132,6 @@ internal fun ScanItApp(
                 settings = settings,
                 language = language,
                 defaultEmailSubjects = defaultEmailSubjects,
-                aiKeyStatus = aiKeyStatus,
                 onClose = {
                     showSettings = false
                     if (settingsOnly) {
@@ -156,22 +142,11 @@ internal fun ScanItApp(
                 onLanguageChange = onLanguageChange,
                 onPdfFolderSelected = onPdfFolderSelected,
                 onPdfFolderCleared = onPdfFolderCleared,
-                onRefreshGeminiKey = onRefreshGeminiKey,
-                onSaveGeminiKey = onSaveGeminiKey,
-                onDeleteGeminiKey = onDeleteGeminiKey,
             )
         } else {
             when (state) {
                 ScreenState.Ready -> ProcessingScreen(stringResource(R.string.opening_scanner))
                 is ScreenState.Processing -> ProcessingScreen(state.message.resolve())
-                is ScreenState.AiReview ->
-                    AiReviewScreen(
-                        review = state,
-                        onPageSelected = onAiReviewPage,
-                        onSourceSelected = onAiReviewSource,
-                        onAccept = onAcceptAi,
-                        onDiscard = onDiscardAi,
-                    )
                 is ScreenState.Failure ->
                     FailureScreen(
                         message = state.message.resolve(),
@@ -181,14 +156,11 @@ internal fun ScanItApp(
                 is ScreenState.Result ->
                     ResultScreen(
                         result = state,
-                        aiEnabled = settings.aiEnabled,
                         onNewScan = onScan,
                         onSettings = { showSettings = true },
                         onSharePdf = onSharePdf,
                         onShareImages = onShareImages,
                         onPrint = onPrint,
-                        onAiCleanup = onAiCleanup,
-                        onUseOriginal = onUseOriginal,
                     )
             }
         }
@@ -234,14 +206,11 @@ private fun FailureScreen(
 @Composable
 private fun ResultScreen(
     result: ScreenState.Result,
-    aiEnabled: Boolean,
     onNewScan: () -> Unit,
     onSettings: () -> Unit,
     onSharePdf: (() -> Unit)?,
     onShareImages: (() -> Unit)?,
     onPrint: (() -> Unit)?,
-    onAiCleanup: () -> Unit,
-    onUseOriginal: () -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
@@ -303,9 +272,6 @@ private fun ResultScreen(
                 scan.warnings.forEach {
                     Text(it.resolve(), color = MaterialTheme.colorScheme.error)
                 }
-                result.message?.let {
-                    Text(it.resolve(), color = MaterialTheme.colorScheme.error)
-                }
             }
             item {
                 Button(
@@ -334,155 +300,9 @@ private fun ResultScreen(
                     Text(stringResource(R.string.print_document))
                 }
             }
-            if (aiEnabled && !scan.isAiCopy) {
-                item {
-                    OutlinedButton(
-                        onClick = onAiCleanup,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.clean_with_ai))
-                    }
-                }
-            }
-            if (scan.isAiCopy && result.original != null) {
-                item {
-                    OutlinedButton(
-                        onClick = onUseOriginal,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.use_original))
-                    }
-                }
-            }
             item {
                 TextButton(onClick = onNewScan, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.new_scan))
-                }
-            }
-            item { Spacer(Modifier.height(4.dp)) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AiReviewScreen(
-    review: ScreenState.AiReview,
-    onPageSelected: (Int) -> Unit,
-    onSourceSelected: (AiReviewSource) -> Unit,
-    onAccept: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    BackHandler(onBack = onDiscard)
-    val pageCount = review.ai.pages.size
-    val backDescription = stringResource(R.string.discard_ai_copy)
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.ai_review_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onDiscard,
-                        modifier = Modifier.semantics {
-                            contentDescription = backDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.back_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Text(
-                    stringResource(R.string.ai_review_warning),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    FilterChip(
-                        selected = review.source == AiReviewSource.Original,
-                        onClick = { onSourceSelected(AiReviewSource.Original) },
-                        enabled = review.preview != null,
-                        label = { Text(stringResource(R.string.original)) },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    )
-                    FilterChip(
-                        selected = review.source == AiReviewSource.Ai,
-                        onClick = { onSourceSelected(AiReviewSource.Ai) },
-                        enabled = review.preview != null,
-                        label = { Text(stringResource(R.string.ai_copy)) },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    )
-                }
-            }
-            item {
-                if (review.preview == null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    Image(
-                        bitmap = review.preview.asImageBitmap(),
-                        contentDescription = stringResource(R.string.ai_review_preview),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-            }
-            item {
-                Text(
-                    stringResource(R.string.ai_review_page, review.pageIndex + 1, pageCount),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { onPageSelected(review.pageIndex - 1) },
-                        enabled = review.preview != null && review.pageIndex > 0,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.previous_page))
-                    }
-                    OutlinedButton(
-                        onClick = { onPageSelected(review.pageIndex + 1) },
-                        enabled = review.preview != null && review.pageIndex < pageCount - 1,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.next_page))
-                    }
-                }
-            }
-            item {
-                Button(
-                    onClick = onAccept,
-                    enabled = review.preview != null,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Text(stringResource(R.string.accept_ai_copy))
-                }
-                TextButton(
-                    onClick = onDiscard,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.discard_ai_copy))
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }
@@ -526,15 +346,11 @@ private fun SettingsScreen(
     settings: AppSettings,
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
-    aiKeyStatus: AiKeyStatus,
     onClose: () -> Unit,
     onSave: (AppSettings) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
-    onRefreshGeminiKey: () -> Unit,
-    onSaveGeminiKey: (String) -> Unit,
-    onDeleteGeminiKey: () -> Unit,
 ) {
     val folderPermissionMissing = UiMessage(R.string.folder_permission_missing)
     val folderPermissionFailed = UiMessage(R.string.folder_permission_failed)
@@ -548,13 +364,8 @@ private fun SettingsScreen(
     var emailSubject by rememberSaveable { mutableStateOf(settings.emailSubject) }
     var emailBody by rememberSaveable { mutableStateOf(settings.emailBody) }
     var pdfTreeUri by rememberSaveable { mutableStateOf(settings.pdfTreeUri) }
-    var aiEnabled by rememberSaveable { mutableStateOf(settings.aiEnabled) }
-    var aiConsent by rememberSaveable { mutableStateOf(settings.aiConsent) }
-    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
-    var apiKey by remember { mutableStateOf("") }
-    var keyOperationPending by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(settings.emailSubject, defaultEmailSubjects) {
@@ -564,17 +375,6 @@ private fun SettingsScreen(
                 targetDefault = settings.emailSubject,
                 supportedDefaults = defaultEmailSubjects,
             )
-    }
-
-    LaunchedEffect(aiKeyStatus) {
-        when (aiKeyStatus) {
-            AiKeyStatus.Saving -> keyOperationPending = true
-            AiKeyStatus.Missing, AiKeyStatus.Present, is AiKeyStatus.Error -> {
-                if (keyOperationPending) apiKey = ""
-                keyOperationPending = false
-            }
-            AiKeyStatus.Checking, AiKeyStatus.Unknown -> Unit
-        }
     }
 
     val folderLauncher =
@@ -762,85 +562,6 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            item { HorizontalDivider() }
-            item {
-                TextButton(
-                    onClick = { advancedExpanded = !advancedExpanded },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(
-                        stringResource(
-                            if (advancedExpanded) {
-                                R.string.advanced_collapse
-                            } else {
-                                R.string.advanced_expand
-                            },
-                        ),
-                    )
-                }
-            }
-            if (advancedExpanded) {
-                item {
-                    SettingsSwitch(
-                        label = stringResource(R.string.enable_cloud_ai),
-                        checked = aiEnabled,
-                        onCheckedChange = { aiEnabled = it },
-                    )
-                }
-                item {
-                    SettingsSwitch(
-                        label = stringResource(R.string.ai_cloud_consent),
-                        checked = aiConsent,
-                        onCheckedChange = { aiConsent = it },
-                    )
-                }
-                item {
-                    Text(
-                        stringResource(R.string.ai_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text(stringResource(R.string.gemini_api_key)) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item { Text(aiKeyStatusText(aiKeyStatus)) }
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = { onSaveGeminiKey(apiKey) },
-                            enabled = apiKey.isNotBlank() && !aiKeyStatus.isBusy(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.save_key))
-                        }
-                        OutlinedButton(
-                            onClick = onDeleteGeminiKey,
-                            enabled =
-                                aiKeyStatus is AiKeyStatus.Present ||
-                                    aiKeyStatus is AiKeyStatus.Error,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.delete_key))
-                        }
-                    }
-                    if (aiKeyStatus is AiKeyStatus.Error) {
-                        TextButton(onClick = onRefreshGeminiKey) {
-                            Text(stringResource(R.string.check_key_again))
-                        }
-                    }
-                }
-            }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 Button(
@@ -856,8 +577,6 @@ private fun SettingsScreen(
                                     emailSubject = emailSubject,
                                     emailBody = emailBody,
                                     pdfTreeUri = pdfTreeUri,
-                                    aiEnabled = aiEnabled,
-                                    aiConsent = aiConsent,
                                 ),
                             )
                             onClose()
@@ -910,19 +629,5 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun aiKeyStatusText(status: AiKeyStatus): String =
-    when (status) {
-        AiKeyStatus.Unknown -> stringResource(R.string.key_status_unknown)
-        AiKeyStatus.Checking -> stringResource(R.string.key_status_checking)
-        AiKeyStatus.Missing -> stringResource(R.string.key_status_missing)
-        AiKeyStatus.Present -> stringResource(R.string.key_status_present)
-        AiKeyStatus.Saving -> stringResource(R.string.key_status_saving)
-        is AiKeyStatus.Error -> status.message.resolve()
-    }
-
-@Composable
 private fun UiMessage.resolve(): String =
     stringResource(resourceId, *formatArgs.toTypedArray())
-
-private fun AiKeyStatus.isBusy(): Boolean =
-    this is AiKeyStatus.Unknown || this is AiKeyStatus.Checking || this is AiKeyStatus.Saving

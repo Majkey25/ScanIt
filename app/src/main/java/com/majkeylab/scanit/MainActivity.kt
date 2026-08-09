@@ -40,30 +40,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by viewModel.state.collectAsState()
             val settings by viewModel.settings.collectAsState()
-            val aiKeyStatus by viewModel.aiKeyStatus.collectAsState()
             ScanItApp(
                 state = state,
                 settings = settings,
                 language = currentAppLanguage(),
                 defaultEmailSubjects = defaultEmailSubjects,
-                aiKeyStatus = aiKeyStatus,
                 onScan = ::startScan,
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
                 onPdfFolderCleared = viewModel::clearPdfTreeUri,
-                onRefreshGeminiKey = viewModel::refreshGeminiKeyStatus,
-                onSaveGeminiKey = viewModel::saveGeminiApiKey,
-                onDeleteGeminiKey = viewModel::deleteGeminiApiKey,
                 onSharePdf = ::shareCurrentPdf,
                 onShareImages = ::shareCurrentImages,
                 onPrint = ::printCurrentScan,
-                onAiCleanup = viewModel::startAiCleanup,
-                onAiReviewPage = viewModel::selectAiReviewPage,
-                onAiReviewSource = viewModel::selectAiReviewSource,
-                onAcceptAi = viewModel::acceptAiCleanup,
-                onDiscardAi = viewModel::discardAiCleanup,
-                onUseOriginal = viewModel::useOriginal,
             )
         }
         if (savedInstanceState == null) {

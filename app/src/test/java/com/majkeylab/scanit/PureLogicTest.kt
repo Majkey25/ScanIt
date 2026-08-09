@@ -5,8 +5,6 @@ import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
-import java.util.Base64
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -25,8 +23,6 @@ class PureLogicTest {
                 emailSubject = "Scanned document",
                 emailBody = "",
                 pdfTreeUri = null,
-                aiEnabled = false,
-                aiConsent = false,
             ),
             AppSettings(),
         )
@@ -158,145 +154,18 @@ class PureLogicTest {
     }
 
     @Test
-    fun validGeminiResponseUsesFinalModelOutputImage() {
-        val oldBytes =
-            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0x01, 0xff.toByte(), 0xd9.toByte())
-        val expected =
-            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0x02, 0xff.toByte(), 0xd9.toByte())
-        val old = Base64.getEncoder().encodeToString(oldBytes)
-        val current = Base64.getEncoder().encodeToString(expected)
-        val response =
-            """
-            {
-              "status": "completed",
-              "steps": [
-                {"type": "model_output", "content": [
-                  {"type": "image", "mime_type": "image/jpeg", "data": "$old"}
-                ]},
-                {"type": "thought"},
-                {"type": "model_output", "content": [
-                  {"type": "text", "text": "done"},
-                  {"type": "image", "mime_type": "image/jpeg", "data": "$current"}
-                ]}
-              ]
-            }
-            """.trimIndent()
-
-        assertArrayEquals(expected, parseGeminiImageResponse(response))
-    }
-
-    @Test
-    fun geminiResponseWithoutImageIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[{"type":"text","text":"none"}]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithInvalidBase64IsRejected() {
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = "not base64!"))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithNullImageDataIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[
-                {"type":"image","mime_type":"image/jpeg","data":null}
-              ]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithNonStringImageDataIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[
-                {"type":"image","mime_type":"image/jpeg","data":1234}
-              ]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithBase64NonJpegIsRejected() {
-        val data = Base64.getEncoder().encodeToString("not-jpeg".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = data))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithEmptyImageIsRejected() {
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = ""))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithWrongMimeIsRejected() {
-        val data = Base64.getEncoder().encodeToString("png".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(mimeType = "image/png", data = data))
-        }
-    }
-
-    @Test
-    fun incompleteGeminiResponseIsRejected() {
-        val data = Base64.getEncoder().encodeToString("jpeg".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(status = "in_progress", data = data))
-        }
-    }
-
-    @Test
-    fun scanFileNamesDistinguishOriginalAndAiCopies() {
+    fun scanFileNamesUseStableOriginalNames() {
         val baseName = "Scan_2026-08-06_12-34-56"
 
         assertEquals("${baseName}_01.jpg", scanPageFileName(baseName, 1))
         assertEquals("${baseName}_12.jpg", scanPageFileName(baseName, 12))
-        assertEquals("${baseName}_01_AI.jpg", scanPageFileName(baseName, 1, isAiCopy = true))
         assertEquals("$baseName.pdf", scanPdfFileName(baseName))
-        assertEquals("${baseName}_AI.pdf", scanPdfFileName(baseName, isAiCopy = true))
     }
 
     @Test
     fun scanPageFileNameRejectsInvalidPageNumber() {
         assertThrows(IllegalArgumentException::class.java) {
             scanPageFileName("Scan", 0)
-        }
-    }
-
-    @Test
-    fun aiReviewPageSelectionStaysInsideDocument() {
-        assertEquals(0, aiReviewPageIndex(-1, 3))
-        assertEquals(1, aiReviewPageIndex(1, 3))
-        assertEquals(2, aiReviewPageIndex(8, 3))
-        assertThrows(IllegalArgumentException::class.java) {
-            aiReviewPageIndex(0, 0)
         }
     }
 
@@ -396,16 +265,4 @@ class PureLogicTest {
         }
     }
 
-    private fun imageResponse(
-        status: String = "completed",
-        mimeType: String = "image/jpeg",
-        data: String,
-    ): String =
-        """
-        {"status":"$status","steps":[
-          {"type":"model_output","content":[
-            {"type":"image","mime_type":"$mimeType","data":"$data"}
-          ]}
-        ]}
-        """.trimIndent()
 }
