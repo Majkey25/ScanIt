@@ -95,6 +95,18 @@ class PureLogicTest {
     }
 
     @Test
+    fun completingScannerPreparationInvalidatesItsCallback() {
+        val gate = ScannerLaunchGate()
+        val preparing = gate.begin(processing = false)!!
+
+        gate.complete()
+
+        assertEquals(ScannerLaunchStage.Idle, gate.stage)
+        assertEquals(false, gate.markLaunched(preparing))
+        assertEquals(false, gate.fail(preparing))
+    }
+
+    @Test
     fun recentActionGateRejectsShareAfterLaterAction() {
         val gate = RecentActionGate()
         val share = gate.begin("Scan_1")
@@ -177,6 +189,18 @@ class PureLogicTest {
     }
 
     @Test
+    fun savedResultStartsInNonInteractiveProcessingState() {
+        assertEquals(
+            ScreenState.Processing(
+                UiMessage(R.string.opening_document),
+                canNavigateBack = false,
+            ),
+            initialScreenState(RestoredRoute.Result),
+        )
+        assertEquals(ScreenState.Recent(emptyList()), initialScreenState(RestoredRoute.Recent))
+    }
+
+    @Test
     fun backNavigationUsesScannerRecentResultMap() {
         val result =
             ScreenState.Result(
@@ -223,6 +247,46 @@ class PureLogicTest {
         assertEquals(
             AppBackAction.CollapseFileDetails,
             appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun backNavigationConsumesReadyAndProcessingStates() {
+        assertEquals(
+            AppBackAction.ShowRecent,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Ready,
+            ),
+        )
+        assertEquals(
+            AppBackAction.ShowRecent,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state =
+                    ScreenState.Processing(
+                        UiMessage(R.string.opening_document),
+                        canNavigateBack = true,
+                    ),
+            ),
+        )
+    }
+
+    @Test
+    fun backNavigationConsumesNonCancellableProcessingWithoutChangingRoute() {
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state =
+                    ScreenState.Processing(
+                        UiMessage(R.string.opening_document),
+                        canNavigateBack = false,
+                    ),
+            ),
         )
     }
 

@@ -145,13 +145,13 @@ internal fun ScanItApp(
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
     var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
     val backAction = appBackAction(showSettings, fileDetailsExpanded, state)
-    BackHandler(backAction != AppBackAction.None) {
+    BackHandler {
         when (backAction) {
             AppBackAction.CloseSettings -> showSettings = false
             AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
             AppBackAction.ShowRecent -> onNavigateBack()
             AppBackAction.LaunchScanner -> onScan()
-            AppBackAction.None -> Unit
+            AppBackAction.Consume -> Unit
         }
     }
 
@@ -190,7 +190,6 @@ internal fun ScanItApp(
                         onSharePdf = onShareRecentPdf,
                         onDelete = onDeleteRecent,
                         onLoadThumbnail = onLoadRecentThumbnail,
-                        onRecent = onRecent,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
@@ -391,20 +390,17 @@ private fun RecentScreen(
     onSharePdf: (String) -> Unit,
     onDelete: (String) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
-    onRecent: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    MainScaffold(onRecent, onSettings) { modifier ->
+    MainScaffold(
+        onRecent = null,
+        onSettings = onSettings,
+        titleRes = R.string.recent_scans,
+    ) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Text(
-                    stringResource(R.string.recent_scans),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-            }
             item {
                 Button(
                     onClick = onNewScan,
@@ -548,15 +544,16 @@ private fun RecentThumbnail(
 
 @Composable
 private fun MainScaffold(
-    onRecent: () -> Unit,
+    onRecent: (() -> Unit)?,
     onSettings: () -> Unit,
+    titleRes: Int = R.string.app_name,
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CompactTopBar(
-                title = stringResource(R.string.app_name),
+                title = stringResource(titleRes),
                 onRecent = onRecent,
                 onSettings = onSettings,
             )

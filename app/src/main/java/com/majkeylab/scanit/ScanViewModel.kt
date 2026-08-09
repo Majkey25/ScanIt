@@ -161,6 +161,17 @@ internal class RecentDeletionGate {
     }
 }
 
+internal fun initialScreenState(route: RestoredRoute): ScreenState =
+    when (route) {
+        RestoredRoute.Scanner -> ScreenState.Ready
+        RestoredRoute.Recent -> ScreenState.Recent(emptyList())
+        RestoredRoute.Result ->
+            ScreenState.Processing(
+                UiMessage(R.string.opening_document),
+                canNavigateBack = false,
+            )
+    }
+
 internal class ScanViewModel(
     application: Application,
     private val savedStateHandle: SavedStateHandle,
@@ -181,14 +192,7 @@ internal class ScanViewModel(
         )
     private val recentActionGate = RecentActionGate()
     private val recentDeletionGate = RecentDeletionGate()
-    private val mutableState =
-        MutableStateFlow<ScreenState>(
-            if (initialRoute == RestoredRoute.Scanner) {
-                ScreenState.Ready
-            } else {
-                ScreenState.Recent(emptyList())
-            },
-        )
+    private val mutableState = MutableStateFlow(initialScreenState(initialRoute))
     private val mutableSettings = MutableStateFlow(settingsStore.load())
     private val pdfGrantLock = ReentrantLock()
     private var processingJob: Job? = null
@@ -279,7 +283,11 @@ internal class ScanViewModel(
         recentJob?.cancel()
         persistRoute(ROUTE_SCANNER)
         persistScannerStage()
-        mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_scanner))
+        mutableState.value =
+            ScreenState.Processing(
+                UiMessage(R.string.opening_scanner),
+                canNavigateBack = true,
+            )
         return request
     }
 
@@ -287,7 +295,11 @@ internal class ScanViewModel(
         val request =
             scannerLaunchGate.resumePreparing(processingJob?.isActive == true) ?: return null
         persistScannerStage()
-        mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_scanner))
+        mutableState.value =
+            ScreenState.Processing(
+                UiMessage(R.string.opening_scanner),
+                canNavigateBack = true,
+            )
         return request
     }
 
@@ -326,12 +338,20 @@ internal class ScanViewModel(
     fun processScan(pageUris: List<Uri>, pdfUri: Uri): Boolean {
         completeScannerLaunch()
         if (processingJob?.isActive == true) {
-            mutableState.value = ScreenState.Processing(UiMessage(R.string.saving_document))
+            mutableState.value =
+                ScreenState.Processing(
+                    UiMessage(R.string.saving_document),
+                    canNavigateBack = false,
+                )
             return false
         }
 
         val pages = pageUris.toList()
-        mutableState.value = ScreenState.Processing(UiMessage(R.string.saving_document))
+        mutableState.value =
+            ScreenState.Processing(
+                UiMessage(R.string.saving_document),
+                canNavigateBack = false,
+            )
         processingJob =
             viewModelScope.launch {
                 var cached: CachedScan? = null
@@ -413,17 +433,23 @@ internal class ScanViewModel(
 
     fun navigateBack() {
         recentActionGate.invalidate()
-        when (mutableState.value) {
-            is ScreenState.Result, is ScreenState.Failure -> refreshRecentScreen()
-            else -> Unit
+        val current = mutableState.value
+        if (current is ScreenState.Processing && !current.canNavigateBack) {
+            return
         }
+        completeScannerLaunch()
+        refreshRecentScreen()
     }
 
     fun openRecentScan(cacheId: String) {
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         persistRoute(ROUTE_RECENT)
-        mutableState.value = ScreenState.Processing(UiMessage(R.string.opening_document))
+        mutableState.value =
+            ScreenState.Processing(
+                UiMessage(R.string.opening_document),
+                canNavigateBack = true,
+            )
         recentJob?.cancel()
         recentJob =
             viewModelScope.launch {

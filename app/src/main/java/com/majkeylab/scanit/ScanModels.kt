@@ -63,7 +63,10 @@ internal fun restoredRoute(savedRoute: String?, cacheId: String?): RestoredRoute
 internal sealed interface ScreenState {
     data object Ready : ScreenState
 
-    data class Processing(val message: UiMessage) : ScreenState
+    data class Processing(
+        val message: UiMessage,
+        val canNavigateBack: Boolean,
+    ) : ScreenState
 
     data class Result(
         val scan: SavedScan,
@@ -83,7 +86,7 @@ internal enum class AppBackAction {
     CollapseFileDetails,
     ShowRecent,
     LaunchScanner,
-    None,
+    Consume,
 }
 
 internal fun appBackAction(
@@ -94,9 +97,9 @@ internal fun appBackAction(
     when {
         settingsOpen -> AppBackAction.CloseSettings
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
-        state is ScreenState.Result || state is ScreenState.Failure -> AppBackAction.ShowRecent
+        state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent -> AppBackAction.LaunchScanner
-        else -> AppBackAction.None
+        else -> AppBackAction.ShowRecent
     }
 
 private val scanNameFormatter =
