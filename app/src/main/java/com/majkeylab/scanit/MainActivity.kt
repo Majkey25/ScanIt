@@ -82,6 +82,11 @@ class MainActivity : ComponentActivity() {
         viewModel.resumeScannerPreparation()
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshAfterShareCleanup()
+    }
+
     internal fun startScan() {
         viewModel.beginScannerLaunch()
     }
@@ -195,7 +200,7 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun shareCurrentPdf() {
-        shareCurrentScan(::pdfShareIntent)
+        shareCurrentScan(ShareCleanupKind.Pdf, ::pdfShareIntent)
     }
 
     private fun shareRecentPdf(cacheId: String) {
@@ -206,18 +211,23 @@ class MainActivity : ComponentActivity() {
         }
         val settings = viewModel.currentSettings()
         lifecycleScope.launch {
-            val shareIntent =
+            val prepared =
                 try {
                     withContext(Dispatchers.IO) {
                         val scan = viewModel.recentScanForShare(action) ?: return@withContext null
-                        pdfShareIntent(this@MainActivity, scan, settings)
+                        pdfShareIntent(this@MainActivity, scan.cached, settings) to
+                            shareCleanupRequest(
+                                scan,
+                                ShareCleanupKind.Pdf,
+                                settings.deletePdfAfterShare,
+                            )
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Exception) {
                     null
                 }
-            if (shareIntent == null) {
+            if (prepared == null) {
                 if (viewModel.recentShareUnavailable(action)) {
                     showToast(R.string.share_failed)
                 }
@@ -227,7 +237,7 @@ class MainActivity : ComponentActivity() {
                 return@launch
             }
             try {
-                if (!launchShareChooser(shareIntent)) {
+                if (!launchShareChooser(prepared.first, prepared.second)) {
                     showToast(R.string.share_failed)
                 }
             } catch (_: RuntimeException) {
@@ -237,19 +247,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareCurrentImages() {
-        shareCurrentScan(::imageShareIntent)
+        shareCurrentScan(ShareCleanupKind.Images, ::imageShareIntent)
     }
 
     private fun shareCurrentScan(
+        cleanupKind: ShareCleanupKind,
         createIntent: (Context, CachedScan, AppSettings) -> Intent,
     ) {
-        val scan = (viewModel.state.value as? ScreenState.Result)?.scan?.cached
+        val scan = (viewModel.state.value as? ScreenState.Result)?.scan
         if (scan == null) {
             showToast(R.string.share_failed)
             return
         }
+        val settings = viewModel.currentSettings()
+        val cleanupEnabled =
+            when (cleanupKind) {
+                ShareCleanupKind.Pdf -> settings.deletePdfAfterShare
+                ShareCleanupKind.Images -> settings.deleteImagesAfterShare
+            }
         try {
-            if (!launchShareChooser(createIntent(this, scan, viewModel.currentSettings()))) {
+            if (
+                !launchShareChooser(
+                    createIntent(this, scan.cached, settings),
+                    shareCleanupRequest(scan, cleanupKind, cleanupEnabled),
+                )
+            ) {
                 showToast(R.string.share_failed)
             }
         } catch (_: Exception) {

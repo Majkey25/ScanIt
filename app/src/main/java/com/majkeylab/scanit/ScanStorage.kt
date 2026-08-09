@@ -749,31 +749,36 @@ internal class ScanStorage(
     fun deleteDurableOutputs(
         request: OutputDeleteRequest,
         deleteRecentCache: Boolean,
-    ): Boolean =
+    ): OutputDeleteOperationResult =
         synchronized(shareCacheLock) {
-            val cached = recentScanCache.open(request.cacheId) ?: return@synchronized false
-            val entryId = cached.entryId ?: return@synchronized false
-            if (entryId != request.entryId) return@synchronized false
+            val cached = recentScanCache.open(request.cacheId)
+                ?: return@synchronized OutputDeleteOperationResult.Stale
+            val entryId = cached.entryId
+                ?: return@synchronized OutputDeleteOperationResult.Stale
+            if (entryId != request.entryId) return@synchronized OutputDeleteOperationResult.Stale
             val directory = File(shareCacheRoot(), cached.baseName)
             val metadata =
                 matchingDeleteMetadata(
                     readOutputMetadata(directory, cached.baseName, cached.pages.size),
                     request,
-                ) ?: return@synchronized false
+                ) ?: return@synchronized OutputDeleteOperationResult.Failed
             val selected =
                 buildList<Pair<String, () -> OutputDeleteStatus>> {
                     if (
                         request.target == RecentDeleteTarget.Pdf ||
                             request.target == RecentDeleteTarget.Both
                     ) {
-                        val pdf = metadata.pdf ?: return@synchronized false
+                        val pdf = metadata.pdf
+                            ?: return@synchronized OutputDeleteOperationResult.Failed
                         add(pdf.uri to { outputDeleter.deletePdf(cached, pdf) })
                     }
                     if (
                         request.target == RecentDeleteTarget.Images ||
                             request.target == RecentDeleteTarget.Both
                     ) {
-                        if (metadata.images.isEmpty()) return@synchronized false
+                        if (metadata.images.isEmpty()) {
+                            return@synchronized OutputDeleteOperationResult.Failed
+                        }
                         metadata.images.forEach { image ->
                             add(image.uri to { outputDeleter.deleteImage(cached, image) })
                         }
@@ -784,7 +789,7 @@ internal class ScanStorage(
                     selected.isEmpty() ||
                     selected.map { it.first }.distinct().size != selected.size
             ) {
-                return@synchronized false
+                return@synchronized OutputDeleteOperationResult.Failed
             }
             val outcomes = selected.associate { (uri, delete) -> uri to delete() }
             val reduction = reduceOutputDeletion(metadata, request.target, outcomes)
@@ -803,9 +808,13 @@ internal class ScanStorage(
                     false
                 }
             if (!mayDeleteRecentCache(reduction.allRequestedRemoved, committed)) {
-                return@synchronized false
+                return@synchronized OutputDeleteOperationResult.Failed
             }
-            !deleteRecentCache || recentScanCache.delete(request.cacheId)
+            if (!deleteRecentCache || recentScanCache.delete(request.cacheId)) {
+                OutputDeleteOperationResult.Completed
+            } else {
+                OutputDeleteOperationResult.Failed
+            }
         }
 
     fun livePdfTreeUris(): Set<String> =

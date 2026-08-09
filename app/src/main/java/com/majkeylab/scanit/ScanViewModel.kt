@@ -109,20 +109,25 @@ internal class ScannerLaunchGate(
 
 internal data class RecentAction(
     val cacheId: String,
+    val entryId: String?,
     val generation: Long,
 )
 
 internal class RecentActionGate {
     private var generation = 0L
 
-    fun begin(cacheId: String): RecentAction = RecentAction(cacheId, nextGeneration())
+    fun begin(cacheId: String, entryId: String?): RecentAction =
+        RecentAction(cacheId, entryId, nextGeneration())
 
     fun invalidate() {
         nextGeneration()
     }
 
-    fun isCurrent(action: RecentAction, cacheIds: Iterable<String>): Boolean =
-        action.generation == generation && cacheIds.any { it == action.cacheId }
+    fun isCurrent(action: RecentAction, identities: Iterable<Pair<String, String?>>): Boolean =
+        action.generation == generation &&
+            identities.any { (cacheId, entryId) ->
+                cacheId == action.cacheId && entryId == action.entryId
+            }
 
     private fun nextGeneration(): Long {
         check(generation < Long.MAX_VALUE) { "Recent action generation exhausted" }
@@ -245,6 +250,7 @@ internal class ScanViewModel(
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
+    private var shareRefreshJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
 
@@ -269,6 +275,48 @@ internal class ScanViewModel(
     }
 
     fun currentSettings(): AppSettings = mutableSettings.value
+
+    fun refreshAfterShareCleanup() {
+        val snapshot = mutableState.value
+        if (snapshot !is ScreenState.Result && snapshot !is ScreenState.Recent) return
+        if (shareRefreshJob?.isActive == true) return
+        shareRefreshJob =
+            viewModelScope.launch {
+                when (snapshot) {
+                    is ScreenState.Result -> {
+                        val cacheId = snapshot.scan.cached.baseName
+                        val entryId = snapshot.scan.cached.entryId
+                        val saved =
+                            try {
+                                withContext(Dispatchers.IO) { storage.openSavedScan(cacheId) }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Exception) {
+                                null
+                            }
+                        val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                        val refreshed = saved?.takeIf { it.cached.entryId == entryId }
+                        if (
+                            latest.scan.cached.baseName == cacheId &&
+                                latest.scan.cached.entryId == entryId &&
+                                refreshed != null
+                        ) {
+                            mutableState.value =
+                                latest.copy(scan = refreshed.copy(warnings = latest.scan.warnings))
+                            refreshRecentCache(cacheId)
+                        }
+                    }
+                    is ScreenState.Recent -> {
+                        val scans = loadRecentScans()
+                        val latest = mutableState.value as? ScreenState.Recent ?: return@launch
+                        if (scans != null) {
+                            recentScans = scans
+                            mutableState.value = latest.copy(scans = scans)
+                        }
+                    }
+                }
+            }
+    }
 
     fun localizeDefaultEmailSubject(
         targetDefault: String,
@@ -677,14 +725,15 @@ internal class ScanViewModel(
                     val deleted =
                         try {
                             withContext(Dispatchers.IO) {
-                                val result = if (request.target == RecentDeleteTarget.RemoveFromRecent) {
-                                    storage.removeRecentPreview(request)
-                                } else {
-                                    storage.deleteDurableOutputs(
-                                        request,
-                                        deleteRecentCache = true,
-                                    )
-                                }
+                                val result =
+                                    if (request.target == RecentDeleteTarget.RemoveFromRecent) {
+                                        storage.removeRecentPreview(request)
+                                    } else {
+                                        storage.deleteDurableOutputs(
+                                            request,
+                                            deleteRecentCache = true,
+                                        ) == OutputDeleteOperationResult.Completed
+                                    }
                                 if (request.target != RecentDeleteTarget.RemoveFromRecent) {
                                     reconcilePdfTreeGrantsAfterOutputChange()
                                 }
@@ -713,15 +762,17 @@ internal class ScanViewModel(
 
     fun beginRecentShare(cacheId: String): RecentAction? {
         val current = mutableState.value as? ScreenState.Recent ?: return null
-        if (current.scans.none { it.cacheId == cacheId }) {
-            return null
-        }
-        return recentActionGate.begin(cacheId)
+        val scan = current.scans.firstOrNull { it.cacheId == cacheId } ?: return null
+        return recentActionGate.begin(cacheId, scan.entryId)
     }
 
-    suspend fun recentScanForShare(action: RecentAction): CachedScan? =
+    suspend fun recentScanForShare(action: RecentAction): SavedScan? =
         try {
-            withContext(Dispatchers.IO) { storage.openCachedScan(action.cacheId) }
+            withContext(Dispatchers.IO) {
+                storage.openSavedScan(action.cacheId)?.takeIf {
+                    it.cached.entryId == action.entryId
+                }
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
@@ -746,7 +797,10 @@ internal class ScanViewModel(
 
     private fun isRecentShareCurrent(action: RecentAction): Boolean {
         val current = mutableState.value as? ScreenState.Recent ?: return false
-        return recentActionGate.isCurrent(action, current.scans.map(RecentScan::cacheId))
+        return recentActionGate.isCurrent(
+            action,
+            current.scans.map { it.cacheId to it.entryId },
+        )
     }
 
     suspend fun loadRecentThumbnail(firstPage: File): Bitmap? =

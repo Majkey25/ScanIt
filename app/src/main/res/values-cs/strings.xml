@@ -43,6 +43,7 @@
     <string name="recent_history_unavailable">Nedávné skeny se nepodařilo načíst.</string>
     <string name="state_update_failed">ScanIt se nepodařilo aktualizovat. Zkuste to znovu.</string>
     <string name="recent_delete_failed">Nedávný sken se nepodařilo smazat.</string>
+    <string name="shared_output_delete_failed">Uložený soubor se nepodařilo smazat. Zkuste to znovu v nedávných skenech.</string>
     <string name="more_actions">Další akce</string>
     <string name="open_scan">Otevřít</string>
     <string name="delete_scan">Smazat…</string>

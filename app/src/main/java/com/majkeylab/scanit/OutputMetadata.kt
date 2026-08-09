@@ -305,7 +305,7 @@ private fun isValidOutputMetadata(
     }
 }
 
-private fun isCanonicalUuid(value: String): Boolean =
+internal fun isCanonicalUuid(value: String): Boolean =
     try {
         value == value.lowercase(Locale.ROOT) && UUID.fromString(value).toString() == value
     } catch (_: IllegalArgumentException) {

@@ -332,20 +332,24 @@ class PureLogicTest {
     @Test
     fun recentActionGateRejectsShareAfterLaterAction() {
         val gate = RecentActionGate()
-        val share = gate.begin("Scan_1")
+        val share = gate.begin("Scan_1", ENTRY_ID)
 
         gate.invalidate()
 
-        assertEquals(false, gate.isCurrent(share, listOf("Scan_1")))
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_1" to ENTRY_ID)))
     }
 
     @Test
-    fun recentActionGateRequiresCurrentRowIdentity() {
+    fun recentActionGateRequiresCurrentRowGenerationIdentity() {
         val gate = RecentActionGate()
-        val share = gate.begin("Scan_1")
+        val share = gate.begin("Scan_1", ENTRY_ID)
 
-        assertEquals(true, gate.isCurrent(share, listOf("Scan_1", "Scan_2")))
-        assertEquals(false, gate.isCurrent(share, listOf("Scan_2")))
+        assertEquals(
+            true,
+            gate.isCurrent(share, listOf("Scan_1" to ENTRY_ID, "Scan_2" to null)),
+        )
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_1" to OTHER_ENTRY_ID)))
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_2" to ENTRY_ID)))
     }
 
     @Test

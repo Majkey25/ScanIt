@@ -37,6 +37,74 @@ internal enum class OutputDeleteStatus {
     Failed,
 }
 
+internal enum class OutputDeleteOperationResult {
+    Completed,
+    Stale,
+    Failed,
+}
+
+internal enum class ShareCleanupKind(val wireValue: String) {
+    Pdf("pdf"),
+    Images("images"),
+}
+
+internal data class ShareCleanupRequest(
+    val cacheId: String,
+    val entryId: String,
+    val kind: ShareCleanupKind,
+)
+
+internal fun shareCleanupRequest(
+    scan: SavedScan,
+    kind: ShareCleanupKind,
+    enabled: Boolean,
+): ShareCleanupRequest? =
+    shareCleanupRequest(
+        cacheId = scan.cached.baseName,
+        entryId = scan.cached.entryId,
+        metadataValid = scan.outputMetadataValid,
+        kind = kind,
+        available =
+            when (kind) {
+                ShareCleanupKind.Pdf -> scan.savedPdf != null
+                ShareCleanupKind.Images -> scan.galleryPages.isNotEmpty()
+            },
+        enabled = enabled,
+    )
+
+internal fun shareCleanupRequest(
+    cacheId: String,
+    entryId: String?,
+    metadataValid: Boolean,
+    kind: ShareCleanupKind,
+    available: Boolean,
+    enabled: Boolean,
+): ShareCleanupRequest? {
+    if (
+        !enabled ||
+            !metadataValid ||
+            !available ||
+            entryId == null ||
+            !isSafeCacheId(cacheId) ||
+            !isCanonicalUuid(entryId)
+    ) {
+        return null
+    }
+    return ShareCleanupRequest(cacheId, entryId, kind)
+}
+
+internal fun decodeShareCleanupRequest(
+    cacheId: String?,
+    entryId: String?,
+    kindValue: String?,
+): ShareCleanupRequest? {
+    if (cacheId == null || entryId == null || !isSafeCacheId(cacheId) || !isCanonicalUuid(entryId)) {
+        return null
+    }
+    val kind = ShareCleanupKind.entries.firstOrNull { it.wireValue == kindValue } ?: return null
+    return ShareCleanupRequest(cacheId, entryId, kind)
+}
+
 internal data class OutputDeleteReduction(
     val metadata: OutputMetadata,
     val allRequestedRemoved: Boolean,

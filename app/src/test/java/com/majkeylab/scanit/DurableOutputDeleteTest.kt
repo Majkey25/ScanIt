@@ -185,6 +185,73 @@ class DurableOutputDeleteTest {
     }
 
     @Test
+    fun shareCleanupRequestRequiresExactGenerationAndAvailableSavedKind() {
+        assertEquals(
+            ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf),
+            shareCleanupRequest(
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                metadataValid = true,
+                kind = ShareCleanupKind.Pdf,
+                available = true,
+                enabled = true,
+            ),
+        )
+        assertEquals(
+            ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Images),
+            shareCleanupRequest(
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                metadataValid = true,
+                kind = ShareCleanupKind.Images,
+                available = true,
+                enabled = true,
+            ),
+        )
+        assertNull(
+            shareCleanupRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                metadataValid = true,
+                kind = ShareCleanupKind.Pdf,
+                available = true,
+                enabled = false,
+            ),
+        )
+        assertNull(
+            shareCleanupRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                metadataValid = false,
+                kind = ShareCleanupKind.Pdf,
+                available = true,
+                enabled = true,
+            ),
+        )
+        assertNull(
+            shareCleanupRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                metadataValid = true,
+                kind = ShareCleanupKind.Pdf,
+                available = false,
+                enabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun shareCleanupExtrasRejectTraversalBadGenerationAndUnknownKind() {
+        assertEquals(
+            ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf),
+            decodeShareCleanupRequest(CACHE_ID, ENTRY_ID, "pdf"),
+        )
+        assertNull(decodeShareCleanupRequest("../$CACHE_ID", ENTRY_ID, "pdf"))
+        assertNull(decodeShareCleanupRequest(CACHE_ID, "not-a-uuid", "pdf"))
+        assertNull(decodeShareCleanupRequest(CACHE_ID, ENTRY_ID, "both"))
+    }
+
+    @Test
     fun treeGrantReconciliationKeepsCurrentAndLiveSidecarTrees() {
         assertEquals(
             setOf("content://docs/tree/stale"),
