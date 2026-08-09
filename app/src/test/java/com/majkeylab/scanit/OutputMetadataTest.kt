@@ -5,6 +5,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -197,6 +198,47 @@ class OutputMetadataTest {
             }
 
             assertEquals(original, readOutputMetadata(directory, cacheId, pageCount = 1))
+        }
+
+    @Test
+    fun committedMetadataDoesNotDependOnAPostMoveReadback() =
+        withDirectory { directory ->
+            initializeOutputMetadata(
+                directory,
+                cacheId,
+                pageCount = 1,
+                createdAtEpochMs = 7L,
+                entryId = entryId,
+            )
+            val relocated = File(directory.parentFile, "${directory.name}-relocated")
+            try {
+                val updated =
+                    rewriteOutputMetadata(
+                        directory = directory,
+                        expectedCacheId = cacheId,
+                        expectedEntryId = entryId,
+                        pageCount = 1,
+                        moveMetadata = { source, target ->
+                            Files.move(
+                                source,
+                                target,
+                                StandardCopyOption.ATOMIC_MOVE,
+                                StandardCopyOption.REPLACE_EXISTING,
+                            )
+                            Files.move(
+                                directory.toPath(),
+                                relocated.toPath(),
+                                StandardCopyOption.ATOMIC_MOVE,
+                            )
+                        },
+                    ) {
+                        it.copy(pdf = PdfOutputRef("content://media/downloads/8", null))
+                    }
+
+                assertEquals(updated, readOutputMetadata(relocated, cacheId, pageCount = 1))
+            } finally {
+                if (relocated.exists()) assertTrue(relocated.deleteRecursively())
+            }
         }
 
     @Test

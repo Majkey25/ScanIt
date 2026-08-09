@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
@@ -27,6 +28,27 @@ class PureLogicTest {
                 pdfTreeUri = null,
             ),
             AppSettings(),
+        )
+    }
+
+    @Test
+    fun pdfSaveFailureKeepsSafCleanupWarningForTheResult() {
+        val warning = UiMessage(R.string.saf_incomplete_warning)
+        val failure = PdfSaveFailure(warning, IOException("metadata write failed"))
+
+        assertEquals(
+            listOf(UiMessage(R.string.pdf_save_failed), warning),
+            pdfSaveFailureMessages(failure),
+        )
+    }
+
+    @Test
+    fun pdfSaveFailureMessagesAreDeduplicated() {
+        val warning = UiMessage(R.string.pdf_save_failed)
+
+        assertEquals(
+            listOf(warning),
+            pdfSaveFailureMessages(PdfSaveFailure(warning, IOException("failed"))),
         )
     }
 

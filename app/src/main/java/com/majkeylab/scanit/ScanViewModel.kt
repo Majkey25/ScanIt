@@ -450,6 +450,8 @@ internal class ScanViewModel(
                                     savedPdf.warning?.let(warnings::add)
                                 } catch (cancellation: CancellationException) {
                                     throw cancellation
+                                } catch (failure: PdfSaveFailure) {
+                                    warnings += pdfSaveFailureMessages(failure)
                                 } catch (_: Exception) {
                                     warnings += UiMessage(R.string.pdf_save_failed)
                                 }

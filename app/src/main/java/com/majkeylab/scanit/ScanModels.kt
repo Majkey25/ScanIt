@@ -3,6 +3,7 @@ package com.majkeylab.scanit
 import android.graphics.Bitmap
 import android.net.Uri
 import java.io.File
+import java.io.IOException
 import java.time.Clock
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -52,6 +53,14 @@ internal data class SavedPdfOutput(
     val treeUri: Uri?,
     val warning: UiMessage?,
 )
+
+internal class PdfSaveFailure(
+    val warning: UiMessage?,
+    cause: Exception,
+) : IOException("PDF save failed", cause)
+
+internal fun pdfSaveFailureMessages(failure: PdfSaveFailure): List<UiMessage> =
+    listOfNotNull(UiMessage(R.string.pdf_save_failed), failure.warning).distinct()
 
 internal enum class RestoredRoute {
     Scanner,

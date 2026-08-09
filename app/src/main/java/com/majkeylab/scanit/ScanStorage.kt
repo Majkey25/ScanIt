@@ -815,35 +815,38 @@ internal class ScanStorage(
         synchronized(shareCacheLock) {
             requireReadableFile(cached.pdf)
             val displayName = scanPdfFileName(cached.baseName)
-            val output =
-                if (pdfTreeUri != null) {
-                    val (savedToTree, cleanupFailed) =
-                        savePdfToTree(cached.pdf, displayName, pdfTreeUri)
-                    if (savedToTree != null) {
-                        SavedPdfOutput(savedToTree, pdfTreeUri.toUri(), warning = null)
-                    } else {
-                        val warning =
-                            UiMessage(
-                                if (cleanupFailed) {
-                                    R.string.saf_incomplete_warning
-                                } else {
-                                    R.string.saf_fallback_warning
-                                },
+            var warning: UiMessage? = null
+            var createdOutput: SavedPdfOutput? = null
+            try {
+                val output =
+                    if (pdfTreeUri != null) {
+                        val (savedToTree, cleanupFailed) =
+                            savePdfToTree(cached.pdf, displayName, pdfTreeUri)
+                        if (savedToTree != null) {
+                            SavedPdfOutput(savedToTree, pdfTreeUri.toUri(), warning = null)
+                        } else {
+                            warning =
+                                UiMessage(
+                                    if (cleanupFailed) {
+                                        R.string.saf_incomplete_warning
+                                    } else {
+                                        R.string.saf_fallback_warning
+                                    },
+                                )
+                            SavedPdfOutput(
+                                savePdfToDownloads(cached.pdf, displayName, album),
+                                treeUri = null,
+                                warning = warning,
                             )
+                        }
+                    } else {
                         SavedPdfOutput(
                             savePdfToDownloads(cached.pdf, displayName, album),
                             treeUri = null,
-                            warning = warning,
+                            warning = null,
                         )
                     }
-                } else {
-                    SavedPdfOutput(
-                        savePdfToDownloads(cached.pdf, displayName, album),
-                        treeUri = null,
-                        warning = null,
-                    )
-                }
-            try {
+                createdOutput = output
                 rewriteCachedOutputMetadata(cached) { metadata ->
                     metadata.copy(
                         pdf =
@@ -854,9 +857,12 @@ internal class ScanStorage(
                     )
                 }
                 output
+            } catch (cancellation: CancellationException) {
+                createdOutput?.let { deleteCreatedOutput(it.uri, cancellation) }
+                throw cancellation
             } catch (exception: Exception) {
-                deleteCreatedOutput(output.uri, exception)
-                throw exception
+                createdOutput?.let { deleteCreatedOutput(it.uri, exception) }
+                throw PdfSaveFailure(warning, exception)
             }
         }
 

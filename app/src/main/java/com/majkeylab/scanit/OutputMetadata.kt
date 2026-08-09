@@ -8,6 +8,7 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.UUID
@@ -177,6 +178,7 @@ internal fun rewriteOutputMetadata(
     expectedCacheId: String,
     expectedEntryId: String,
     pageCount: Int,
+    moveMetadata: (Path, Path) -> Unit = ::moveOutputMetadataAtomically,
     update: (OutputMetadata) -> OutputMetadata,
 ): OutputMetadata {
     val current =
@@ -193,7 +195,7 @@ internal fun rewriteOutputMetadata(
     ) {
         throw IOException("Output metadata identity cannot change")
     }
-    writeOutputMetadata(directory, updated, pageCount)
+    writeOutputMetadata(directory, updated, pageCount, moveMetadata)
     return updated
 }
 
@@ -234,6 +236,7 @@ private fun writeOutputMetadata(
     directory: File,
     metadata: OutputMetadata,
     pageCount: Int,
+    moveMetadata: (Path, Path) -> Unit = ::moveOutputMetadataAtomically,
 ) {
     val absoluteDirectory = directory.absoluteFile
     if (
@@ -251,19 +254,13 @@ private fun writeOutputMetadata(
             output.write(bytes)
             output.fd.sync()
         }
-        Files.move(
-            temporary.toPath(),
-            target.toPath(),
-            StandardCopyOption.ATOMIC_MOVE,
-            StandardCopyOption.REPLACE_EXISTING,
-        )
-        if (readOutputMetadata(absoluteDirectory, metadata.cacheId, pageCount) != metadata) {
-            throw IOException("Output metadata could not be verified")
+        if (
+            decodeOutputMetadata(temporary.readBytes(), metadata.cacheId, pageCount) != metadata
+        ) {
+            throw IOException("Staged output metadata could not be verified")
         }
+        moveMetadata(temporary.toPath(), target.toPath())
     } catch (failure: Exception) {
-        if (readOutputMetadata(absoluteDirectory, metadata.cacheId, pageCount) == metadata) {
-            return
-        }
         try {
             Files.deleteIfExists(temporary.toPath())
         } catch (cleanupFailure: Exception) {
@@ -271,6 +268,15 @@ private fun writeOutputMetadata(
         }
         throw IOException("Output metadata could not be written", failure)
     }
+}
+
+private fun moveOutputMetadataAtomically(source: Path, target: Path) {
+    Files.move(
+        source,
+        target,
+        StandardCopyOption.ATOMIC_MOVE,
+        StandardCopyOption.REPLACE_EXISTING,
+    )
 }
 
 private fun isValidOutputMetadata(
