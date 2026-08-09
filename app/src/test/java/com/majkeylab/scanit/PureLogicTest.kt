@@ -135,7 +135,7 @@ class PureLogicTest {
         gate.invalidateCurrent()
 
         assertEquals(false, gate.isCurrent(deletion))
-        assertEquals(true, gate.complete(deletion))
+        gate.complete(deletion)
     }
 
     @Test
@@ -144,9 +144,24 @@ class PureLogicTest {
         val earlier = gate.begin("Scan_1")
         val later = gate.begin("Scan_2")
 
-        assertEquals(true, gate.complete(earlier))
+        gate.complete(earlier)
 
         assertEquals(true, gate.isCurrent(later))
+    }
+
+    @Test
+    fun routeMutationGateRejectsEveryStaleCompletion() {
+        val gate = RouteMutationGate()
+        val first = gate.begin()
+        val second = gate.begin()
+
+        assertFalse(gate.isCurrent(first))
+        assertTrue(gate.isCurrent(second))
+
+        val third = gate.begin()
+
+        assertFalse(gate.isCurrent(second))
+        assertTrue(gate.isCurrent(third))
     }
 
     @Test
@@ -203,6 +218,17 @@ class PureLogicTest {
     }
 
     @Test
+    fun coldNavigationStartsNonInteractiveUntilCheckpointPolicyResolves() {
+        assertEquals(
+            ScreenState.Processing(
+                UiMessage(R.string.starting_scanit),
+                canNavigateBack = false,
+            ),
+            initialScreenState(null),
+        )
+    }
+
+    @Test
     fun activeResultCheckpointRoundTripsOnlySafeVersionedCacheId() {
         val cacheId = "Scan_2026-08-09_13-47-50"
 
@@ -222,9 +248,9 @@ class PureLogicTest {
     }
 
     @Test
-    fun explicitSavedRoutePrecedesDurableActiveResultCheckpoint() {
+    fun durableActiveResultCheckpointPrecedesSavedRoute() {
         assertEquals(
-            InitialNavigation(RestoredRoute.Result, "Scan_saved"),
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
             initialNavigation(
                 savedRoute = "result",
                 savedCacheId = "Scan_saved",
@@ -232,7 +258,7 @@ class PureLogicTest {
             ),
         )
         assertEquals(
-            InitialNavigation(RestoredRoute.Recent, null),
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
             initialNavigation(
                 savedRoute = "recent",
                 savedCacheId = null,
@@ -240,16 +266,20 @@ class PureLogicTest {
             ),
         )
         assertEquals(
-            InitialNavigation(RestoredRoute.Scanner, null),
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
             initialNavigation("scanner", null, "Scan_durable"),
         )
+    }
+
+    @Test
+    fun absentCheckpointCannotRecreateSavedResult() {
         assertEquals(
             InitialNavigation(RestoredRoute.Recent, null),
-            initialNavigation("result", null, "Scan_durable"),
+            initialNavigation("result", "Scan_saved", null),
         )
         assertEquals(
             InitialNavigation(RestoredRoute.Recent, null),
-            initialNavigation("unknown", "Scan_saved", "Scan_durable"),
+            initialNavigation("result", null, null),
         )
     }
 
@@ -275,10 +305,11 @@ class PureLogicTest {
 
     @Test
     fun scannerPreparationResumeUsesCurrentPersistedRoute() {
-        assertTrue(scannerPreparationMayResume("scanner"))
-        assertFalse(scannerPreparationMayResume("result"))
-        assertFalse(scannerPreparationMayResume("recent"))
-        assertFalse(scannerPreparationMayResume(null))
+        assertFalse(scannerPreparationMayResume(false, "scanner"))
+        assertTrue(scannerPreparationMayResume(true, "scanner"))
+        assertFalse(scannerPreparationMayResume(true, "result"))
+        assertFalse(scannerPreparationMayResume(true, "recent"))
+        assertFalse(scannerPreparationMayResume(true, null))
     }
 
     @Test

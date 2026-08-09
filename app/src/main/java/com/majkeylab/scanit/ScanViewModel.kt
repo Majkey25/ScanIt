@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val SCANNER_STAGE_KEY = "scanner_launch_stage"
@@ -34,7 +36,10 @@ private const val RECENT_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
-internal fun scannerPreparationMayResume(route: String?): Boolean = route == ROUTE_SCANNER
+internal fun scannerPreparationMayResume(
+    navigationInitialized: Boolean,
+    route: String?,
+): Boolean = navigationInitialized && route == ROUTE_SCANNER
 
 internal enum class ScannerLaunchStage {
     Idle,
@@ -134,22 +139,19 @@ internal data class RecentDeletion(
 internal class RecentDeletionGate {
     private var generation = 0L
     private var current: RecentDeletion? = null
-    private val inFlight = mutableSetOf<RecentDeletion>()
 
     fun begin(cacheId: String): RecentDeletion {
         val deletion = RecentDeletion(cacheId, nextGeneration())
         current = deletion
-        inFlight += deletion
         return deletion
     }
 
     fun isCurrent(deletion: RecentDeletion): Boolean = current == deletion
 
-    fun complete(deletion: RecentDeletion): Boolean {
+    fun complete(deletion: RecentDeletion) {
         if (current == deletion) {
             current = null
         }
-        return inFlight.remove(deletion)
     }
 
     fun invalidateCurrent() {
@@ -163,8 +165,44 @@ internal class RecentDeletionGate {
     }
 }
 
-internal fun initialScreenState(route: RestoredRoute): ScreenState =
+internal class RouteMutationGate {
+    private var generation = 0L
+
+    fun begin(): Long = nextGeneration()
+
+    fun isCurrent(requestGeneration: Long): Boolean = requestGeneration == generation
+
+    private fun nextGeneration(): Long {
+        check(generation < Long.MAX_VALUE) { "Route mutation generation exhausted" }
+        generation += 1L
+        return generation
+    }
+}
+
+private enum class CheckpointMutationResult {
+    Applied,
+    Failed,
+    Stale,
+}
+
+private data class CheckpointReadResult(
+    val mutation: CheckpointMutationResult,
+    val cacheId: String? = null,
+)
+
+private enum class ResultActivation {
+    Applied,
+    Rejected,
+    Stale,
+}
+
+internal fun initialScreenState(route: RestoredRoute?): ScreenState =
     when (route) {
+        null ->
+            ScreenState.Processing(
+                UiMessage(R.string.starting_scanit),
+                canNavigateBack = false,
+            )
         RestoredRoute.Scanner -> ScreenState.Ready
         RestoredRoute.Recent -> ScreenState.Recent(emptyList())
         RestoredRoute.Result ->
@@ -180,23 +218,7 @@ internal class ScanViewModel(
 ) : AndroidViewModel(application) {
     private val settingsStore = SettingsStore(application)
     private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
-    private val initialDestination =
-        initialNavigation(
-            savedRoute = savedRoute,
-            savedCacheId = savedStateHandle[ROUTE_CACHE_ID_KEY],
-            activeResultCacheId =
-                if (savedRoute == null) {
-                    try {
-                        settingsStore.activeResultCacheId()
-                    } catch (_: IOException) {
-                        null
-                    }
-                } else {
-                    null
-                },
-        )
-    private val initialRoute = initialDestination.route
-    private val initialCacheId = initialDestination.cacheId
+    private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val storage = ScanStorage(application)
     private val scannerLaunchGate =
         ScannerLaunchGate(
@@ -206,14 +228,20 @@ internal class ScanViewModel(
         )
     private val recentActionGate = RecentActionGate()
     private val recentDeletionGate = RecentDeletionGate()
-    private val mutableState = MutableStateFlow(initialScreenState(initialRoute))
+    private val routeMutationGate = RouteMutationGate()
+    private val routeMutationMutex = Mutex()
+    private val mutableState = MutableStateFlow(initialScreenState(null))
+    private val mutableScannerRequest = MutableStateFlow<Long?>(null)
     private val mutableSettings = MutableStateFlow(settingsStore.load())
     private val pdfGrantLock = ReentrantLock()
     private var processingJob: Job? = null
     private var recentJob: Job? = null
+    private var cacheRefreshJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
+    private var navigationInitialized = false
 
     val state: StateFlow<ScreenState> = mutableState.asStateFlow()
+    val scannerRequest: StateFlow<Long?> = mutableScannerRequest.asStateFlow()
     val settings: StateFlow<AppSettings> = mutableSettings.asStateFlow()
 
     init {
@@ -231,8 +259,6 @@ internal class ScanViewModel(
         }
         restoreNavigation()
     }
-
-    fun shouldLaunchScannerOnCreate(): Boolean = initialRoute == RestoredRoute.Scanner
 
     fun currentSettings(): AppSettings = mutableSettings.value
 
@@ -290,39 +316,37 @@ internal class ScanViewModel(
             retryPendingPdfTreeGrant()
         }
 
-    fun beginScannerLaunch(): Long? {
-        val request = scannerLaunchGate.begin(processingJob?.isActive == true) ?: return null
-        if (!clearActiveResultCheckpoint()) {
-            completeScannerLaunch()
-            return null
-        }
-        recentActionGate.invalidate()
-        recentDeletionGate.invalidateCurrent()
-        recentJob?.cancel()
-        persistRoute(ROUTE_SCANNER)
-        persistScannerStage()
-        mutableState.value =
-            ScreenState.Processing(
-                UiMessage(R.string.opening_scanner),
-                canNavigateBack = true,
-            )
-        return request
+    fun beginScannerLaunch() {
+        if (processingJob?.isActive == true) return
+        completeScannerLaunch()
+        val generation = beginRouteMutation()
+        recentJob =
+            viewModelScope.launch {
+                clearCheckpointAndPublish(generation) {
+                    publishScannerRequest()
+                }
+            }
     }
 
-    fun resumeScannerPreparation(): Long? {
-        if (!scannerPreparationMayResume(savedStateHandle[ROUTE_KEY])) {
-            completeScannerLaunch()
-            return null
+    fun resumeScannerPreparation() {
+        if (!scannerPreparationMayResume(navigationInitialized, savedStateHandle[ROUTE_KEY])) {
+            return
         }
         val request =
-            scannerLaunchGate.resumePreparing(processingJob?.isActive == true) ?: return null
+            scannerLaunchGate.resumePreparing(processingJob?.isActive == true) ?: return
         persistScannerStage()
         mutableState.value =
             ScreenState.Processing(
                 UiMessage(R.string.opening_scanner),
                 canNavigateBack = true,
             )
-        return request
+        mutableScannerRequest.value = request
+    }
+
+    fun claimScannerRequest(requestGeneration: Long): Boolean {
+        if (mutableScannerRequest.value != requestGeneration) return false
+        mutableScannerRequest.value = null
+        return true
     }
 
     fun isScannerLaunchCurrent(requestGeneration: Long): Boolean =
@@ -337,9 +361,14 @@ internal class ScanViewModel(
     fun scannerLaunchFailed(requestGeneration: Long, message: UiMessage) {
         if (scannerLaunchGate.fail(requestGeneration)) {
             persistScannerStage()
-            if (!clearActiveResultCheckpoint()) return
-            persistRoute(ROUTE_FAILURE)
-            mutableState.value = ScreenState.Failure(message)
+            val generation = beginRouteMutation()
+            recentJob =
+                viewModelScope.launch {
+                    clearCheckpointAndPublish(generation) {
+                        persistRoute(ROUTE_FAILURE)
+                        mutableState.value = ScreenState.Failure(message)
+                    }
+                }
         }
     }
 
@@ -353,9 +382,14 @@ internal class ScanViewModel(
     fun scannerResultFailed(message: UiMessage) {
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
-            if (!clearActiveResultCheckpoint()) return
-            persistRoute(ROUTE_FAILURE)
-            mutableState.value = ScreenState.Failure(message)
+            val generation = beginRouteMutation()
+            recentJob =
+                viewModelScope.launch {
+                    clearCheckpointAndPublish(generation) {
+                        persistRoute(ROUTE_FAILURE)
+                        mutableState.value = ScreenState.Failure(message)
+                    }
+                }
         }
     }
 
@@ -371,6 +405,7 @@ internal class ScanViewModel(
         }
 
         val pages = pageUris.toList()
+        val generation = beginRouteMutation()
         mutableState.value =
             ScreenState.Processing(
                 UiMessage(R.string.saving_document),
@@ -430,24 +465,63 @@ internal class ScanViewModel(
                                     thumbnail = thumbnail,
                                 )
                             completedResult = result
-                            settingsStore.saveActiveResult(cachedScan.baseName)
                             currentCoroutineContext().ensureActive()
                             result
                         }
-                    publishResult(result)
+                    when (
+                        activateCachedResult(generation, result.scan.cached.baseName, result)
+                    ) {
+                        ResultActivation.Applied -> Unit
+                        ResultActivation.Rejected -> {
+                            val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
+                            if (routeMutationGate.isCurrent(generation)) {
+                                mutableState.value =
+                                    ScreenState.Failure(
+                                        UiMessage(
+                                            if (cleanupComplete) {
+                                                R.string.document_save_failed
+                                            } else {
+                                                R.string.document_save_partial_failed
+                                            },
+                                        ),
+                                    )
+                                persistRoute(ROUTE_FAILURE)
+                            }
+                        }
+                        ResultActivation.Stale -> cleanup(cached, galleryPages, savedPdfUri)
+                    }
                 } catch (exception: CancellationException) {
                     val retainedResult = completedResult
-                    if (!clearActiveResultCheckpoint() && retainedResult != null) {
-                        publishResult(retainedResult)
-                    } else {
-                        cleanup(cached, galleryPages, savedPdfUri)
+                    when (
+                        withContext(NonCancellable) {
+                            clearCheckpointAndPublish(
+                                generation = generation,
+                                onFailure = { retainedResult?.let(::publishResult) },
+                                onSuccess = {},
+                            )
+                        }
+                    ) {
+                        CheckpointMutationResult.Failed -> {
+                            if (retainedResult == null) {
+                                cleanup(cached, galleryPages, savedPdfUri)
+                            }
+                        }
+                        CheckpointMutationResult.Applied,
+                        CheckpointMutationResult.Stale,
+                        -> cleanup(cached, galleryPages, savedPdfUri)
                     }
                     throw exception
                 } catch (exception: Exception) {
                     val retainedResult = completedResult
-                    if (!clearActiveResultCheckpoint() && retainedResult != null) {
-                        publishResult(retainedResult)
-                    } else {
+                    val checkpoint =
+                        clearCheckpointAndPublish(
+                            generation = generation,
+                            onFailure = { retainedResult?.let(::publishResult) },
+                            onSuccess = {},
+                        )
+                    val retained =
+                        checkpoint == CheckpointMutationResult.Failed && retainedResult != null
+                    if (!retained && routeMutationGate.isCurrent(generation)) {
                         val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
                         val message =
                             if (cleanupComplete && exception.suppressed.isEmpty()) {
@@ -480,21 +554,27 @@ internal class ScanViewModel(
     }
 
     fun openRecentScan(cacheId: String) {
-        if (!clearActiveResultCheckpoint()) return
-        recentActionGate.invalidate()
-        recentDeletionGate.invalidateCurrent()
-        persistRoute(ROUTE_RECENT)
-        mutableState.value =
-            ScreenState.Processing(
-                UiMessage(R.string.opening_document),
-                canNavigateBack = true,
-            )
-        recentJob?.cancel()
+        val generation = beginRouteMutation()
         recentJob =
             viewModelScope.launch {
+                if (
+                    clearCheckpointAndPublish(generation) {
+                        persistRoute(ROUTE_RECENT)
+                        mutableState.value =
+                            ScreenState.Processing(
+                                UiMessage(R.string.opening_document),
+                                canNavigateBack = true,
+                            )
+                    } != CheckpointMutationResult.Applied
+                ) {
+                    return@launch
+                }
                 val result = loadCachedResult(cacheId)
-                if (result == null || !activateCachedResult(cacheId, result)) {
+                val activation =
+                    result?.let { activateCachedResult(generation, cacheId, it) }
+                if (result == null || activation == ResultActivation.Rejected) {
                     showRecentResult(
+                        generation = generation,
                         message = UiMessage(R.string.recent_scan_unavailable),
                     )
                 }
@@ -502,13 +582,18 @@ internal class ScanViewModel(
     }
 
     fun deleteRecentScan(cacheId: String) {
-        if (!clearActiveResultCheckpoint()) return
-        recentActionGate.invalidate()
+        val generation = beginRouteMutation()
         val deletion = recentDeletionGate.begin(cacheId)
-        recentJob?.cancel()
         recentJob =
             viewModelScope.launch {
                 try {
+                    if (
+                        clearCheckpointAndPublish(generation) {
+                            persistRoute(ROUTE_RECENT)
+                        } != CheckpointMutationResult.Applied
+                    ) {
+                        return@launch
+                    }
                     val deleted =
                         try {
                             withContext(Dispatchers.IO) { storage.deleteRecentScan(cacheId) }
@@ -517,10 +602,14 @@ internal class ScanViewModel(
                         } catch (_: Exception) {
                             false
                         }
-                    if (!recentDeletionGate.isCurrent(deletion)) {
+                    if (
+                        !routeMutationGate.isCurrent(generation) ||
+                        !recentDeletionGate.isCurrent(deletion)
+                    ) {
                         return@launch
                     }
                     showRecentResult(
+                        generation = generation,
                         message = if (deleted) null else UiMessage(R.string.recent_delete_failed),
                     )
                 } finally {
@@ -573,32 +662,59 @@ internal class ScanViewModel(
         }
 
     private fun restoreNavigation() {
-        when (initialRoute) {
-            RestoredRoute.Scanner -> {
-                if (savedRoute != null) {
-                    clearActiveResultCheckpoint()
-                }
-                refreshRecentCache()
-            }
-            RestoredRoute.Recent -> refreshRecentScreen()
-            RestoredRoute.Result -> restoreSavedResult()
-        }
-    }
-
-    private fun restoreSavedResult() {
-        val cacheId = initialCacheId
-        if (cacheId == null) {
-            refreshRecentScreen()
-            return
-        }
-        recentJob?.cancel()
+        val generation = beginRouteMutation()
         recentJob =
             viewModelScope.launch {
-                val result = loadCachedResult(cacheId)
-                if (result == null || !activateCachedResult(cacheId, result)) {
-                    showRecentResult(
-                        message = UiMessage(R.string.recent_scan_unavailable),
-                    )
+                val checkpoint = readActiveResultCheckpoint(generation)
+                if (checkpoint.mutation != CheckpointMutationResult.Applied) return@launch
+                val destination = initialNavigation(savedRoute, savedCacheId, checkpoint.cacheId)
+                when (destination.route) {
+                    RestoredRoute.Result -> {
+                        val cacheId = checkNotNull(destination.cacheId)
+                        val result = loadCachedResult(cacheId)
+                        if (result == null) {
+                            if (
+                                clearCheckpointAndPublish(generation) {
+                                    navigationInitialized = true
+                                    persistRoute(ROUTE_RECENT)
+                                    mutableState.value =
+                                        ScreenState.Recent(
+                                            recentScans,
+                                            UiMessage(R.string.recent_scan_unavailable),
+                                        )
+                                } == CheckpointMutationResult.Applied
+                            ) {
+                                showRecentResult(
+                                    generation,
+                                    UiMessage(R.string.recent_scan_unavailable),
+                                )
+                            }
+                        } else {
+                            routeMutationMutex.withLock {
+                                if (routeMutationGate.isCurrent(generation)) {
+                                    navigationInitialized = true
+                                    publishResult(result)
+                                }
+                            }
+                        }
+                    }
+                    RestoredRoute.Recent -> {
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation)) {
+                                navigationInitialized = true
+                                persistRoute(ROUTE_RECENT)
+                                mutableState.value = ScreenState.Recent(recentScans)
+                            }
+                        }
+                        showRecentResult(generation)
+                    }
+                    RestoredRoute.Scanner -> {
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation)) {
+                                publishScannerRequest()
+                            }
+                        }
+                    }
                 }
             }
     }
@@ -621,18 +737,45 @@ internal class ScanViewModel(
         }
     }
 
-    private fun activateCachedResult(cacheId: String, result: ScreenState.Result): Boolean {
-        try {
-            settingsStore.saveActiveResult(cacheId)
-        } catch (_: IOException) {
-            clearActiveResultCheckpoint()
-            return false
-        } catch (_: IllegalArgumentException) {
-            clearActiveResultCheckpoint()
-            return false
+    private suspend fun activateCachedResult(
+        generation: Long,
+        cacheId: String,
+        result: ScreenState.Result,
+    ): ResultActivation =
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
+            try {
+                withContext(Dispatchers.IO) { settingsStore.saveActiveResult(cacheId) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: IOException) {
+                return@withLock recoverFailedResultCheckpoint(generation, result)
+            } catch (_: IllegalArgumentException) {
+                return@withLock recoverFailedResultCheckpoint(generation, result)
+            }
+            if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
+            publishResult(result)
+            ResultActivation.Applied
         }
-        publishResult(result)
-        return true
+
+    private suspend fun recoverFailedResultCheckpoint(
+        generation: Long,
+        result: ScreenState.Result,
+    ): ResultActivation {
+        val cleared =
+            try {
+                withContext(Dispatchers.IO) { settingsStore.clearActiveResult() }
+                true
+            } catch (_: IOException) {
+                false
+            }
+        if (!routeMutationGate.isCurrent(generation)) return ResultActivation.Stale
+        return if (cleared) {
+            ResultActivation.Rejected
+        } else {
+            publishResult(result)
+            ResultActivation.Applied
+        }
     }
 
     private fun publishResult(result: ScreenState.Result) {
@@ -643,29 +786,38 @@ internal class ScanViewModel(
     }
 
     private fun refreshRecentScreen(message: UiMessage? = null) {
-        if (!clearActiveResultCheckpoint()) return
-        recentActionGate.invalidate()
-        recentDeletionGate.invalidateCurrent()
-        persistRoute(ROUTE_RECENT)
-        mutableState.value = ScreenState.Recent(recentScans, message)
-        recentJob?.cancel()
+        val generation = beginRouteMutation()
         recentJob =
             viewModelScope.launch {
-                showRecentResult(message)
+                if (
+                    clearCheckpointAndPublish(generation) {
+                        navigationInitialized = true
+                        persistRoute(ROUTE_RECENT)
+                        mutableState.value = ScreenState.Recent(recentScans, message)
+                    } != CheckpointMutationResult.Applied
+                ) {
+                    return@launch
+                }
+                showRecentResult(generation, message)
             }
     }
 
-    private suspend fun showRecentResult(message: UiMessage? = null) {
-        if (!clearActiveResultCheckpoint()) return
+    private suspend fun showRecentResult(
+        generation: Long,
+        message: UiMessage? = null,
+    ) {
         val scans = loadRecentScans()
-        recentScans = scans ?: emptyList()
         val effectiveMessage =
             message ?: when {
                 scans == null -> UiMessage(R.string.recent_history_unavailable)
                 else -> null
             }
-        mutableState.value = ScreenState.Recent(recentScans, effectiveMessage)
-        persistRoute(ROUTE_RECENT)
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) return@withLock
+            recentScans = scans ?: emptyList()
+            mutableState.value = ScreenState.Recent(recentScans, effectiveMessage)
+            persistRoute(ROUTE_RECENT)
+        }
     }
 
     private suspend fun loadRecentScans(protectedCacheId: String? = null): List<RecentScan>? =
@@ -680,8 +832,8 @@ internal class ScanViewModel(
         }
 
     private fun refreshRecentCache(protectedCacheId: String? = null) {
-        recentJob?.cancel()
-        recentJob =
+        cacheRefreshJob?.cancel()
+        cacheRefreshJob =
             viewModelScope.launch {
                 loadRecentScans(protectedCacheId)?.let { recentScans = it }
             }
@@ -692,17 +844,90 @@ internal class ScanViewModel(
         savedStateHandle[ROUTE_CACHE_ID_KEY] = cacheId
     }
 
-    private fun clearActiveResultCheckpoint(): Boolean =
-        try {
-            settingsStore.clearActiveResult()
-            true
-        } catch (_: IOException) {
-            mutableState.value = ScreenState.Failure(UiMessage(R.string.state_update_failed))
-            false
+    private fun beginRouteMutation(): Long {
+        recentActionGate.invalidate()
+        recentDeletionGate.invalidateCurrent()
+        recentJob?.cancel()
+        return routeMutationGate.begin()
+    }
+
+    private suspend fun readActiveResultCheckpoint(generation: Long): CheckpointReadResult =
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) {
+                return@withLock CheckpointReadResult(CheckpointMutationResult.Stale)
+            }
+            val cacheId =
+                try {
+                    withContext(Dispatchers.IO) { settingsStore.activeResultCacheId() }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: IOException) {
+                    if (routeMutationGate.isCurrent(generation)) {
+                        persistRoute(ROUTE_FAILURE)
+                        mutableState.value =
+                            ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                    }
+                    return@withLock CheckpointReadResult(CheckpointMutationResult.Failed)
+                }
+            if (!routeMutationGate.isCurrent(generation)) {
+                CheckpointReadResult(CheckpointMutationResult.Stale)
+            } else {
+                CheckpointReadResult(CheckpointMutationResult.Applied, cacheId)
+            }
         }
+
+    private suspend fun clearCheckpointAndPublish(
+        generation: Long,
+        onFailure: () -> Unit = {
+            persistRoute(ROUTE_FAILURE)
+            mutableState.value = ScreenState.Failure(UiMessage(R.string.state_update_failed))
+        },
+        onSuccess: () -> Unit,
+    ): CheckpointMutationResult =
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) {
+                return@withLock CheckpointMutationResult.Stale
+            }
+            try {
+                withContext(Dispatchers.IO) { settingsStore.clearActiveResult() }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: IOException) {
+                if (!routeMutationGate.isCurrent(generation)) {
+                    return@withLock CheckpointMutationResult.Stale
+                }
+                onFailure()
+                return@withLock CheckpointMutationResult.Failed
+            }
+            if (!routeMutationGate.isCurrent(generation)) {
+                return@withLock CheckpointMutationResult.Stale
+            }
+            onSuccess()
+            CheckpointMutationResult.Applied
+        }
+
+    private fun publishScannerRequest() {
+        val request =
+            when (scannerLaunchGate.stage) {
+                ScannerLaunchStage.Preparing ->
+                    scannerLaunchGate.resumePreparing(processingJob?.isActive == true)
+                ScannerLaunchStage.Idle -> scannerLaunchGate.begin(processingJob?.isActive == true)
+                ScannerLaunchStage.Launched -> null
+            } ?: return
+        navigationInitialized = true
+        persistRoute(ROUTE_SCANNER)
+        persistScannerStage()
+        mutableState.value =
+            ScreenState.Processing(
+                UiMessage(R.string.opening_scanner),
+                canNavigateBack = true,
+            )
+        mutableScannerRequest.value = request
+    }
 
     private fun completeScannerLaunch() {
         scannerLaunchGate.complete()
+        mutableScannerRequest.value = null
         persistScannerStage()
     }
 

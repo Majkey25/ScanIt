@@ -75,6 +75,7 @@
     <string name="scanner_unexpected_error">Scanning ended unexpectedly. Try again.</string>
     <string name="pdf_tree_release_warning">The previous folder permission could not be released.</string>
     <string name="opening_scanner">Opening scanner…</string>
+    <string name="starting_scanit">Opening ScanIt…</string>
     <string name="saving_document">Saving document…</string>
     <string name="images_save_failed">Images could not be saved to Gallery. The document can still be shared.</string>
     <string name="pdf_save_failed">The PDF could not be saved. The document can still be shared.</string>

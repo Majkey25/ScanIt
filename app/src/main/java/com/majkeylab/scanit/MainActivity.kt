@@ -17,12 +17,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -66,15 +69,20 @@ class MainActivity : ComponentActivity() {
                 onPrint = ::printCurrentScan,
             )
         }
-        if (savedInstanceState == null && viewModel.shouldLaunchScannerOnCreate()) {
-            startScan()
-        } else {
-            viewModel.resumeScannerPreparation()?.let(::requestScannerIntent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.scannerRequest.collect { request ->
+                    if (request != null && viewModel.claimScannerRequest(request)) {
+                        requestScannerIntent(request)
+                    }
+                }
+            }
         }
+        viewModel.resumeScannerPreparation()
     }
 
     internal fun startScan() {
-        viewModel.beginScannerLaunch()?.let(::requestScannerIntent)
+        viewModel.beginScannerLaunch()
     }
 
     private fun requestScannerIntent(requestGeneration: Long) {

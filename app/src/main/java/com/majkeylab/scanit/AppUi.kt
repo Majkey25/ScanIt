@@ -402,14 +402,6 @@ private fun RecentScreen(
             modifier = modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Button(
-                    onClick = onNewScan,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Text(stringResource(R.string.new_scan))
-                }
-            }
             state.message?.let { message ->
                 item { Text(message.resolve(), color = MaterialTheme.colorScheme.error) }
             }
@@ -425,6 +417,14 @@ private fun RecentScreen(
                         onLoadThumbnail = onLoadThumbnail,
                     )
                     HorizontalDivider()
+                }
+            }
+            item {
+                Button(
+                    onClick = onNewScan,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    Text(stringResource(R.string.new_scan))
                 }
             }
             item {

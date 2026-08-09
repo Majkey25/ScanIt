@@ -77,6 +77,7 @@
     <string name="scanner_unexpected_error">Skenování skončilo neočekávaně. Zkuste to znovu.</string>
     <string name="pdf_tree_release_warning">Původní oprávnění ke složce se nepodařilo uvolnit.</string>
     <string name="opening_scanner">Otevírám skener…</string>
+    <string name="starting_scanit">Otevírám ScanIt…</string>
     <string name="saving_document">Dokument se ukládá…</string>
     <string name="images_save_failed">Obrázky se nepodařilo uložit do Galerie. Dokument lze stále odeslat.</string>
     <string name="pdf_save_failed">PDF se nepodařilo uložit. Dokument lze stále odeslat.</string>

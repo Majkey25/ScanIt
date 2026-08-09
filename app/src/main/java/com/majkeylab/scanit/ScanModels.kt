@@ -70,19 +70,15 @@ internal fun initialNavigation(
     savedCacheId: String?,
     activeResultCacheId: String?,
 ): InitialNavigation {
-    if (savedRoute != null) {
-        val route = restoredRoute(savedRoute, savedCacheId)
-        return InitialNavigation(
-            route,
-            savedCacheId.takeIf { route == RestoredRoute.Result },
-        )
-    }
     val durableCacheId = activeResultCacheId?.takeIf(::isSafeActiveResultCacheId)
-    return if (durableCacheId == null) {
-        InitialNavigation(RestoredRoute.Scanner, null)
-    } else {
-        InitialNavigation(RestoredRoute.Result, durableCacheId)
+    if (durableCacheId != null) {
+        return InitialNavigation(RestoredRoute.Result, durableCacheId)
     }
+    val route = restoredRoute(savedRoute, savedCacheId)
+    return InitialNavigation(
+        route = if (route == RestoredRoute.Result) RestoredRoute.Recent else route,
+        cacheId = null,
+    )
 }
 
 internal sealed interface ScreenState {
