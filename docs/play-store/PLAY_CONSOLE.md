@@ -26,8 +26,8 @@ submitted declarations:
 | Category | Productivity |
 | Free or paid | Free |
 | Contact email | `majkeylab@gmail.com` |
-| Website | `https://majkey25.github.io/ScanIt/` (deployment required) |
-| Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` (deployment required) |
+| Website | `https://majkey25.github.io/ScanIt/` |
+| Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
 | Ads | No |
 
 Do not invent a legal developer name, address, phone number, organization, or
@@ -50,23 +50,25 @@ the Play developer account.
 
 > ScanIt removes the file-management work from document scanning.
 >
-> Open the app and the scanner starts immediately. Capture one or more pages, review the automatic crop and enhancement, then share the finished PDF or images through Android.
+> Open the app and the scanner starts immediately. Capture one or more pages, review the automatic crop and enhancement, then save, share, or print the result.
 >
 > Features:
 > - automatic document detection and capture
-> - edge detection, crop, perspective correction, rotation, filters, shadow removal, and cleanup
-> - single-page and multi-page PDF/JPEG output
-> - Recent scans for bounded temporary working copies
-> - configurable automatic PDF and Gallery saving
-> - optional PDF folder selected with Android's folder picker
-> - PDF/image sharing with a prepared subject and message
+> - crop, perspective correction, rotation, filters, shadow removal, and cleanup
+> - single-page and multi-page PDF and JPEG output
+> - Recent scans with page previews
+> - automatic or manual saving of PDFs and Gallery images
+> - PDF saving to Downloads or a folder you choose
+> - PDF/image sharing with an optional subject and message
+> - optional deletion of saved PDFs or images after sharing
+> - deletion of saved outputs from Recent scans
 > - Android system printing
 > - monochrome light and dark interface
 > - system, English, and Czech language selection
 >
-> ScanIt has no advertising, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature.
+> ScanIt has no ads, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
 >
-> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Document input is processed on-device. Google Play services may download the scanner module and process limited diagnostic and usage telemetry.
+> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner module and process limited diagnostic and usage telemetry.
 
 ## Czech listing
 
@@ -82,25 +84,27 @@ the Play developer account.
 
 ### Full description
 
-> ScanIt odstraňuje zbytečnou práci se soubory při skenování dokumentů.
+> ScanIt usnadňuje skenování a odesílání dokumentů.
 >
-> Po otevření aplikace se skener spustí okamžitě. Vyfoťte jednu nebo více stran, zkontrolujte automatický ořez a vylepšení a hotové PDF nebo obrázky sdílejte přes Android.
+> Po otevření aplikace se skener spustí okamžitě. Naskenujte jednu nebo více stran, zkontrolujte automatický ořez a vylepšení a výsledek uložte, sdílejte nebo vytiskněte.
 >
 > Funkce:
 > - automatická detekce a zachycení dokumentu
-> - detekce hran, ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
-> - jednostránkový i vícestránkový PDF/JPEG výstup
-> - Nedávné skeny pro omezené dočasné pracovní kopie
-> - nastavitelné automatické ukládání PDF a obrázků do Galerie
-> - volitelná složka pro PDF vybraná systémovým nástrojem Androidu
-> - sdílení PDF/obrázků s připraveným předmětem a zprávou
+> - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
+> - jednostránkový i vícestránkový výstup do PDF a JPEG
+> - Nedávné skeny s náhledy stránek
+> - automatické nebo ruční ukládání PDF a obrázků do Galerie
+> - ukládání PDF do Stažených souborů nebo zvolené složky
+> - sdílení PDF nebo obrázků s volitelným předmětem a zprávou
+> - volitelné smazání uložených PDF nebo obrázků po sdílení
+> - mazání uložených výstupů v Nedávných skenech
 > - systémový tisk Androidu
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický a český jazyk
 >
-> ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytiku, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování.
+> ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
 >
-> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Obsah dokumentu se zpracovává v zařízení. Služby Google Play mohou stáhnout modul skeneru a zpracovávat omezené diagnostické a provozní údaje.
+> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou stáhnout modul skeneru a zpracovávat omezené diagnostické a provozní údaje.
 
 The listing describes current implemented public behavior only. It does not
 advertise compression targets, signatures, stamps, cloud processing, donations,
@@ -111,12 +115,11 @@ or any other unfinished feature.
 ### Privacy Policy
 
 - URL: `https://majkey25.github.io/ScanIt/privacy.html`
-- Publicly accessible without login: **Not yet verified; must be Yes before submission.**
+- Publicly accessible without login: **Yes; verified HTTP 200 on 2026-08-09.**
 - Names ScanIt and provides privacy contact: Yes.
 - Covers SDK data, retention/deletion, sharing, and security: Yes.
-- GitHub Pages must be enabled and the URL must return the policy before the
-  Play form is submitted: **release gate**.
-- In-app link must point to this same URL before the AAB is uploaded: **release gate**.
+- GitHub Pages is enabled and the URL returns the policy without login.
+- The in-app link points to this same URL.
 
 ### App access
 
