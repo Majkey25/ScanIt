@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+    width="512"
+    height="512"
+    viewBox="0 0 108 108"
+    shape-rendering="geometricPrecision">
+  <rect width="108" height="108" fill="#0A0A0A"/>
+  <path d="M30 18h36l12 12v60H30z" fill="#FFFFFF"/>
+  <path d="M66 18v12h12z" fill="#BDBDBD"/>
+  <path d="M39 48h30v5H39zM39 61h30v5H39zM39 74h20v5H39z" fill="#0A0A0A"/>
+</svg>

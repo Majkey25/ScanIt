@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+    width="1024"
+    height="500"
+    viewBox="0 0 1024 500"
+    shape-rendering="geometricPrecision">
+  <rect width="1024" height="500" fill="#0A0A0A"/>
+
+  <text x="88" y="276"
+      fill="#FFFFFF"
+      font-family="Segoe UI, Arial, sans-serif"
+      font-size="86"
+      font-weight="600"
+      letter-spacing="-3">ScanIt</text>
+
+  <path d="M548 82h170l58 58v278H548z" fill="#FFFFFF"/>
+  <path d="M718 82v58h58z" fill="#BDBDBD"/>
+  <path d="M594 196h136v16H594zM594 240h136v16H594zM594 284h92v16H594z"
+      fill="#0A0A0A"/>
+
+  <path d="M804 250h44m-14-14 14 14-14 14"
+      fill="none"
+      stroke="#BDBDBD"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-width="8"/>
+
+  <path d="M876 170 926 250 876 330"
+      fill="none"
+      stroke="#FFFFFF"
+      stroke-linecap="round"
+      stroke-width="8"/>
+  <circle cx="876" cy="170" r="17" fill="#0A0A0A" stroke="#FFFFFF" stroke-width="8"/>
+  <circle cx="926" cy="250" r="17" fill="#0A0A0A" stroke="#FFFFFF" stroke-width="8"/>
+  <circle cx="876" cy="330" r="17" fill="#0A0A0A" stroke="#FFFFFF" stroke-width="8"/>
+</svg>
