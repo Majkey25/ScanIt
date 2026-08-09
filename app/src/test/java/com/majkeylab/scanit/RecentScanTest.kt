@@ -8,7 +8,6 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -50,8 +49,22 @@ class RecentScanTest {
             initializeOutputMetadata(directory, id, 2, 100L, entryId)
             rewriteOutputMetadata(directory, id, entryId, 2) {
                 it.copy(
-                    pdf = PdfOutputRef("content://media/downloads/1", null),
-                    images = listOf(ImageOutputRef(1, "content://media/images/1")),
+                    pdf =
+                        PdfOutputRef(
+                            "content://media/downloads/1",
+                            null,
+                            byteLength = 1L,
+                            sha256 = "00".repeat(32),
+                        ),
+                    images =
+                        listOf(
+                            ImageOutputRef(
+                                1,
+                                "content://media/images/1",
+                                byteLength = 1L,
+                                sha256 = "11".repeat(32),
+                            ),
+                        ),
                 )
             }
 
@@ -448,7 +461,6 @@ class RecentScanTest {
         val moveStarted = CountDownLatch(1)
         val allowMove = CountDownLatch(1)
         val listStarted = CountDownLatch(1)
-        val listThread = AtomicReference<Thread>()
         val cache =
             RecentScanCache(
                 root,
@@ -471,12 +483,11 @@ class RecentScanTest {
             assertTrue(pending.isDirectory)
             val list =
                 executor.submit<List<RecentScan>> {
-                    listThread.set(Thread.currentThread())
                     listStarted.countDown()
                     cache.list()
                 }
             assertTrue(listStarted.await(5, TimeUnit.SECONDS))
-            assertTrue(waitForState(listThread.get(), Thread.State.BLOCKED))
+            assertFalse(list.isDone)
 
             allowMove.countDown()
 
@@ -524,6 +535,83 @@ class RecentScanTest {
     }
 
     @Test
+    fun cacheRemovalRenamesFirstAndRetriesAnUndeletedPendingDirectory() =
+        withShareRoot { root ->
+            val id = "Scan_crash_safe_remove"
+            val live = createEntry(root, id)
+
+            assertFalse(
+                deleteRecentScanInRoot(
+                    root,
+                    id,
+                    deleteTree = { false },
+                ),
+            )
+            assertFalse(live.exists())
+            val pending = root.listFiles()!!.single { it.name.startsWith(".pending-remove-") }
+            assertTrue(pending.isDirectory)
+
+            assertFalse(recoverPendingRecentRemovalsInRoot(root, deleteTree = { false }))
+            assertTrue(pending.exists())
+            assertTrue(recoverPendingRecentRemovalsInRoot(root, deleteTree = { it.deleteRecursively() }))
+            assertFalse(pending.exists())
+        }
+
+    @Test
+    fun failedCacheRenameLeavesTheLiveEntryUntouched() = withShareRoot { root ->
+        val id = "Scan_rename_failure"
+        val live = createEntry(root, id)
+
+        assertFalse(
+            deleteRecentScanInRoot(
+                root,
+                id,
+                moveEntry = { _, _ -> throw IOException("move") },
+            ),
+        )
+        assertTrue(live.isDirectory)
+        assertFalse(root.listFiles()!!.any { it.name.startsWith(".pending-remove-") })
+    }
+
+    @Test
+    fun movedThenThrownCacheRenameIsRecoveredWithoutReadingPartialContents() =
+        withShareRoot { root ->
+            val id = "Scan_ambiguous_remove"
+            val live = createEntry(root, id)
+
+            assertFalse(
+                deleteRecentScanInRoot(
+                    root,
+                    id,
+                    moveEntry = { source, target ->
+                        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                        File(target.toFile(), scanPdfFileName(id)).delete()
+                        throw IOException("move result unknown")
+                    },
+                ),
+            )
+            assertFalse(live.exists())
+            assertTrue(root.listFiles()!!.any { it.name.startsWith(".pending-remove-") })
+            assertTrue(recoverPendingRecentRemovalsInRoot(root))
+            assertFalse(root.listFiles()!!.any { it.name.startsWith(".pending-remove-") })
+        }
+
+    @Test
+    fun legacyReferencesWithoutFingerprintsOfferOnlyRemoveRecent() = withShareRoot { root ->
+        val id = "Scan_legacy_output"
+        val directory = createEntry(root, id)
+        val entryId = "123e4567-e89b-12d3-a456-426614174000"
+        initializeOutputMetadata(directory, id, 1, 1L, entryId)
+        rewriteOutputMetadata(directory, id, entryId, 1) {
+            it.copy(pdf = PdfOutputRef("content://media/external/downloads/7", null))
+        }
+
+        val scan = listRecentScansInRoot(root).single()
+        assertFalse(scan.hasSavedPdf)
+        assertEquals(0, scan.savedImageCount)
+    }
+
+    @Test
     fun pendingRecentRemovalIsVisibleUntilStartupRecoveryDeletesOnlyItsCache() =
         withShareRoot { root ->
             val id = "Scan_pending_recent_removal"
@@ -567,11 +655,4 @@ class RecentScanTest {
         }
     }
 
-    private fun waitForState(thread: Thread, state: Thread.State): Boolean {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        while (thread.state != state && System.nanoTime() < deadline) {
-            Thread.yield()
-        }
-        return thread.state == state
-    }
 }

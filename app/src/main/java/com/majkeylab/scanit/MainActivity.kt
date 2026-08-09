@@ -2,8 +2,10 @@ package com.majkeylab.scanit
 
 import android.app.Activity
 import android.app.LocaleManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Bundle
 import android.os.LocaleList
@@ -33,6 +35,14 @@ internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null el
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
+    private val savedOutputsChangedReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == ACTION_SAVED_OUTPUTS_CHANGED) {
+                    viewModel.refreshAfterShareCleanup()
+                }
+            }
+        }
     private val scannerLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
             handleScannerResult(it)
@@ -80,6 +90,26 @@ class MainActivity : ComponentActivity() {
             }
         }
         viewModel.resumeScannerPreparation()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = retryPendingShareCleanup(applicationContext)
+            if (result != null && !shareCleanupCompletionPolicy(result).clear) {
+                showShareCleanupFailure(applicationContext)
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        registerReceiver(
+            savedOutputsChangedReceiver,
+            IntentFilter(ACTION_SAVED_OUTPUTS_CHANGED),
+            Context.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    override fun onStop() {
+        unregisterReceiver(savedOutputsChangedReceiver)
+        super.onStop()
     }
 
     override fun onResume() {

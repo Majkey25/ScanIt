@@ -29,6 +29,8 @@ internal data class PdfOutputRef(
     val displayName: String? = null,
     val mimeType: String? = null,
     val ownerPackageName: String? = null,
+    val byteLength: Long? = null,
+    val sha256: String? = null,
 )
 
 internal data class ImageOutputRef(
@@ -37,6 +39,8 @@ internal data class ImageOutputRef(
     val displayName: String? = null,
     val mimeType: String? = null,
     val ownerPackageName: String? = null,
+    val byteLength: Long? = null,
+    val sha256: String? = null,
 )
 
 internal data class OutputMetadata(
@@ -64,6 +68,8 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
         pdf.displayName?.let { value.put("displayName", it) }
         pdf.mimeType?.let { value.put("mimeType", it) }
         pdf.ownerPackageName?.let { value.put("ownerPackageName", it) }
+        pdf.byteLength?.let { value.put("byteLength", it) }
+        pdf.sha256?.let { value.put("sha256", it) }
         json.put("pdf", value)
     }
     val images = JSONArray()
@@ -72,6 +78,8 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
         image.displayName?.let { value.put("displayName", it) }
         image.mimeType?.let { value.put("mimeType", it) }
         image.ownerPackageName?.let { value.put("ownerPackageName", it) }
+        image.byteLength?.let { value.put("byteLength", it) }
+        image.sha256?.let { value.put("sha256", it) }
         images.put(value)
     }
     json.put("images", images)
@@ -118,6 +126,10 @@ internal fun decodeOutputMetadata(
                         } else {
                             null
                         },
+                    byteLength =
+                        if (value.has("byteLength")) value.strictLong("byteLength") ?: return null else null,
+                    sha256 =
+                        if (value.has("sha256")) value.strictString("sha256") ?: return null else null,
                 )
             } else {
                 null
@@ -147,6 +159,18 @@ internal fun decodeOutputMetadata(
                             ownerPackageName =
                                 if (value.has("ownerPackageName")) {
                                     value.strictString("ownerPackageName") ?: return null
+                                } else {
+                                    null
+                                },
+                            byteLength =
+                                if (value.has("byteLength")) {
+                                    value.strictLong("byteLength") ?: return null
+                                } else {
+                                    null
+                                },
+                            sha256 =
+                                if (value.has("sha256")) {
+                                    value.strictString("sha256") ?: return null
                                 } else {
                                     null
                                 },
@@ -354,6 +378,7 @@ private fun isValidOutputMetadata(
         metadata.pdf?.let { pdf ->
             !isContentUri(pdf.uri) ||
                 (pdf.treeUri != null && !isContentUri(pdf.treeUri)) ||
+                !isValidOutputFingerprint(pdf.byteLength, pdf.sha256) ||
                 if (pdf.treeUri == null) {
                     !isValidMediaIdentity(
                         pdf.displayName,
@@ -373,6 +398,7 @@ private fun isValidOutputMetadata(
     return metadata.images.all { image ->
         image.page in 1..pageCount &&
             isContentUri(image.uri) &&
+            isValidOutputFingerprint(image.byteLength, image.sha256) &&
             isValidMediaIdentity(
                 image.displayName,
                 image.mimeType,
@@ -412,9 +438,8 @@ private fun isValidMediaIdentity(
     if (values.all { it == null }) return true
     return isProviderDisplayName(displayName) &&
         mimeType == requiredMimeType &&
-        ownerPackageName != null &&
-        ownerPackageName.length in 1..255 &&
-        ownerPackageName.none(Char::isISOControl)
+        (ownerPackageName == null ||
+            ownerPackageName.length in 1..255 && ownerPackageName.none(Char::isISOControl))
 }
 
 private fun JSONObject.hasOnlyKeys(
@@ -456,9 +481,11 @@ private val ROOT_KEYS =
         "removeRecentPending",
     )
 private val REQUIRED_ROOT_KEYS = ROOT_KEYS - setOf("pdf", "removeRecentPending")
-private val PDF_KEYS = setOf("uri", "treeUri", "displayName", "mimeType", "ownerPackageName")
+private val PDF_KEYS =
+    setOf("uri", "treeUri", "displayName", "mimeType", "ownerPackageName", "byteLength", "sha256")
 private val REQUIRED_PDF_KEYS = setOf("uri")
-private val IMAGE_KEYS = setOf("page", "uri", "displayName", "mimeType", "ownerPackageName")
+private val IMAGE_KEYS =
+    setOf("page", "uri", "displayName", "mimeType", "ownerPackageName", "byteLength", "sha256")
 private val REQUIRED_IMAGE_KEYS = setOf("page", "uri")
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"

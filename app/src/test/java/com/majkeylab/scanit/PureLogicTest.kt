@@ -115,6 +115,81 @@ class PureLogicTest {
     }
 
     @Test
+    fun selectedShareCleanupPersistsForRetryAndClearsOnlyAfterTerminalResult() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val request = ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf)
+        var attempts = 0
+        var refreshes = 0
+
+        store.savePendingShareCleanup(request)
+        assertEquals(request, store.pendingShareCleanup())
+        assertEquals(
+            OutputDeleteOperationResult.Failed,
+            processPendingShareCleanup(
+                store,
+                delete = { attempts++; OutputDeleteOperationResult.Failed },
+                afterDelete = { refreshes++ },
+            ),
+        )
+        assertEquals(request, store.pendingShareCleanup())
+        assertEquals(
+            OutputDeleteOperationResult.Completed,
+            processPendingShareCleanup(
+                store,
+                delete = { attempts++; OutputDeleteOperationResult.Completed },
+                afterDelete = { refreshes++ },
+            ),
+        )
+        assertNull(store.pendingShareCleanup())
+        assertEquals(2, attempts)
+        assertEquals(2, refreshes)
+        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.Failed).signal)
+    }
+
+    @Test
+    fun selectedShareCleanupSlotRejectsOverwriteAndMalformedValues() {
+        val (preferences, values) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val request = ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Images)
+
+        store.savePendingShareCleanup(request)
+        assertThrows(IOException::class.java) {
+            store.savePendingShareCleanup(
+                ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Images),
+            )
+        }
+        values["pending_share_cleanup"] = "1:../outside:$ENTRY_ID:pdf"
+        assertNull(store.pendingShareCleanup())
+        val longCacheId = "x".repeat(129)
+        assertThrows(IllegalArgumentException::class.java) {
+            encodePendingShareCleanup(
+                ShareCleanupRequest(longCacheId, ENTRY_ID, ShareCleanupKind.Pdf),
+            )
+        }
+        values["pending_share_cleanup"] = "1:$longCacheId:$ENTRY_ID:pdf"
+        assertNull(store.pendingShareCleanup())
+    }
+
+    @Test
+    fun settingsInstancesDoNotResurrectAReleasedPendingTreeGrant() {
+        val (preferences, _) = inMemoryPreferences()
+        val first = SettingsStore(preferences, "Scanned document")
+        val second = SettingsStore(preferences, "Scanned document")
+
+        first.savePdfTreeUris(
+            current = "content://docs/tree/current",
+            pending = "content://docs/tree/old",
+        )
+        second.save(AppSettings(pdfTreeUri = "content://docs/tree/current"))
+        assertEquals("content://docs/tree/old", first.pendingPdfTreeUri())
+
+        second.savePdfTreeUris(current = "content://docs/tree/current", pending = null)
+        first.save(AppSettings(pdfTreeUri = "content://docs/tree/current"))
+        assertNull(first.pendingPdfTreeUri())
+    }
+
+    @Test
     fun pdfSaveFailureReportsSafAndProviderCleanupWarnings() {
         val warning = UiMessage(R.string.saf_cleanup_warning)
         val failure =

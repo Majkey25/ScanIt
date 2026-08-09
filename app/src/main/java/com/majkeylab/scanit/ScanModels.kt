@@ -80,8 +80,9 @@ internal fun shareCleanupRequest(
         kind = kind,
         available =
             when (kind) {
-                ShareCleanupKind.Pdf -> scan.savedPdf != null
-                ShareCleanupKind.Images -> scan.galleryPages.isNotEmpty()
+                ShareCleanupKind.Pdf -> scan.savedPdf != null && scan.savedPdfDeleteVerified
+                ShareCleanupKind.Images ->
+                    scan.galleryPages.isNotEmpty() && scan.savedImagesDeleteVerified
             },
         enabled = enabled,
     )
@@ -118,6 +119,21 @@ internal fun decodeShareCleanupRequest(
     val kind = ShareCleanupKind.entries.firstOrNull { it.wireValue == kindValue } ?: return null
     return ShareCleanupRequest(cacheId, entryId, kind)
 }
+
+internal data class ShareCleanupCompletionPolicy(
+    val clear: Boolean,
+    val signal: Boolean,
+)
+
+internal fun shareCleanupCompletionPolicy(
+    result: OutputDeleteOperationResult,
+): ShareCleanupCompletionPolicy =
+    ShareCleanupCompletionPolicy(
+        clear =
+            result == OutputDeleteOperationResult.Completed ||
+                result == OutputDeleteOperationResult.Stale,
+        signal = true,
+    )
 
 internal data class OutputDeleteReduction(
     val metadata: OutputMetadata,
@@ -193,6 +209,8 @@ internal data class SavedScan(
     val savedPdfTree: Uri? = null,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
+    val savedPdfDeleteVerified: Boolean = false,
+    val savedImagesDeleteVerified: Boolean = false,
 )
 
 internal enum class SaveNowTarget {
@@ -305,13 +323,17 @@ internal data class SavedPdfOutput(
     val displayName: String? = null,
     val mimeType: String? = null,
     val ownerPackageName: String? = null,
+    val byteLength: Long? = null,
+    val sha256: String? = null,
 )
 
 internal data class SavedMediaOutput(
     val uri: Uri,
     val displayName: String,
     val mimeType: String,
-    val ownerPackageName: String,
+    val ownerPackageName: String?,
+    val byteLength: Long,
+    val sha256: String,
 )
 
 internal class PendingMediaFailure(

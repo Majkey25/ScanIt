@@ -2,6 +2,9 @@ package com.majkeylab.scanit
 
 import android.provider.DocumentsContract
 import android.service.chooser.ChooserResult
+import java.io.ByteArrayInputStream
+import java.io.FileNotFoundException
+import java.io.IOException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +60,121 @@ class DurableOutputDeleteTest {
         assertFalse(isExactMediaItem(exact.copy(displayName = "other.jpg"), expected))
         assertFalse(isExactMediaItem(exact.copy(mimeType = "image/png"), expected))
         assertFalse(isExactMediaItem(exact.copy(ownerPackageName = "other.app"), expected))
+
+        val ownerOptional = expected.copy(ownerPackageName = null)
+        assertTrue(isExactMediaItem(exact.copy(ownerPackageName = null), ownerOptional))
+        assertTrue(isExactMediaItem(exact, ownerOptional))
+    }
+
+    @Test
+    fun fingerprintMismatchAndReplacementFailBeforeDelete() {
+        val bytes = "original".toByteArray()
+        val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+        var deleteCalls = 0
+
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedMediaOutput(
+                fingerprint = fingerprint,
+                query = { ExactItemQuery.Exact },
+                open = { ByteArrayInputStream("replacement".toByteArray()) },
+                delete = { deleteCalls++; 1 },
+            ),
+        )
+        assertEquals(0, deleteCalls)
+
+        var queryCalls = 0
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedMediaOutput(
+                fingerprint = fingerprint,
+                query = {
+                    queryCalls++
+                    if (queryCalls == 1) ExactItemQuery.Exact else ExactItemQuery.Invalid
+                },
+                open = { ByteArrayInputStream(bytes) },
+                delete = { deleteCalls++; 1 },
+            ),
+        )
+        assertEquals(0, deleteCalls)
+    }
+
+    @Test
+    fun mediaBoundaryHandlesDeleteZeroAndProviderFailures() {
+        val bytes = "exact".toByteArray()
+        val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+        var queryCalls = 0
+        assertEquals(
+            OutputDeleteStatus.Absent,
+            deleteVerifiedMediaOutput(
+                fingerprint = fingerprint,
+                query = {
+                    queryCalls++
+                    if (queryCalls < 3) ExactItemQuery.Exact else ExactItemQuery.Absent
+                },
+                open = { ByteArrayInputStream(bytes) },
+                delete = { 0 },
+            ),
+        )
+        listOf<() -> ExactItemQuery>(
+            { throw IOException("query") },
+            { ExactItemQuery.Invalid },
+        ).forEach { query ->
+            assertEquals(
+                OutputDeleteStatus.Failed,
+                deleteVerifiedMediaOutput(fingerprint, query, { ByteArrayInputStream(bytes) }) { 1 },
+            )
+        }
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedMediaOutput(fingerprint, { ExactItemQuery.Exact }, { throw IOException("open") }) { 1 },
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedMediaOutput(fingerprint, { ExactItemQuery.Exact }, { ByteArrayInputStream(bytes) }) {
+                throw IOException("delete")
+            },
+        )
+    }
+
+    @Test
+    fun safBoundaryRequiresFingerprintAndIndependentlyConfirmsFalseOrMissingDelete() {
+        val bytes = "exact".toByteArray()
+        val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+
+        assertEquals(
+            OutputDeleteStatus.Absent,
+            deleteVerifiedSafOutput(
+                fingerprint,
+                query = { ExactItemQuery.Exact },
+                open = { ByteArrayInputStream(bytes) },
+                isChild = { true },
+                delete = { false },
+                confirmAbsent = { OutputDeleteStatus.Absent },
+            ),
+        )
+        assertEquals(
+            OutputDeleteStatus.Absent,
+            deleteVerifiedSafOutput(
+                fingerprint,
+                query = { ExactItemQuery.Exact },
+                open = { ByteArrayInputStream(bytes) },
+                isChild = { true },
+                delete = { throw FileNotFoundException("gone") },
+                confirmAbsent = { OutputDeleteStatus.Absent },
+            ),
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            deleteVerifiedSafOutput(
+                fingerprint,
+                query = { ExactItemQuery.Exact },
+                open = { ByteArrayInputStream(bytes) },
+                isChild = { false },
+                delete = { true },
+                confirmAbsent = { OutputDeleteStatus.Absent },
+            ),
+        )
     }
 
     @Test
@@ -145,6 +263,10 @@ class DurableOutputDeleteTest {
             arrayOf("12", expected.displayName, expected.mimeType, expected.ownerPackageName),
             mediaDeleteSelectionArgs(expected),
         )
+        assertArrayEquals(
+            arrayOf("12", expected.displayName, expected.mimeType),
+            mediaDeleteSelectionArgs(expected.copy(ownerPackageName = null)),
+        )
     }
 
     @Test
@@ -209,6 +331,8 @@ class DurableOutputDeleteTest {
                 exact.copy(cacheId = "../$CACHE_ID"),
             ),
         )
+        assertTrue(outputDeleteTargetIsAbsent(metadata.copy(pdf = null), RecentDeleteTarget.Pdf))
+        assertFalse(outputDeleteTargetIsAbsent(metadata, RecentDeleteTarget.Pdf))
     }
 
     @Test
@@ -405,7 +529,13 @@ class DurableOutputDeleteTest {
             entryId = ENTRY_ID,
             cacheId = CACHE_ID,
             createdAtEpochMs = 1L,
-            pdf = PdfOutputRef("content://media/external/downloads/1", null),
+            pdf =
+                PdfOutputRef(
+                    "content://media/external/downloads/1",
+                    null,
+                    byteLength = 1L,
+                    sha256 = "00".repeat(32),
+                ),
         )
 
     private fun recent(

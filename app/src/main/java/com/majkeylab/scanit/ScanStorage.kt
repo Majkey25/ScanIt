@@ -25,7 +25,9 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.CancellationException
+import java.util.concurrent.locks.ReentrantLock
 import java.util.UUID
+import kotlin.concurrent.withLock
 import kotlin.math.min
 
 private const val DEFAULT_THUMBNAIL_SIZE = 1024
@@ -35,7 +37,21 @@ private const val JPEG_MIME_TYPE = "image/jpeg"
 private const val MAX_SHARE_CACHE_SCANS = 8
 private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
 private const val DELETE_PENDING_PREFIX = ".pending-delete-"
+private const val REMOVE_PENDING_PREFIX = ".pending-remove-"
 private const val COMMITTED_PRUNE_PREFIX = ".committed-prune-"
+internal val storageTransactionLock = ReentrantLock()
+
+internal inline fun <T> withStorageTransaction(operation: () -> T): T =
+    storageTransactionLock.withLock(operation)
+
+internal inline fun <T> tryStorageTransaction(operation: () -> T): T? {
+    if (!storageTransactionLock.tryLock()) return null
+    return try {
+        operation()
+    } finally {
+        storageTransactionLock.unlock()
+    }
+}
 private val MEDIA_IDENTITY_PROJECTION =
     arrayOf(
         MediaStore.MediaColumns._ID,
@@ -76,6 +92,8 @@ private fun SavedMediaOutput.toPdfOutput(warning: UiMessage? = null): SavedPdfOu
         displayName = displayName,
         mimeType = mimeType,
         ownerPackageName = ownerPackageName,
+        byteLength = byteLength,
+        sha256 = sha256,
     )
 
 internal data class FitRect(
@@ -174,15 +192,35 @@ internal fun openCachedScanInRoot(root: File, cacheId: String): CachedScan? {
     return readCacheEntry(safeRoot, directory, cacheId)?.cached
 }
 
-internal fun deleteRecentScanInRoot(root: File, cacheId: String): Boolean {
+internal fun deleteRecentScanInRoot(
+    root: File,
+    cacheId: String,
+    moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
+    deleteTree: (File) -> Boolean = ::deleteTreeWithoutFollowingLinks,
+): Boolean {
     if (!isSafeCacheId(cacheId)) return false
     val safeRoot = ensureShareRoot(root)
-    maintainPendingDirectories(safeRoot)
+    try {
+        maintainPendingDirectories(safeRoot)
+    } catch (_: IOException) {
+        return false
+    } catch (_: SecurityException) {
+        return false
+    }
     val directory = File(safeRoot, cacheId).absoluteFile
     if (readCacheEntry(safeRoot, directory, cacheId) == null) {
         return !Files.exists(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
     }
-    return deleteTreeWithoutFollowingLinks(directory)
+    val pending = File(safeRoot, "$REMOVE_PENDING_PREFIX${UUID.randomUUID()}").absoluteFile
+    if (!isDirectChild(safeRoot, pending) || pending.exists()) return false
+    return try {
+        moveEntry(directory.toPath(), pending.toPath())
+        deleteTree(pending)
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
 }
 
 internal fun listRecentScansInRoot(
@@ -197,14 +235,26 @@ internal fun listRecentScansInRoot(
     return pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries).map(ParsedCacheEntry::recent)
 }
 
-internal fun recoverPendingRecentRemovalsInRoot(root: File): Boolean {
+internal fun recoverPendingRecentRemovalsInRoot(
+    root: File,
+    deleteTree: (File) -> Boolean = ::deleteTreeWithoutFollowingLinks,
+): Boolean {
     val safeRoot = ensureShareRoot(root)
-    maintainPendingDirectories(safeRoot)
+    if (!recoverPendingRemovalDirectories(safeRoot, deleteTree)) return false
+    maintainPendingDirectories(safeRoot, recoverRemovals = false)
     var recoveredAll = true
     readCacheEntries(safeRoot)
         .filter { it.outputs?.removeRecentPending == true }
         .forEach { entry ->
-            if (!deleteRecentScanInRoot(safeRoot, entry.recent.cacheId)) recoveredAll = false
+            if (
+                !deleteRecentScanInRoot(
+                    safeRoot,
+                    entry.recent.cacheId,
+                    deleteTree = deleteTree,
+                )
+            ) {
+                recoveredAll = false
+            }
         }
     return recoveredAll
 }
@@ -450,8 +500,11 @@ private fun readCacheEntry(
             pdfBytes = exactPdf.length(),
             firstPage = orderedPages.first(),
             entryId = outputs?.entryId,
-            hasSavedPdf = outputs?.pdf != null,
-            savedImageCount = outputs?.images?.size ?: 0,
+            hasSavedPdf = outputs?.pdf?.outputFingerprint() != null,
+            savedImageCount =
+                outputs?.images?.takeIf {
+                    it.isNotEmpty() && it.all { image -> image.outputFingerprint() != null }
+                }?.size ?: 0,
             removeRecentPending = outputs?.removeRecentPending == true,
         )
     return ParsedCacheEntry(
@@ -462,9 +515,37 @@ private fun readCacheEntry(
     )
 }
 
-private fun maintainPendingDirectories(root: File, keepCreate: File? = null) {
+private fun maintainPendingDirectories(
+    root: File,
+    keepCreate: File? = null,
+    recoverRemovals: Boolean = true,
+) {
+    if (recoverRemovals && !recoverPendingRemovalDirectories(root)) {
+        throw IOException("Pending recent scan removal could not be completed")
+    }
     recoverPendingDirectories(root)
     cleanDisposablePendingDirectories(root, keepCreate)
+}
+
+private fun recoverPendingRemovalDirectories(
+    root: File,
+    deleteTree: (File) -> Boolean = ::deleteTreeWithoutFollowingLinks,
+): Boolean {
+    val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
+    var recoveredAll = true
+    children.filter { it.name.startsWith(REMOVE_PENDING_PREFIX) }.forEach { child ->
+        val directory = child.absoluteFile
+        val id = directory.name.removePrefix(REMOVE_PENDING_PREFIX)
+        if (
+            !isCanonicalUuid(id) ||
+                !isDirectChild(root, directory) ||
+                !Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+        ) {
+            throw IOException("Pending recent scan removal directory is unsafe")
+        }
+        if (!deleteTree(directory)) recoveredAll = false
+    }
+    return recoveredAll
 }
 
 private fun recoverPendingDirectories(root: File) {
@@ -543,10 +624,12 @@ private fun cleanDisposablePendingDirectories(root: File, keepCreate: File? = nu
         val directory = child.absoluteFile
         val isRecovery = directory.name.startsWith(RECOVERY_PENDING_PREFIX)
         val isDelete = directory.name.startsWith(DELETE_PENDING_PREFIX)
+        val isRemove = directory.name.startsWith(REMOVE_PENDING_PREFIX)
         directory != keepCreate?.absoluteFile &&
             directory.name.startsWith(".pending-") &&
             !isRecovery &&
             !isDelete &&
+            !isRemove &&
             isDirectChild(root, directory) &&
             Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
     }.forEach { directory ->
@@ -599,6 +682,7 @@ private fun isCreatePendingDirectory(root: File, directory: File): Boolean =
     directory.name.startsWith(".pending-") &&
         !directory.name.startsWith(RECOVERY_PENDING_PREFIX) &&
         !directory.name.startsWith(DELETE_PENDING_PREFIX) &&
+        !directory.name.startsWith(REMOVE_PENDING_PREFIX) &&
         directory.name.length > ".pending-".length &&
         isDirectChild(root, directory) &&
         Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
@@ -670,34 +754,34 @@ private fun deleteTreeWithoutFollowingLinks(directory: File): Boolean =
 
 internal class RecentScanCache(
     private val root: File,
-    private val lock: Any = Any(),
+    private val lock: ReentrantLock = ReentrantLock(),
     private val moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
 ) {
     fun list(
         protectedCacheIds: Set<String> = emptySet(),
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     ): List<RecentScan> =
-        synchronized(lock) {
+        lock.withLock {
             listRecentScansInRoot(root, protectedCacheIds, maxEntries)
         }
 
     fun open(cacheId: String): CachedScan? =
-        synchronized(lock) {
+        lock.withLock {
             openCachedScanInRoot(root, cacheId)
         }
 
     fun delete(cacheId: String): Boolean =
-        synchronized(lock) {
+        lock.withLock {
             deleteRecentScanInRoot(root, cacheId)
         }
 
     fun recoverPendingRemovals(): Boolean =
-        synchronized(lock) {
+        lock.withLock {
             recoverPendingRecentRemovalsInRoot(root)
         }
 
     fun nextDerivedCacheId(sourceCacheId: String, suffix: String): String =
-        synchronized(lock) {
+        lock.withLock {
             val safeRoot = ensureShareRoot(root)
             maintainPendingDirectories(safeRoot)
             val children = safeRoot.listFiles() ?: throw IOException("Share cache could not be listed")
@@ -710,7 +794,7 @@ internal class RecentScanCache(
         protectedCacheIds: Set<String> = emptySet(),
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     ): CachedScan =
-        synchronized(lock) {
+        lock.withLock {
             publishCacheEntryInRoot(
                 root,
                 workDir,
@@ -726,18 +810,12 @@ internal class ScanStorage(
     private val context: Context,
     private val clock: Clock = Clock.systemDefaultZone(),
 ) {
-    private companion object {
-        // ponytail: app-wide lock is intentional; use per-root locks only if concurrent scanner throughput is ever needed.
-        val shareCacheLock = Any()
-    }
-
     private val resolver = context.contentResolver
-    private val recentScanCache by lazy { RecentScanCache(shareCacheRoot(), shareCacheLock) }
+    private val recentScanCache by lazy { RecentScanCache(shareCacheRoot(), storageTransactionLock) }
     private val outputDeleter by lazy { ExactOutputDeleter(context) }
-    private var pendingRemovalRecoveryAttempted = false
 
     fun cacheScan(pageUris: List<Uri>, pdfUri: Uri): CachedScan =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             require(pageUris.isNotEmpty()) { "Scanner returned no pages" }
             val baseName = scanBaseName(clock)
             val shareRoot = ensureShareRoot(shareCacheRoot())
@@ -770,10 +848,9 @@ internal class ScanStorage(
         }
 
     fun listRecentScans(protectedCacheIds: Set<String> = emptySet()): List<RecentScan> =
-        synchronized(shareCacheLock) {
-            if (!pendingRemovalRecoveryAttempted) {
-                recentScanCache.recoverPendingRemovals()
-                pendingRemovalRecoveryAttempted = true
+        storageTransactionLock.withLock {
+            if (!recentScanCache.recoverPendingRemovals()) {
+                throw IOException("Pending recent scan removal could not be completed")
             }
             recentScanCache.list(protectedCacheIds)
         }
@@ -782,8 +859,8 @@ internal class ScanStorage(
         recentScanCache.open(cacheId)
 
     fun openSavedScan(cacheId: String): SavedScan? =
-        synchronized(shareCacheLock) {
-            val cached = recentScanCache.open(cacheId) ?: return@synchronized null
+        storageTransactionLock.withLock {
+            val cached = recentScanCache.open(cacheId) ?: return@withLock null
             val outputs =
                 cached.entryId?.let { entryId ->
                     readOutputMetadata(
@@ -798,6 +875,11 @@ internal class ScanStorage(
                 savedPdf = outputs?.pdf?.uri?.toUri(),
                 savedPdfTree = outputs?.pdf?.treeUri?.toUri(),
                 outputMetadataValid = outputs != null,
+                savedPdfDeleteVerified = outputs?.pdf?.outputFingerprint() != null,
+                savedImagesDeleteVerified =
+                    outputs?.images?.let { images ->
+                        images.isNotEmpty() && images.all { it.outputFingerprint() != null }
+                    } == true,
             )
         }
 
@@ -805,10 +887,10 @@ internal class ScanStorage(
         recentScanCache.delete(cacheId)
 
     fun removeRecentPreview(request: OutputDeleteRequest): Boolean =
-        synchronized(shareCacheLock) {
-            if (request.target != RecentDeleteTarget.RemoveFromRecent) return@synchronized false
-            val cached = recentScanCache.open(request.cacheId) ?: return@synchronized false
-            if (cached.entryId != request.entryId) return@synchronized false
+        storageTransactionLock.withLock {
+            if (request.target != RecentDeleteTarget.RemoveFromRecent) return@withLock false
+            val cached = recentScanCache.open(request.cacheId) ?: return@withLock false
+            if (cached.entryId != request.entryId) return@withLock false
             recentScanCache.delete(request.cacheId)
         }
 
@@ -816,18 +898,27 @@ internal class ScanStorage(
         request: OutputDeleteRequest,
         deleteRecentCache: Boolean,
     ): OutputDeleteOperationResult =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             val cached = recentScanCache.open(request.cacheId)
-                ?: return@synchronized OutputDeleteOperationResult.Stale
+                ?: return@withLock OutputDeleteOperationResult.Stale
             val entryId = cached.entryId
-                ?: return@synchronized OutputDeleteOperationResult.Stale
-            if (entryId != request.entryId) return@synchronized OutputDeleteOperationResult.Stale
+                ?: return@withLock OutputDeleteOperationResult.Stale
+            if (entryId != request.entryId) return@withLock OutputDeleteOperationResult.Stale
             val directory = File(shareCacheRoot(), cached.baseName)
+            val current =
+                matchingOutputMetadata(
+                    readOutputMetadata(directory, cached.baseName, cached.pages.size),
+                    request.cacheId,
+                    entryId,
+                ) ?: return@withLock OutputDeleteOperationResult.Failed
+            if (!deleteRecentCache && outputDeleteTargetIsAbsent(current, request.target)) {
+                return@withLock OutputDeleteOperationResult.Stale
+            }
             val metadata =
                 matchingDeleteMetadata(
-                    readOutputMetadata(directory, cached.baseName, cached.pages.size),
+                    current,
                     request,
-                ) ?: return@synchronized OutputDeleteOperationResult.Failed
+                ) ?: return@withLock OutputDeleteOperationResult.Failed
             val selected =
                 buildList<Pair<String, () -> OutputDeleteStatus>> {
                     if (
@@ -835,7 +926,7 @@ internal class ScanStorage(
                             request.target == RecentDeleteTarget.Both
                     ) {
                         val pdf = metadata.pdf
-                            ?: return@synchronized OutputDeleteOperationResult.Failed
+                            ?: return@withLock OutputDeleteOperationResult.Failed
                         add(pdf.uri to { outputDeleter.deletePdf(cached, pdf) })
                     }
                     if (
@@ -843,7 +934,7 @@ internal class ScanStorage(
                             request.target == RecentDeleteTarget.Both
                     ) {
                         if (metadata.images.isEmpty()) {
-                            return@synchronized OutputDeleteOperationResult.Failed
+                            return@withLock OutputDeleteOperationResult.Failed
                         }
                         metadata.images.forEach { image ->
                             add(image.uri to { outputDeleter.deleteImage(cached, image) })
@@ -855,7 +946,7 @@ internal class ScanStorage(
                     selected.isEmpty() ||
                     selected.map { it.first }.distinct().size != selected.size
             ) {
-                return@synchronized OutputDeleteOperationResult.Failed
+                return@withLock OutputDeleteOperationResult.Failed
             }
             val outcomes = selected.associate { (uri, delete) -> uri to delete() }
             val reduction = reduceOutputDeletion(metadata, request.target, outcomes)
@@ -880,7 +971,7 @@ internal class ScanStorage(
                     false
                 }
             if (!committed) {
-                return@synchronized outputDeleteOperationResult(
+                return@withLock outputDeleteOperationResult(
                     outcomes = outcomes.values,
                     metadataCommitted = false,
                     cacheDeletionRequested = deleteRecentCache,
@@ -900,7 +991,7 @@ internal class ScanStorage(
         }
 
     fun livePdfTreeUris(): Set<String> =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             val root = ensureShareRoot(shareCacheRoot())
             maintainPendingDirectories(root)
             val entries = readCacheEntries(root).associateBy(ParsedCacheEntry::directory)
@@ -927,7 +1018,7 @@ internal class ScanStorage(
         recentScanCache.publish(workDir, finalDir, protectedCacheIds)
 
     fun deleteCachedScan(cached: CachedScan): Boolean =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             try {
                 val root = shareCacheRoot()
                 val directory = File(root, cached.baseName).absoluteFile
@@ -954,7 +1045,7 @@ internal class ScanStorage(
         cached: CachedScan,
         album: String,
     ): List<Uri> =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             require(cached.pages.isNotEmpty()) { "Scan has no pages" }
             val relativePath = "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(album)}"
             val saved = mutableListOf<SavedMediaOutput>()
@@ -963,7 +1054,7 @@ internal class ScanStorage(
                     requireCurrentOutputMetadata(cached),
                     cached.pages.size,
                 )?.let { existing ->
-                    return@synchronized existing.map { it.uri.toUri() }
+                    return@withLock existing.map { it.uri.toUri() }
                 }
                 cached.pages.forEachIndexed { index, source ->
                     val values =
@@ -991,6 +1082,8 @@ internal class ScanStorage(
                                     displayName = uri.displayName,
                                     mimeType = uri.mimeType,
                                     ownerPackageName = uri.ownerPackageName,
+                                    byteLength = uri.byteLength,
+                                    sha256 = uri.sha256,
                                 )
                             },
                     )
@@ -1036,20 +1129,22 @@ internal class ScanStorage(
         album: String,
         pdfTreeUri: String?,
     ): SavedPdfOutput =
-        synchronized(shareCacheLock) {
+        storageTransactionLock.withLock {
             requireReadableFile(cached.pdf)
             val displayName = scanPdfFileName(cached.baseName)
             var failureWarning: UiMessage? = null
             var createdOutput: SavedPdfOutput? = null
             try {
                 requireCurrentOutputMetadata(cached).pdf?.let { existing ->
-                    return@synchronized SavedPdfOutput(
+                    return@withLock SavedPdfOutput(
                         uri = existing.uri.toUri(),
                         treeUri = existing.treeUri?.toUri(),
                         warning = null,
                         displayName = existing.displayName,
                         mimeType = existing.mimeType,
                         ownerPackageName = existing.ownerPackageName,
+                        byteLength = existing.byteLength,
+                        sha256 = existing.sha256,
                     )
                 }
                 val output =
@@ -1078,6 +1173,8 @@ internal class ScanStorage(
                                 displayName = output.displayName,
                                 mimeType = output.mimeType,
                                 ownerPackageName = output.ownerPackageName,
+                                byteLength = output.byteLength,
+                                sha256 = output.sha256,
                             ),
                     )
                 }
@@ -1207,12 +1304,15 @@ internal class ScanStorage(
             createdDocument = document
             copyFileToUri(source, document)
             val actualName = readSafPdfDisplayName(treeUri, document)
+            val fingerprint = fingerprintUri(document, source.length())
             return SavedPdfOutput(
                 uri = document,
                 treeUri = treeUri,
                 warning = null,
                 displayName = actualName,
                 mimeType = PDF_MIME_TYPE,
+                byteLength = fingerprint.byteLength,
+                sha256 = fingerprint.sha256,
             ) to false
         } catch (cancellation: CancellationException) {
             createdDocument?.let { document ->
@@ -1313,6 +1413,7 @@ internal class ScanStorage(
         expectedMimeType: String,
     ): SavedMediaOutput {
         requireReadableFile(source)
+        val expectedLength = source.length()
         val destination =
             resolver.insert(collection, values)
                 ?: throw IOException("MediaStore row could not be created")
@@ -1328,7 +1429,12 @@ internal class ScanStorage(
             if (published != 1) {
                 throw IOException("MediaStore row could not be published")
             }
-            readSavedMediaOutput(destination, expectedCollection, expectedMimeType)
+            readSavedMediaOutput(
+                destination,
+                expectedCollection,
+                expectedMimeType,
+                expectedLength,
+            )
         }
     }
 
@@ -1336,6 +1442,7 @@ internal class ScanStorage(
         uri: Uri,
         expectedCollection: MediaOutputCollection,
         expectedMimeType: String,
+        expectedLength: Long,
     ): SavedMediaOutput {
         val address = parseMediaItemAddress(uri.toString())
             ?: throw IOException("MediaStore item URI is invalid")
@@ -1366,25 +1473,39 @@ internal class ScanStorage(
                     ownerIndex < 0 ||
                     it.isNull(idIndex) ||
                     it.isNull(nameIndex) ||
-                    it.isNull(mimeIndex) ||
-                    it.isNull(ownerIndex)
+                    it.isNull(mimeIndex)
             ) {
                 throw IOException("MediaStore item identity is incomplete")
             }
             val displayName = it.getString(nameIndex)
             val mimeType = it.getString(mimeIndex)
-            val ownerPackageName = it.getString(ownerIndex)
+            val ownerPackageName =
+                if (ownerIndex < 0 || it.isNull(ownerIndex)) null else it.getString(ownerIndex)
             if (
                 it.getLong(idIndex) != address.id ||
                     !isProviderDisplayName(displayName) ||
                     mimeType != expectedMimeType ||
-                    ownerPackageName != context.packageName ||
+                    (ownerPackageName != null && ownerPackageName != context.packageName) ||
                     it.moveToNext()
             ) {
                 throw IOException("MediaStore item identity changed")
             }
-            SavedMediaOutput(uri, displayName, mimeType, ownerPackageName)
+            val fingerprint = fingerprintUri(uri, expectedLength)
+            SavedMediaOutput(
+                uri,
+                displayName,
+                mimeType,
+                ownerPackageName,
+                fingerprint.byteLength,
+                fingerprint.sha256,
+            )
         }
+    }
+
+    private fun fingerprintUri(uri: Uri, expectedLength: Long): OutputFingerprint {
+        val input = resolver.openInputStream(uri)
+            ?: throw IOException("Saved output could not be reopened")
+        return input.use { readOutputFingerprint(it, expectedLength) }
     }
 
     private fun copyUriToFile(source: Uri, destination: File) {

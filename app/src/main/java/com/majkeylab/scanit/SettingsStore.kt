@@ -18,8 +18,17 @@ private const val KEY_DELETE_IMAGES_AFTER_SHARE = "delete_images_after_share"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
 private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
+private const val KEY_PENDING_SHARE_CLEANUP = "pending_share_cleanup"
 private const val ACTIVE_RESULT_CHECKPOINT_PREFIX = "1:"
 private const val MAX_ACTIVE_RESULT_CACHE_ID_LENGTH = 128
+private const val PENDING_SHARE_CLEANUP_PREFIX = "1:"
+private const val CANONICAL_UUID_LENGTH = 36
+private const val MAX_SHARE_CLEANUP_KIND_LENGTH = 6
+private const val MAX_PENDING_SHARE_CLEANUP_LENGTH =
+    PENDING_SHARE_CLEANUP_PREFIX.length +
+        MAX_ACTIVE_RESULT_CACHE_ID_LENGTH + 1 +
+        CANONICAL_UUID_LENGTH + 1 +
+        MAX_SHARE_CLEANUP_KIND_LENGTH
 
 internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
     cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
@@ -42,6 +51,27 @@ internal fun decodeActiveResultCheckpoint(value: String?): String? {
     }
     return value.removePrefix(ACTIVE_RESULT_CHECKPOINT_PREFIX)
         .takeIf(::isSafeActiveResultCacheId)
+}
+
+internal fun encodePendingShareCleanup(request: ShareCleanupRequest): String {
+    require(isSafeActiveResultCacheId(request.cacheId) && isCanonicalUuid(request.entryId)) {
+        "Pending share cleanup identity is unsafe"
+    }
+    return "$PENDING_SHARE_CLEANUP_PREFIX${request.cacheId}:${request.entryId}:${request.kind.wireValue}"
+}
+
+internal fun decodePendingShareCleanup(value: String?): ShareCleanupRequest? {
+    if (
+        value == null ||
+            value.length > MAX_PENDING_SHARE_CLEANUP_LENGTH ||
+            !value.startsWith(PENDING_SHARE_CLEANUP_PREFIX)
+    ) {
+        return null
+    }
+    val parts = value.removePrefix(PENDING_SHARE_CLEANUP_PREFIX).split(':')
+    if (parts.size != 3) return null
+    return decodeShareCleanupRequest(parts[0], parts[1], parts[2])
+        ?.takeIf { isSafeActiveResultCacheId(it.cacheId) }
 }
 
 internal fun normalizeAlbumName(value: String): String {
@@ -74,12 +104,6 @@ internal class SettingsStore(
         context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
         context.getString(R.string.default_email_subject),
     )
-
-    @Volatile
-    private var pendingPdfTreeUriValue =
-        readPreferenceOrDefault<String?>(null) {
-            preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
-    }
 
     fun load(): AppSettings {
         val defaults = AppSettings(emailSubject = defaultEmailSubject)
@@ -138,7 +162,6 @@ internal class SettingsStore(
             .putString(KEY_PDF_TREE_URI, settings.pdfTreeUri)
             .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
             .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
-            .putString(KEY_PENDING_PDF_TREE_URI, pendingPdfTreeUriValue)
             .apply()
     }
 
@@ -178,7 +201,49 @@ internal class SettingsStore(
         }
     }
 
-    internal fun pendingPdfTreeUri(): String? = pendingPdfTreeUriValue
+    @Throws(IOException::class)
+    internal fun pendingShareCleanup(): ShareCleanupRequest? {
+        val stored =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
+            }
+        val request = decodePendingShareCleanup(stored)
+        if (request == null && preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+            val cleared = preferences.edit().remove(KEY_PENDING_SHARE_CLEANUP).commit()
+            if (!cleared || preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+                throw IOException("Invalid pending share cleanup could not be cleared")
+            }
+        }
+        return request
+    }
+
+    @Throws(IOException::class)
+    internal fun savePendingShareCleanup(request: ShareCleanupRequest) {
+        val encoded = encodePendingShareCleanup(request)
+        val existing = pendingShareCleanup()
+        if (existing == request) return
+        if (existing != null) throw IOException("Another share cleanup is pending")
+        val stored = preferences.edit().putString(KEY_PENDING_SHARE_CLEANUP, encoded).commit()
+        val verified =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
+            } == encoded
+        if (!stored || !verified) throw IOException("Pending share cleanup could not be stored")
+    }
+
+    @Throws(IOException::class)
+    internal fun clearPendingShareCleanup(request: ShareCleanupRequest) {
+        if (pendingShareCleanup() != request) return
+        val cleared = preferences.edit().remove(KEY_PENDING_SHARE_CLEANUP).commit()
+        if (!cleared || preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+            throw IOException("Pending share cleanup could not be cleared")
+        }
+    }
+
+    internal fun pendingPdfTreeUri(): String? =
+        readPreferenceOrDefault<String?>(null) {
+            preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
+        }
 
     @Throws(IOException::class)
     internal fun savePdfTreeUris(current: String?, pending: String?) {
@@ -191,7 +256,6 @@ internal class SettingsStore(
         if (!stored) {
             throw IOException("PDF destinations could not be stored")
         }
-        pendingPdfTreeUriValue = pending
     }
 
 }

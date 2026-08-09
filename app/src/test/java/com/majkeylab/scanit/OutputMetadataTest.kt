@@ -107,6 +107,8 @@ class OutputMetadataTest {
                         displayName = "scan (1).pdf",
                         mimeType = "application/pdf",
                         ownerPackageName = owner,
+                        byteLength = 10L,
+                        sha256 = "00".repeat(32),
                     ),
                 images =
                     listOf(
@@ -116,6 +118,8 @@ class OutputMetadataTest {
                             displayName = "scan (1).jpg",
                             mimeType = "image/jpeg",
                             ownerPackageName = owner,
+                            byteLength = 11L,
+                            sha256 = "11".repeat(32),
                         ),
                     ),
             )
@@ -128,6 +132,62 @@ class OutputMetadataTest {
                 pageCount = 1,
             ),
         )
+    }
+
+    @Test
+    fun outputFingerprintRoundTripsAndRejectsIncompleteOrMalformedPairs() {
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/42",
+                        treeUri = null,
+                        byteLength = 7L,
+                        sha256 = "ab".repeat(32),
+                    ),
+            )
+
+        assertEquals(
+            metadata,
+            decodeOutputMetadata(encodeOutputMetadata(metadata, 1), cacheId, 1),
+        )
+        assertNull(
+            decodeOutputMetadata(
+                encodeOutputMetadata(metadata, 1)
+                    .toString(StandardCharsets.UTF_8)
+                    .replace("\"sha256\":\"${"ab".repeat(32)}\"", "\"sha256\":null")
+                    .toByteArray(StandardCharsets.UTF_8),
+                cacheId,
+                1,
+            ),
+        )
+        assertNull(
+            decodeOutputMetadata(
+                encodeOutputMetadata(metadata, 1)
+                    .toString(StandardCharsets.UTF_8)
+                    .replace("${"ab".repeat(32)}", "not-a-hash")
+                    .toByteArray(StandardCharsets.UTF_8),
+                cacheId,
+                1,
+            ),
+        )
+    }
+
+    @Test
+    fun fingerprintReadsExactlyTheExpectedBytes() {
+        val bytes = "ScanIt".toByteArray()
+        val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+
+        assertEquals(bytes.size.toLong(), fingerprint.byteLength)
+        assertEquals(64, fingerprint.sha256.length)
+        assertTrue(outputFingerprintMatches(ByteArrayInputStream(bytes), fingerprint))
+        assertTrue(!outputFingerprintMatches(ByteArrayInputStream(bytes + 0.toByte()), fingerprint))
+        assertThrows(IOException::class.java) {
+            readOutputFingerprint(ByteArrayInputStream(bytes.copyOf(3)), bytes.size.toLong())
+        }
     }
 
     @Test

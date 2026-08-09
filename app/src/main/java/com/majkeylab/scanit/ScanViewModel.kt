@@ -11,7 +11,6 @@ import androidx.lifecycle.viewModelScope
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.CancellationException
-import java.util.concurrent.locks.ReentrantLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -245,7 +244,6 @@ internal class ScanViewModel(
     private val mutableState = MutableStateFlow(initialScreenState(null))
     private val mutableScannerRequest = MutableStateFlow<Long?>(null)
     private val mutableSettings = MutableStateFlow(settingsStore.load())
-    private val pdfGrantLock = ReentrantLock()
     private var processingJob: Job? = null
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
@@ -260,15 +258,12 @@ internal class ScanViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            pdfGrantLock.lock()
             try {
                 retryPendingPdfTreeGrant()
             } catch (_: IOException) {
                 // The single pending grant remains recorded for the next retry.
             } catch (_: RuntimeException) {
                 // The single pending grant remains recorded for the next retry.
-            } finally {
-                pdfGrantLock.unlock()
             }
         }
         restoreNavigation()
@@ -525,6 +520,8 @@ internal class ScanViewModel(
                                             savedPdfTree = savedPdfTreeUri,
                                             warnings = warnings,
                                             outputMetadataValid = true,
+                                            savedPdfDeleteVerified = savedPdfUri != null,
+                                            savedImagesDeleteVerified = galleryPages.isNotEmpty(),
                                         ),
                                     thumbnail = thumbnail,
                                 )
@@ -1155,14 +1152,14 @@ internal class ScanViewModel(
         }
     }
 
-    private fun retryPendingPdfTreeGrant(): UiMessage? {
+    private fun retryPendingPdfTreeGrant(): UiMessage? = withStorageTransaction {
         val live =
             try {
                 storage.livePdfTreeUris()
             } catch (_: IOException) {
-                return UiMessage(R.string.pdf_tree_release_warning)
+                return@withStorageTransaction UiMessage(R.string.pdf_tree_release_warning)
             } catch (_: RuntimeException) {
-                return UiMessage(R.string.pdf_tree_release_warning)
+                return@withStorageTransaction UiMessage(R.string.pdf_tree_release_warning)
             }
         if (
             !reconcilePdfTreeGrants(
@@ -1171,10 +1168,10 @@ internal class ScanViewModel(
                 live = live,
             )
         ) {
-            return UiMessage(R.string.pdf_tree_release_warning)
+            return@withStorageTransaction UiMessage(R.string.pdf_tree_release_warning)
         }
-        if (settingsStore.pendingPdfTreeUri() == null) return null
-        return try {
+        if (settingsStore.pendingPdfTreeUri() == null) return@withStorageTransaction null
+        try {
             settingsStore.savePdfTreeUris(
                 current = mutableSettings.value.pdfTreeUri,
                 pending = null,
@@ -1186,23 +1183,12 @@ internal class ScanViewModel(
     }
 
     private fun reconcilePdfTreeGrantsAfterOutputChange() {
-        pdfGrantLock.lock()
-        try {
-            retryPendingPdfTreeGrant()
-        } finally {
-            pdfGrantLock.unlock()
-        }
+        retryPendingPdfTreeGrant()
     }
 
     private fun <T> withPdfGrantChange(operation: () -> T): T {
-        if (!pdfGrantLock.tryLock()) {
-            throw IOException("PDF destination cleanup is still in progress")
-        }
-        return try {
-            operation()
-        } finally {
-            pdfGrantLock.unlock()
-        }
+        return tryStorageTransaction(operation)
+            ?: throw IOException("PDF destination cleanup is still in progress")
     }
 
     private suspend fun cleanup(
