@@ -197,6 +197,73 @@ class BitonalPdfWriterTest {
             assertEquals(listOf("raced.pdf"), directory.listFiles()?.map(File::getName))
         }
 
+    @Test
+    fun oversizedWidthIsRejectedBeforeCreatingFiles() {
+        assertWriteRejected(
+            listOf(BitonalPdfPage(width = 3509, height = 1) { _, _ -> fail("Row read") }),
+            "Page width exceeds 3508 pixels",
+        )
+    }
+
+    @Test
+    fun nonPositiveDimensionsAreRejectedBeforeCreatingFiles() {
+        listOf(
+            BitonalPdfPage(width = 0, height = 1) { _, _ -> fail("Row read") } to
+                "Page width must be positive",
+            BitonalPdfPage(width = -1, height = 1) { _, _ -> fail("Row read") } to
+                "Page width must be positive",
+            BitonalPdfPage(width = 1, height = 0) { _, _ -> fail("Row read") } to
+                "Page height must be positive",
+            BitonalPdfPage(width = 1, height = -1) { _, _ -> fail("Row read") } to
+                "Page height must be positive",
+        ).forEach { (page, message) ->
+            assertWriteRejected(listOf(page), message)
+        }
+    }
+
+    @Test
+    fun oversizedHeightIsRejectedBeforeCreatingFiles() {
+        assertWriteRejected(
+            listOf(BitonalPdfPage(width = 1, height = 3509) { _, _ -> fail("Row read") }),
+            "Page height exceeds 3508 pixels",
+        )
+    }
+
+    @Test
+    fun oversizedPixelProductIsRejectedBeforeCreatingFiles() {
+        assertWriteRejected(
+            listOf(BitonalPdfPage(width = 3509, height = 3509) { _, _ -> fail("Row read") }),
+            "Page pixel count exceeds 12306064",
+        )
+    }
+
+    @Test
+    fun oversizedPageCountIsRejectedBeforeCreatingFiles() {
+        val page = BitonalPdfPage(width = 1, height = 1) { _, _ -> fail("Row read") }
+        assertWriteRejected(
+            List(26_214) { page },
+            "PDF page count exceeds 26213",
+        )
+    }
+
+    @Test
+    fun maximumSafePageCountKeepsObjectTableWithinBudget() {
+        assertEquals(131_067, bitonalPdfObjectCount(26_213))
+    }
+
+    @Test
+    fun imageStreamUsesBestZlibCompressionLevel() =
+        withTempDirectory { directory ->
+            val output = File(directory, "compression.pdf")
+            BitonalPdfWriter.write(
+                output,
+                listOf(BitonalPdfPage(width = 64, height = 64) { _, pixels -> pixels.fill(WHITE) }),
+            )
+
+            val compressed = stream(output.readBytes(), 4, 5)
+            assertEquals(3, (compressed[1].toInt() and 0xff) ushr 6)
+        }
+
     private fun inflatedImage(pdf: ByteArray, objectNumber: Int, lengthObjectNumber: Int): ByteArray =
         InflaterInputStream(stream(pdf, objectNumber, lengthObjectNumber).inputStream()).use {
             it.readBytes()
@@ -226,6 +293,17 @@ class BitonalPdfWriterTest {
         assertTrue("Missing startxref", match != null)
         return checkNotNull(match).groupValues[1].toLong()
     }
+
+    private fun assertWriteRejected(pages: List<BitonalPdfPage>, expectedMessage: String) =
+        withTempDirectory { directory ->
+            try {
+                BitonalPdfWriter.write(File(directory, "rejected.pdf"), pages)
+                fail("Expected validation failure")
+            } catch (failure: IllegalArgumentException) {
+                assertEquals(expectedMessage, failure.message)
+            }
+            assertTrue(directory.listFiles()?.isEmpty() == true)
+        }
 
     private fun String.takeWhileIncludingNewline(): String {
         val newline = indexOf('\n')

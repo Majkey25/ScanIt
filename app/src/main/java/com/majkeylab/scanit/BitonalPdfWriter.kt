@@ -15,16 +15,11 @@ internal class BitonalPdfPage(
     val width: Int,
     val height: Int,
     internal val readRow: (row: Int, grayscale: ByteArray) -> Unit,
-) {
-    init {
-        require(width > 0) { "Page width must be positive" }
-        require(height > 0) { "Page height must be positive" }
-    }
-}
+)
 
 internal object BitonalPdfWriter {
     fun write(output: File, pages: List<BitonalPdfPage>) {
-        require(pages.isNotEmpty()) { "PDF must contain at least one page" }
+        validatePages(pages)
         val target = output.absoluteFile
         val parent = requireNotNull(target.parentFile) { "PDF destination must have a parent" }
         require(parent.isDirectory) { "PDF destination directory does not exist" }
@@ -49,7 +44,7 @@ internal object BitonalPdfWriter {
     }
 
     private fun writePdf(output: PdfOutput, pages: List<BitonalPdfPage>) {
-        val objectCount = Math.addExact(2, Math.multiplyExact(pages.size, OBJECTS_PER_PAGE))
+        val objectCount = bitonalPdfObjectCount(pages.size)
         val offsets = LongArray(Math.addExact(objectCount, 1))
         output.ascii("%PDF-1.4\n")
         output.write(
@@ -122,7 +117,7 @@ internal object BitonalPdfWriter {
     private fun writeCompressedRows(output: OutputStream, page: BitonalPdfPage) {
         val grayscale = ByteArray(page.width)
         val packed = ByteArray((page.width.toLong() + 7L).div(8L).toInt())
-        val deflater = Deflater()
+        val deflater = Deflater(Deflater.BEST_COMPRESSION, false)
         try {
             val compressed = DeflaterOutputStream(output, deflater, COMPRESSION_BUFFER_SIZE)
             repeat(page.height) { row ->
@@ -149,6 +144,25 @@ internal object BitonalPdfWriter {
     }
 
     private fun pageObject(index: Int): Int = FIRST_PAGE_OBJECT + index * OBJECTS_PER_PAGE
+
+    private fun validatePages(pages: List<BitonalPdfPage>) {
+        bitonalPdfObjectCount(pages.size)
+        pages.forEach { page ->
+            require(page.width > 0) { "Page width must be positive" }
+            require(page.height > 0) { "Page height must be positive" }
+            require(page.width.toLong() * page.height <= MAX_PAGE_PIXELS) {
+                "Page pixel count exceeds $MAX_PAGE_PIXELS"
+            }
+            require(page.width <= MAX_PAGE_SIDE) { "Page width exceeds $MAX_PAGE_SIDE pixels" }
+            require(page.height <= MAX_PAGE_SIDE) { "Page height exceeds $MAX_PAGE_SIDE pixels" }
+        }
+    }
+}
+
+internal fun bitonalPdfObjectCount(pageCount: Int): Int {
+    require(pageCount > 0) { "PDF must contain at least one page" }
+    require(pageCount <= MAX_PAGE_COUNT) { "PDF page count exceeds $MAX_PAGE_COUNT" }
+    return BASE_OBJECT_COUNT + pageCount * OBJECTS_PER_PAGE
 }
 
 internal fun pdfXrefEntry(offset: Long): String {
@@ -189,7 +203,14 @@ private const val BLACK: Byte = 0
 private const val WHITE: Byte = 1
 private const val CATALOG_OBJECT = 1
 private const val PAGES_OBJECT = 2
+private const val BASE_OBJECT_COUNT = 2
 private const val FIRST_PAGE_OBJECT = 3
 private const val OBJECTS_PER_PAGE = 5
 private const val COMPRESSION_BUFFER_SIZE = 8192
+private const val OFFSET_TABLE_BUDGET_BYTES = 1024 * 1024
+private const val OFFSET_BYTES = 8
+private const val MAX_PAGE_COUNT =
+    (OFFSET_TABLE_BUDGET_BYTES / OFFSET_BYTES - BASE_OBJECT_COUNT - 1) / OBJECTS_PER_PAGE
+private const val MAX_PAGE_SIDE = 3508
 private const val MAX_XREF_OFFSET = 9_999_999_999L
+private val MAX_PAGE_PIXELS = MAX_PAGE_SIDE.toLong() * MAX_PAGE_SIDE
