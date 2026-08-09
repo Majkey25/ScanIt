@@ -114,59 +114,25 @@ class PureLogicTest {
     }
 
     @Test
-    fun failedDeleteRetainsResultBackWhenCacheIsStillListed() {
-        assertEquals(
-            "Scan_1",
-            retainedRecentResultCacheId("Scan_1", listOf("Scan_2", "Scan_1")),
-        )
-    }
-
-    @Test
-    fun deletedOrMissingResultCacheRemovesResultBack() {
-        assertEquals(null, retainedRecentResultCacheId("Scan_1", listOf("Scan_2")))
-        assertEquals(null, retainedRecentResultCacheId("Scan_1", null))
-    }
-
-    @Test
-    fun deletingPreviousResultBlocksBackUntilRevalidationCompletes() {
-        val gate = RecentDeletionGate()
-
-        gate.begin("Scan_1")
-
-        assertEquals(false, gate.canRestore("Scan_1"))
-    }
-
-    @Test
-    fun deletingAnotherCacheDoesNotBlockPreviousResultBack() {
-        val gate = RecentDeletionGate()
-
-        gate.begin("Scan_2")
-
-        assertEquals(true, gate.canRestore("Scan_1"))
-    }
-
-    @Test
-    fun laterDeleteDoesNotHideEarlierPreviousResultDeletion() {
-        val gate = RecentDeletionGate()
-        val previousResultDeletion = gate.begin("Scan_1")
-
-        gate.begin("Scan_2")
-
-        assertEquals(false, gate.canRestore("Scan_1"))
-        assertEquals(true, gate.complete(previousResultDeletion))
-        assertEquals(true, gate.canRestore("Scan_1"))
-    }
-
-    @Test
-    fun completedDeleteAllowsBackOnlyForRetainedPreviousResult() {
+    fun invalidatedRecentDeletionCannotChangeTheNewScreen() {
         val gate = RecentDeletionGate()
         val deletion = gate.begin("Scan_1")
-        val retained = retainedRecentResultCacheId("Scan_1", listOf("Scan_1"))
-        val removed = retainedRecentResultCacheId("Scan_1", emptyList())
 
+        gate.invalidateCurrent()
+
+        assertEquals(false, gate.isCurrent(deletion))
         assertEquals(true, gate.complete(deletion))
-        assertEquals(true, gate.canRestore(retained))
-        assertEquals(false, gate.canRestore(removed))
+    }
+
+    @Test
+    fun completingEarlierDeletionKeepsLaterDeletionCurrent() {
+        val gate = RecentDeletionGate()
+        val earlier = gate.begin("Scan_1")
+        val later = gate.begin("Scan_2")
+
+        assertEquals(true, gate.complete(earlier))
+
+        assertEquals(true, gate.isCurrent(later))
     }
 
     @Test
@@ -204,21 +170,67 @@ class PureLogicTest {
     }
 
     @Test
-    fun recentBackStackRequiresItsSavedCacheId() {
-        assertEquals(
-            RestoredRoute.RecentWithResultBack,
-            restoredRoute("recent_with_result_back", "Scan_1"),
-        )
-        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", null))
-        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", ""))
+    fun savedResultRouteRequiresItsCacheId() {
+        assertEquals("Result", restoredRoute("result", "Scan_1").name)
+        assertEquals(RestoredRoute.Recent, restoredRoute("result", null))
+        assertEquals(RestoredRoute.Recent, restoredRoute("result", ""))
     }
 
     @Test
-    fun resultOpenedFromRecentRestoresOnlyWithItsSavedCacheId() {
+    fun backNavigationUsesScannerRecentResultMap() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+            )
+
         assertEquals(
-            RestoredRoute.ResultWithRecentBack,
-            restoredRoute("result_with_recent_back", "Scan_1"),
+            AppBackAction.ShowRecent,
+            appBackAction(settingsOpen = false, fileDetailsOpen = false, state = result),
         )
+        assertEquals(
+            AppBackAction.LaunchScanner,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Recent(emptyList()),
+            ),
+        )
+    }
+
+    @Test
+    fun backNavigationClosesOverlaysBeforeChangingResultRoute() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+            )
+
+        assertEquals(
+            AppBackAction.CloseSettings,
+            appBackAction(settingsOpen = true, fileDetailsOpen = true, state = result),
+        )
+        assertEquals(
+            AppBackAction.CollapseFileDetails,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun obsoleteBackStackRoutesFallBackToRecent() {
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", "Scan_1"))
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", null))
+        assertEquals(RestoredRoute.Recent, restoredRoute("result_with_recent_back", "Scan_1"))
         assertEquals(RestoredRoute.Recent, restoredRoute("result_with_recent_back", null))
     }
 

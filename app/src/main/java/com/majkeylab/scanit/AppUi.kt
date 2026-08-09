@@ -24,7 +24,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
@@ -32,18 +35,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -56,18 +59,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.IOException
@@ -140,14 +142,18 @@ internal fun ScanItApp(
     onPrint: (() -> Unit)? = null,
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
-    BackHandler(showSettings) { showSettings = false }
-    BackHandler(
-        enabled =
-            !showSettings &&
-                ((state as? ScreenState.Recent)?.canGoBack == true ||
-                    (state as? ScreenState.Result)?.returnToRecent == true),
-        onBack = onNavigateBack,
-    )
+    val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
+    var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
+    val backAction = appBackAction(showSettings, fileDetailsExpanded, state)
+    BackHandler(backAction != AppBackAction.None) {
+        when (backAction) {
+            AppBackAction.CloseSettings -> showSettings = false
+            AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
+            AppBackAction.ShowRecent -> onNavigateBack()
+            AppBackAction.LaunchScanner -> onScan()
+            AppBackAction.None -> Unit
+        }
+    }
 
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
@@ -184,7 +190,7 @@ internal fun ScanItApp(
                         onSharePdf = onShareRecentPdf,
                         onDelete = onDeleteRecent,
                         onLoadThumbnail = onLoadRecentThumbnail,
-                        onBack = onNavigateBack,
+                        onRecent = onRecent,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
@@ -196,6 +202,8 @@ internal fun ScanItApp(
                         onSharePdf = onSharePdf,
                         onShareImages = onShareImages,
                         onPrint = onPrint,
+                        fileDetailsExpanded = fileDetailsExpanded,
+                        onFileDetailsChange = { fileDetailsExpanded = it },
                     )
             }
         }
@@ -248,6 +256,8 @@ private fun ResultScreen(
     onSharePdf: (() -> Unit)?,
     onShareImages: (() -> Unit)?,
     onPrint: (() -> Unit)?,
+    fileDetailsExpanded: Boolean,
+    onFileDetailsChange: (Boolean) -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
@@ -278,37 +288,6 @@ private fun ResultScreen(
                     pluralStringResource(R.plurals.page_count, pageCount, pageCount),
                     style = MaterialTheme.typography.titleMedium,
                 )
-            }
-            item {
-                val savedPdf = scan.savedPdf
-                Text(
-                    when {
-                        savedPdf == null -> stringResource(R.string.pdf_temporary)
-                        savedPdf.authority == MediaStore.AUTHORITY ->
-                            stringResource(
-                                R.string.pdf_saved_downloads,
-                                scan.cached.pdf.name,
-                            )
-                        else ->
-                            stringResource(
-                                R.string.pdf_saved_selected_folder,
-                                scan.cached.pdf.name,
-                            )
-                    },
-                )
-                Text(
-                    if (scan.galleryPages.isEmpty()) {
-                        stringResource(R.string.images_temporary)
-                    } else {
-                        stringResource(
-                            R.string.images_saved_gallery,
-                            scan.cached.pages.first().name,
-                        )
-                    },
-                )
-                scan.warnings.forEach {
-                    Text(it.resolve(), color = MaterialTheme.colorScheme.error)
-                }
             }
             item {
                 Button(
@@ -342,12 +321,68 @@ private fun ResultScreen(
                     Text(stringResource(R.string.new_scan))
                 }
             }
+            item {
+                TextButton(
+                    onClick = { onFileDetailsChange(!fileDetailsExpanded) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.file_details), modifier = Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_expand_more),
+                        contentDescription =
+                            stringResource(
+                                if (fileDetailsExpanded) {
+                                    R.string.collapse_file_details
+                                } else {
+                                    R.string.expand_file_details
+                                },
+                            ),
+                        modifier = Modifier.size(24.dp).rotate(if (fileDetailsExpanded) 180f else 0f),
+                    )
+                }
+                if (fileDetailsExpanded) {
+                    FileDetails(scan)
+                }
+            }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FileDetails(scan: SavedScan) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val savedPdf = scan.savedPdf
+        Text(
+            when {
+                savedPdf == null -> stringResource(R.string.pdf_temporary)
+                savedPdf.authority == MediaStore.AUTHORITY ->
+                    stringResource(R.string.pdf_saved_downloads, scan.cached.pdf.name)
+                else -> stringResource(R.string.pdf_saved_selected_folder, scan.cached.pdf.name)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (scan.galleryPages.isEmpty()) {
+                stringResource(R.string.images_temporary)
+            } else {
+                stringResource(R.string.images_saved_gallery, scan.cached.pages.first().name)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        scan.warnings.forEach {
+            Text(
+                it.resolve(),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
 @Composable
 private fun RecentScreen(
     state: ScreenState.Recent,
@@ -356,55 +391,18 @@ private fun RecentScreen(
     onSharePdf: (String) -> Unit,
     onDelete: (String) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
-    onBack: () -> Unit,
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val backDescription = stringResource(R.string.back)
-    val settingsDescription = stringResource(R.string.open_settings)
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.recent_scans)) },
-                navigationIcon = {
-                    if (state.canGoBack) {
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier.semantics {
-                                contentDescription = backDescription
-                            },
-                        ) {
-                            Text(
-                                stringResource(R.string.back_symbol),
-                                modifier = Modifier.clearAndSetSemantics {},
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = onSettings,
-                        modifier = Modifier.semantics {
-                            contentDescription = settingsDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.settings_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    MainScaffold(onRecent, onSettings) { modifier ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier = modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
                 Text(
-                    stringResource(R.string.recent_scans_temporary),
-                    style = MaterialTheme.typography.bodyMedium,
+                    stringResource(R.string.recent_scans),
+                    style = MaterialTheme.typography.headlineSmall,
                 )
             }
             item {
@@ -431,6 +429,13 @@ private fun RecentScreen(
                     )
                     HorizontalDivider()
                 }
+            }
+            item {
+                Text(
+                    stringResource(R.string.recent_scans_temporary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
@@ -469,16 +474,14 @@ private fun RecentScanRow(
             )
         }
         Box {
-            val overflowDescription = stringResource(R.string.more_actions)
             IconButton(
                 onClick = { menuExpanded = true },
-                modifier = Modifier.semantics {
-                    contentDescription = overflowDescription
-                },
+                modifier = Modifier.size(48.dp),
             ) {
-                Text(
-                    stringResource(R.string.more_actions_symbol),
-                    modifier = Modifier.clearAndSetSemantics {},
+                Icon(
+                    painter = painterResource(R.drawable.ic_more_vert),
+                    contentDescription = stringResource(R.string.more_actions),
+                    modifier = Modifier.size(24.dp),
                 )
             }
             DropdownMenu(
@@ -543,50 +546,79 @@ private fun RecentThumbnail(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScaffold(
     onRecent: () -> Unit,
     onSettings: () -> Unit,
     content: @Composable (Modifier) -> Unit,
 ) {
-    val recentDescription = stringResource(R.string.open_recent_scans)
-    val settingsDescription = stringResource(R.string.open_settings)
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                actions = {
-                    IconButton(
-                        onClick = onRecent,
-                        modifier = Modifier.semantics {
-                            contentDescription = recentDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.recent_scans_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                    IconButton(
-                        onClick = onSettings,
-                        modifier = Modifier.semantics {
-                            contentDescription = settingsDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.settings_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
+            CompactTopBar(
+                title = stringResource(R.string.app_name),
+                onRecent = onRecent,
+                onSettings = onSettings,
             )
         },
     ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactTopBar(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    onRecent: (() -> Unit)? = null,
+    onSettings: (() -> Unit)? = null,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .height(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = stringResource(R.string.back),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Text(
+                    title,
+                    modifier =
+                        Modifier.weight(1f).padding(start = if (onBack == null) 16.dp else 0.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                if (onRecent != null) {
+                    IconButton(onClick = onRecent, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_dashboard),
+                            contentDescription = stringResource(R.string.open_recent_scans),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                if (onSettings != null) {
+                    IconButton(onClick = onSettings, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = stringResource(R.string.open_settings),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+            HorizontalDivider()
+        }
+    }
+}
+
 @Composable
 private fun SettingsScreen(
     settings: AppSettings,
@@ -646,27 +678,11 @@ private fun SettingsScreen(
             }
         }
 
-    val backDescription = stringResource(R.string.back)
     Scaffold(
         modifier = Modifier.imePadding(),
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.semantics {
-                            contentDescription = backDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.back_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
-            )
+            CompactTopBar(title = stringResource(R.string.settings), onBack = onClose)
         },
     ) { padding ->
         LazyColumn(
@@ -731,10 +747,6 @@ private fun SettingsScreen(
                     } else {
                         stringResource(R.string.custom_pdf_folder)
                     },
-                )
-                Text(
-                    stringResource(R.string.folder_saved_immediately),
-                    style = MaterialTheme.typography.bodySmall,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),

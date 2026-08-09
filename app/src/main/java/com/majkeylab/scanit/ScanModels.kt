@@ -48,20 +48,14 @@ internal data class SavedScan(
 internal enum class RestoredRoute {
     Scanner,
     Recent,
-    RecentWithResultBack,
-    ResultWithRecentBack,
+    Result,
 }
 
 internal fun restoredRoute(savedRoute: String?, cacheId: String?): RestoredRoute =
     when (savedRoute) {
         null -> RestoredRoute.Scanner
         "scanner" -> RestoredRoute.Scanner
-        "recent_with_result_back" ->
-            if (cacheId.isNullOrBlank()) RestoredRoute.Recent
-            else RestoredRoute.RecentWithResultBack
-        "result_with_recent_back" ->
-            if (cacheId.isNullOrBlank()) RestoredRoute.Recent
-            else RestoredRoute.ResultWithRecentBack
+        "result" -> if (cacheId.isNullOrBlank()) RestoredRoute.Recent else RestoredRoute.Result
         "recent" -> RestoredRoute.Recent
         else -> RestoredRoute.Recent
     }
@@ -74,17 +68,36 @@ internal sealed interface ScreenState {
     data class Result(
         val scan: SavedScan,
         val thumbnail: Bitmap?,
-        val returnToRecent: Boolean = false,
     ) : ScreenState
 
     data class Recent(
         val scans: List<RecentScan>,
-        val canGoBack: Boolean,
         val message: UiMessage? = null,
     ) : ScreenState
 
     data class Failure(val message: UiMessage) : ScreenState
 }
+
+internal enum class AppBackAction {
+    CloseSettings,
+    CollapseFileDetails,
+    ShowRecent,
+    LaunchScanner,
+    None,
+}
+
+internal fun appBackAction(
+    settingsOpen: Boolean,
+    fileDetailsOpen: Boolean,
+    state: ScreenState,
+): AppBackAction =
+    when {
+        settingsOpen -> AppBackAction.CloseSettings
+        fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
+        state is ScreenState.Result || state is ScreenState.Failure -> AppBackAction.ShowRecent
+        state is ScreenState.Recent -> AppBackAction.LaunchScanner
+        else -> AppBackAction.None
+    }
 
 private val scanNameFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss", Locale.ROOT)
