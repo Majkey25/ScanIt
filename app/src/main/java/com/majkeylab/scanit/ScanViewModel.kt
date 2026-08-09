@@ -374,6 +374,7 @@ internal class ScanViewModel(
 
     fun beginScannerLaunch() {
         if (processingJob?.isActive == true) return
+        if ((mutableState.value as? ScreenState.Recent)?.deletionInProgress == true) return
         completeScannerLaunch()
         val generation = beginRouteMutation()
         recentJob =
@@ -670,6 +671,7 @@ internal class ScanViewModel(
     fun navigateBack() {
         recentActionGate.invalidate()
         val current = mutableState.value
+        if (current is ScreenState.Recent && current.deletionInProgress) return
         if (current is ScreenState.Processing && !current.canNavigateBack) {
             return
         }
@@ -678,6 +680,8 @@ internal class ScanViewModel(
     }
 
     fun openRecentScan(cacheId: String) {
+        val current = mutableState.value as? ScreenState.Recent ?: return
+        if (current.deletionInProgress || current.scans.none { it.cacheId == cacheId }) return
         val generation = beginRouteMutation()
         recentJob =
             viewModelScope.launch {
@@ -716,23 +720,36 @@ internal class ScanViewModel(
             viewModelScope.launch {
                 try {
                     if (
-                        clearCheckpointAndPublish(generation) {
-                            persistRoute(ROUTE_RECENT)
-                        } != CheckpointMutationResult.Applied
+                        clearCheckpointAndPublish(
+                            generation = generation,
+                            onFailure = {
+                                persistRoute(ROUTE_RECENT)
+                                mutableState.value =
+                                    current.copy(
+                                        message = UiMessage(R.string.state_update_failed),
+                                        deletionInProgress = false,
+                                    )
+                            },
+                            onSuccess = { persistRoute(ROUTE_RECENT) },
+                        ) != CheckpointMutationResult.Applied
                     ) {
                         return@launch
                     }
-                    val deleted =
+                    val result =
                         try {
                             withContext(Dispatchers.IO) {
                                 val result =
                                     if (request.target == RecentDeleteTarget.RemoveFromRecent) {
-                                        storage.removeRecentPreview(request)
+                                        if (storage.removeRecentPreview(request)) {
+                                            OutputDeleteOperationResult.Completed
+                                        } else {
+                                            OutputDeleteOperationResult.Failed
+                                        }
                                     } else {
                                         storage.deleteDurableOutputs(
                                             request,
                                             deleteRecentCache = true,
-                                        ) == OutputDeleteOperationResult.Completed
+                                        )
                                     }
                                 if (request.target != RecentDeleteTarget.RemoveFromRecent) {
                                     reconcilePdfTreeGrantsAfterOutputChange()
@@ -742,7 +759,7 @@ internal class ScanViewModel(
                         } catch (cancellation: CancellationException) {
                             throw cancellation
                         } catch (_: Exception) {
-                            false
+                            OutputDeleteOperationResult.Failed
                         }
                     if (
                         !routeMutationGate.isCurrent(generation) ||
@@ -752,7 +769,7 @@ internal class ScanViewModel(
                     }
                     showRecentResult(
                         generation = generation,
-                        message = if (deleted) null else UiMessage(R.string.recent_delete_failed),
+                        message = recentDeleteMessage(result),
                     )
                 } finally {
                     recentDeletionGate.complete(deletion)
@@ -762,6 +779,7 @@ internal class ScanViewModel(
 
     fun beginRecentShare(cacheId: String): RecentAction? {
         val current = mutableState.value as? ScreenState.Recent ?: return null
+        if (current.deletionInProgress) return null
         val scan = current.scans.firstOrNull { it.cacheId == cacheId } ?: return null
         return recentActionGate.begin(cacheId, scan.entryId)
     }

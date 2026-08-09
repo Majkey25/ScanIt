@@ -73,7 +73,10 @@ private suspend fun deleteSharedOutput(context: Context, request: ShareCleanupRe
     } catch (_: Exception) {
         // A later app start or output action retries grant reconciliation.
     }
-    if (result == OutputDeleteOperationResult.Failed) {
+    if (
+        result != OutputDeleteOperationResult.Completed &&
+            result != OutputDeleteOperationResult.Stale
+    ) {
         withContext(Dispatchers.Main) {
             Toast.makeText(
                 context,

@@ -71,6 +71,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import java.io.File
 import java.io.IOException
@@ -491,13 +494,35 @@ private fun RecentScreen(
         onSettings = onSettings,
         titleRes = R.string.recent_scans,
         onScan = onNewScan,
+        actionsEnabled = !state.deletionInProgress,
     ) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             state.message?.let { message ->
-                item { Text(message.resolve(), color = MaterialTheme.colorScheme.error) }
+                item {
+                    Text(
+                        message.resolve(),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+            if (state.deletionInProgress) {
+                item {
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth().semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.deleting_scan))
+                    }
+                }
             }
             if (state.scans.isEmpty()) {
                 item { Text(stringResource(R.string.recent_scans_empty)) }
@@ -517,6 +542,7 @@ private fun RecentScreen(
             item {
                 Button(
                     onClick = onNewScan,
+                    enabled = !state.deletionInProgress,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
                     Text(stringResource(R.string.new_scan))
@@ -550,6 +576,7 @@ private fun RecentScanRow(
             metadataValid = scan.entryId != null,
             hasPdf = scan.hasSavedPdf,
             savedImageCount = scan.savedImageCount,
+            removeRecentPending = scan.removeRecentPending,
         )
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
@@ -576,6 +603,7 @@ private fun RecentScanRow(
         Box {
             IconButton(
                 onClick = { menuExpanded = true },
+                enabled = !deletionInProgress,
                 modifier = Modifier.size(48.dp),
             ) {
                 Icon(
@@ -590,6 +618,7 @@ private fun RecentScanRow(
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.open_scan)) },
+                    enabled = !deletionInProgress,
                     onClick = {
                         menuExpanded = false
                         onOpen(scan.cacheId)
@@ -597,6 +626,7 @@ private fun RecentScanRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.send_pdf)) },
+                    enabled = !deletionInProgress,
                     onClick = {
                         menuExpanded = false
                         onSharePdf(scan.cacheId)
@@ -616,6 +646,7 @@ private fun RecentScanRow(
     if (showDeleteDialog) {
         RecentDeleteDialog(
             targets = deleteTargets,
+            removeRecentPending = scan.removeRecentPending,
             onDismiss = { showDeleteDialog = false },
             onDelete = { target ->
                 showDeleteDialog = false
@@ -628,6 +659,7 @@ private fun RecentScanRow(
 @Composable
 private fun RecentDeleteDialog(
     targets: List<RecentDeleteTarget>,
+    removeRecentPending: Boolean,
     onDismiss: () -> Unit,
     onDelete: (RecentDeleteTarget) -> Unit,
 ) {
@@ -637,7 +669,9 @@ private fun RecentDeleteDialog(
         title = { Text(stringResource(R.string.delete_scan)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (legacy) {
+                if (removeRecentPending) {
+                    Text(stringResource(R.string.recent_delete_pending_hint))
+                } else if (legacy) {
                     Text(stringResource(R.string.recent_delete_legacy_hint))
                 } else {
                     Text(stringResource(R.string.recent_delete_saved_hint))
@@ -705,6 +739,7 @@ private fun MainScaffold(
     onSettings: () -> Unit,
     titleRes: Int = R.string.app_name,
     onScan: (() -> Unit)? = null,
+    actionsEnabled: Boolean = true,
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
@@ -715,6 +750,7 @@ private fun MainScaffold(
                 onRecent = onRecent,
                 onScan = onScan,
                 onSettings = onSettings,
+                actionsEnabled = actionsEnabled,
             )
         },
     ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }

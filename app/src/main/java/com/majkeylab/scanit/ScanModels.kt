@@ -41,7 +41,21 @@ internal enum class OutputDeleteOperationResult {
     Completed,
     Stale,
     Failed,
+    Partial,
+    MetadataFailed,
+    CacheFailed,
 }
+
+internal fun recentDeleteMessage(result: OutputDeleteOperationResult): UiMessage? =
+    when (result) {
+        OutputDeleteOperationResult.Completed -> null
+        OutputDeleteOperationResult.Partial -> UiMessage(R.string.recent_delete_partial)
+        OutputDeleteOperationResult.MetadataFailed -> UiMessage(R.string.recent_delete_metadata_failed)
+        OutputDeleteOperationResult.CacheFailed -> UiMessage(R.string.recent_delete_cache_failed)
+        OutputDeleteOperationResult.Stale,
+        OutputDeleteOperationResult.Failed,
+        -> UiMessage(R.string.recent_delete_failed)
+    }
 
 internal enum class ShareCleanupKind(val wireValue: String) {
     Pdf("pdf"),
@@ -114,7 +128,9 @@ internal fun recentDeleteTargets(
     metadataValid: Boolean,
     hasPdf: Boolean,
     savedImageCount: Int,
+    removeRecentPending: Boolean = false,
 ): List<RecentDeleteTarget> {
+    if (removeRecentPending) return listOf(RecentDeleteTarget.RemoveFromRecent)
     if (!metadataValid || (!hasPdf && savedImageCount == 0)) {
         return listOf(RecentDeleteTarget.RemoveFromRecent)
     }
@@ -286,6 +302,16 @@ internal data class SavedPdfOutput(
     val uri: Uri,
     val treeUri: Uri?,
     val warning: UiMessage?,
+    val displayName: String? = null,
+    val mimeType: String? = null,
+    val ownerPackageName: String? = null,
+)
+
+internal data class SavedMediaOutput(
+    val uri: Uri,
+    val displayName: String,
+    val mimeType: String,
+    val ownerPackageName: String,
 )
 
 internal class PendingMediaFailure(
@@ -412,6 +438,7 @@ internal fun appBackAction(
         state is ScreenState.Result && state.outputSaveInProgress -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
+        state is ScreenState.Recent && state.deletionInProgress -> AppBackAction.Consume
         state is ScreenState.Recent -> AppBackAction.LaunchScanner
         else -> AppBackAction.ShowRecent
     }

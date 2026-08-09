@@ -13,4 +13,5 @@ internal data class RecentScan(
     val entryId: String? = null,
     val hasSavedPdf: Boolean = false,
     val savedImageCount: Int = 0,
+    val removeRecentPending: Boolean = false,
 )

@@ -523,6 +523,26 @@ class RecentScanTest {
         assertFalse(File(root, validId).exists())
     }
 
+    @Test
+    fun pendingRecentRemovalIsVisibleUntilStartupRecoveryDeletesOnlyItsCache() =
+        withShareRoot { root ->
+            val id = "Scan_pending_recent_removal"
+            val directory = createEntry(root, id)
+            val entryId = "123e4567-e89b-12d3-a456-426614174000"
+            initializeOutputMetadata(directory, id, 1, 1L, entryId)
+            rewriteOutputMetadata(directory, id, entryId, 1) {
+                it.copy(
+                    images = listOf(ImageOutputRef(1, "content://media/external/images/media/7")),
+                    removeRecentPending = true,
+                )
+            }
+
+            val pending = listRecentScansInRoot(root).single()
+            assertTrue(pending.removeRecentPending)
+            assertTrue(recoverPendingRecentRemovalsInRoot(root))
+            assertFalse(directory.exists())
+        }
+
     private fun createEntry(
         root: File,
         directoryName: String,

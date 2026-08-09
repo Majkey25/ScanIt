@@ -43,6 +43,9 @@
     <string name="recent_history_unavailable">Nedávné skeny se nepodařilo načíst.</string>
     <string name="state_update_failed">ScanIt se nepodařilo aktualizovat. Zkuste to znovu.</string>
     <string name="recent_delete_failed">Nedávný sken se nepodařilo smazat.</string>
+    <string name="recent_delete_partial">Některé vybrané soubory byly smazány. Zbývající soubory jsou stále uvedeny. Zkuste to znovu.</string>
+    <string name="recent_delete_metadata_failed">Soubory mohly být smazány, ale ScanIt nemohl aktualizovat jejich záznam. Zkuste to znovu.</string>
+    <string name="recent_delete_cache_failed">Vybrané soubory byly smazány, ale položku v Nedávných se nepodařilo odebrat. Zkuste to znovu.</string>
     <string name="shared_output_delete_failed">Uložený soubor se nepodařilo smazat. Zkuste to znovu v nedávných skenech.</string>
     <string name="more_actions">Další akce</string>
     <string name="open_scan">Otevřít</string>
@@ -53,6 +56,8 @@
     <string name="remove_from_recent">Odebrat z nedávných</string>
     <string name="recent_delete_saved_hint">Vybrané uložené soubory budou smazány ze zařízení a potom bude tento sken odebrán z nedávných.</string>
     <string name="recent_delete_legacy_hint">Podrobnosti o uložených souborech nejsou dostupné, takže ScanIt nebude hádat, co smazat. Lze odebrat jen tento nedávný náhled.</string>
+    <string name="recent_delete_pending_hint">Vybrané uložené soubory už byly smazány. Zkuste znovu odebrat tento náhled z Nedávných; žádné další uložené soubory se nesmažou.</string>
+    <string name="deleting_scan">Mazání…</string>
     <string name="recent_scan_preview">Náhled nedávného skenu</string>
     <string name="open_settings">Otevřít nastavení</string>
     <string name="settings">Nastavení</string>

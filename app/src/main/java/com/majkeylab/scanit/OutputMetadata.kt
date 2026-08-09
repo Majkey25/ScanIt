@@ -26,11 +26,17 @@ private const val MAX_CONTENT_URI_LENGTH = 4096
 internal data class PdfOutputRef(
     val uri: String,
     val treeUri: String?,
+    val displayName: String? = null,
+    val mimeType: String? = null,
+    val ownerPackageName: String? = null,
 )
 
 internal data class ImageOutputRef(
     val page: Int,
     val uri: String,
+    val displayName: String? = null,
+    val mimeType: String? = null,
+    val ownerPackageName: String? = null,
 )
 
 internal data class OutputMetadata(
@@ -39,6 +45,7 @@ internal data class OutputMetadata(
     val createdAtEpochMs: Long,
     val pdf: PdfOutputRef? = null,
     val images: List<ImageOutputRef> = emptyList(),
+    val removeRecentPending: Boolean = false,
 )
 
 internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): ByteArray {
@@ -54,13 +61,21 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
     metadata.pdf?.let { pdf ->
         val value = JSONObject().put("uri", pdf.uri)
         pdf.treeUri?.let { value.put("treeUri", it) }
+        pdf.displayName?.let { value.put("displayName", it) }
+        pdf.mimeType?.let { value.put("mimeType", it) }
+        pdf.ownerPackageName?.let { value.put("ownerPackageName", it) }
         json.put("pdf", value)
     }
     val images = JSONArray()
     metadata.images.forEach { image ->
-        images.put(JSONObject().put("page", image.page).put("uri", image.uri))
+        val value = JSONObject().put("page", image.page).put("uri", image.uri)
+        image.displayName?.let { value.put("displayName", it) }
+        image.mimeType?.let { value.put("mimeType", it) }
+        image.ownerPackageName?.let { value.put("ownerPackageName", it) }
+        images.put(value)
     }
     json.put("images", images)
+    if (metadata.removeRecentPending) json.put("removeRecentPending", true)
     return json.toString().toByteArray(StandardCharsets.UTF_8).also { bytes ->
         if (bytes.size > MAX_OUTPUT_METADATA_BYTES) {
             throw IllegalArgumentException("Output metadata is too large")
@@ -89,6 +104,20 @@ internal fun decodeOutputMetadata(
                 PdfOutputRef(
                     uri = value.strictString("uri") ?: return null,
                     treeUri = if (value.has("treeUri")) value.strictString("treeUri") ?: return null else null,
+                    displayName =
+                        if (value.has("displayName")) {
+                            value.strictString("displayName") ?: return null
+                        } else {
+                            null
+                        },
+                    mimeType =
+                        if (value.has("mimeType")) value.strictString("mimeType") ?: return null else null,
+                    ownerPackageName =
+                        if (value.has("ownerPackageName")) {
+                            value.strictString("ownerPackageName") ?: return null
+                        } else {
+                            null
+                        },
                 )
             } else {
                 null
@@ -98,11 +127,29 @@ internal fun decodeOutputMetadata(
             buildList {
                 repeat(imageValues.length()) { index ->
                     val value = imageValues.opt(index) as? JSONObject ?: return null
-                    if (!value.hasOnlyKeys(IMAGE_KEYS)) return null
+                    if (!value.hasOnlyKeys(IMAGE_KEYS, REQUIRED_IMAGE_KEYS)) return null
                     add(
                         ImageOutputRef(
                             page = value.strictInt("page") ?: return null,
                             uri = value.strictString("uri") ?: return null,
+                            displayName =
+                                if (value.has("displayName")) {
+                                    value.strictString("displayName") ?: return null
+                                } else {
+                                    null
+                                },
+                            mimeType =
+                                if (value.has("mimeType")) {
+                                    value.strictString("mimeType") ?: return null
+                                } else {
+                                    null
+                                },
+                            ownerPackageName =
+                                if (value.has("ownerPackageName")) {
+                                    value.strictString("ownerPackageName") ?: return null
+                                } else {
+                                    null
+                                },
                         ),
                     )
                 }
@@ -114,6 +161,12 @@ internal fun decodeOutputMetadata(
                 createdAtEpochMs = json.strictLong("createdAtEpochMs") ?: return null,
                 pdf = pdf,
                 images = images,
+                removeRecentPending =
+                    if (json.has("removeRecentPending")) {
+                        json.strictBoolean("removeRecentPending") ?: return null
+                    } else {
+                        false
+                    },
             )
         metadata.takeIf { isValidOutputMetadata(it, expectedCacheId, pageCount) }
     } catch (_: Exception) {
@@ -297,11 +350,35 @@ private fun isValidOutputMetadata(
     ) {
         return false
     }
-    if (metadata.pdf?.let { !isContentUri(it.uri) || (it.treeUri != null && !isContentUri(it.treeUri)) } == true) {
+    if (
+        metadata.pdf?.let { pdf ->
+            !isContentUri(pdf.uri) ||
+                (pdf.treeUri != null && !isContentUri(pdf.treeUri)) ||
+                if (pdf.treeUri == null) {
+                    !isValidMediaIdentity(
+                        pdf.displayName,
+                        pdf.mimeType,
+                        pdf.ownerPackageName,
+                        PDF_MIME_TYPE,
+                    )
+                } else {
+                    !isProviderDisplayName(pdf.displayName) ||
+                        pdf.mimeType != PDF_MIME_TYPE ||
+                        pdf.ownerPackageName != null
+                }
+        } == true
+    ) {
         return false
     }
     return metadata.images.all { image ->
-        image.page in 1..pageCount && isContentUri(image.uri)
+        image.page in 1..pageCount &&
+            isContentUri(image.uri) &&
+            isValidMediaIdentity(
+                image.displayName,
+                image.mimeType,
+                image.ownerPackageName,
+                JPEG_MIME_TYPE,
+            )
     }
 }
 
@@ -320,6 +397,24 @@ private fun isContentUri(value: String): Boolean {
     } catch (_: Exception) {
         false
     }
+}
+
+internal fun isProviderDisplayName(value: String?): Boolean =
+    value != null && value.length in 1..255 && value.none(Char::isISOControl)
+
+private fun isValidMediaIdentity(
+    displayName: String?,
+    mimeType: String?,
+    ownerPackageName: String?,
+    requiredMimeType: String,
+): Boolean {
+    val values = listOf(displayName, mimeType, ownerPackageName)
+    if (values.all { it == null }) return true
+    return isProviderDisplayName(displayName) &&
+        mimeType == requiredMimeType &&
+        ownerPackageName != null &&
+        ownerPackageName.length in 1..255 &&
+        ownerPackageName.none(Char::isISOControl)
 }
 
 private fun JSONObject.hasOnlyKeys(
@@ -348,8 +443,22 @@ private fun JSONObject.strictLong(key: String): Long? =
         else -> null
     }
 
-private val ROOT_KEYS = setOf("version", "entryId", "cacheId", "createdAtEpochMs", "pdf", "images")
-private val REQUIRED_ROOT_KEYS = ROOT_KEYS - "pdf"
-private val PDF_KEYS = setOf("uri", "treeUri")
+private fun JSONObject.strictBoolean(key: String): Boolean? = opt(key) as? Boolean
+
+private val ROOT_KEYS =
+    setOf(
+        "version",
+        "entryId",
+        "cacheId",
+        "createdAtEpochMs",
+        "pdf",
+        "images",
+        "removeRecentPending",
+    )
+private val REQUIRED_ROOT_KEYS = ROOT_KEYS - setOf("pdf", "removeRecentPending")
+private val PDF_KEYS = setOf("uri", "treeUri", "displayName", "mimeType", "ownerPackageName")
 private val REQUIRED_PDF_KEYS = setOf("uri")
-private val IMAGE_KEYS = setOf("page", "uri")
+private val IMAGE_KEYS = setOf("page", "uri", "displayName", "mimeType", "ownerPackageName")
+private val REQUIRED_IMAGE_KEYS = setOf("page", "uri")
+private const val PDF_MIME_TYPE = "application/pdf"
+private const val JPEG_MIME_TYPE = "image/jpeg"

@@ -2,6 +2,7 @@ package com.majkeylab.scanit
 
 import android.provider.DocumentsContract
 import android.service.chooser.ChooserResult
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -66,6 +67,87 @@ class DurableOutputDeleteTest {
     }
 
     @Test
+    fun operationResultDistinguishesPartialMetadataAndCacheFailures() {
+        assertEquals(
+            OutputDeleteOperationResult.Partial,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.Deleted, OutputDeleteStatus.Failed),
+                metadataCommitted = true,
+                cacheDeletionRequested = true,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
+            OutputDeleteOperationResult.MetadataFailed,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.Absent),
+                metadataCommitted = false,
+                cacheDeletionRequested = true,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
+            OutputDeleteOperationResult.CacheFailed,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.Deleted),
+                metadataCommitted = true,
+                cacheDeletionRequested = true,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
+            OutputDeleteOperationResult.Completed,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.Absent),
+                metadataCommitted = true,
+                cacheDeletionRequested = false,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
+            OutputDeleteOperationResult.Failed,
+            outputDeleteOperationResult(
+                listOf(OutputDeleteStatus.Failed),
+                metadataCommitted = false,
+                cacheDeletionRequested = true,
+                cacheDeleted = false,
+            ),
+        )
+        assertEquals(
+            R.string.recent_delete_partial,
+            recentDeleteMessage(OutputDeleteOperationResult.Partial)?.resourceId,
+        )
+        assertEquals(
+            R.string.recent_delete_metadata_failed,
+            recentDeleteMessage(OutputDeleteOperationResult.MetadataFailed)?.resourceId,
+        )
+        assertEquals(
+            R.string.recent_delete_cache_failed,
+            recentDeleteMessage(OutputDeleteOperationResult.CacheFailed)?.resourceId,
+        )
+    }
+
+    @Test
+    fun mediaDeleteIsBoundToTheValidatedRowIdentity() {
+        val expected =
+            ExpectedMediaItem(
+                id = 12L,
+                displayName = "Scan_2026-08-09_12-12-00.pdf",
+                mimeType = "application/pdf",
+                ownerPackageName = "com.majkeylab.scanit.internal",
+            )
+
+        assertEquals(
+            "_id = ? AND _display_name = ? AND mime_type = ? AND owner_package_name = ?",
+            MEDIA_DELETE_SELECTION,
+        )
+        assertArrayEquals(
+            arrayOf("12", expected.displayName, expected.mimeType, expected.ownerPackageName),
+            mediaDeleteSelectionArgs(expected),
+        )
+    }
+
+    @Test
     fun safRowMustMatchDocumentNameMimeAndDeleteCapability() {
         val exact =
             SafDocumentRow(
@@ -95,6 +177,22 @@ class DurableOutputDeleteTest {
                 expectedDocumentId = exact.documentId,
                 expectedDisplayName = exact.displayName,
             ),
+        )
+    }
+
+    @Test
+    fun safMissingDocumentIsAbsentOnlyWhenRootIsExactAndItIsNoLongerAChild() {
+        assertEquals(
+            OutputDeleteStatus.Absent,
+            safMissingDocumentStatus(rootExact = true, documentIsChild = false),
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            safMissingDocumentStatus(rootExact = false, documentIsChild = false),
+        )
+        assertEquals(
+            OutputDeleteStatus.Failed,
+            safMissingDocumentStatus(rootExact = true, documentIsChild = true),
         )
     }
 
@@ -264,6 +362,40 @@ class DurableOutputDeleteTest {
                     ),
                 current = "content://docs/tree/current",
                 live = setOf("content://docs/tree/live"),
+            ),
+        )
+    }
+
+    @Test
+    fun treeGrantInventoryFailsClosedWhenAnyPresentSidecarIsUnreadable() {
+        val live =
+            metadata().copy(
+                pdf =
+                    PdfOutputRef(
+                        "content://docs/document/1",
+                        "content://docs/tree/live",
+                        "scan.pdf",
+                    ),
+            )
+
+        assertEquals(
+            setOf("content://docs/tree/live"),
+            completePdfTreeGrantInventory(
+                listOf(OutputMetadataInventoryEntry(sidecarPresent = true, metadata = live)),
+            ),
+        )
+        assertNull(
+            completePdfTreeGrantInventory(
+                listOf(
+                    OutputMetadataInventoryEntry(sidecarPresent = true, metadata = live),
+                    OutputMetadataInventoryEntry(sidecarPresent = true, metadata = null),
+                ),
+            ),
+        )
+        assertEquals(
+            emptySet<String>(),
+            completePdfTreeGrantInventory(
+                listOf(OutputMetadataInventoryEntry(sidecarPresent = false, metadata = null)),
             ),
         )
     }

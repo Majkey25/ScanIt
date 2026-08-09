@@ -41,6 +41,9 @@
     <string name="recent_history_unavailable">Recent scans could not be loaded.</string>
     <string name="state_update_failed">Could not update ScanIt. Try again.</string>
     <string name="recent_delete_failed">The recent scan could not be deleted.</string>
+    <string name="recent_delete_partial">Some selected files were deleted. The remaining files are still listed. Try again.</string>
+    <string name="recent_delete_metadata_failed">Files may have been deleted, but ScanIt could not update their record. Try again.</string>
+    <string name="recent_delete_cache_failed">Selected files were deleted, but the Recent item could not be removed. Try again.</string>
     <string name="shared_output_delete_failed">A saved file could not be deleted. Retry from Recent scans.</string>
     <string name="more_actions">More actions</string>
     <string name="open_scan">Open</string>
@@ -51,6 +54,8 @@
     <string name="remove_from_recent">Remove from Recent</string>
     <string name="recent_delete_saved_hint">The selected saved files will be deleted from your device, then this scan will be removed from Recent.</string>
     <string name="recent_delete_legacy_hint">Saved file details are unavailable, so ScanIt will not guess which files to delete. Only this recent preview can be removed.</string>
+    <string name="recent_delete_pending_hint">The selected saved files are already gone. Retry removing this Recent preview; no other saved files will be deleted.</string>
+    <string name="deleting_scan">Deleting…</string>
     <string name="recent_scan_preview">Recent scan preview</string>
     <string name="open_settings">Open settings</string>
     <string name="settings">Settings</string>

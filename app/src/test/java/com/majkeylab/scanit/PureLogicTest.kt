@@ -54,6 +54,19 @@ class PureLogicTest {
     }
 
     @Test
+    fun pendingCacheRemovalOffersOnlyARecentRetry() {
+        assertEquals(
+            listOf(RecentDeleteTarget.RemoveFromRecent),
+            recentDeleteTargets(
+                metadataValid = true,
+                hasPdf = false,
+                savedImageCount = 2,
+                removeRecentPending = true,
+            ),
+        )
+    }
+
+    @Test
     fun outputDeleteReductionRemovesDeletedAndAbsentRefsButKeepsFailures() {
         val metadata =
             outputMetadata(
@@ -548,6 +561,18 @@ class PureLogicTest {
         assertEquals(
             AppBackAction.Consume,
             appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun backNavigationIsConsumedWhileRecentDeletionIsRunning() {
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Recent(emptyList(), deletionInProgress = true),
+            ),
         )
     }
 

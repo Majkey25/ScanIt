@@ -47,6 +47,8 @@ class OutputMetadataTest {
                     PdfOutputRef(
                         uri = "content://com.android.externalstorage.documents/document/primary%3AScans%2Fscan.pdf",
                         treeUri = "content://com.android.externalstorage.documents/tree/primary%3AScans",
+                        displayName = "scan (1).pdf",
+                        mimeType = "application/pdf",
                     ),
             )
 
@@ -59,6 +61,73 @@ class OutputMetadataTest {
 
         assertEquals(metadata, decoded)
         assertEquals(metadata.pdf?.treeUri, decoded?.pdf?.treeUri)
+    }
+
+    @Test
+    fun safPdfWithoutARecordedProviderNameIsRejected() {
+        val bytes =
+            """{"version":1,"entryId":"$entryId","cacheId":"$cacheId","createdAtEpochMs":1,"pdf":{"uri":"content://docs/tree/root/document/root%3Ascan.pdf","treeUri":"content://docs/tree/root"},"images":[]}"""
+                .toByteArray(StandardCharsets.UTF_8)
+
+        assertNull(decodeOutputMetadata(bytes, expectedCacheId = cacheId, pageCount = 1))
+    }
+
+    @Test
+    fun pendingRecentRemovalRoundTrips() {
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                removeRecentPending = true,
+            )
+
+        assertEquals(
+            metadata,
+            decodeOutputMetadata(
+                encodeOutputMetadata(metadata, pageCount = 1),
+                expectedCacheId = cacheId,
+                pageCount = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun providerObservedMediaIdentityRoundTrips() {
+        val owner = "com.majkeylab.scanit.internal"
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/42",
+                        treeUri = null,
+                        displayName = "scan (1).pdf",
+                        mimeType = "application/pdf",
+                        ownerPackageName = owner,
+                    ),
+                images =
+                    listOf(
+                        ImageOutputRef(
+                            page = 1,
+                            uri = "content://media/external/images/media/43",
+                            displayName = "scan (1).jpg",
+                            mimeType = "image/jpeg",
+                            ownerPackageName = owner,
+                        ),
+                    ),
+            )
+
+        assertEquals(
+            metadata,
+            decodeOutputMetadata(
+                encodeOutputMetadata(metadata, pageCount = 1),
+                expectedCacheId = cacheId,
+                pageCount = 1,
+            ),
+        )
     }
 
     @Test
