@@ -96,7 +96,7 @@ internal enum class AppLanguage(val languageTag: String?) {
 private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
 private const val THIRD_PARTY_NOTICES_URL =
-    "https://github.com/Majkey25/ScanIt/blob/main/THIRD_PARTY_NOTICES.md"
+    "https://majkey25.github.io/ScanIt/third-party-notices.txt"
 
 private val LightColorScheme =
     lightColorScheme(
