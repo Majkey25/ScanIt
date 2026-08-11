@@ -19,7 +19,8 @@ internal const val OUTPUT_METADATA_FILE_NAME = "outputs.json"
 internal const val OUTPUT_METADATA_TEMP_FILE_NAME = ".outputs.json.tmp"
 internal const val MAX_OUTPUT_METADATA_BYTES = 64 * 1024
 
-private const val OUTPUT_METADATA_VERSION = 1
+private const val OUTPUT_METADATA_VERSION = 2
+private const val OUTPUT_METADATA_LEGACY_VERSION = 1
 private const val MAX_CACHE_ID_LENGTH = 128
 private const val MAX_CONTENT_URI_LENGTH = 4096
 
@@ -31,6 +32,7 @@ internal data class PdfOutputRef(
     val ownerPackageName: String? = null,
     val byteLength: Long? = null,
     val sha256: String? = null,
+    val pending: Boolean = false,
 )
 
 internal data class ImageOutputRef(
@@ -41,6 +43,7 @@ internal data class ImageOutputRef(
     val ownerPackageName: String? = null,
     val byteLength: Long? = null,
     val sha256: String? = null,
+    val pending: Boolean = false,
 )
 
 internal data class OutputMetadata(
@@ -78,6 +81,7 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
         pdf.ownerPackageName?.let { value.put("ownerPackageName", it) }
         pdf.byteLength?.let { value.put("byteLength", it) }
         pdf.sha256?.let { value.put("sha256", it) }
+        if (pdf.pending) value.put("pending", true)
         json.put("pdf", value)
     }
     val images = JSONArray()
@@ -88,6 +92,7 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
         image.ownerPackageName?.let { value.put("ownerPackageName", it) }
         image.byteLength?.let { value.put("byteLength", it) }
         image.sha256?.let { value.put("sha256", it) }
+        if (image.pending) value.put("pending", true)
         images.put(value)
     }
     json.put("images", images)
@@ -107,9 +112,10 @@ internal fun decodeOutputMetadata(
     if (bytes.isEmpty() || bytes.size > MAX_OUTPUT_METADATA_BYTES) return null
     return try {
         val json = JSONObject(String(bytes, StandardCharsets.UTF_8))
+        val version = json.strictInt("version")
         if (
             !json.hasOnlyKeys(ROOT_KEYS, REQUIRED_ROOT_KEYS) ||
-                json.strictInt("version") != OUTPUT_METADATA_VERSION
+                version !in setOf(OUTPUT_METADATA_LEGACY_VERSION, OUTPUT_METADATA_VERSION)
         ) {
             return null
         }
@@ -117,6 +123,7 @@ internal fun decodeOutputMetadata(
             if (json.has("pdf")) {
                 val value = json.opt("pdf") as? JSONObject ?: return null
                 if (!value.hasOnlyKeys(PDF_KEYS, REQUIRED_PDF_KEYS)) return null
+                if (version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")) return null
                 PdfOutputRef(
                     uri = value.strictString("uri") ?: return null,
                     treeUri = if (value.has("treeUri")) value.strictString("treeUri") ?: return null else null,
@@ -138,6 +145,8 @@ internal fun decodeOutputMetadata(
                         if (value.has("byteLength")) value.strictLong("byteLength") ?: return null else null,
                     sha256 =
                         if (value.has("sha256")) value.strictString("sha256") ?: return null else null,
+                    pending =
+                        if (value.has("pending")) value.strictBoolean("pending") ?: return null else false,
                 )
             } else {
                 null
@@ -148,6 +157,7 @@ internal fun decodeOutputMetadata(
                 repeat(imageValues.length()) { index ->
                     val value = imageValues.opt(index) as? JSONObject ?: return null
                     if (!value.hasOnlyKeys(IMAGE_KEYS, REQUIRED_IMAGE_KEYS)) return null
+                    if (version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")) return null
                     add(
                         ImageOutputRef(
                             page = value.strictInt("page") ?: return null,
@@ -181,6 +191,12 @@ internal fun decodeOutputMetadata(
                                     value.strictString("sha256") ?: return null
                                 } else {
                                     null
+                                },
+                            pending =
+                                if (value.has("pending")) {
+                                    value.strictBoolean("pending") ?: return null
+                                } else {
+                                    false
                                 },
                         ),
                     )
@@ -397,6 +413,8 @@ private fun isValidOutputMetadata(
         metadata.pdf?.let { pdf ->
             !isContentUri(pdf.uri) ||
                 (pdf.treeUri != null && !isContentUri(pdf.treeUri)) ||
+                (pdf.pending && pdf.treeUri != null) ||
+                (pdf.pending && !pdf.hasPendingMediaIdentity(PDF_MIME_TYPE)) ||
                 !isValidOutputFingerprint(pdf.byteLength, pdf.sha256) ||
                 if (pdf.treeUri == null) {
                     !isValidMediaIdentity(
@@ -417,6 +435,7 @@ private fun isValidOutputMetadata(
     return metadata.images.all { image ->
         image.page in 1..pageCount &&
             isContentUri(image.uri) &&
+            (!image.pending || image.hasPendingMediaIdentity(JPEG_MIME_TYPE)) &&
             isValidOutputFingerprint(image.byteLength, image.sha256) &&
             isValidMediaIdentity(
                 image.displayName,
@@ -426,6 +445,18 @@ private fun isValidOutputMetadata(
             )
     }
 }
+
+private fun PdfOutputRef.hasPendingMediaIdentity(requiredMimeType: String): Boolean =
+    isProviderDisplayName(displayName) &&
+        mimeType == requiredMimeType &&
+        !ownerPackageName.isNullOrBlank() &&
+        outputFingerprint() != null
+
+private fun ImageOutputRef.hasPendingMediaIdentity(requiredMimeType: String): Boolean =
+    isProviderDisplayName(displayName) &&
+        mimeType == requiredMimeType &&
+        !ownerPackageName.isNullOrBlank() &&
+        outputFingerprint() != null
 
 internal fun isCanonicalUuid(value: String): Boolean =
     try {
@@ -501,10 +532,28 @@ private val ROOT_KEYS =
     )
 private val REQUIRED_ROOT_KEYS = ROOT_KEYS - setOf("pdf", "removeRecentPending")
 private val PDF_KEYS =
-    setOf("uri", "treeUri", "displayName", "mimeType", "ownerPackageName", "byteLength", "sha256")
+    setOf(
+        "uri",
+        "treeUri",
+        "displayName",
+        "mimeType",
+        "ownerPackageName",
+        "byteLength",
+        "sha256",
+        "pending",
+    )
 private val REQUIRED_PDF_KEYS = setOf("uri")
 private val IMAGE_KEYS =
-    setOf("page", "uri", "displayName", "mimeType", "ownerPackageName", "byteLength", "sha256")
+    setOf(
+        "page",
+        "uri",
+        "displayName",
+        "mimeType",
+        "ownerPackageName",
+        "byteLength",
+        "sha256",
+        "pending",
+    )
 private val REQUIRED_IMAGE_KEYS = setOf("page", "uri")
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"

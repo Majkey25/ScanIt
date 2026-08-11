@@ -60,6 +60,7 @@ private val MEDIA_IDENTITY_PROJECTION =
         MediaStore.MediaColumns.DISPLAY_NAME,
         MediaStore.MediaColumns.MIME_TYPE,
         MediaStore.MediaColumns.OWNER_PACKAGE_NAME,
+        MediaStore.MediaColumns.IS_PENDING,
     )
 
 internal fun <T> pendingMediaWrite(
@@ -82,7 +83,8 @@ internal fun existingCompleteImagesForSave(
     when {
         pageCount <= 0 -> throw IOException("Scan has no pages")
         metadata.images.isEmpty() -> null
-        metadata.images.map(ImageOutputRef::page) == (1..pageCount).toList() -> metadata.images
+        metadata.images.map(ImageOutputRef::page) == (1..pageCount).toList() &&
+            metadata.images.none(ImageOutputRef::pending) -> metadata.images
         else -> throw IOException("Cached image output metadata is incomplete")
     }
 
@@ -182,6 +184,11 @@ private data class ParsedCacheEntry(
     val outputs: OutputMetadata?,
     val provisional: Boolean,
 )
+
+private fun ParsedCacheEntry.hasPendingMediaOwnership(): Boolean =
+    outputs?.let { metadata ->
+        metadata.pdf?.pending == true || metadata.images.any(ImageOutputRef::pending)
+    } == true
 
 internal fun nextDerivedCacheId(
     sourceCacheId: String,
@@ -471,12 +478,23 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             candidateCacheId,
     ) ?: throw IOException("Checkpoint cache entry is unavailable")
     if (!candidate.provisional) return candidate.cached
-    val parentCacheId = candidate.cached.parentCacheId
-        ?: throw IOException("Provisional cache parent is unavailable")
-    val parentEntryId = candidate.cached.parentEntryId
-        ?: throw IOException("Provisional cache parent generation is unavailable")
     if (candidate.cached.appearanceSettings == null) {
         throw IOException("Provisional cache appearance authority is unavailable")
+    }
+    val parentCacheId = candidate.cached.parentCacheId
+    val parentEntryId = candidate.cached.parentEntryId
+    if (parentCacheId == null && parentEntryId == null) {
+        return activateProvisionalCacheEntryInRoot(
+            root = safeRoot,
+            candidateCacheId = candidateCacheId,
+            retireCacheId = null,
+            protectedCacheIds = emptySet(),
+            maxEntries = maxEntries,
+            moveEntry = moveEntry,
+        )
+    }
+    if (parentCacheId == null || parentEntryId == null) {
+        throw IOException("Provisional cache parent generation is incomplete")
     }
     val parent = readCacheEntries(safeRoot).singleOrNull {
         it.recent.cacheId == parentCacheId
@@ -527,7 +545,10 @@ private fun activationEntriesToRemove(
             entry
         }
     val remaining = entries.filterNot { it === retired }
-    val protectedEntries = remaining.filter { it.recent.cacheId in protectedCacheIds }
+    val protectedEntries =
+        remaining.filter { entry ->
+            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+        }
     if (protectedEntries.size > activeCapacity) {
         throw IOException("Protected recent scans exceed cache capacity")
     }
@@ -630,7 +651,10 @@ private fun entriesToPrune(
     maxEntries: Int,
 ): List<ParsedCacheEntry> {
     val entries = readCacheEntries(root)
-    val protectedEntries = entries.filter { it.recent.cacheId in protectedCacheIds }
+    val protectedEntries =
+        entries.filter { entry ->
+            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+        }
     if (protectedEntries.size > maxEntries) {
         throw IOException("Protected recent scans exceed cache capacity")
     }
@@ -776,10 +800,11 @@ private fun readCacheEntry(
             pdfBytes = exactPdf.length(),
             firstPage = orderedPages.first(),
             entryId = outputs?.entryId,
-            hasSavedPdf = outputs?.pdf?.outputFingerprint() != null,
+            hasSavedPdf = outputs?.pdf?.let { !it.pending && it.outputFingerprint() != null } == true,
             savedImageCount =
                 outputs?.images?.takeIf {
-                    it.isNotEmpty() && it.all { image -> image.outputFingerprint() != null }
+                    it.isNotEmpty() &&
+                        it.all { image -> !image.pending && image.outputFingerprint() != null }
                 }?.size ?: 0,
             removeRecentPending = outputs?.removeRecentPending == true,
         )
@@ -1272,7 +1297,7 @@ internal class ScanStorage(
                     createdAtEpochMs = clock.millis(),
                 )
                 CachedScanBuild(
-                    cached = recentScanCache.publish(workDirectory, finalDirectory),
+                    cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
                     pdf = pdfBuild,
                 )
             } catch (failure: Throwable) {
@@ -1384,6 +1409,13 @@ internal class ScanStorage(
     fun openSavedScan(cacheId: String): SavedScan? =
         storageTransactionLock.withLock {
             val cached = recentScanCache.open(cacheId) ?: return@withLock null
+            try {
+                reconcilePendingMediaOutputs(cached)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // Keep exact pending ownership for a later retry.
+            }
             val outputs =
                 cached.entryId?.let { entryId ->
                     readOutputMetadata(
@@ -1396,13 +1428,15 @@ internal class ScanStorage(
                 outputs?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
             SavedScan(
                 cached = cached,
-                galleryPages = outputs?.images?.map { it.uri.toUri() }.orEmpty(),
-                savedPdf = outputs?.pdf?.uri?.toUri(),
-                savedPdfTree = outputs?.pdf?.treeUri?.toUri(),
+                galleryPages = outputs?.images?.filterNot(ImageOutputRef::pending)?.map { it.uri.toUri() }.orEmpty(),
+                savedPdf = outputs?.pdf?.takeUnless(PdfOutputRef::pending)?.uri?.toUri(),
+                savedPdfTree = outputs?.pdf?.takeUnless(PdfOutputRef::pending)?.treeUri?.toUri(),
                 warnings = listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())),
                 outputMetadataValid = outputs != null,
-                savedPdfDeleteVerified = deleteMetadata?.pdf != null,
-                savedImagesDeleteVerified = deleteMetadata?.images?.isNotEmpty() == true,
+                savedPdfDeleteVerified =
+                    deleteMetadata?.pdf?.takeUnless(PdfOutputRef::pending) != null,
+                savedImagesDeleteVerified =
+                    deleteMetadata?.images?.any { !it.pending } == true,
             )
         }
 
@@ -1625,7 +1659,9 @@ internal class ScanStorage(
             require(cached.pages.isNotEmpty()) { "Scan has no pages" }
             val relativePath = "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(album)}"
             val saved = mutableListOf<SavedMediaOutput>()
+            var metadataCommitted = false
             try {
+                reconcilePendingMediaOutputs(cached)
                 existingCompleteImagesForSave(
                     requireCurrentOutputMetadata(cached),
                     cached.pages.size,
@@ -1652,28 +1688,45 @@ internal class ScanStorage(
                 rewriteCachedOutputMetadata(cached) { metadata ->
                     metadata.copy(
                         images =
-                            saved.mapIndexed { index, uri ->
+                            saved.mapIndexed { index, output ->
                                 ImageOutputRef(
                                     page = index + 1,
-                                    uri = uri.uri.toString(),
-                                    displayName = uri.displayName,
-                                    mimeType = uri.mimeType,
-                                    ownerPackageName = uri.ownerPackageName,
-                                    byteLength = uri.byteLength,
-                                    sha256 = uri.sha256,
+                                    uri = output.uri.toString(),
+                                    displayName = output.displayName,
+                                    mimeType = output.mimeType,
+                                    ownerPackageName = output.ownerPackageName,
+                                    byteLength = output.byteLength,
+                                    sha256 = output.sha256,
+                                    pending = true,
                                 )
                             },
                     )
                 }
-                saved.map(SavedMediaOutput::uri)
+                metadataCommitted = true
+                val published =
+                    saved.map {
+                        publishPendingFile(it, MediaOutputCollection.Images)
+                    }
+                rewriteCachedOutputMetadata(cached) { metadata ->
+                    metadata.copy(
+                        images = metadata.images.map { it.copy(pending = false) },
+                    )
+                }
+                published.map(SavedMediaOutput::uri)
             } catch (cancellation: CancellationException) {
-                saved.forEach { rollbackMediaOutput(it, MediaOutputCollection.Images, cancellation) }
+                if (!metadataCommitted) {
+                    saved.forEach {
+                        rollbackMediaOutput(it, MediaOutputCollection.Images, cancellation)
+                    }
+                }
                 throw cancellation
             } catch (exception: Exception) {
                 var rollbackFailed = false
-                saved.forEach { output ->
-                    if (!rollbackMediaOutput(output, MediaOutputCollection.Images, exception)) {
-                        rollbackFailed = true
+                if (!metadataCommitted) {
+                    saved.forEach { output ->
+                        if (!rollbackMediaOutput(output, MediaOutputCollection.Images, exception)) {
+                            rollbackFailed = true
+                        }
                     }
                 }
                 throw ImageSaveFailure(exception, rollbackFailed)
@@ -1690,8 +1743,14 @@ internal class ScanStorage(
             val displayName = scanPdfFileName(cached.baseName)
             var failureWarning: UiMessage? = null
             var createdOutput: SavedPdfOutput? = null
+            var pendingMedia: SavedMediaOutput? = null
+            var metadataCommitted = false
             try {
+                reconcilePendingMediaOutputs(cached)
                 requireCurrentOutputMetadata(cached).pdf?.let { existing ->
+                    if (existing.pending) {
+                        throw IOException("Saved PDF publication is still pending")
+                    }
                     return@withLock SavedPdfOutput(
                         uri = existing.uri.toUri(),
                         treeUri = existing.treeUri?.toUri(),
@@ -1712,12 +1771,16 @@ internal class ScanStorage(
                         } else {
                             failureWarning =
                                 safFallbackWarning(cleanupFailed, savedToDownloads = false)
-                            savePdfToDownloads(cached.pdf, displayName, album).toPdfOutput(
-                                safFallbackWarning(cleanupFailed, savedToDownloads = true),
-                            )
+                            savePdfToDownloads(cached.pdf, displayName, album)
+                                .also { pendingMedia = it }
+                                .toPdfOutput(
+                                    safFallbackWarning(cleanupFailed, savedToDownloads = true),
+                                )
                         }
                     } else {
-                        savePdfToDownloads(cached.pdf, displayName, album).toPdfOutput()
+                        savePdfToDownloads(cached.pdf, displayName, album)
+                            .also { pendingMedia = it }
+                            .toPdfOutput()
                     }
                 createdOutput = output
                 rewriteCachedOutputMetadata(cached) { metadata ->
@@ -1731,16 +1794,36 @@ internal class ScanStorage(
                                 ownerPackageName = output.ownerPackageName,
                                 byteLength = output.byteLength,
                                 sha256 = output.sha256,
+                                pending = pendingMedia != null,
                             ),
                     )
                 }
-                output
+                metadataCommitted = true
+                val media = pendingMedia
+                if (media == null) {
+                    output
+                } else {
+                    val published =
+                        publishPendingFile(media, MediaOutputCollection.Downloads)
+                            .toPdfOutput(output.warning)
+                    createdOutput = published
+                    rewriteCachedOutputMetadata(cached) { metadata ->
+                        metadata.copy(pdf = metadata.pdf?.copy(pending = false))
+                    }
+                    published
+                }
             } catch (cancellation: CancellationException) {
-                createdOutput?.let { rollbackPdfOutput(it, cancellation) }
+                if (!metadataCommitted) {
+                    createdOutput?.let { rollbackPdfOutput(it, cancellation) }
+                }
                 throw cancellation
             } catch (exception: Exception) {
                 val rollbackFailed =
-                    createdOutput?.let { !rollbackPdfOutput(it, exception) } ?: false
+                    if (metadataCommitted) {
+                        false
+                    } else {
+                        createdOutput?.let { !rollbackPdfOutput(it, exception) } ?: false
+                    }
                 throw PdfSaveFailure(failureWarning, exception, rollbackFailed)
             }
         }
@@ -1783,6 +1866,112 @@ internal class ScanStorage(
             pageCount = cached.pages.size,
             update = update,
         )
+    }
+
+    private fun reconcilePendingMediaOutputs(cached: CachedScan) {
+        val current = requireCurrentOutputMetadata(cached)
+        var pdf = current.pdf
+        var images = current.images
+        var changed = false
+        val pendingPdf = pdf?.takeIf(PdfOutputRef::pending)
+        if (pendingPdf != null) {
+            val completed =
+                try {
+                    reconcilePendingMediaOutput(
+                        uri = pendingPdf.uri,
+                        displayName = pendingPdf.displayName,
+                        mimeType = pendingPdf.mimeType,
+                        ownerPackageName = pendingPdf.ownerPackageName,
+                        fingerprint = pendingPdf.outputFingerprint(),
+                        source = cached.pdf,
+                        collection = MediaOutputCollection.Downloads,
+                    )
+                } catch (_: NoSuchFileException) {
+                    pdf = null
+                    changed = true
+                    null
+                }
+            if (completed != null) {
+                pdf =
+                    pendingPdf.copy(
+                        displayName = completed.displayName,
+                        mimeType = completed.mimeType,
+                        ownerPackageName = completed.ownerPackageName,
+                        byteLength = completed.byteLength,
+                        sha256 = completed.sha256,
+                        pending = false,
+                    )
+                changed = true
+            }
+        }
+        images =
+            images.mapNotNull { image ->
+                if (!image.pending) return@mapNotNull image
+                val page = cached.pages.getOrNull(image.page - 1) ?: return@mapNotNull image
+                try {
+                    val completed =
+                        reconcilePendingMediaOutput(
+                            uri = image.uri,
+                            displayName = image.displayName,
+                            mimeType = image.mimeType,
+                            ownerPackageName = image.ownerPackageName,
+                            fingerprint = image.outputFingerprint(),
+                            source = page,
+                            collection = MediaOutputCollection.Images,
+                        ) ?: return@mapNotNull image
+                    changed = true
+                    image.copy(
+                        displayName = completed.displayName,
+                        mimeType = completed.mimeType,
+                        ownerPackageName = completed.ownerPackageName,
+                        byteLength = completed.byteLength,
+                        sha256 = completed.sha256,
+                        pending = false,
+                    )
+                } catch (_: NoSuchFileException) {
+                    changed = true
+                    null
+                }
+            }
+        if (changed) {
+            rewriteCachedOutputMetadata(cached) { metadata ->
+                metadata.copy(pdf = pdf, images = images)
+            }
+        }
+    }
+
+    private fun reconcilePendingMediaOutput(
+        uri: String,
+        displayName: String?,
+        mimeType: String?,
+        ownerPackageName: String?,
+        fingerprint: OutputFingerprint?,
+        source: File,
+        collection: MediaOutputCollection,
+    ): SavedMediaOutput? {
+        val expected = fingerprint ?: return null
+        if (
+            !isProviderDisplayName(displayName) ||
+                mimeType == null ||
+                ownerPackageName != context.packageName ||
+                fingerprintFile(source) != expected
+        ) {
+            return null
+        }
+        val observed =
+            readSavedMediaOutput(
+                uri.toUri(),
+                collection,
+                mimeType,
+                expected,
+            )
+        if (
+            observed.displayName != displayName ||
+                observed.ownerPackageName != ownerPackageName
+        ) {
+            return null
+        }
+        return publishPendingFile(observed, collection).takeUnless(SavedMediaOutput::pending)
     }
 
     private fun requireCurrentOutputMetadata(cached: CachedScan): OutputMetadata {
@@ -2020,34 +2209,76 @@ internal class ScanStorage(
                     expectedMimeType,
                     sourceFingerprint,
                 )
-            verifiedOutput = pendingOutput
-            val address = parseMediaItemAddress(destination.toString())
-                ?: throw IOException("MediaStore item URI is invalid")
-            val published =
-                resolver.update(
-                    destination,
-                    ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
-                    MEDIA_PUBLISH_SELECTION,
-                    mediaDeleteSelectionArgs(
-                        ExpectedMediaItem(
-                            id = address.id,
-                            displayName = pendingOutput.displayName,
-                            mimeType = pendingOutput.mimeType,
-                            ownerPackageName = pendingOutput.ownerPackageName,
-                        ),
-                    ),
-                )
-            if (published != 1) {
-                throw IOException("MediaStore row could not be published")
+            if (!pendingOutput.pending) {
+                throw IOException("MediaStore row was published before ownership was recorded")
             }
-            readSavedMediaOutput(
-                destination,
-                expectedCollection,
-                expectedMimeType,
-                sourceFingerprint,
-            )
+            verifiedOutput = pendingOutput
+            pendingOutput
         }
     }
+
+    private fun publishPendingFile(
+        output: SavedMediaOutput,
+        expectedCollection: MediaOutputCollection,
+    ): SavedMediaOutput {
+        val fingerprint = OutputFingerprint(output.byteLength, output.sha256)
+        val current =
+            readSavedMediaOutput(
+                output.uri,
+                expectedCollection,
+                output.mimeType,
+                fingerprint,
+            )
+        if (!sameMediaOutput(current, output)) {
+            throw IOException("MediaStore item identity changed before publication")
+        }
+        if (!current.pending) return current
+        val address = parseMediaItemAddress(output.uri.toString())
+            ?: throw IOException("MediaStore item URI is invalid")
+        val published =
+            resolver.update(
+                output.uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                MEDIA_PUBLISH_SELECTION,
+                mediaDeleteSelectionArgs(
+                    ExpectedMediaItem(
+                        id = address.id,
+                        displayName = output.displayName,
+                        mimeType = output.mimeType,
+                        ownerPackageName = output.ownerPackageName,
+                    ),
+                ),
+            )
+        if (published != 1) {
+            val observed =
+                readSavedMediaOutput(
+                    output.uri,
+                    expectedCollection,
+                    output.mimeType,
+                    fingerprint,
+                )
+            if (!observed.pending && sameMediaOutput(observed, output)) return observed
+            throw IOException("MediaStore row could not be published")
+        }
+        return readSavedMediaOutput(
+            output.uri,
+            expectedCollection,
+            output.mimeType,
+            fingerprint,
+        ).also {
+            if (it.pending || !sameMediaOutput(it, output)) {
+                throw IOException("Published MediaStore row identity changed")
+            }
+        }
+    }
+
+    private fun sameMediaOutput(left: SavedMediaOutput, right: SavedMediaOutput): Boolean =
+        left.uri == right.uri &&
+            left.displayName == right.displayName &&
+            left.mimeType == right.mimeType &&
+            left.ownerPackageName == right.ownerPackageName &&
+            left.byteLength == right.byteLength &&
+            left.sha256 == right.sha256
 
     private fun readSavedMediaOutput(
         uri: Uri,
@@ -2072,16 +2303,18 @@ internal class ScanStorage(
             resolver.query(uri, MEDIA_IDENTITY_PROJECTION, null, null, null)
                 ?: throw IOException("MediaStore item identity is unavailable")
         return cursor.use {
-            if (!it.moveToFirst()) throw IOException("MediaStore item is unavailable")
+            if (!it.moveToFirst()) throw NoSuchFileException("MediaStore item is unavailable")
             val idIndex = it.getColumnIndex(MediaStore.MediaColumns._ID)
             val nameIndex = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
             val mimeIndex = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
             val ownerIndex = it.getColumnIndex(MediaStore.MediaColumns.OWNER_PACKAGE_NAME)
+            val pendingIndex = it.getColumnIndex(MediaStore.MediaColumns.IS_PENDING)
             if (
                 idIndex < 0 ||
                     nameIndex < 0 ||
                     mimeIndex < 0 ||
                     ownerIndex < 0 ||
+                    pendingIndex < 0 ||
                     it.isNull(idIndex) ||
                     it.isNull(nameIndex) ||
                     it.isNull(mimeIndex)
@@ -2092,11 +2325,14 @@ internal class ScanStorage(
             val mimeType = it.getString(mimeIndex)
             val ownerPackageName =
                 if (it.isNull(ownerIndex)) null else it.getString(ownerIndex)
+            val pendingValue =
+                if (it.isNull(pendingIndex)) -1 else it.getInt(pendingIndex)
             if (
                 it.getLong(idIndex) != address.id ||
                     !isProviderDisplayName(displayName) ||
                     mimeType != expectedMimeType ||
                     ownerPackageName != context.packageName ||
+                    pendingValue !in 0..1 ||
                     it.moveToNext()
             ) {
                 throw IOException("MediaStore item identity changed")
@@ -2112,6 +2348,7 @@ internal class ScanStorage(
                 context.packageName,
                 fingerprint.byteLength,
                 fingerprint.sha256,
+                pending = pendingValue == 1,
             )
         }
     }

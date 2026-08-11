@@ -44,6 +44,12 @@ class PureLogicTest {
     }
 
     @Test
+    fun automaticPdfSaveDefersCustomSafUntilExplicitSave() {
+        assertTrue(automaticPdfUsesDownloads(null))
+        assertFalse(automaticPdfUsesDownloads("content://documents/tree/scanit"))
+    }
+
+    @Test
     fun recentDeleteChoicesUseOnlyExactDurableReferences() {
         assertEquals(
             listOf(RecentDeleteTarget.Pdf, RecentDeleteTarget.Images, RecentDeleteTarget.Both),

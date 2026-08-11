@@ -135,6 +135,93 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun pendingMediaOwnershipRoundTripsAndLegacyRowsDefaultToPublished() {
+        val pending =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/42",
+                        treeUri = null,
+                        displayName = "scan.pdf",
+                        mimeType = "application/pdf",
+                        ownerPackageName = "com.majkeylab.scanit.internal",
+                        byteLength = 10L,
+                        sha256 = "00".repeat(32),
+                        pending = true,
+                    ),
+                images =
+                    listOf(
+                        ImageOutputRef(
+                            page = 1,
+                            uri = "content://media/external/images/media/43",
+                            displayName = "scan.jpg",
+                            mimeType = "image/jpeg",
+                            ownerPackageName = "com.majkeylab.scanit.internal",
+                            byteLength = 11L,
+                            sha256 = "11".repeat(32),
+                            pending = true,
+                        ),
+                    ),
+            )
+
+        assertEquals(
+            pending,
+            decodeOutputMetadata(encodeOutputMetadata(pending, 1), cacheId, 1),
+        )
+
+        val legacy =
+            validJson(
+                images = """[{"page":1,"uri":"content://media/external/images/media/43"}]""",
+            ).toByteArray(StandardCharsets.UTF_8)
+        assertEquals(false, decodeOutputMetadata(legacy, cacheId, 1)?.images?.single()?.pending)
+    }
+
+    @Test
+    fun pendingMediaWithoutExactIdentityIsRejected() {
+        val incomplete =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/42",
+                        treeUri = null,
+                        pending = true,
+                    ),
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(incomplete, pageCount = 1)
+        }
+    }
+
+    @Test
+    fun pendingImagesAreNotTreatedAsCompletedSaves() {
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images =
+                    listOf(
+                        ImageOutputRef(
+                            page = 1,
+                            uri = "content://media/external/images/media/43",
+                            pending = true,
+                        ),
+                    ),
+            )
+
+        assertThrows(IOException::class.java) {
+            existingCompleteImagesForSave(metadata, pageCount = 1)
+        }
+    }
+
+    @Test
     fun outputFingerprintRoundTripsAndRejectsIncompleteOrMalformedPairs() {
         val metadata =
             OutputMetadata(
@@ -236,7 +323,7 @@ class OutputMetadataTest {
         sidecar.writeText("not json")
         assertNull(readOutputMetadata(directory, cacheId, pageCount = 1))
 
-        sidecar.writeText(validJson().replace("\"version\":1", "\"version\":2"))
+        sidecar.writeText(validJson().replace("\"version\":1", "\"version\":99"))
         assertNull(readOutputMetadata(directory, cacheId, pageCount = 1))
 
         sidecar.writeBytes(ByteArray(MAX_OUTPUT_METADATA_BYTES + 1))

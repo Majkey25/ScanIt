@@ -252,6 +252,12 @@ private data class OutputSaveResult(
     val warnings: List<UiMessage>,
 )
 
+private data class PreparedInitialScan(
+    val settings: AppSettings,
+    val build: CachedScanBuild,
+    val thumbnail: Bitmap?,
+)
+
 internal fun automaticOutputTarget(settings: AppSettings): SaveNowTarget? =
     when {
         settings.savePdf && settings.saveImages -> SaveNowTarget.Both
@@ -259,6 +265,8 @@ internal fun automaticOutputTarget(settings: AppSettings): SaveNowTarget? =
         settings.saveImages -> SaveNowTarget.Images
         else -> null
     }
+
+internal fun automaticPdfUsesDownloads(pdfTreeUri: String?): Boolean = pdfTreeUri == null
 
 private enum class ResultActivation {
     Applied,
@@ -549,12 +557,10 @@ internal class ScanViewModel(
         processingJob =
             viewModelScope.launch {
                 var cached: CachedScan? = null
-                var galleryPages: List<Uri> = emptyList()
-                var savedPdfUri: Uri? = null
-                var savedPdfTreeUri: Uri? = null
-                var completedResult: ScreenState.Result? = null
+                var authorityCommitted = false
+                var retainedResult: ScreenState.Result? = null
                 try {
-                    val result =
+                    val prepared =
                         withContext(Dispatchers.IO) {
                             val settings = currentSettings()
                             val processingContext = currentCoroutineContext()
@@ -567,71 +573,39 @@ internal class ScanViewModel(
                                 )
                             val cachedScan = cacheBuild.cached
                             cached = cachedScan
-                            val thumbnail =
-                                storage.loadThumbnail(
-                                    cachedScan.pages.first(),
-                                    RESULT_PREVIEW_SIZE,
-                                )
-                            val warnings = mutableListOf<UiMessage>()
-                            if (!cacheBuild.pdf.targetMet) {
-                                warnings += pdfSizeTargetWarning(cacheBuild.pdf)
-                            }
-                            if (settings.saveImages) {
-                                try {
-                                    galleryPages =
-                                        storage.saveImages(cachedScan, settings.albumName)
-                                } catch (cancellation: CancellationException) {
-                                    throw cancellation
-                                } catch (failure: ImageSaveFailure) {
-                                    warnings += imageSaveFailureMessages(failure)
-                                } catch (_: Exception) {
-                                    warnings += UiMessage(R.string.images_save_failed)
-                                }
-                            }
                             currentCoroutineContext().ensureActive()
-                            if (settings.savePdf) {
-                                try {
-                                    val savedPdf =
-                                        savePdfToCanonicalDestination(
-                                            cachedScan,
-                                            settings.albumName,
-                                        )
-                                    savedPdfUri = savedPdf.uri
-                                    savedPdfTreeUri = savedPdf.treeUri
-                                    savedPdf.warning?.let(warnings::add)
-                                } catch (cancellation: CancellationException) {
-                                    throw cancellation
-                                } catch (failure: PdfSaveFailure) {
-                                    warnings += pdfSaveFailureMessages(failure)
-                                } catch (_: Exception) {
-                                    warnings += UiMessage(R.string.pdf_save_failed)
-                                }
-                            }
-                            val result =
-                                ScreenState.Result(
-                                    scan =
-                                        SavedScan(
-                                            cached = cachedScan,
-                                            galleryPages = galleryPages,
-                                            savedPdf = savedPdfUri,
-                                            savedPdfTree = savedPdfTreeUri,
-                                            warnings = warnings,
-                                            outputMetadataValid = true,
-                                            savedPdfDeleteVerified = savedPdfUri != null,
-                                            savedImagesDeleteVerified = galleryPages.isNotEmpty(),
-                                        ),
-                                    thumbnail = thumbnail,
-                                )
-                            completedResult = result
-                            currentCoroutineContext().ensureActive()
-                            result
+                            PreparedInitialScan(
+                                settings = settings,
+                                build = cacheBuild,
+                                thumbnail =
+                                    storage.loadThumbnail(
+                                        cachedScan.pages.first(),
+                                        RESULT_PREVIEW_SIZE,
+                                    ),
+                            )
                         }
-                    when (
-                        activateCachedResult(generation, result.scan.cached.baseName, result)
-                    ) {
-                        ResultActivation.Applied -> Unit
+                    val baseWarnings =
+                        if (prepared.build.pdf.targetMet) {
+                            emptyList()
+                        } else {
+                            listOf(pdfSizeTargetWarning(prepared.build.pdf))
+                        }
+                    retainedResult =
+                        ScreenState.Result(
+                            scan =
+                                SavedScan(
+                                    cached = prepared.build.cached,
+                                    galleryPages = emptyList(),
+                                    savedPdf = null,
+                                    warnings = baseWarnings,
+                                    outputMetadataValid = false,
+                                ),
+                            thumbnail = prepared.thumbnail,
+                        )
+                    when (persistResultCheckpoint(generation, prepared.build.cached.baseName)) {
+                        ResultActivation.Applied -> authorityCommitted = true
                         ResultActivation.Rejected -> {
-                            val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
+                            val cleanupComplete = deleteUncommittedCandidate(prepared.build.cached)
                             if (routeMutationGate.isCurrent(generation)) {
                                 mutableState.value =
                                     ScreenState.Failure(
@@ -645,50 +619,85 @@ internal class ScanViewModel(
                                     )
                                 persistRoute(ROUTE_FAILURE)
                             }
+                            return@launch
                         }
-                        ResultActivation.Stale -> cleanup(cached, galleryPages, savedPdfUri)
+                        ResultActivation.Stale -> {
+                            discardAppearanceVariantUnlessActive(prepared.build.cached)
+                            return@launch
+                        }
                     }
-                } catch (exception: CancellationException) {
-                    val retainedResult = completedResult
-                    when (
-                        withContext(NonCancellable) {
-                            clearCheckpointAndPublish(
-                                generation = generation,
-                                onFailure = { retainedResult?.let(::publishResult) },
-                                onSuccess = {},
+                    if (!routeMutationGate.isCurrent(generation)) return@launch
+                    val result =
+                        withContext(Dispatchers.IO) {
+                            val activated =
+                                storage.activateCheckpointProvisional(prepared.build.cached)
+                            val warnings =
+                                (baseWarnings +
+                                    saveAutomaticInitialOutputs(
+                                        activated,
+                                        prepared.settings,
+                                    )).toMutableList()
+                            val saved =
+                                storage.openSavedScan(activated.baseName)
+                                    ?: throw IOException(
+                                        "Cached scan output metadata is unavailable",
+                                    )
+                            ScreenState.Result(
+                                scan =
+                                    saved.copy(
+                                        warnings = (warnings + saved.warnings).distinct(),
+                                    ),
+                                thumbnail = prepared.thumbnail,
                             )
                         }
-                    ) {
-                        CheckpointMutationResult.Failed -> {
-                            if (retainedResult == null) {
-                                cleanup(cached, galleryPages, savedPdfUri)
-                            }
+                    retainedResult = result
+                    routeMutationMutex.withLock {
+                        if (routeMutationGate.isCurrent(generation)) publishResult(result)
+                    }
+                } catch (exception: CancellationException) {
+                    if (!authorityCommitted) {
+                        cached?.let { candidate ->
+                            deleteUncommittedCandidate(candidate)
                         }
-                        CheckpointMutationResult.Applied,
-                        CheckpointMutationResult.Stale,
-                        -> cleanup(cached, galleryPages, savedPdfUri)
                     }
                     throw exception
-                } catch (exception: Exception) {
-                    val retainedResult = completedResult
-                    val checkpoint =
-                        clearCheckpointAndPublish(
-                            generation = generation,
-                            onFailure = { retainedResult?.let(::publishResult) },
-                            onSuccess = {},
-                        )
-                    val retained =
-                        checkpoint == CheckpointMutationResult.Failed && retainedResult != null
-                    if (!retained && routeMutationGate.isCurrent(generation)) {
-                        val cleanupComplete = cleanup(cached, galleryPages, savedPdfUri)
-                        val message =
-                            if (cleanupComplete && exception.suppressed.isEmpty()) {
-                                UiMessage(R.string.document_save_failed)
-                            } else {
-                                UiMessage(R.string.document_save_partial_failed)
+                } catch (_: Exception) {
+                    if (authorityCommitted) {
+                        retainedResult?.let { result ->
+                            routeMutationMutex.withLock {
+                                if (routeMutationGate.isCurrent(generation)) {
+                                    publishResult(
+                                        result.copy(
+                                            scan =
+                                                result.scan.copy(
+                                                    warnings =
+                                                        (result.scan.warnings +
+                                                            UiMessage(R.string.state_update_failed))
+                                                            .distinct(),
+                                                ),
+                                        ),
+                                    )
+                                }
                             }
-                        mutableState.value = ScreenState.Failure(message)
-                        persistRoute(ROUTE_FAILURE)
+                        }
+                    } else {
+                        val cleanupComplete =
+                            cached?.let { candidate ->
+                                deleteUncommittedCandidate(candidate)
+                            } ?: true
+                        if (routeMutationGate.isCurrent(generation)) {
+                            mutableState.value =
+                                ScreenState.Failure(
+                                    UiMessage(
+                                        if (cleanupComplete) {
+                                            R.string.document_save_failed
+                                        } else {
+                                            R.string.document_save_partial_failed
+                                        },
+                                    ),
+                                )
+                            persistRoute(ROUTE_FAILURE)
+                        }
                     }
                 } finally {
                     processingJob = null
@@ -1281,11 +1290,24 @@ internal class ScanViewModel(
         generation: Long,
         cacheId: String,
         result: ScreenState.Result,
+    ): ResultActivation {
+        val activation = persistResultCheckpoint(generation, cacheId)
+        if (activation == ResultActivation.Applied) {
+            routeMutationMutex.withLock {
+                if (routeMutationGate.isCurrent(generation)) publishResult(result)
+            }
+        }
+        return activation
+    }
+
+    private suspend fun persistResultCheckpoint(
+        generation: Long,
+        cacheId: String,
     ): ResultActivation =
         routeMutationMutex.withLock {
             if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
+            val owner = activeResultOwner ?: return@withLock ResultActivation.Stale
             try {
-                val owner = activeResultOwner ?: return@withLock ResultActivation.Stale
                 val saved =
                     withContext(Dispatchers.IO) {
                         settingsStore.saveActiveResult(cacheId, owner)
@@ -1297,41 +1319,31 @@ internal class ScanViewModel(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: IOException) {
-                return@withLock recoverFailedResultCheckpoint(generation, result)
+                return@withLock recoverResultCheckpoint(cacheId, owner)
             } catch (_: IllegalArgumentException) {
-                return@withLock recoverFailedResultCheckpoint(generation, result)
+                return@withLock recoverResultCheckpoint(cacheId, owner)
             }
-            if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
-            publishResult(result)
             ResultActivation.Applied
         }
 
-    private suspend fun recoverFailedResultCheckpoint(
-        generation: Long,
-        result: ScreenState.Result,
-    ): ResultActivation {
-        val cleared =
-            try {
-                val owner = activeResultOwner ?: return ResultActivation.Stale
-                val result =
-                    withContext(Dispatchers.IO) {
-                        settingsStore.clearActiveResult(owner)
-                    }
-                if (result == AuthorityMutationResult.Applied) {
-                    activeResultOwner = owner.withCheckpoint(null)
+    private suspend fun recoverResultCheckpoint(
+        cacheId: String,
+        previousOwner: ActiveResultOwner,
+    ): ResultActivation =
+        try {
+            val snapshot =
+                withContext(Dispatchers.IO) {
+                    settingsStore.authoritySnapshot()
                 }
-                result == AuthorityMutationResult.Applied
-            } catch (_: IOException) {
-                false
+            activeResultOwner = snapshot.owner
+            when (snapshot.checkpoint) {
+                ActiveResultCheckpoint(cacheId) -> ResultActivation.Applied
+                previousOwner.checkpoint -> ResultActivation.Rejected
+                else -> ResultActivation.Stale
             }
-        if (!routeMutationGate.isCurrent(generation)) return ResultActivation.Stale
-        return if (cleared) {
-            ResultActivation.Rejected
-        } else {
-            publishResult(result)
-            ResultActivation.Applied
+        } catch (_: IOException) {
+            ResultActivation.Stale
         }
-    }
 
     private fun publishResult(result: ScreenState.Result) {
         val cacheId = result.scan.cached.baseName
@@ -1434,6 +1446,19 @@ internal class ScanViewModel(
             }
         }
     }
+
+    private suspend fun deleteUncommittedCandidate(candidate: CachedScan): Boolean =
+        withContext(NonCancellable + Dispatchers.IO) {
+            try {
+                storage.deleteProvisionalCacheEntry(candidate)
+            } catch (_: IOException) {
+                false
+            } catch (_: SecurityException) {
+                false
+            } catch (_: IllegalArgumentException) {
+                false
+            }
+        }
 
     private fun commitAppliedAppearance(
         normalized: ScanAppearanceSettings,
@@ -1539,7 +1564,48 @@ internal class ScanViewModel(
         val saved =
             storage.openSavedScan(activated.baseName)
                 ?: throw IOException("Cached scan output metadata is unavailable")
-        return saved.copy(warnings = (initialWarnings + saved.warnings).distinct())
+        return saved.copy(
+            warnings = (initialWarnings + saved.warnings).distinct(),
+        )
+    }
+
+    private suspend fun saveAutomaticInitialOutputs(
+        cached: CachedScan,
+        settings: AppSettings,
+    ): List<UiMessage> {
+        val warnings = mutableListOf<UiMessage>()
+        if (settings.saveImages) {
+            try {
+                storage.saveImages(cached, settings.albumName)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: ImageSaveFailure) {
+                warnings += imageSaveFailureMessages(failure)
+            } catch (_: Exception) {
+                warnings += UiMessage(R.string.images_save_failed)
+            }
+        }
+        currentCoroutineContext().ensureActive()
+        if (settings.savePdf) {
+            if (automaticPdfUsesDownloads(settings.pdfTreeUri)) {
+                try {
+                    storage.savePdf(
+                        cached,
+                        settings.albumName,
+                        pdfTreeUri = null,
+                    ).warning?.let(warnings::add)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: PdfSaveFailure) {
+                    warnings += pdfSaveFailureMessages(failure)
+                } catch (_: Exception) {
+                    warnings += UiMessage(R.string.pdf_save_failed)
+                }
+            } else {
+                warnings += UiMessage(R.string.pdf_auto_save_deferred)
+            }
+        }
+        return warnings.distinct()
     }
 
     private suspend fun readActiveResultCheckpoint(generation: Long): CheckpointReadResult =
@@ -1559,8 +1625,8 @@ internal class ScanViewModel(
                             if (
                                 provisional &&
                                     (authoritative.appearanceSettings == null ||
-                                        authoritative.parentCacheId == null ||
-                                        authoritative.parentEntryId == null)
+                                        (authoritative.parentCacheId == null) !=
+                                        (authoritative.parentEntryId == null))
                             ) {
                                 throw IOException(
                                     "Provisional checkpoint metadata is not authoritative",
@@ -1749,25 +1815,4 @@ internal class ScanViewModel(
         return tryStorageTransaction(operation)
             ?: throw IOException("PDF destination cleanup is still in progress")
     }
-
-    private suspend fun cleanup(
-        cached: CachedScan?,
-        galleryPages: List<Uri>,
-        savedPdf: Uri?,
-    ): Boolean =
-        withContext(NonCancellable + Dispatchers.IO) {
-            if (cached == null) return@withContext true
-            val target =
-                when {
-                    savedPdf != null && galleryPages.isNotEmpty() -> RecentDeleteTarget.Both
-                    savedPdf != null -> RecentDeleteTarget.Pdf
-                    galleryPages.isNotEmpty() -> RecentDeleteTarget.Images
-                    else -> null
-                }
-            if (target == null) return@withContext storage.deleteCachedScan(cached)
-            storage.deleteDurableOutputs(
-                OutputDeleteRequest(cached.baseName, cached.entryId, target),
-                deleteRecentCache = true,
-            ) == OutputDeleteOperationResult.Completed
-        }
 }
