@@ -198,7 +198,7 @@ internal fun writeMarkedSourcePages(
                 if (index == selectedPageIndex) {
                     renderSelectedPage(source, target)
                 } else {
-                    Files.createLink(target.toPath(), source.toPath())
+                    copyDerivedSourcePage(source, target)
                 }
                 if (!target.isFile || target.length() <= 0L) {
                     throw IOException("Marked scan source page is incomplete")
@@ -212,6 +212,26 @@ internal fun writeMarkedSourcePages(
             } catch (cleanupFailure: Exception) {
                 failure.addSuppressed(cleanupFailure)
             }
+        }
+        throw failure
+    }
+}
+
+internal fun copyDerivedSourcePage(source: File, target: File) {
+    if (!source.isFile || source.length() <= 0L) {
+        throw IOException("Derived scan source page is unavailable")
+    }
+    if (target.exists()) throw IOException("Derived scan source target already exists")
+    try {
+        Files.copy(source.toPath(), target.toPath())
+        if (!target.isFile || target.length() != source.length()) {
+            throw IOException("Derived scan source page is incomplete")
+        }
+    } catch (failure: Throwable) {
+        try {
+            Files.deleteIfExists(target.toPath())
+        } catch (cleanupFailure: Exception) {
+            failure.addSuppressed(cleanupFailure)
         }
         throw failure
     }
@@ -1377,7 +1397,7 @@ internal class ScanStorage(
                 val sourcePages =
                     source.sourcePages.mapIndexed { index, page ->
                         File(workDirectory, scanSourcePageFileName(baseName, index + 1)).also {
-                            Files.createLink(it.toPath(), page.toPath())
+                            copyDerivedSourcePage(page, it)
                         }
                     }
                 val renderedPages =

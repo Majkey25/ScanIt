@@ -159,6 +159,19 @@ class VisualMarkApplyTest {
         assertEquals(emptyList<String>(), workDirectory.listFiles().orEmpty().map(File::getName))
     }
 
+    @Test
+    fun derivedSourceCopyIsIndependentFromTheOriginalFile() {
+        val directory = temporaryFolder.newFolder("source-copy")
+        val source = File(directory, "source.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val target = File(directory, "derived.jpg")
+
+        copyDerivedSourcePage(source, target)
+        target.writeBytes(byteArrayOf(9))
+
+        assertArrayEquals(byteArrayOf(1, 2, 3), source.readBytes())
+        assertArrayEquals(byteArrayOf(9), target.readBytes())
+    }
+
     private fun savedScan(cacheId: String): SavedScan =
         SavedScan(
             cached =

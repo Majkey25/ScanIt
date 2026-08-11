@@ -146,4 +146,16 @@ class MarkTemplateStorageTest {
         assertFalse(File(directory, "mark_2.png").exists())
         assertEquals(listOf("mark_1.png"), directory.listFiles()?.map(File::getName))
     }
+
+    @Test
+    fun atomicPublishMovesTheTemporaryFileWithoutCreatingAHardLink() {
+        val directory = temporaryFolder.newFolder("atomic-move")
+        val temporary = File(directory, ".mark_1.tmp").apply { writeBytes(byteArrayOf(4, 2)) }
+        val target = File(directory, "mark_1.png")
+
+        publishStagedFileNoReplace(temporary.toPath(), target.toPath())
+
+        assertFalse(temporary.exists())
+        assertArrayEquals(byteArrayOf(4, 2), target.readBytes())
+    }
 }

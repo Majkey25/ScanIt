@@ -78,7 +78,7 @@ internal fun buildScanPdf(
                 val targetMet = target.maxBytes?.let { candidateBytes <= it } ?: true
                 if (selected == null || candidateBytes < selected.bytes) {
                     val retained = File(workingDirectory, "candidate-$sampleMultiplier.pdf")
-                    Files.createLink(retained.toPath(), chosen.toPath())
+                    publishStagedFileNoReplace(chosen.toPath(), retained.toPath())
                     val previous = selected
                     selected =
                         ScanPdfCandidate(sampleMultiplier, candidateBytes, encoding, retained)
@@ -163,7 +163,7 @@ private fun createPdfPublicationStaging(parent: File, candidate: File): Path {
     val staging = Files.createTempFile(parent.toPath(), ".scanit-pdf-ready-", ".part")
     try {
         Files.delete(staging)
-        Files.createLink(staging, candidate.toPath())
+        publishStagedFileNoReplace(candidate.toPath(), staging)
         return staging
     } catch (failure: Throwable) {
         try {

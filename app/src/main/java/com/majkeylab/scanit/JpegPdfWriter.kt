@@ -54,28 +54,8 @@ internal object JpegPdfWriter {
 internal fun publishStagedFileNoReplace(
     staging: Path,
     target: Path,
-    deleteIfExists: (Path) -> Boolean = Files::deleteIfExists,
 ) {
-    var published = false
-    try {
-        Files.createLink(target, staging)
-        published = true
-        deleteIfExists(staging)
-    } catch (failure: Throwable) {
-        if (published) {
-            try {
-                if (
-                    Files.exists(target) &&
-                    (!Files.exists(staging) || Files.isSameFile(target, staging))
-                ) {
-                    deleteIfExists(target)
-                }
-            } catch (rollbackFailure: Throwable) {
-                failure.addSuppressed(rollbackFailure)
-            }
-        }
-        throw failure
-    }
+    Files.move(staging, target)
 }
 
 private fun writeJpegPdf(
