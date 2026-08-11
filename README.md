@@ -25,15 +25,29 @@ main scanning path.
 ScanIt was built with AI-assisted coding and design. The maintainer reviews the
 source, release artifacts, and real-device workflows.
 
+<p align="center">
+  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="30%" alt="ScanIt result with PDF sharing, image sharing, printing, and a new-scan action.">
+  <img src="docs/play-store/assets/en-US/phone/04-recent.png" width="30%" alt="Recent scans with a document preview, page count, file size, and actions.">
+  <img src="docs/play-store/assets/en-US/phone/05-visual-mark.png" width="30%" alt="Visual mark editor placing a SAMPLE mark on a scanned page.">
+</p>
+
+[See all English and Czech screenshots](docs/play-store/assets/).
+
 ## Features
 
 - Opens Google ML Kit Document Scanner directly; no redundant landing-page tap.
 - Automatic capture, edge detection, crop, rotation, filters, shadow removal, and cleanup through the ML Kit scanner flow.
 - Single-page and multi-page PDF/JPEG output.
+- Lazy page thumbnails for browsing multi-page results without decoding every page at once.
+- Color, grayscale, and black-and-white appearance controls with per-filter intensity and shadow strength.
+- Measured PDF size goals of Original, 5 MB, 10 MB, or 20 MB; ScanIt reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
+- Manual PDF, image, or combined saving from File details.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
+- Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
+- Reusable drawn, imported, or scanned visual marks placed on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI and system/English/Czech language selection.
 - No account, ads, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
@@ -112,7 +126,7 @@ passwords must never enter Git.
 | UI | One Activity, Jetpack Compose, Material 3 |
 | Scanner | Google ML Kit Document Scanner |
 | Storage | MediaStore, Storage Access Framework, bounded app cache |
-| PDF | Android `PdfDocument` / `PrintedPdfDocument` |
+| PDF | Bounded JPEG/bitonal writers + Android `PrintedPdfDocument` for printing |
 | Sharing | Android Sharesheet + scoped `FileProvider` |
 | Settings | `SharedPreferences` |
 
@@ -122,6 +136,7 @@ passwords must never enter Git.
 - Recent scans are temporary working copies, not a permanent document library.
 - Android 17 has no `maxSdk` restriction but has not yet been device-tested.
 - Google Play publication is still in testing; do not describe the app as a production Play release yet.
+- Visual marks do not verify identity, authorization, or document integrity.
 - The repository does not contain production signing material.
 
 ## Feedback
