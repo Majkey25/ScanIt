@@ -394,6 +394,7 @@ internal data class SavedMediaOutput(
     val ownerPackageName: String,
     val byteLength: Long,
     val sha256: String,
+    val pending: Boolean,
 )
 
 internal class PendingMediaFailure(

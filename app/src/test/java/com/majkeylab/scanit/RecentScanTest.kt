@@ -146,6 +146,58 @@ class RecentScanTest {
         }
 
     @Test
+    fun pendingMediaOwnershipStaysHiddenUntilProviderPublicationCompletes() =
+        withShareRoot { root ->
+            val id = "Scan_pending_outputs"
+            val directory = createEntry(root, id)
+            val entryId = "123e4567-e89b-12d3-a456-426614174000"
+            initializeOutputMetadata(directory, id, 1, 100L, entryId)
+            rewriteOutputMetadata(directory, id, entryId, 1) {
+                it.copy(
+                    pdf =
+                        PdfOutputRef(
+                            uri = "content://media/external/downloads/1",
+                            treeUri = null,
+                            displayName = "scan.pdf",
+                            mimeType = "application/pdf",
+                            ownerPackageName = "com.majkeylab.scanit.internal",
+                            byteLength = 1L,
+                            sha256 = "00".repeat(32),
+                            pending = true,
+                        ),
+                    images =
+                        listOf(
+                            ImageOutputRef(
+                                page = 1,
+                                uri = "content://media/external/images/media/1",
+                                displayName = "scan.jpg",
+                                mimeType = "image/jpeg",
+                                ownerPackageName = "com.majkeylab.scanit.internal",
+                                byteLength = 1L,
+                                sha256 = "11".repeat(32),
+                                pending = true,
+                            ),
+                        ),
+                )
+            }
+
+            val recent = listRecentScansInRoot(root).single()
+
+            assertFalse(recent.hasSavedPdf)
+            assertEquals(0, recent.savedImageCount)
+
+            rewriteOutputMetadata(directory, id, entryId, 1) { metadata ->
+                metadata.copy(
+                    pdf = metadata.pdf?.copy(pending = false),
+                    images = metadata.images.map { it.copy(pending = false) },
+                )
+            }
+            val published = listRecentScansInRoot(root).single()
+            assertTrue(published.hasSavedPdf)
+            assertEquals(1, published.savedImageCount)
+        }
+
+    @Test
     fun fixedMetadataTempCompanionDoesNotInvalidateCoreEntry() = withShareRoot { root ->
         val id = "Scan_with_temp"
         val directory = createEntry(root, id)
@@ -175,7 +227,7 @@ class RecentScanTest {
         val variants =
             listOf(
                 "unknown" to
-                    """{"version":2,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_unknown","createdAtEpochMs":1,"images":[]}"""
+                    """{"version":99,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_unknown","createdAtEpochMs":1,"images":[]}"""
                         .toByteArray(),
                 "duplicate" to
                     """{"version":1,"entryId":"123e4567-e89b-12d3-a456-426614174000","cacheId":"Scan_duplicate","createdAtEpochMs":1,"images":[{"page":1,"uri":"content://media/images/1"},{"page":1,"uri":"content://media/images/2"}]}"""
@@ -601,6 +653,91 @@ class RecentScanTest {
         }
 
     @Test
+    fun checkpointRecoveryActivatesAnInitialScanWithoutPruningBeforeAuthority() =
+        withShareRoot { root ->
+            val oldIds =
+                (1..8).map { index ->
+                    "Scan_old_$index".also { id ->
+                        createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                    }
+                }
+            val candidateId = "Scan_initial"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-initial",
+                    sourcePageCount = 1,
+                    fileBaseName = candidateId,
+                ).apply {
+                    writeScanAppearanceMetadata(
+                        directory = this,
+                        appearanceSettings = ScanAppearanceSettings(),
+                        pdfSizeTarget = PdfSizeTarget.Original,
+                        lineageCacheId = candidateId,
+                    )
+                }
+            val cache = RecentScanCache(root)
+
+            cache.publishProvisional(pending, File(root, candidateId))
+            assertEquals(oldIds.toSet(), cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet())
+
+            val activated = cache.activateCheckpointProvisional(candidateId, maxEntries = 8)
+
+            assertEquals(candidateId, activated.baseName)
+            assertFalse(cache.isProvisional(candidateId))
+            assertEquals(
+                (oldIds.drop(1) + candidateId).toSet(),
+                cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet(),
+            )
+        }
+
+    @Test
+    fun activationPruneKeepsSidecarOwnedPendingMedia() = withShareRoot { root ->
+        val ownedId = "Scan_pending_owned"
+        val ownedEntryId = "123e4567-e89b-12d3-a456-426614174000"
+        val ownedDirectory = createEntry(root, ownedId)
+        initializeOutputMetadata(ownedDirectory, ownedId, 1, 1L, ownedEntryId)
+        rewriteOutputMetadata(ownedDirectory, ownedId, ownedEntryId, 1) {
+            it.copy(
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/1",
+                        treeUri = null,
+                        displayName = "scan.pdf",
+                        mimeType = "application/pdf",
+                        ownerPackageName = "com.majkeylab.scanit.internal",
+                        byteLength = 1L,
+                        sha256 = "00".repeat(32),
+                        pending = true,
+                    ),
+            )
+        }
+        assertTrue(ownedDirectory.setLastModified(1L))
+        val disposableId = "Scan_disposable"
+        createEntry(root, disposableId).apply { assertTrue(setLastModified(2L)) }
+        val candidateId = "Scan_initial"
+        val pending =
+            createEntry(root, ".pending-initial", fileBaseName = candidateId).apply {
+                writeScanAppearanceMetadata(
+                    directory = this,
+                    appearanceSettings = ScanAppearanceSettings(),
+                    lineageCacheId = candidateId,
+                )
+            }
+        val cache = RecentScanCache(root)
+        cache.publishProvisional(pending, File(root, candidateId))
+
+        cache.activateCheckpointProvisional(candidateId, maxEntries = 2)
+
+        assertTrue(ownedDirectory.isDirectory)
+        assertFalse(File(root, disposableId).exists())
+        assertEquals(
+            setOf(ownedId, candidateId),
+            cache.list(maxEntries = 2).map(RecentScan::cacheId).toSet(),
+        )
+    }
+
+    @Test
     fun checkpointRecoveryActivatesWhenThePriorLineageRevisionIsAlreadyGone() =
         withShareRoot { root ->
             val unrelatedId = "Scan_unrelated"
@@ -815,6 +952,36 @@ class RecentScanTest {
         } finally {
             assertTrue(durableOutput.delete())
         }
+    }
+
+    @Test
+    fun automaticPruneKeepsSidecarOwnedPendingMedia() = withShareRoot { root ->
+        val pendingId = "Scan_pending_owned"
+        val pendingEntryId = "123e4567-e89b-12d3-a456-426614174000"
+        val pendingDirectory = createEntry(root, pendingId)
+        initializeOutputMetadata(pendingDirectory, pendingId, 1, 1L, pendingEntryId)
+        rewriteOutputMetadata(pendingDirectory, pendingId, pendingEntryId, 1) {
+            it.copy(
+                pdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/1",
+                        treeUri = null,
+                        displayName = "scan.pdf",
+                        mimeType = "application/pdf",
+                        ownerPackageName = "com.majkeylab.scanit.internal",
+                        byteLength = 1L,
+                        sha256 = "00".repeat(32),
+                        pending = true,
+                    ),
+            )
+        }
+        assertTrue(pendingDirectory.setLastModified(1L))
+        createEntry(root, "Scan_newer").apply { assertTrue(setLastModified(2L)) }
+
+        val listed = listRecentScansInRoot(root, maxEntries = 1)
+
+        assertEquals(listOf(pendingId), listed.map(RecentScan::cacheId))
+        assertTrue(pendingDirectory.isDirectory)
     }
 
     @Test
