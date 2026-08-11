@@ -9,7 +9,7 @@ param(
 
     [switch]$AllowUnsigned,
 
-    [string]$SdkRoot = $env:ANDROID_HOME,
+    [string]$SdkRoot,
 
     [string]$BundletoolPath
 )
@@ -22,6 +22,7 @@ $expectedVersionCode = "5"
 $expectedMinSdk = "35"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
+$sdkRootWasExplicit = $PSBoundParameters.ContainsKey("SdkRoot")
 
 switch ($Flavor) {
     "internal" {
@@ -56,12 +57,6 @@ if ($Flavor -eq "play" -and $artifactType -ne "aab") {
 function Get-AndroidBuildTool {
     param([Parameter(Mandatory)][string]$Name)
 
-    if ([string]::IsNullOrWhiteSpace($SdkRoot)) {
-        $script:SdkRoot = $env:ANDROID_SDK_ROOT
-    }
-    if ([string]::IsNullOrWhiteSpace($SdkRoot) -or -not (Test-Path -LiteralPath $SdkRoot -PathType Container)) {
-        throw "Set ANDROID_HOME or ANDROID_SDK_ROOT to a valid Android SDK directory."
-    }
     $buildToolsRoot = Join-Path $SdkRoot "build-tools"
     $buildTools =
         Get-ChildItem -LiteralPath $buildToolsRoot -Directory |
@@ -81,6 +76,36 @@ function Get-AndroidBuildTool {
         throw "Required Android tool is missing: $tool"
     }
     return $tool
+}
+
+function Resolve-AndroidSdkRoot {
+    if ($sdkRootWasExplicit) {
+        if (-not [string]::IsNullOrWhiteSpace($SdkRoot) -and (Test-Path -LiteralPath $SdkRoot -PathType Container)) {
+            return (Resolve-Path -LiteralPath $SdkRoot).Path
+        }
+        throw "The explicit Android SDK directory is invalid: $SdkRoot"
+    }
+
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $localProperties = Join-Path $projectRoot "local.properties"
+    if (Test-Path -LiteralPath $localProperties -PathType Leaf) {
+        foreach ($line in Get-Content -LiteralPath $localProperties) {
+            $match = [regex]::Match($line, '^\s*sdk\.dir\s*=\s*(.+?)\s*$')
+            if ($match.Success) {
+                $localSdkRoot = $match.Groups[1].Value.Replace('\:', ':').Replace('\\', '\')
+                $candidates += $localSdkRoot
+                break
+            }
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Container)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Set ANDROID_HOME or ANDROID_SDK_ROOT, or add sdk.dir to local.properties."
 }
 
 function Get-Bundletool {
@@ -219,6 +244,7 @@ function Assert-Metadata {
 $facts = Get-ArchiveFacts -Path $artifact
 $signatureStatus = "signed"
 if ($artifactType -eq "apk") {
+    $SdkRoot = Resolve-AndroidSdkRoot
     $aapt2 = Get-AndroidBuildTool -Name "aapt2"
     $zipalign = Get-AndroidBuildTool -Name "zipalign"
     $apksigner = Get-AndroidBuildTool -Name "apksigner"
