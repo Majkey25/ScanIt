@@ -177,6 +177,46 @@ internal fun shareCacheEntriesToPrune(children: List<File>, keep: Int): List<Fil
         ).drop(keep)
 }
 
+internal fun writeMarkedSourcePages(
+    sourcePages: List<File>,
+    workDirectory: File,
+    derivedBaseName: String,
+    selectedPageIndex: Int,
+    renderSelectedPage: (File, File) -> Unit,
+): List<File> {
+    require(sourcePages.isNotEmpty()) { "Marked scan has no source pages" }
+    require(selectedPageIndex in sourcePages.indices) { "Marked scan page is invalid" }
+    require(isSafeCacheId(derivedBaseName)) { "Marked scan name is unsafe" }
+    if (!workDirectory.isDirectory) throw IOException("Marked scan work directory is unavailable")
+    val created = mutableListOf<File>()
+    try {
+        return sourcePages.mapIndexed { index, source ->
+            if (!source.isFile) throw IOException("Marked scan source page is unavailable")
+            File(workDirectory, scanSourcePageFileName(derivedBaseName, index + 1)).also { target ->
+                if (target.exists()) throw IOException("Marked scan source target already exists")
+                created += target
+                if (index == selectedPageIndex) {
+                    renderSelectedPage(source, target)
+                } else {
+                    Files.createLink(target.toPath(), source.toPath())
+                }
+                if (!target.isFile || target.length() <= 0L) {
+                    throw IOException("Marked scan source page is incomplete")
+                }
+            }
+        }
+    } catch (failure: Throwable) {
+        created.asReversed().forEach { file ->
+            try {
+                Files.deleteIfExists(file.toPath())
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
+            }
+        }
+        throw failure
+    }
+}
+
 private data class ParsedCacheEntry(
     val directory: File,
     val recent: RecentScan,
@@ -824,6 +864,8 @@ private fun readCacheEntry(
                 lineageCacheId = appearanceMetadata?.lineageCacheId ?: cacheId,
                 parentCacheId = appearanceMetadata?.parentCacheId,
                 parentEntryId = appearanceMetadata?.parentEntryId,
+                restoreAppearanceSettings =
+                    appearanceMetadata?.restoreSettingsOnActivation ?: true,
             ),
         outputs = outputs,
         provisional = provisional,
@@ -1375,6 +1417,95 @@ internal class ScanStorage(
                 CachedScanBuild(
                     cached =
                         recentScanCache.publishProvisional(workDirectory, finalDirectory),
+                    pdf = pdfBuild,
+                )
+            } catch (failure: Throwable) {
+                deleteRecursivelyOrSuppress(workDirectory, failure)
+                throw failure
+            }
+        }
+
+    fun createMarkedVariant(
+        source: CachedScan,
+        selectedPageIndex: Int,
+        mark: Bitmap,
+        placement: MarkPlacement,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): CachedScanBuild =
+        storageTransactionLock.withLock {
+            requireCurrentOutputMetadata(source)
+            val appearanceSettings = source.appearanceSettings
+                ?: throw IOException("Cached scan appearance settings are unavailable")
+            if (
+                source.sourcePages.size != source.pages.size ||
+                    source.sourcePages.isEmpty() ||
+                    selectedPageIndex !in source.sourcePages.indices ||
+                    source.entryId == null
+            ) {
+                throw IOException("Cached scan has no immutable mark sources")
+            }
+            val appearance = appearanceSettings.selected()
+            val shareRoot = ensureShareRoot(shareCacheRoot())
+            val baseName = recentScanCache.nextDerivedCacheId(source.lineageCacheId, "mark")
+            val finalDirectory = File(shareRoot, baseName)
+            val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
+            if (!workDirectory.mkdir()) {
+                throw IOException("Pending marked cache directory could not be created")
+            }
+            try {
+                val sourcePages =
+                    writeMarkedSourcePages(
+                        sourcePages = source.sourcePages,
+                        workDirectory = workDirectory,
+                        derivedBaseName = baseName,
+                        selectedPageIndex = selectedPageIndex,
+                        renderSelectedPage = { input, output ->
+                            renderMarkedSourceJpeg(
+                                source = input,
+                                destination = output,
+                                mark = mark,
+                                placement = placement,
+                                isCancelled = isCancelled,
+                            )
+                        },
+                    )
+                val renderedPages =
+                    sourcePages.mapIndexed { index, page ->
+                        File(workDirectory, scanPageFileName(baseName, index + 1)).also { destination ->
+                            ScanAppearanceRenderer.renderJpeg(
+                                page,
+                                destination,
+                                appearance,
+                                isCancelled = isCancelled,
+                            )
+                        }
+                    }
+                val pdfBuild =
+                    buildScanPdfFromPages(
+                        output = File(workDirectory, scanPdfFileName(baseName)),
+                        sourcePages = sourcePages,
+                        renderedPages = renderedPages,
+                        appearance = appearance,
+                        target = source.pdfSizeTarget,
+                        isCancelled = isCancelled,
+                    )
+                writeScanAppearanceMetadata(
+                    directory = workDirectory,
+                    appearanceSettings = appearanceSettings,
+                    pdfSizeTarget = source.pdfSizeTarget,
+                    lineageCacheId = source.lineageCacheId,
+                    parentCacheId = source.baseName,
+                    parentEntryId = source.entryId,
+                    restoreSettingsOnActivation = false,
+                )
+                initializeOutputMetadata(
+                    directory = workDirectory,
+                    cacheId = baseName,
+                    pageCount = renderedPages.size,
+                    createdAtEpochMs = clock.millis(),
+                )
+                CachedScanBuild(
+                    cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
                     pdf = pdfBuild,
                 )
             } catch (failure: Throwable) {
@@ -1989,7 +2120,8 @@ internal class ScanStorage(
                 current.pdfSizeTarget != cached.pdfSizeTarget ||
                 current.lineageCacheId != cached.lineageCacheId ||
                 current.parentCacheId != cached.parentCacheId ||
-                current.parentEntryId != cached.parentEntryId
+                current.parentEntryId != cached.parentEntryId ||
+                current.restoreAppearanceSettings != cached.restoreAppearanceSettings
         ) {
             throw IOException("Cached scan belongs to another generation")
         }

@@ -28,6 +28,7 @@ internal object ScanAppearanceRenderer {
         destination: File,
         appearance: ScanAppearance,
         minimumSampleSize: Int = 1,
+        transformBitmap: (Bitmap) -> Unit = {},
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): RenderedJpeg {
         val input = source.canonicalFile
@@ -74,6 +75,8 @@ internal object ScanAppearanceRenderer {
         var staging: File? = null
         var failure: Throwable? = null
         try {
+            transformBitmap(bitmap)
+            throwIfCancelled(isCancelled)
             applyAppearance(bitmap, normalizedAppearance, isCancelled)
             throwIfCancelled(isCancelled)
 

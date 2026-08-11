@@ -9,7 +9,7 @@ import org.junit.Test
 
 class ScanAppearanceMetadataTest {
     @Test
-    fun v3MetadataRoundTripsFullNormalizedSettingsAndExactParent() {
+    fun v4MetadataRoundTripsFullNormalizedSettingsAndExactParent() {
         val settings =
             ScanAppearanceSettings(
                 colorMode = ScanColorMode.Grayscale,
@@ -40,6 +40,7 @@ class ScanAppearanceMetadataTest {
                 lineageCacheId = "Scan_origin",
                 parentCacheId = "Scan_parent",
                 parentEntryId = "00000000-0000-0000-0000-000000000001",
+                restoreSettingsOnActivation = true,
             ),
             decodeScanAppearanceMetadata(encoded),
         )
@@ -51,6 +52,36 @@ class ScanAppearanceMetadataTest {
                     .toByteArray(Charsets.US_ASCII),
             ),
         )
+    }
+
+    @Test
+    fun markedRevisionDoesNotAuthorizeRestoringGlobalAppearanceDefaults() {
+        val encoded =
+            encodeScanAppearanceMetadata(
+                ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale),
+                PdfSizeTarget.Mb5,
+                "Scan_origin",
+                parentCacheId = "Scan_parent",
+                parentEntryId = "00000000-0000-0000-0000-000000000001",
+                restoreSettingsOnActivation = false,
+            )
+
+        assertFalse(requireNotNull(decodeScanAppearanceMetadata(encoded)).restoreSettingsOnActivation)
+    }
+
+    @Test
+    fun v3MetadataRemainsReadableAndRestoresAppearanceDefaults() {
+        val decoded =
+            decodeScanAppearanceMetadata(
+                (
+                    "scanit-appearance-v3\ngrayscale\n80\n35\n100\n50\n5_mb\nScan_origin\n" +
+                        "derived\nScan_parent\n00000000-0000-0000-0000-000000000001\n"
+                ).toByteArray(Charsets.US_ASCII),
+            )
+
+        assertEquals(ScanColorMode.Grayscale, decoded?.appearanceSettings?.colorMode)
+        assertEquals("Scan_parent", decoded?.parentCacheId)
+        assertEquals(true, decoded?.restoreSettingsOnActivation)
     }
 
     @Test
@@ -88,6 +119,7 @@ class ScanAppearanceMetadataTest {
                     "Scan_origin",
                     parentCacheId = null,
                     parentEntryId = null,
+                    restoreSettingsOnActivation = true,
                 ),
                 readScanAppearanceMetadata(directory, "Scan_origin"),
             )
