@@ -237,6 +237,33 @@ Use the current official [Google Play preview-asset requirements](https://suppor
 - Screenshots must show the real current UI, use `12:12`, omit notifications, carrier identity, and battery percentage, and contain no private documents or third-party copyrighted sheet music.
 - Provide English and Czech alt text for every uploaded graphic.
 
+### Validated asset manifest
+
+- `assets/icon.png`: 512 × 512 RGBA PNG, no text or badge.
+- `assets/feature-graphic.png`: 1024 × 500 RGB PNG, no alpha.
+- `assets/en-US/phone/01-capture.png` through `06-settings.png`: six 1080 × 1920 RGB PNG screenshots.
+- `assets/cs-CZ/phone/01-capture.png` through `06-settings.png`: six 1080 × 1920 RGB PNG screenshots. Upload `02` through `06`; keep `01` as evidence because the emulator camera scene is less representative than the other five images.
+
+Upload screenshots in this order: capture, review, result, Recent scans, visual mark, Settings.
+
+English alt text:
+
+1. `ScanIt detects the edges of an original document before capture.`
+2. `Review, crop, enhance, and filter scanned pages before saving.`
+3. `ScanIt result with PDF sharing, image sharing, printing, and a new-scan action.`
+4. `Recent scans with a document preview, page count, file size, and actions.`
+5. `Visual mark editor placing a SAMPLE mark on a scanned page.`
+6. `Settings for language, scan appearance, filter intensity, shadows, and PDF size.`
+
+Czech alt text:
+
+1. `ScanIt rozpoznává okraje původního dokumentu před pořízením skenu.`
+2. `Kontrola, ořez, vylepšení a filtrování naskenovaných stran před uložením.`
+3. `Výsledek ve ScanIt se sdílením PDF a obrázků, tiskem a novým skenem.`
+4. `Nedávné skeny s náhledem dokumentu, počtem stran, velikostí a akcemi.`
+5. `Editor vizuální značky umisťuje značku SAMPLE na naskenovanou stranu.`
+6. `Nastavení jazyka, vzhledu skenu, intenzity filtru, stínů a velikosti PDF.`
+
 Do not show a Play badge, price/free claim, ranking, award, download call to
 action, donation, unfinished feature, or device mockup in the feature graphic.
 
@@ -252,6 +279,6 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 - [ ] English and Czech short descriptions remain within 80 characters.
 - [ ] Data Safety answers are rechecked against the exact runtime graph and current official guidance.
 - [ ] Developer identity and public contact fields use verified Play account data.
-- [ ] App icon, feature graphic, screenshots, and alt text pass the current asset rules.
+- [x] App icon, feature graphic, screenshots, and alt text pass the current asset rules.
 - [ ] No account credentials are entered in App access because none are required.
 - [ ] Closed/production submission happens only after the signed artifact and all declarations receive final account-holder review.
