@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 internal const val DEFAULT_ALBUM_NAME = "Scan to PDF"
+internal const val MAX_SCAN_PAGES = 20
 
 internal data class AppSettings(
     val savePdf: Boolean = true,
@@ -22,6 +23,8 @@ internal data class AppSettings(
     val pdfTreeUri: String? = null,
     val deletePdfAfterShare: Boolean = false,
     val deleteImagesAfterShare: Boolean = false,
+    val appearance: ScanAppearanceSettings = ScanAppearanceSettings(),
+    val pdfSizeTarget: PdfSizeTarget = PdfSizeTarget.Original,
 )
 
 internal enum class RecentDeleteTarget {
@@ -225,15 +228,39 @@ internal fun localizedDefaultEmailSubject(
 
 internal data class UiMessage(
     val resourceId: Int,
-    val formatArgs: List<Int> = emptyList(),
+    val formatArgs: List<Any> = emptyList(),
 )
+
+internal fun pdfSizeTargetWarning(
+    target: PdfSizeTarget,
+    bytes: Long,
+): UiMessage? {
+    val targetBytes = target.maxBytes ?: return null
+    if (bytes <= 0L || bytes <= targetBytes) return null
+    return UiMessage(
+        R.string.pdf_size_target_not_met,
+        listOf(
+            (targetBytes / PDF_DISPLAY_BYTES).toInt(),
+            bytes / PDF_DISPLAY_BYTES.toDouble(),
+        ),
+    )
+}
 
 internal data class CachedScan(
     val baseName: String,
     val pages: List<File>,
     val pdf: File,
     val entryId: String? = null,
+    val sourcePages: List<File> = emptyList(),
+    val appearance: ScanAppearance? = null,
+    val appearanceSettings: ScanAppearanceSettings? = null,
+    val pdfSizeTarget: PdfSizeTarget = PdfSizeTarget.Original,
+    val lineageCacheId: String = baseName,
+    val parentCacheId: String? = null,
+    val parentEntryId: String? = null,
 )
+
+private const val PDF_DISPLAY_BYTES = 1_000_000L
 
 internal data class SavedScan(
     val cached: CachedScan,
@@ -466,6 +493,8 @@ internal sealed interface ScreenState {
         val selectedPageIndex: Int = 0,
         val pagePreviewLoading: Boolean = false,
         val outputSaveInProgress: Boolean = false,
+        val appearanceApplyInProgress: Boolean = false,
+        val appearanceMessage: UiMessage? = null,
     ) : ScreenState
 
     data class Recent(
@@ -480,6 +509,7 @@ internal sealed interface ScreenState {
 internal enum class AppBackAction {
     CloseSettings,
     CollapseFileDetails,
+    CollapseAppearance,
     ShowRecent,
     LaunchScanner,
     Consume,
@@ -489,10 +519,13 @@ internal fun appBackAction(
     settingsOpen: Boolean,
     fileDetailsOpen: Boolean,
     state: ScreenState,
+    appearanceOpen: Boolean = false,
 ): AppBackAction =
     when {
         settingsOpen -> AppBackAction.CloseSettings
-        state is ScreenState.Result && state.outputSaveInProgress -> AppBackAction.Consume
+        state is ScreenState.Result &&
+            (state.outputSaveInProgress || state.appearanceApplyInProgress) -> AppBackAction.Consume
+        appearanceOpen && state is ScreenState.Result -> AppBackAction.CollapseAppearance
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent && state.deletionInProgress -> AppBackAction.Consume

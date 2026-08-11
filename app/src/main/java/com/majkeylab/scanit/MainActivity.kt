@@ -31,7 +31,9 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null else 1
+internal fun scannerPageLimit(multipage: Boolean): Int = if (multipage) MAX_SCAN_PAGES else 1
+
+internal fun isAcceptedScanPageCount(pageCount: Int): Boolean = pageCount in 1..MAX_SCAN_PAGES
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
@@ -79,6 +81,7 @@ class MainActivity : ComponentActivity() {
                 onShareImages = ::shareCurrentImages,
                 onPrint = ::printCurrentScan,
                 onSaveNow = viewModel::saveCurrentOutputs,
+                onApplyAppearance = viewModel::applyCurrentAppearance,
             )
         }
         lifecycleScope.launch {
@@ -128,11 +131,9 @@ class MainActivity : ComponentActivity() {
             val optionsBuilder =
                 GmsDocumentScannerOptions.Builder()
                     .setGalleryImportAllowed(settings.allowGallery)
-                    .setResultFormats(
-                        GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
-                        GmsDocumentScannerOptions.RESULT_FORMAT_PDF,
-                    ).setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-            scannerPageLimit(settings.multipage)?.let(optionsBuilder::setPageLimit)
+                    .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                    .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+            optionsBuilder.setPageLimit(scannerPageLimit(settings.multipage))
 
             GmsDocumentScanning.getClient(optionsBuilder.build())
                 .getStartScanIntent(this)
@@ -193,12 +194,7 @@ class MainActivity : ComponentActivity() {
                 viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
                 return
             }
-            val pdf = result.pdf
-            if (pdf == null) {
-                viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
-                return
-            }
-            viewModel.processScan(pages.map { it.imageUri }, pdf.uri)
+            viewModel.processScan(pages.map { it.imageUri })
         } catch (_: RuntimeException) {
             viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
         }

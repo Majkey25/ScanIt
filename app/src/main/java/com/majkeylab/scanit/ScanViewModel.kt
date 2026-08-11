@@ -19,6 +19,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +37,16 @@ private const val RESULT_PREVIEW_SIZE = 1024
 private const val PAGE_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+
+internal fun pdfSizeTargetWarning(result: ScanPdfBuildResult): UiMessage {
+    require(!result.targetMet && result.bytes > 0L) { "PDF warning requires an unmet target" }
+    return requireNotNull(pdfSizeTargetWarning(result.target, result.bytes)) {
+        "PDF warning requires an exceeded size target"
+    }
+}
+
+internal fun settingsSaveAllowed(state: ScreenState): Boolean =
+    (state as? ScreenState.Result)?.appearanceApplyInProgress != true
 
 internal fun scannerPreparationMayResume(
     navigationInitialized: Boolean,
@@ -193,14 +204,61 @@ private enum class CheckpointMutationResult {
 
 private data class CheckpointReadResult(
     val mutation: CheckpointMutationResult,
-    val cacheId: String? = null,
+    val checkpoint: ActiveResultCheckpoint? = null,
+    val authoritativeWasProvisional: Boolean = false,
 )
+
+internal class ActiveResultCleanupException(cause: Exception) :
+    IOException("Active result was cleared but provisional cleanup failed", cause)
+
+internal fun clearActiveResultAndReconcileProvisionals(
+    clearCheckpoint: () -> AuthorityMutationResult,
+    reconcileProvisionals: () -> Unit,
+): AuthorityMutationResult =
+    withActiveResultAuthority {
+        val cleared = clearCheckpoint()
+        if (cleared != AuthorityMutationResult.Applied) {
+            return@withActiveResultAuthority cleared
+        }
+        try {
+            reconcileProvisionals()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            throw ActiveResultCleanupException(failure)
+        }
+        AuthorityMutationResult.Applied
+    }
+
+internal fun keepCheckpointAfterRestoreFailure(authoritativeWasProvisional: Boolean): Boolean =
+    authoritativeWasProvisional
+
+internal fun checkpointRestoreSettings(
+    current: AppSettings,
+    authoritative: CachedScan?,
+    provisional: Boolean,
+): AppSettings {
+    if (!provisional) return current
+    val cached = checkNotNull(authoritative)
+    return current.copy(
+        appearance = checkNotNull(cached.appearanceSettings),
+        pdfSizeTarget = cached.pdfSizeTarget,
+    )
+}
 
 private data class OutputSaveResult(
     val scan: SavedScan?,
     val successful: Set<SavedOutputKind>,
     val warnings: List<UiMessage>,
 )
+
+internal fun automaticOutputTarget(settings: AppSettings): SaveNowTarget? =
+    when {
+        settings.savePdf && settings.saveImages -> SaveNowTarget.Both
+        settings.savePdf -> SaveNowTarget.Pdf
+        settings.saveImages -> SaveNowTarget.Images
+        else -> null
+    }
 
 private enum class ResultActivation {
     Applied,
@@ -251,9 +309,12 @@ internal class ScanViewModel(
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
+    private var appearanceApplyJob: Job? = null
     private var resultPreviewJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
+    private var activeResultAuthorityKnown = false
+    private var activeResultOwner: ActiveResultOwner? = null
 
     val state: StateFlow<ScreenState> = mutableState.asStateFlow()
     val scannerRequest: StateFlow<Long?> = mutableScannerRequest.asStateFlow()
@@ -327,18 +388,30 @@ internal class ScanViewModel(
         val localized =
             localizedDefaultEmailSubject(current.emailSubject, targetDefault, supportedDefaults)
         if (localized != current.emailSubject) {
-            saveSettings(current.copy(emailSubject = localized))
+            settingsStore.saveEmailSubject(localized)
+            mutableSettings.value = mutableSettings.value.copy(emailSubject = localized)
         }
     }
 
-    fun saveSettings(settings: AppSettings) {
+    fun saveSettings(settings: AppSettings): Boolean {
+        if (!settingsSaveAllowed(mutableState.value) || !activeResultAuthorityKnown) return false
+        val owner = activeResultOwner ?: return false
         val normalized =
             settings.copy(
                 albumName = normalizeAlbumName(settings.albumName),
                 pdfTreeUri = mutableSettings.value.pdfTreeUri,
             )
-        settingsStore.save(normalized)
+        val saved =
+            try {
+                settingsStore.trySave(normalized, owner)
+            } catch (_: IOException) {
+                return false
+            } catch (_: RuntimeException) {
+                return false
+            }
+        if (!settingsSaveApplied(saved)) return false
         mutableSettings.value = normalized
+        return true
     }
 
     fun setPdfTreeUri(uri: Uri, grantedFlags: Int): UiMessage? =
@@ -451,8 +524,12 @@ internal class ScanViewModel(
         }
     }
 
-    fun processScan(pageUris: List<Uri>, pdfUri: Uri): Boolean {
+    fun processScan(pageUris: List<Uri>): Boolean {
         completeScannerLaunch()
+        if (!isAcceptedScanPageCount(pageUris.size)) {
+            scannerResultFailed(UiMessage(R.string.scanner_result_error))
+            return false
+        }
         if (processingJob?.isActive == true) {
             mutableState.value =
                 ScreenState.Processing(
@@ -480,7 +557,15 @@ internal class ScanViewModel(
                     val result =
                         withContext(Dispatchers.IO) {
                             val settings = currentSettings()
-                            val cachedScan = storage.cacheScan(pages, pdfUri)
+                            val processingContext = currentCoroutineContext()
+                            val cacheBuild =
+                                storage.cacheScan(
+                                    pageUris = pages,
+                                    appearanceSettings = settings.appearance,
+                                    pdfSizeTarget = settings.pdfSizeTarget,
+                                    isCancelled = { !processingContext.isActive },
+                                )
+                            val cachedScan = cacheBuild.cached
                             cached = cachedScan
                             val thumbnail =
                                 storage.loadThumbnail(
@@ -488,6 +573,9 @@ internal class ScanViewModel(
                                     RESULT_PREVIEW_SIZE,
                                 )
                             val warnings = mutableListOf<UiMessage>()
+                            if (!cacheBuild.pdf.targetMet) {
+                                warnings += pdfSizeTargetWarning(cacheBuild.pdf)
+                            }
                             if (settings.saveImages) {
                                 try {
                                     galleryPages =
@@ -504,10 +592,9 @@ internal class ScanViewModel(
                             if (settings.savePdf) {
                                 try {
                                     val savedPdf =
-                                        storage.savePdf(
+                                        savePdfToCanonicalDestination(
                                             cachedScan,
                                             settings.albumName,
-                                            settings.pdfTreeUri,
                                         )
                                     savedPdfUri = savedPdf.uri
                                     savedPdfTreeUri = savedPdf.treeUri
@@ -616,7 +703,7 @@ internal class ScanViewModel(
 
     fun selectResultPage(selectedPageIndex: Int) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.outputSaveInProgress) return
+        if (current.outputSaveInProgress || current.appearanceApplyInProgress) return
         val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
         if (
             pageIndex == current.selectedPageIndex &&
@@ -670,8 +757,192 @@ internal class ScanViewModel(
             }
     }
 
+    fun applyCurrentAppearance(requested: ScanAppearanceSettings) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val cached = current.scan.cached
+        if (
+            current.outputSaveInProgress ||
+                current.appearanceApplyInProgress ||
+                current.pagePreviewLoading ||
+                appearanceApplyJob?.isActive == true ||
+                cached.sourcePages.size != cached.pages.size ||
+                cached.appearance == null ||
+                cached.entryId == null ||
+                !current.scan.outputMetadataValid
+        ) {
+            return
+        }
+        val previousSettings = currentSettings()
+        val normalized =
+            parseScanAppearanceSettings(
+                colorModeWireValue = requested.colorMode.wireValue,
+                colorIntensity = requested.colorIntensity,
+                grayscaleIntensity = requested.grayscaleIntensity,
+                blackWhiteIntensity = requested.blackWhiteIntensity,
+                shadows = requested.shadows,
+            )
+        if (
+            cached.appearanceSettings == normalized &&
+                cached.pdfSizeTarget == previousSettings.pdfSizeTarget
+        ) {
+            return
+        }
+        val generation = beginRouteMutation()
+        mutableState.value =
+            current.copy(
+                appearanceApplyInProgress = true,
+                appearanceMessage = null,
+            )
+        appearanceApplyJob =
+            viewModelScope.launch {
+                var created: CachedScan? = null
+                var checkpointCommitted = false
+                var pageIndex = current.selectedPageIndex
+                var thumbnail = current.thumbnail
+                var buildWarnings: List<UiMessage> = emptyList()
+                try {
+                    withContext(Dispatchers.IO) {
+                        val coroutineContext = currentCoroutineContext()
+                        val build =
+                            storage.createAppearanceVariant(
+                                source = cached,
+                                appearanceSettings = normalized,
+                                pdfSizeTarget = previousSettings.pdfSizeTarget,
+                                isCancelled = { !coroutineContext.isActive },
+                            )
+                        created = build.cached
+                        buildWarnings =
+                            if (build.pdf.targetMet) {
+                                emptyList()
+                            } else {
+                                listOf(pdfSizeTargetWarning(build.pdf))
+                            }
+                        pageIndex =
+                            resolvedPageIndex(
+                                current.selectedPageIndex,
+                                build.cached.pages.size,
+                            )
+                        thumbnail =
+                            storage.loadThumbnail(
+                                build.cached.pages[pageIndex],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                    }
+                    val completed =
+                        routeMutationMutex.withLock {
+                            val latest = mutableState.value as? ScreenState.Result
+                            if (
+                                !routeMutationGate.isCurrent(generation) ||
+                                    latest?.scan?.cached?.baseName != cached.baseName ||
+                                    latest.scan.cached.entryId != cached.entryId
+                            ) {
+                                return@withLock false
+                            }
+                            val candidate = checkNotNull(created)
+                            val commitResult =
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    commitAppliedAppearance(
+                                        normalized = normalized,
+                                        pdfSizeTarget = previousSettings.pdfSizeTarget,
+                                        targetCacheId = candidate.baseName,
+                                    )
+                                }
+                            if (commitResult != AppearanceCommitResult.Applied) {
+                                return@withLock false
+                            }
+                            checkpointCommitted = true
+                            mutableSettings.value =
+                                mutableSettings.value.copy(
+                                    appearance = normalized,
+                                    pdfSizeTarget = previousSettings.pdfSizeTarget,
+                                )
+                            val saved =
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    completeAppearanceCandidate(candidate, buildWarnings)
+                                }
+                            if (routeMutationGate.isCurrent(generation)) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = saved,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = pageIndex,
+                                    ),
+                                )
+                            }
+                            true
+                        }
+                    if (!completed && !checkpointCommitted) {
+                        created?.let { discardAppearanceVariantUnlessActive(it) }
+                        if (routeMutationGate.isCurrent(generation)) {
+                            val latest = mutableState.value as? ScreenState.Result
+                            if (
+                                latest?.scan?.cached?.baseName == cached.baseName &&
+                                    latest.scan.cached.entryId == cached.entryId
+                            ) {
+                                mutableState.value =
+                                    latest.copy(
+                                        appearanceApplyInProgress = false,
+                                        appearanceMessage =
+                                            UiMessage(R.string.appearance_apply_failed),
+                                    )
+                            }
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    if (!checkpointCommitted) {
+                        created?.let { discardAppearanceVariantUnlessActive(it) }
+                    }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (checkpointCommitted) {
+                        val recovered =
+                            try {
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    created?.let {
+                                        completeAppearanceCandidate(
+                                            it,
+                                            buildWarnings + UiMessage(R.string.state_update_failed),
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = recovered,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = pageIndex,
+                                    ),
+                                )
+                            } else if (routeMutationGate.isCurrent(generation)) {
+                                navigationInitialized = true
+                                persistRoute(ROUTE_FAILURE)
+                                mutableState.value =
+                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                            }
+                        }
+                    } else {
+                        created?.let { discardAppearanceVariantUnlessActive(it) }
+                        if (routeMutationGate.isCurrent(generation)) {
+                            mutableState.value =
+                                current.copy(
+                                    appearanceApplyInProgress = false,
+                                    appearanceMessage =
+                                        UiMessage(R.string.appearance_apply_failed),
+                                )
+                        }
+                    }
+                }
+            }
+    }
+
+
     fun saveCurrentOutputs(target: SaveNowTarget) {
         val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.appearanceApplyInProgress) return
         val entryId = current.scan.cached.entryId ?: return
         if (target !in saveNowTargets(current.scan)) return
         val action = resultSaveGate.begin(current.scan.cached.baseName, entryId) ?: return
@@ -895,12 +1166,32 @@ internal class ScanViewModel(
             viewModelScope.launch {
                 val checkpoint = readActiveResultCheckpoint(generation)
                 if (checkpoint.mutation != CheckpointMutationResult.Applied) return@launch
-                val destination = initialNavigation(savedRoute, savedCacheId, checkpoint.cacheId)
+                val activeCheckpoint = checkpoint.checkpoint
+                val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
+                val destination =
+                    initialNavigation(savedRoute, savedCacheId, activeCheckpoint?.cacheId)
                 when (destination.route) {
                     RestoredRoute.Result -> {
                         val cacheId = checkNotNull(destination.cacheId)
                         val result = loadCachedResult(cacheId)
                         if (result == null) {
+                            if (
+                                keepCheckpointAfterRestoreFailure(
+                                    authoritativeWasProvisional,
+                                )
+                            ) {
+                                routeMutationMutex.withLock {
+                                    if (routeMutationGate.isCurrent(generation)) {
+                                        navigationInitialized = true
+                                        persistRoute(ROUTE_FAILURE)
+                                        mutableState.value =
+                                            ScreenState.Failure(
+                                                UiMessage(R.string.state_update_failed),
+                                            )
+                                    }
+                                }
+                                return@launch
+                            }
                             if (
                                 clearCheckpointAndPublish(generation) {
                                     navigationInitialized = true
@@ -953,7 +1244,14 @@ internal class ScanViewModel(
         val savedPageIndex = savedStateHandle.get<Int>(RESULT_PAGE_INDEX_KEY)
         return try {
             withContext(Dispatchers.IO) {
-                val saved = storage.openSavedScan(cacheId) ?: return@withContext null
+                var saved = storage.openSavedScan(cacheId) ?: return@withContext null
+                if (storage.isProvisionalCacheEntry(saved.cached)) {
+                    saved =
+                        completeAppearanceCandidate(
+                            candidate = saved.cached,
+                            initialWarnings = saved.warnings,
+                        )
+                }
                 val pageIndex =
                     restoredResultPageIndex(
                         savedCacheId = savedResultCacheId,
@@ -987,7 +1285,15 @@ internal class ScanViewModel(
         routeMutationMutex.withLock {
             if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
             try {
-                withContext(Dispatchers.IO) { settingsStore.saveActiveResult(cacheId) }
+                val owner = activeResultOwner ?: return@withLock ResultActivation.Stale
+                val saved =
+                    withContext(Dispatchers.IO) {
+                        settingsStore.saveActiveResult(cacheId, owner)
+                    }
+                if (saved != AuthorityMutationResult.Applied) {
+                    return@withLock ResultActivation.Stale
+                }
+                activeResultOwner = owner.withCheckpoint(ActiveResultCheckpoint(cacheId))
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: IOException) {
@@ -1006,8 +1312,15 @@ internal class ScanViewModel(
     ): ResultActivation {
         val cleared =
             try {
-                withContext(Dispatchers.IO) { settingsStore.clearActiveResult() }
-                true
+                val owner = activeResultOwner ?: return ResultActivation.Stale
+                val result =
+                    withContext(Dispatchers.IO) {
+                        settingsStore.clearActiveResult(owner)
+                    }
+                if (result == AuthorityMutationResult.Applied) {
+                    activeResultOwner = owner.withCheckpoint(null)
+                }
+                result == AuthorityMutationResult.Applied
             } catch (_: IOException) {
                 false
             }
@@ -1088,6 +1401,7 @@ internal class ScanViewModel(
     }
 
     private fun beginRouteMutation(): Long {
+        appearanceApplyJob?.cancel()
         resultSaveGate.invalidate()
         outputSaveJob?.cancel()
         recentActionGate.invalidate()
@@ -1097,11 +1411,54 @@ internal class ScanViewModel(
         return routeMutationGate.begin()
     }
 
+    private suspend fun discardAppearanceVariantUnlessActive(variant: CachedScan) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            val isActive =
+                try {
+                    settingsStore.activeResultCacheId() == variant.baseName
+                } catch (_: IOException) {
+                    true
+                } catch (_: RuntimeException) {
+                    true
+                }
+            if (!isActive) {
+                try {
+                    storage.deleteProvisionalCacheEntry(variant)
+                } catch (_: IOException) {
+                    // Keep an ambiguous candidate for startup reconciliation.
+                } catch (_: SecurityException) {
+                    // Keep an ambiguous candidate for startup reconciliation.
+                } catch (_: IllegalArgumentException) {
+                    // Keep an ambiguous candidate for startup reconciliation.
+                }
+            }
+        }
+    }
+
+    private fun commitAppliedAppearance(
+        normalized: ScanAppearanceSettings,
+        pdfSizeTarget: PdfSizeTarget,
+        targetCacheId: String,
+    ): AppearanceCommitResult {
+        val owner = activeResultOwner ?: return AppearanceCommitResult.Stale
+        val result =
+            settingsStore.saveAppliedAppearanceAndActiveResult(
+                normalized,
+                pdfSizeTarget,
+                targetCacheId,
+                owner,
+            )
+        if (result == AppearanceCommitResult.Applied) {
+            activeResultOwner = owner.withCheckpoint(ActiveResultCheckpoint(targetCacheId))
+        }
+        return result
+    }
+
     private suspend fun saveCurrentOutputs(
         scan: SavedScan,
         target: SaveNowTarget,
+        settings: AppSettings = currentSettings(),
     ): OutputSaveResult {
-        val settings = currentSettings()
         val successful = mutableSetOf<SavedOutputKind>()
         val warnings = mutableListOf<UiMessage>()
         if (target == SaveNowTarget.Images || target == SaveNowTarget.Both) {
@@ -1119,8 +1476,7 @@ internal class ScanViewModel(
         currentCoroutineContext().ensureActive()
         if (target == SaveNowTarget.Pdf || target == SaveNowTarget.Both) {
             try {
-                val saved =
-                    storage.savePdf(scan.cached, settings.albumName, settings.pdfTreeUri)
+                val saved = savePdfToCanonicalDestination(scan.cached, settings.albumName)
                 successful += SavedOutputKind.Pdf
                 saved.warning?.let(warnings::add)
             } catch (cancellation: CancellationException) {
@@ -1144,17 +1500,101 @@ internal class ScanViewModel(
         )
     }
 
+    private fun savePdfToCanonicalDestination(
+        cached: CachedScan,
+        albumName: String,
+    ): SavedPdfOutput =
+        withStorageTransaction {
+            storage.savePdf(cached, albumName, canonicalPdfTreeUri(settingsStore))
+        }
+
+    private suspend fun completeAppearanceCandidate(
+        candidate: CachedScan,
+        initialWarnings: List<UiMessage>,
+    ): SavedScan {
+        val owner = activeResultOwner
+            ?: throw IOException("Active result authority is unavailable")
+        val activated =
+            withActiveResultAuthority {
+                if (!settingsStore.ownsActiveResult(owner)) {
+                    throw IOException("Active result checkpoint ownership changed")
+                }
+                if (storage.isProvisionalCacheEntry(candidate)) {
+                    val appearance = candidate.appearanceSettings
+                        ?: throw IOException("Appearance authority metadata is unavailable")
+                    if (
+                        settingsStore.restoreAppearanceAuthority(
+                            appearance,
+                            candidate.pdfSizeTarget,
+                            owner,
+                        ) != AuthorityMutationResult.Applied
+                    ) {
+                        throw IOException("Appearance authority could not be repaired")
+                    }
+                    storage.activateCheckpointProvisional(candidate)
+                } else {
+                    candidate
+                }
+            }
+        val saved =
+            storage.openSavedScan(activated.baseName)
+                ?: throw IOException("Cached scan output metadata is unavailable")
+        return saved.copy(warnings = (initialWarnings + saved.warnings).distinct())
+    }
+
     private suspend fun readActiveResultCheckpoint(generation: Long): CheckpointReadResult =
         routeMutationMutex.withLock {
             if (!routeMutationGate.isCurrent(generation)) {
                 return@withLock CheckpointReadResult(CheckpointMutationResult.Stale)
             }
-            val cacheId =
+            val restored =
                 try {
-                    withContext(Dispatchers.IO) { settingsStore.activeResultCacheId() }
+                    withContext(Dispatchers.IO) {
+                        settingsStore.withAuthoritySnapshot { snapshot ->
+                            val checkpoint = snapshot.checkpoint
+                            val authoritative =
+                                checkpoint?.cacheId?.let(storage::openCachedScan)
+                            val provisional =
+                                authoritative?.let(storage::isProvisionalCacheEntry) == true
+                            if (
+                                provisional &&
+                                    (authoritative.appearanceSettings == null ||
+                                        authoritative.parentCacheId == null ||
+                                        authoritative.parentEntryId == null)
+                            ) {
+                                throw IOException(
+                                    "Provisional checkpoint metadata is not authoritative",
+                                )
+                            }
+                            val effectiveSettings =
+                                checkpointRestoreSettings(
+                                    snapshot.settings,
+                                    authoritative,
+                                    provisional,
+                                )
+                            if (provisional) {
+                                    if (
+                                        settingsStore.restoreAppearanceAuthority(
+                                            effectiveSettings.appearance,
+                                            effectiveSettings.pdfSizeTarget,
+                                            snapshot.owner,
+                                        ) != AuthorityMutationResult.Applied
+                                    ) {
+                                        throw IOException("Appearance authority changed")
+                                    }
+                            }
+                            storage.reconcileProvisionalCacheEntries(authoritative)
+                            ActiveResultAuthoritySnapshot(
+                                effectiveSettings,
+                                checkpoint,
+                                snapshot.owner,
+                            ) to
+                                provisional
+                        }
+                    }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
-                } catch (_: IOException) {
+                } catch (_: Exception) {
                     if (routeMutationGate.isCurrent(generation)) {
                         persistRoute(ROUTE_FAILURE)
                         mutableState.value =
@@ -1165,7 +1605,15 @@ internal class ScanViewModel(
             if (!routeMutationGate.isCurrent(generation)) {
                 CheckpointReadResult(CheckpointMutationResult.Stale)
             } else {
-                CheckpointReadResult(CheckpointMutationResult.Applied, cacheId)
+                val (snapshot, provisional) = restored
+                activeResultOwner = snapshot.owner
+                activeResultAuthorityKnown = true
+                mutableSettings.value = snapshot.settings
+                CheckpointReadResult(
+                    mutation = CheckpointMutationResult.Applied,
+                    checkpoint = snapshot.checkpoint,
+                    authoritativeWasProvisional = provisional,
+                )
             }
         }
 
@@ -1181,10 +1629,37 @@ internal class ScanViewModel(
             if (!routeMutationGate.isCurrent(generation)) {
                 return@withLock CheckpointMutationResult.Stale
             }
+            val owner = activeResultOwner
+                ?: return@withLock CheckpointMutationResult.Stale
             try {
-                withContext(Dispatchers.IO) { settingsStore.clearActiveResult() }
+                val cleanup =
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        clearActiveResultAndReconcileProvisionals(
+                            clearCheckpoint = {
+                                val result = settingsStore.clearActiveResult(owner)
+                                if (result == AuthorityMutationResult.Applied) {
+                                    activeResultOwner = owner.withCheckpoint(null)
+                                }
+                                result
+                            },
+                            reconcileProvisionals = {
+                                storage.reconcileProvisionalCacheEntries(null)
+                            },
+                        )
+                    }
+                if (cleanup != AuthorityMutationResult.Applied) {
+                    return@withLock CheckpointMutationResult.Stale
+                }
             } catch (cancellation: CancellationException) {
                 throw cancellation
+            } catch (_: ActiveResultCleanupException) {
+                if (!routeMutationGate.isCurrent(generation)) {
+                    return@withLock CheckpointMutationResult.Stale
+                }
+                navigationInitialized = true
+                persistRoute(ROUTE_FAILURE)
+                mutableState.value = ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                return@withLock CheckpointMutationResult.Failed
             } catch (_: IOException) {
                 if (!routeMutationGate.isCurrent(generation)) {
                     return@withLock CheckpointMutationResult.Stale
@@ -1259,6 +1734,7 @@ internal class ScanViewModel(
                 current = current,
                 pending = null,
             )
+            mutableSettings.value = mutableSettings.value.copy(pdfTreeUri = current)
             null
         } catch (_: IOException) {
             UiMessage(R.string.pdf_tree_release_warning)

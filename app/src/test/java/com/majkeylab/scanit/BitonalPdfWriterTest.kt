@@ -5,6 +5,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import java.util.zip.InflaterInputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -91,7 +92,10 @@ class BitonalPdfWriterTest {
             assertTrue(text.contains("/Length 7 0 R"))
             assertEquals(streamLength(pdf, 4, 5), objectNumber(text, 5))
             assertEquals(streamLength(pdf, 6, 7), objectNumber(text, 7))
-            assertEquals("q\n8 0 0 2 0 0 cm\n/Im0 Do\nQ\n", stream(pdf, 6, 7).decodeToString())
+            assertEquals(
+                "q\n1.92 0 0 0.48 0 0 cm\n/Im0 Do\nQ\n",
+                stream(pdf, 6, 7).decodeToString(),
+            )
         }
 
     @Test
@@ -114,10 +118,33 @@ class BitonalPdfWriterTest {
             val pdf = output.readBytes()
             val text = pdf.toString(StandardCharsets.ISO_8859_1)
             assertTrue(text.contains("/Kids [3 0 R 8 0 R] /Count 2"))
-            assertTrue(text.contains("/MediaBox [0 0 8 2]"))
-            assertTrue(text.contains("/MediaBox [0 0 3 1]"))
+            assertTrue(text.contains("/MediaBox [0 0 1.92 0.48]"))
+            assertTrue(text.contains("/MediaBox [0 0 0.72 0.24]"))
             assertArrayEquals(byteArrayOf(0x00, 0xff.toByte()), inflatedImage(pdf, 4, 5))
             assertArrayEquals(byteArrayOf(0xff.toByte()), inflatedImage(pdf, 9, 10))
+        }
+
+    @Test
+    fun downsampledBitonalImageKeepsOriginalPhysicalPageSize() =
+        withTempDirectory { directory ->
+            val output = File(directory, "physical.pdf")
+
+            BitonalPdfWriter.write(
+                output,
+                listOf(
+                    BitonalPdfPage(
+                        width = 4,
+                        height = 1,
+                        physicalWidthPixels = 8,
+                        physicalHeightPixels = 2,
+                    ) { _, pixels -> pixels.fill(WHITE) },
+                ),
+            )
+
+            val text = output.readText(StandardCharsets.ISO_8859_1)
+            assertTrue(text.contains("/Width 4 /Height 1"))
+            assertTrue(text.contains("/MediaBox [0 0 1.92 0.48]"))
+            assertTrue(text.contains("q\n1.92 0 0 0.48 0 0 cm\n/Im0 Do\nQ\n"))
         }
 
     @Test
@@ -175,6 +202,71 @@ class BitonalPdfWriterTest {
         }
 
     @Test
+    fun pageCompletionRunsAfterSuccessfulAndFailedRows() =
+        withTempDirectory { directory ->
+            var completed = 0
+            BitonalPdfWriter.write(
+                File(directory, "success.pdf"),
+                listOf(
+                    BitonalPdfPage(
+                        width = 1,
+                        height = 1,
+                        readRow = { _, pixels -> pixels[0] = WHITE },
+                        onComplete = { completed++ },
+                    ),
+                ),
+            )
+            try {
+                BitonalPdfWriter.write(
+                    File(directory, "failure.pdf"),
+                    listOf(
+                        BitonalPdfPage(
+                            width = 1,
+                            height = 1,
+                            readRow = { _, _ -> throw IOException("failure") },
+                            onComplete = { completed++ },
+                        ),
+                    ),
+                )
+                fail("Expected row failure")
+            } catch (_: IOException) {}
+
+            assertEquals(2, completed)
+        }
+
+    @Test
+    fun cancellationDuringRowsCleansStagingAndCompletesActivePageOnce() =
+        withTempDirectory { directory ->
+            val output = File(directory, "cancelled.pdf")
+            var rowsRead = 0
+            var completed = 0
+
+            try {
+                BitonalPdfWriter.write(
+                    output,
+                    listOf(
+                        BitonalPdfPage(
+                            width = 8,
+                            height = 3,
+                            readRow = { _, pixels ->
+                                rowsRead++
+                                pixels.fill(WHITE)
+                            },
+                            onComplete = { completed++ },
+                        ),
+                    ),
+                    isCancelled = { rowsRead >= 1 },
+                )
+                fail("Expected cancellation")
+            } catch (_: CancellationException) {}
+
+            assertEquals(1, rowsRead)
+            assertEquals(1, completed)
+            assertFalse(output.exists())
+            assertTrue(directory.listFiles()?.isEmpty() == true)
+        }
+
+    @Test
     fun destinationCreatedWhileWritingIsNotOverwritten() =
         withTempDirectory { directory ->
             val output = File(directory, "raced.pdf")
@@ -200,8 +292,8 @@ class BitonalPdfWriterTest {
     @Test
     fun oversizedWidthIsRejectedBeforeCreatingFiles() {
         assertWriteRejected(
-            listOf(BitonalPdfPage(width = 3509, height = 1) { _, _ -> fail("Row read") }),
-            "Page width exceeds 3508 pixels",
+            listOf(BitonalPdfPage(width = 6001, height = 1) { _, _ -> fail("Row read") }),
+            "Page width exceeds 6000 pixels",
         )
     }
 
@@ -224,16 +316,16 @@ class BitonalPdfWriterTest {
     @Test
     fun oversizedHeightIsRejectedBeforeCreatingFiles() {
         assertWriteRejected(
-            listOf(BitonalPdfPage(width = 1, height = 3509) { _, _ -> fail("Row read") }),
-            "Page height exceeds 3508 pixels",
+            listOf(BitonalPdfPage(width = 1, height = 6001) { _, _ -> fail("Row read") }),
+            "Page height exceeds 6000 pixels",
         )
     }
 
     @Test
     fun oversizedPixelProductIsRejectedBeforeCreatingFiles() {
         assertWriteRejected(
-            listOf(BitonalPdfPage(width = 3509, height = 3509) { _, _ -> fail("Row read") }),
-            "Page pixel count exceeds 12306064",
+            listOf(BitonalPdfPage(width = 4000, height = 4000) { _, _ -> fail("Row read") }),
+            "Page pixel count exceeds 12000000",
         )
     }
 
@@ -241,14 +333,14 @@ class BitonalPdfWriterTest {
     fun oversizedPageCountIsRejectedBeforeCreatingFiles() {
         val page = BitonalPdfPage(width = 1, height = 1) { _, _ -> fail("Row read") }
         assertWriteRejected(
-            List(26_214) { page },
-            "PDF page count exceeds 26213",
+            List(MAX_SCAN_PAGES + 1) { page },
+            "PDF page count exceeds $MAX_SCAN_PAGES",
         )
     }
 
     @Test
-    fun maximumSafePageCountKeepsObjectTableWithinBudget() {
-        assertEquals(131_067, bitonalPdfObjectCount(26_213))
+    fun maximumScanPageCountKeepsObjectTableBounded() {
+        assertEquals(102, bitonalPdfObjectCount(MAX_SCAN_PAGES))
     }
 
     @Test

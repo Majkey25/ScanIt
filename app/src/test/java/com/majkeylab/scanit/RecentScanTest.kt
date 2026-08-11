@@ -17,6 +17,20 @@ import org.junit.Test
 
 class RecentScanTest {
     @Test
+    fun sourcePageFileNamesAreStableAndRejectInvalidInput() {
+        val id = "Scan_2026-08-09_10-20-30"
+
+        assertEquals("${id}_source_01.jpg", scanSourcePageFileName(id, 1))
+        assertEquals("${id}_source_12.jpg", scanSourcePageFileName(id, 12))
+        assertThrows(IllegalArgumentException::class.java) {
+            scanSourcePageFileName(id, 0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            scanSourcePageFileName("", 1)
+        }
+    }
+
+    @Test
     fun validFolderProducesRecentEntryAndOrderedCachedScan() = withShareRoot { root ->
         val id = "Scan_2026-08-09_10-20-30"
         val directory = createEntry(root, id, pageCount = 10, pdfBytes = byteArrayOf(1, 2, 3))
@@ -33,10 +47,63 @@ class RecentScanTest {
         assertEquals("${id}_01.jpg", recent.firstPage.name)
         assertEquals((1..10).map { scanPageFileName(id, it) }, cached.pages.map(File::getName))
         assertEquals(scanPdfFileName(id), cached.pdf.name)
+        assertEquals(emptyList<File>(), cached.sourcePages)
         assertNull(recent.entryId)
         assertFalse(recent.hasSavedPdf)
         assertEquals(0, recent.savedImageCount)
         assertNull(cached.entryId)
+    }
+
+    @Test
+    fun completeSourceSetProducesOrderedImmutableSourcePages() = withShareRoot { root ->
+        val id = "Scan_with_sources"
+        createEntry(root, id, pageCount = 3, sourcePageCount = 3)
+
+        val cached = openCachedScanInRoot(root, id)!!
+
+        assertEquals(
+            (1..3).map { scanSourcePageFileName(id, it) },
+            cached.sourcePages.map(File::getName),
+        )
+        assertEquals(ScanAppearance(), cached.appearance)
+    }
+
+    @Test
+    fun sourceSetMustMatchEveryCanonicalPage() = withShareRoot { root ->
+        createEntry(root, "Scan_source_gap", pageCount = 3, sourcePageCount = 3).apply {
+            assertTrue(File(this, scanSourcePageFileName(name, 2)).delete())
+        }
+        createEntry(root, "Scan_source_short", pageCount = 3, sourcePageCount = 2)
+        createEntry(root, "Scan_source_extra", pageCount = 2, sourcePageCount = 3)
+
+        assertEquals(emptyList<RecentScan>(), listRecentScansInRoot(root))
+    }
+
+    @Test
+    fun malformedEmptyAndDuplicateSourceLookalikesAreRejected() = withShareRoot { root ->
+        val malformed = "Scan_source_malformed"
+        createEntry(root, malformed).apply {
+            File(this, "${malformed}_source_1.jpg").writeBytes(byteArrayOf(1))
+        }
+        val empty = "Scan_source_empty"
+        createEntry(root, empty).apply {
+            File(this, scanSourcePageFileName(empty, 1)).writeBytes(byteArrayOf())
+        }
+        val duplicate = "Scan_source_duplicate"
+        createEntry(root, duplicate, sourcePageCount = 1).apply {
+            File(this, "${duplicate}_source_001.jpg").writeBytes(byteArrayOf(1))
+        }
+
+        assertEquals(emptyList<RecentScan>(), listRecentScansInRoot(root))
+    }
+
+    @Test
+    fun deletingSourceBackedEntryRemovesItsWholeCache() = withShareRoot { root ->
+        val id = "Scan_source_delete"
+        val directory = createEntry(root, id, pageCount = 2, sourcePageCount = 2)
+
+        assertTrue(deleteRecentScanInRoot(root, id))
+        assertFalse(directory.exists())
     }
 
     @Test
@@ -275,6 +342,462 @@ class RecentScanTest {
         assertTrue(File(finalDirectory, OUTPUT_METADATA_FILE_NAME).isFile)
         assertEquals(listOf(finalId), listRecentScansInRoot(root).map(RecentScan::cacheId))
     }
+
+    @Test
+    fun provisionalPublishAtCapacityCanBeRolledBackWithoutPruningHistory() =
+        withShareRoot { root ->
+            val oldIds =
+                (1..8).map { index ->
+                    "Scan_old_$index".also { id ->
+                        createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                    }
+                }
+            val finalId = "Scan_candidate"
+            val pending = createEntry(root, ".pending-candidate", fileBaseName = finalId)
+            val cache = RecentScanCache(root)
+
+            val candidate = cache.publishProvisional(pending, File(root, finalId))
+
+            assertEquals(oldIds.toSet(), cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet())
+            assertEquals(finalId, cache.open(finalId)?.baseName)
+            assertTrue(cache.delete(candidate.baseName))
+            assertEquals(oldIds.toSet(), cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet())
+            assertEquals(oldIds.toSet(), root.listFiles()!!.map(File::getName).toSet())
+        }
+
+    @Test
+    fun provisionalDeleteRejectsAnotherEntryGeneration() =
+        withShareRoot { root ->
+            val finalId = "Scan_candidate"
+            val pending = createEntry(root, ".pending-candidate", fileBaseName = finalId)
+            val cache = RecentScanCache(root)
+            val candidate = cache.publishProvisional(pending, File(root, finalId))
+
+            assertFalse(
+                cache.deleteProvisional(
+                    finalId,
+                    "123e4567-e89b-12d3-a456-426614174000",
+                ),
+            )
+            assertTrue(File(root, finalId).isDirectory)
+            assertTrue(cache.deleteProvisional(finalId, checkNotNull(candidate.entryId)))
+            assertFalse(File(root, finalId).exists())
+        }
+
+    @Test
+    fun exactDeleteRejectsAnotherEntryGeneration() =
+        withShareRoot { root ->
+            val cacheId = "Scan_candidate"
+            val cache = RecentScanCache(root)
+            val candidate =
+                cache.publish(
+                    createEntry(root, ".pending-candidate", fileBaseName = cacheId),
+                    File(root, cacheId),
+                )
+            val entryId = checkNotNull(candidate.entryId)
+
+            assertFalse(
+                cache.deleteExact(
+                    cacheId,
+                    "123e4567-e89b-12d3-a456-426614174000",
+                ),
+            )
+            assertTrue(File(root, cacheId).isDirectory)
+            assertTrue(cache.deleteExact(cacheId, entryId))
+            assertFalse(File(root, cacheId).exists())
+        }
+
+    @Test
+    fun failedProvisionalPublishCleansPendingWithoutTouchingExistingFinalEntry() =
+        withShareRoot { root ->
+            val finalId = "Scan_existing"
+            val finalDirectory = createEntry(root, finalId)
+            val pending = createEntry(root, ".pending-candidate", fileBaseName = finalId)
+
+            assertThrows(IOException::class.java) {
+                RecentScanCache(root).publishProvisional(pending, finalDirectory)
+            }
+
+            assertFalse(pending.exists())
+            assertTrue(finalDirectory.isDirectory)
+            assertEquals(listOf(finalId), listRecentScansInRoot(root).map(RecentScan::cacheId))
+        }
+
+    @Test
+    fun activationRetiresOnlyRequestedRevisionAfterExplicitActivation() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val oldIds =
+                (1..8).map { index ->
+                    "Scan_old_$index".also { id ->
+                        createEntry(root, id).apply {
+                            assertTrue(setLastModified(index.toLong()))
+                            if (index == 1) {
+                                writeLegacyAppearanceMetadata(this, lineageId)
+                            }
+                        }
+                    }
+                }
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(root, ".pending-candidate", fileBaseName = finalId).apply {
+                    writeLegacyAppearanceMetadata(this, lineageId)
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+            assertEquals(oldIds.toSet(), cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet())
+
+            val activated =
+                cache.activateProvisional(
+                    candidateCacheId = finalId,
+                    retireCacheId = oldIds.first(),
+                    maxEntries = 8,
+                )
+
+            assertEquals(finalId, activated.baseName)
+            assertEquals(
+                (oldIds.drop(1) + finalId).toSet(),
+                cache.list(maxEntries = 8).map(RecentScan::cacheId).toSet(),
+            )
+            assertFalse(File(root, oldIds.first()).exists())
+        }
+
+    @Test
+    fun activationRejectsRetiringAnUnrelatedLineage() =
+        withShareRoot { root ->
+            val oldId = "Scan_unrelated"
+            createEntry(root, oldId)
+            val finalId = "Scan_candidate"
+            val pending = createEntry(root, ".pending-candidate", fileBaseName = finalId)
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+
+            assertThrows(IOException::class.java) {
+                cache.activateProvisional(
+                    candidateCacheId = finalId,
+                    retireCacheId = oldId,
+                )
+            }
+
+            assertTrue(cache.isProvisional(finalId))
+            assertTrue(File(root, oldId).isDirectory)
+            assertEquals(listOf(oldId), cache.list().map(RecentScan::cacheId))
+        }
+
+    @Test
+    fun failedActivationKeepsCandidateProvisionalAndRestoresEveryPriorEntry() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val oldIds =
+                (1..3).map { index ->
+                    "Scan_old_$index".also { id ->
+                        createEntry(root, id).apply {
+                            assertTrue(setLastModified(index.toLong()))
+                            if (index == 1) {
+                                writeLegacyAppearanceMetadata(this, lineageId)
+                            }
+                        }
+                    }
+                }
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(root, ".pending-candidate", fileBaseName = finalId).apply {
+                    writeLegacyAppearanceMetadata(this, lineageId)
+                }
+            var failActivationMove = true
+            val cache =
+                RecentScanCache(
+                    root,
+                    moveEntry = { source, target ->
+                        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                        if (
+                            failActivationMove &&
+                                target.parent.fileName.toString().startsWith(".pending-recovery-")
+                        ) {
+                            failActivationMove = false
+                            throw IOException("Forced activation move failure")
+                        }
+                    },
+                )
+            cache.publishProvisional(pending, File(root, finalId))
+
+            assertThrows(IOException::class.java) {
+                cache.activateProvisional(
+                    candidateCacheId = finalId,
+                    retireCacheId = oldIds.first(),
+                    maxEntries = 3,
+                )
+            }
+
+            assertTrue(File(root, finalId).isDirectory)
+            assertTrue(cache.isProvisional(finalId))
+            assertEquals(oldIds.toSet(), cache.list(maxEntries = 3).map(RecentScan::cacheId).toSet())
+            assertEquals(
+                oldIds.toSet() + finalId,
+                root.listFiles()!!.map(File::getName).toSet(),
+            )
+        }
+
+    @Test
+    fun startupRecoveryKeepsProvisionalCheckpointWhenActivationMarkerWasNotWritten() =
+        withShareRoot { root ->
+            val oldId = "Scan_old"
+            createEntry(root, oldId)
+            val finalId = "Scan_candidate"
+            val pending = createEntry(root, ".pending-candidate", fileBaseName = finalId)
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+            assertTrue(File(root, ".pending-recovery-$finalId").mkdir())
+
+            assertEquals(listOf(oldId), cache.list().map(RecentScan::cacheId))
+
+            assertTrue(cache.isProvisional(finalId))
+            assertEquals(finalId, cache.open(finalId)?.baseName)
+            assertFalse(File(root, ".pending-recovery-$finalId").exists())
+        }
+
+    @Test
+    fun checkpointRecoveryRetiresTheOnlyVisibleRevisionWithTheSameLineage() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val oldId = "Scan_old"
+            val oldEntryId = "00000000-0000-0000-0000-000000000001"
+            createEntry(root, oldId, sourcePageCount = 1).also { directory ->
+                initializeOutputMetadata(directory, oldId, 1, 1L, oldEntryId)
+                writeLegacyAppearanceMetadata(directory, lineageId)
+            }
+            val unrelatedId = "Scan_unrelated"
+            createEntry(root, unrelatedId)
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-candidate",
+                    sourcePageCount = 1,
+                    fileBaseName = finalId,
+                ).also { directory ->
+                    writeScanAppearanceMetadata(
+                        directory,
+                        ScanAppearanceSettings(),
+                        lineageCacheId = lineageId,
+                        parentCacheId = oldId,
+                        parentEntryId = oldEntryId,
+                    )
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+            assertTrue(cache.isProvisional(finalId))
+
+            val recovered = cache.activateCheckpointProvisional(finalId)
+
+            assertEquals(finalId, recovered.baseName)
+            assertFalse(cache.isProvisional(finalId))
+            assertEquals(
+                setOf(finalId, unrelatedId),
+                cache.list().map(RecentScan::cacheId).toSet(),
+            )
+            assertFalse(File(root, oldId).exists())
+            assertEquals(finalId, cache.activateCheckpointProvisional(finalId).baseName)
+        }
+
+    @Test
+    fun checkpointRecoveryActivatesWhenThePriorLineageRevisionIsAlreadyGone() =
+        withShareRoot { root ->
+            val unrelatedId = "Scan_unrelated"
+            createEntry(root, unrelatedId)
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-candidate",
+                    sourcePageCount = 1,
+                    fileBaseName = finalId,
+                ).apply {
+                    writeScanAppearanceMetadata(
+                        this,
+                        ScanAppearanceSettings(),
+                        lineageCacheId = "Scan_gone",
+                        parentCacheId = "Scan_gone",
+                        parentEntryId = "00000000-0000-0000-0000-000000000001",
+                    )
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+
+            val recovered = cache.activateCheckpointProvisional(finalId)
+
+            assertEquals(finalId, recovered.baseName)
+            assertFalse(cache.isProvisional(finalId))
+            assertEquals(
+                setOf(finalId, unrelatedId),
+                cache.list().map(RecentScan::cacheId).toSet(),
+            )
+        }
+
+    @Test
+    fun checkpointRecoveryRetiresOnlyExactUnsavedParentAndKeepsSavedHistory() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val savedId = "Scan_saved"
+            val savedEntryId = "00000000-0000-0000-0000-000000000001"
+            createEntry(root, savedId, sourcePageCount = 1).apply {
+                initializeOutputMetadata(this, savedId, 1, 1L, savedEntryId)
+                rewriteOutputMetadata(this, savedId, savedEntryId, 1) {
+                    it.copy(
+                        images =
+                            listOf(
+                                ImageOutputRef(
+                                    page = 1,
+                                    uri = "content://media/external/images/media/1",
+                                ),
+                            ),
+                    )
+                }
+                writeLegacyAppearanceMetadata(this, lineageId)
+            }
+            val parentId = "Scan_parent"
+            val parentEntryId = "00000000-0000-0000-0000-000000000002"
+            createEntry(root, parentId, sourcePageCount = 1).apply {
+                initializeOutputMetadata(this, parentId, 1, 2L, parentEntryId)
+                writeLegacyAppearanceMetadata(
+                    this,
+                    lineageId,
+                    ScanAppearance(colorMode = ScanColorMode.Grayscale),
+                )
+            }
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-candidate",
+                    sourcePageCount = 1,
+                    fileBaseName = finalId,
+                ).apply {
+                    writeScanAppearanceMetadata(
+                        this,
+                        ScanAppearanceSettings(colorMode = ScanColorMode.Color),
+                        lineageCacheId = lineageId,
+                        parentCacheId = parentId,
+                        parentEntryId = parentEntryId,
+                    )
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+
+            val activated = cache.activateCheckpointProvisional(finalId)
+
+            assertEquals(finalId, activated.baseName)
+            assertFalse(cache.isProvisional(finalId))
+            assertFalse(File(root, parentId).exists())
+            assertTrue(File(root, savedId).isDirectory)
+            assertEquals(
+                setOf(savedId, finalId),
+                cache.list().map(RecentScan::cacheId).toSet(),
+            )
+        }
+
+    @Test
+    fun checkpointRecoveryPreservesParentWithAnyDurableRefOrStaleGeneration() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val parentId = "Scan_parent"
+            val parentEntryId = "00000000-0000-0000-0000-000000000001"
+            createEntry(root, parentId, sourcePageCount = 1).apply {
+                initializeOutputMetadata(this, parentId, 1, 1L, parentEntryId)
+                rewriteOutputMetadata(this, parentId, parentEntryId, 1) {
+                    it.copy(
+                        pdf = PdfOutputRef("content://media/external/downloads/1", null),
+                    )
+                }
+                writeLegacyAppearanceMetadata(this, lineageId)
+            }
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-candidate",
+                    sourcePageCount = 1,
+                    fileBaseName = finalId,
+                ).apply {
+                    writeScanAppearanceMetadata(
+                        this,
+                        ScanAppearanceSettings(),
+                        lineageCacheId = lineageId,
+                        parentCacheId = parentId,
+                        parentEntryId = parentEntryId,
+                    )
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+
+            assertEquals(finalId, cache.activateCheckpointProvisional(finalId).baseName)
+            assertTrue(File(root, parentId).isDirectory)
+            assertEquals(
+                setOf(parentId, finalId),
+                cache.list().map(RecentScan::cacheId).toSet(),
+            )
+        }
+
+    @Test
+    fun legacyV2ProvisionalCannotBecomeCheckpointAuthority() =
+        withShareRoot { root ->
+            val finalId = "Scan_candidate"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-candidate",
+                    sourcePageCount = 1,
+                    fileBaseName = finalId,
+                ).apply {
+                    File(this, SCAN_APPEARANCE_FILE_NAME).writeText(
+                        "scanit-appearance-v2\nblack_white\n100\n50\noriginal\n$finalId\n",
+                        Charsets.US_ASCII,
+                    )
+                }
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(pending, File(root, finalId))
+
+            assertThrows(IOException::class.java) {
+                cache.activateCheckpointProvisional(finalId)
+            }
+
+            assertTrue(cache.isProvisional(finalId))
+        }
+
+    @Test
+    fun provisionalReconciliationKeepsOnlyTheAuthoritativeCandidate() =
+        withShareRoot { root ->
+            val activeId = "Scan_active"
+            createEntry(root, activeId)
+            val authoritativeId = "Scan_authoritative"
+            val orphanId = "Scan_orphan"
+            val cache = RecentScanCache(root)
+            cache.publishProvisional(
+                createEntry(root, ".pending-authoritative", fileBaseName = authoritativeId),
+                File(root, authoritativeId),
+            )
+            cache.publishProvisional(
+                createEntry(root, ".pending-orphan", fileBaseName = orphanId),
+                File(root, orphanId),
+            )
+
+            assertThrows(IOException::class.java) {
+                cache.reconcileProvisionals(activeId)
+            }
+            assertTrue(File(root, authoritativeId).isDirectory)
+            assertTrue(File(root, orphanId).isDirectory)
+
+            cache.reconcileProvisionals(authoritativeId)
+
+            assertTrue(cache.isProvisional(authoritativeId))
+            assertFalse(File(root, orphanId).exists())
+            assertEquals(listOf(activeId), cache.list().map(RecentScan::cacheId))
+
+            cache.reconcileProvisionals(null)
+
+            assertFalse(File(root, authoritativeId).exists())
+            assertEquals(listOf(activeId), cache.list().map(RecentScan::cacheId))
+        }
 
     @Test
     fun pruningNeverDeletesDurableOutputsOutsideTheCache() = withShareRoot { root ->
@@ -635,6 +1158,7 @@ class RecentScanTest {
         root: File,
         directoryName: String,
         pageCount: Int = 1,
+        sourcePageCount: Int = 0,
         pdfBytes: ByteArray = byteArrayOf(1),
         fileBaseName: String = directoryName,
     ): File =
@@ -644,7 +1168,34 @@ class RecentScanTest {
             (pageCount downTo 1).forEach { page ->
                 File(this, scanPageFileName(fileBaseName, page)).writeBytes(byteArrayOf(page.toByte()))
             }
+            (sourcePageCount downTo 1).forEach { page ->
+                File(this, scanSourcePageFileName(fileBaseName, page))
+                    .writeBytes(byteArrayOf(page.toByte()))
+            }
+            if (sourcePageCount > 0) {
+                writeScanAppearanceMetadata(
+                    this,
+                    ScanAppearanceSettings(),
+                    lineageCacheId = fileBaseName,
+                )
+            }
         }
+
+    private fun writeLegacyAppearanceMetadata(
+        directory: File,
+        lineageCacheId: String,
+        appearance: ScanAppearance = ScanAppearance(),
+    ) {
+        File(directory, SCAN_APPEARANCE_FILE_NAME).writeText(
+            "scanit-appearance-v2\n" +
+                "${appearance.colorMode.wireValue}\n" +
+                "${appearance.intensity}\n" +
+                "${appearance.shadows}\n" +
+                "original\n" +
+                "$lineageCacheId\n",
+            Charsets.US_ASCII,
+        )
+    }
 
     private fun withShareRoot(block: (File) -> Unit) {
         val root = Files.createTempDirectory("recent-scans").toFile()

@@ -137,6 +137,20 @@ internal fun safMissingDocumentStatus(
 ): OutputDeleteStatus =
     if (rootExact && !documentIsChild) OutputDeleteStatus.Absent else OutputDeleteStatus.Failed
 
+internal fun safChildStructureIsValid(
+    sameAuthority: Boolean,
+    rootDocumentId: String,
+    returnedTreeDocumentId: String,
+    returnedDocumentId: String,
+    returnedUriIsCanonical: Boolean,
+): Boolean =
+    sameAuthority &&
+        rootDocumentId.isNotEmpty() &&
+        returnedTreeDocumentId == rootDocumentId &&
+        returnedDocumentId != rootDocumentId &&
+        returnedDocumentId.isNotEmpty() &&
+        returnedUriIsCanonical
+
 internal fun mediaDeleteSelectionArgs(expected: ExpectedMediaItem): Array<String> =
     arrayOf(
         expected.id.toString(),
@@ -360,30 +374,32 @@ internal fun reconcilePdfTreeGrants(
     context: Context,
     current: String?,
     live: Set<String>,
-): Boolean {
-    val resolver = context.contentResolver
-    val permissions = resolver.persistedUriPermissions.filter { DocumentsContract.isTreeUri(it.uri) }
-    val release =
-        pdfTreeGrantsToRelease(
-            persisted = permissions.mapTo(mutableSetOf()) { it.uri.toString() },
-            current = current,
-            live = live,
-        )
-    var releasedAll = true
-    permissions.filter { it.uri.toString() in release }.forEach { permission ->
-        var flags = 0
-        if (permission.isReadPermission) flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
-        if (permission.isWritePermission) flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
-            if (flags != 0) resolver.releasePersistableUriPermission(permission.uri, flags)
-        } catch (_: SecurityException) {
-            releasedAll = false
-        } catch (_: RuntimeException) {
-            releasedAll = false
+): Boolean =
+    withStorageTransaction {
+        val resolver = context.contentResolver
+        val permissions =
+            resolver.persistedUriPermissions.filter { DocumentsContract.isTreeUri(it.uri) }
+        val release =
+            pdfTreeGrantsToRelease(
+                persisted = permissions.mapTo(mutableSetOf()) { it.uri.toString() },
+                current = current,
+                live = live,
+            )
+        var releasedAll = true
+        permissions.filter { it.uri.toString() in release }.forEach { permission ->
+            var flags = 0
+            if (permission.isReadPermission) flags = flags or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            if (permission.isWritePermission) flags = flags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                if (flags != 0) resolver.releasePersistableUriPermission(permission.uri, flags)
+            } catch (_: SecurityException) {
+                releasedAll = false
+            } catch (_: RuntimeException) {
+                releasedAll = false
+            }
         }
+        releasedAll
     }
-    return releasedAll
-}
 
 internal class ExactOutputDeleter(private val context: Context) {
     private val resolver = context.contentResolver

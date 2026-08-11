@@ -31,6 +31,29 @@ class ScanAppearanceRendererTest {
         assertThrows(IllegalArgumentException::class.java) {
             sampledDimensionUpperBound(size = 1, sampleSize = 0)
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            appearanceDecodeSampleSize(width = 100, height = 100, minimumSampleSize = 3)
+        }
+    }
+
+    @Test
+    fun requestedPowerOfTwoSamplingCanReduceAPdfCandidateFurther() {
+        assertEquals(
+            4,
+            appearanceDecodeSampleSize(
+                width = 2_480,
+                height = 3_508,
+                minimumSampleSize = 4,
+            ),
+        )
+        assertEquals(
+            4,
+            appearanceDecodeSampleSize(
+                width = 12_000,
+                height = 9_000,
+                minimumSampleSize = 2,
+            ),
+        )
     }
 
     @Test

@@ -7,6 +7,7 @@ import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import java.util.zip.Deflater
 import java.util.zip.DeflaterOutputStream
 
@@ -14,12 +15,20 @@ import java.util.zip.DeflaterOutputStream
 internal class BitonalPdfPage(
     val width: Int,
     val height: Int,
+    val physicalWidthPixels: Int = width,
+    val physicalHeightPixels: Int = height,
+    internal val onComplete: () -> Unit = {},
     internal val readRow: (row: Int, grayscale: ByteArray) -> Unit,
 )
 
 internal object BitonalPdfWriter {
-    fun write(output: File, pages: List<BitonalPdfPage>) {
+    fun write(
+        output: File,
+        pages: List<BitonalPdfPage>,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ) {
         validatePages(pages)
+        throwIfBitonalPdfCancelled(isCancelled)
         val target = output.absoluteFile
         val parent = requireNotNull(target.parentFile) { "PDF destination must have a parent" }
         require(parent.isDirectory) { "PDF destination directory does not exist" }
@@ -28,9 +37,10 @@ internal object BitonalPdfWriter {
         var failure: Throwable? = null
         try {
             BufferedOutputStream(FileOutputStream(staging.toFile())).use { stream ->
-                writePdf(PdfOutput(stream), pages)
+                writePdf(PdfOutput(stream), pages, isCancelled)
             }
-            Files.createLink(target.toPath(), staging)
+            throwIfBitonalPdfCancelled(isCancelled)
+            publishStagedFileNoReplace(staging, target.toPath())
         } catch (throwable: Throwable) {
             failure = throwable
             throw throwable
@@ -43,7 +53,11 @@ internal object BitonalPdfWriter {
         }
     }
 
-    private fun writePdf(output: PdfOutput, pages: List<BitonalPdfPage>) {
+    private fun writePdf(
+        output: PdfOutput,
+        pages: List<BitonalPdfPage>,
+        isCancelled: () -> Boolean,
+    ) {
         val objectCount = bitonalPdfObjectCount(pages.size)
         val offsets = LongArray(Math.addExact(objectCount, 1))
         output.ascii("%PDF-1.4\n")
@@ -59,7 +73,8 @@ internal object BitonalPdfWriter {
         output.ascii("<< /Type /Pages /Kids [$kids] /Count ${pages.size} >>\nendobj\n")
 
         pages.forEachIndexed { index, page ->
-            writePage(output, offsets, index, page)
+            throwIfBitonalPdfCancelled(isCancelled)
+            writePage(output, offsets, index, page, isCancelled)
         }
 
         val xrefOffset = output.bytesWritten
@@ -79,16 +94,19 @@ internal object BitonalPdfWriter {
         offsets: LongArray,
         index: Int,
         page: BitonalPdfPage,
+        isCancelled: () -> Boolean,
     ) {
         val pageObject = pageObject(index)
         val imageObject = pageObject + 1
         val imageLengthObject = pageObject + 2
         val contentObject = pageObject + 3
         val contentLengthObject = pageObject + 4
+        val pageWidth = pdfPointsAt300Dpi(page.physicalWidthPixels)
+        val pageHeight = pdfPointsAt300Dpi(page.physicalHeightPixels)
 
         output.objectStart(pageObject, offsets)
         output.ascii(
-            "<< /Type /Page /Parent $PAGES_OBJECT 0 R /MediaBox [0 0 ${page.width} ${page.height}] " +
+            "<< /Type /Page /Parent $PAGES_OBJECT 0 R /MediaBox [0 0 $pageWidth $pageHeight] " +
                 "/Resources << /XObject << /Im0 $imageObject 0 R >> >> " +
                 "/Contents $contentObject 0 R >>\nendobj\n",
         )
@@ -100,7 +118,7 @@ internal object BitonalPdfWriter {
                 "/Length $imageLengthObject 0 R >>\nstream\n",
         )
         val imageStart = output.bytesWritten
-        writeCompressedRows(output, page)
+        writeCompressedRows(output, page, isCancelled)
         val imageLength = output.bytesWritten - imageStart
         output.ascii("\nendstream\nendobj\n")
         output.numberObject(imageLengthObject, imageLength, offsets)
@@ -108,28 +126,42 @@ internal object BitonalPdfWriter {
         output.objectStart(contentObject, offsets)
         output.ascii("<< /Length $contentLengthObject 0 R >>\nstream\n")
         val contentStart = output.bytesWritten
-        output.ascii("q\n${page.width} 0 0 ${page.height} 0 0 cm\n/Im0 Do\nQ\n")
+        output.ascii("q\n$pageWidth 0 0 $pageHeight 0 0 cm\n/Im0 Do\nQ\n")
         val contentLength = output.bytesWritten - contentStart
         output.ascii("endstream\nendobj\n")
         output.numberObject(contentLengthObject, contentLength, offsets)
     }
 
-    private fun writeCompressedRows(output: OutputStream, page: BitonalPdfPage) {
+    private fun writeCompressedRows(
+        output: OutputStream,
+        page: BitonalPdfPage,
+        isCancelled: () -> Boolean,
+    ) {
         val grayscale = ByteArray(page.width)
         val packed = ByteArray((page.width.toLong() + 7L).div(8L).toInt())
         val deflater = Deflater(Deflater.BEST_COMPRESSION, false)
         try {
             val compressed = DeflaterOutputStream(output, deflater, COMPRESSION_BUFFER_SIZE)
             repeat(page.height) { row ->
+                throwIfBitonalPdfCancelled(isCancelled)
                 grayscale.fill(WHITE)
                 page.readRow(row, grayscale)
                 packRow(grayscale, packed)
                 compressed.write(packed)
             }
+            throwIfBitonalPdfCancelled(isCancelled)
             compressed.finish()
         } finally {
-            deflater.end()
+            try {
+                deflater.end()
+            } finally {
+                page.onComplete()
+            }
         }
+    }
+
+    private fun throwIfBitonalPdfCancelled(isCancelled: () -> Boolean) {
+        if (isCancelled()) throw CancellationException("PDF build cancelled")
     }
 
     private fun packRow(grayscale: ByteArray, packed: ByteArray) {
@@ -150,18 +182,25 @@ internal object BitonalPdfWriter {
         pages.forEach { page ->
             require(page.width > 0) { "Page width must be positive" }
             require(page.height > 0) { "Page height must be positive" }
+            require(page.physicalWidthPixels > 0 && page.physicalHeightPixels > 0) {
+                "Physical page dimensions must be positive"
+            }
             require(page.width.toLong() * page.height <= MAX_PAGE_PIXELS) {
                 "Page pixel count exceeds $MAX_PAGE_PIXELS"
             }
             require(page.width <= MAX_PAGE_SIDE) { "Page width exceeds $MAX_PAGE_SIDE pixels" }
             require(page.height <= MAX_PAGE_SIDE) { "Page height exceeds $MAX_PAGE_SIDE pixels" }
+            require(
+                page.physicalWidthPixels <= MAX_PAGE_SIDE &&
+                    page.physicalHeightPixels <= MAX_PAGE_SIDE,
+            ) { "Physical page dimensions exceed $MAX_PAGE_SIDE pixels" }
         }
     }
 }
 
 internal fun bitonalPdfObjectCount(pageCount: Int): Int {
     require(pageCount > 0) { "PDF must contain at least one page" }
-    require(pageCount <= MAX_PAGE_COUNT) { "PDF page count exceeds $MAX_PAGE_COUNT" }
+    require(pageCount <= MAX_SCAN_PAGES) { "PDF page count exceeds $MAX_SCAN_PAGES" }
     return BASE_OBJECT_COUNT + pageCount * OBJECTS_PER_PAGE
 }
 
@@ -207,10 +246,6 @@ private const val BASE_OBJECT_COUNT = 2
 private const val FIRST_PAGE_OBJECT = 3
 private const val OBJECTS_PER_PAGE = 5
 private const val COMPRESSION_BUFFER_SIZE = 8192
-private const val OFFSET_TABLE_BUDGET_BYTES = 1024 * 1024
-private const val OFFSET_BYTES = 8
-private const val MAX_PAGE_COUNT =
-    (OFFSET_TABLE_BUDGET_BYTES / OFFSET_BYTES - BASE_OBJECT_COUNT - 1) / OBJECTS_PER_PAGE
-private const val MAX_PAGE_SIDE = 3508
+private const val MAX_PAGE_SIDE = 6_000
 private const val MAX_XREF_OFFSET = 9_999_999_999L
-private val MAX_PAGE_PIXELS = MAX_PAGE_SIDE.toLong() * MAX_PAGE_SIDE
+private const val MAX_PAGE_PIXELS = 12_000_000L

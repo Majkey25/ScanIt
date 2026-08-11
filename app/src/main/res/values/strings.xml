@@ -64,6 +64,7 @@
     <string name="saving">Saving</string>
     <string name="save_pdf">Save PDF automatically</string>
     <string name="save_images">Save images to Gallery</string>
+    <string name="automatic_saving_scope">Automatic saving applies to new scans. Save appearance edits from File details.</string>
     <string name="album_name">Gallery album name</string>
     <string name="default_pdf_folder">PDF: Default Downloads/Scan to PDF folder</string>
     <string name="custom_pdf_folder">PDF: Custom folder selected</string>
@@ -86,6 +87,23 @@
     <string name="privacy_policy">Privacy policy</string>
     <string name="third_party_notices">Third-party notices</string>
     <string name="settings_save_failed">Could not save settings.</string>
+    <string name="appearance">Appearance</string>
+    <string name="default_appearance">Default scan appearance</string>
+    <string name="filter_color">Color</string>
+    <string name="filter_grayscale">Grayscale</string>
+    <string name="filter_black_white">B&amp;W</string>
+    <string name="filter_intensity_percent">Filter intensity: %1$d%%</string>
+    <string name="shadows_percent">Shadows: %1$d%%</string>
+    <string name="edit_appearance">Edit appearance</string>
+    <string name="apply_appearance">Apply</string>
+    <string name="applying_appearance">Applying…</string>
+    <string name="appearance_apply_failed">Could not apply the appearance. The previous scan was kept.</string>
+    <string name="pdf_size">PDF size</string>
+    <string name="pdf_size_original">Original</string>
+    <string name="pdf_size_5_mb">5 MB</string>
+    <string name="pdf_size_10_mb">10 MB</string>
+    <string name="pdf_size_20_mb">20 MB</string>
+    <string name="pdf_size_hint">Size limits use measured, readable versions. If a limit cannot be reached, ScanIt keeps the smallest readable PDF and shows its actual size.</string>
 
     <string name="language">Language</string>
     <string name="language_system">System default</string>
@@ -102,6 +120,7 @@
     <string name="saving_document">Saving document…</string>
     <string name="images_save_failed">Images could not be saved to Gallery. The document can still be shared.</string>
     <string name="pdf_save_failed">The PDF could not be saved. The document can still be shared.</string>
+    <string name="pdf_size_target_not_met">The PDF could not fit under %1$d MB without making pages too small. Actual size: %2$.2f MB.</string>
     <string name="document_save_failed">Could not save the document. Try again.</string>
     <string name="document_save_partial_failed">Could not save the document. Some files may remain saved.</string>
     <string name="saf_fallback_warning">The selected folder is unavailable. The PDF was saved to Downloads.</string>
