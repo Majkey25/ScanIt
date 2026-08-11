@@ -1,13 +1,18 @@
 package com.majkeylab.scanit
 
+import android.content.SharedPreferences
 import java.io.File
+import java.io.IOException
+import java.lang.reflect.Proxy
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
-import java.util.Base64
-import org.junit.Assert.assertArrayEquals
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,11 +30,364 @@ class PureLogicTest {
                 emailSubject = "Scanned document",
                 emailBody = "",
                 pdfTreeUri = null,
-                aiEnabled = false,
-                aiConsent = false,
+                deletePdfAfterShare = false,
+                deleteImagesAfterShare = false,
             ),
             AppSettings(),
         )
+    }
+
+    @Test
+    fun recentDeleteChoicesUseOnlyExactDurableReferences() {
+        assertEquals(
+            listOf(RecentDeleteTarget.Pdf, RecentDeleteTarget.Images, RecentDeleteTarget.Both),
+            recentDeleteTargets(metadataValid = true, hasPdf = true, savedImageCount = 2),
+        )
+        assertEquals(
+            listOf(RecentDeleteTarget.Images),
+            recentDeleteTargets(metadataValid = true, hasPdf = false, savedImageCount = 1),
+        )
+        assertEquals(
+            listOf(RecentDeleteTarget.RemoveFromRecent),
+            recentDeleteTargets(metadataValid = false, hasPdf = true, savedImageCount = 2),
+        )
+    }
+
+    @Test
+    fun pendingCacheRemovalOffersOnlyARecentRetry() {
+        assertEquals(
+            listOf(RecentDeleteTarget.RemoveFromRecent),
+            recentDeleteTargets(
+                metadataValid = true,
+                hasPdf = false,
+                savedImageCount = 2,
+                removeRecentPending = true,
+            ),
+        )
+    }
+
+    @Test
+    fun outputDeleteReductionRemovesDeletedAndAbsentRefsButKeepsFailures() {
+        val metadata =
+            outputMetadata(
+                images =
+                    listOf(
+                        ImageOutputRef(1, "content://media/external/images/media/1"),
+                        ImageOutputRef(2, "content://media/external/images/media/2"),
+                    ),
+            ).copy(
+                pdf = PdfOutputRef("content://media/external/downloads/3", null),
+            )
+
+        val reduced =
+            reduceOutputDeletion(
+                metadata,
+                RecentDeleteTarget.Both,
+                mapOf(
+                    "content://media/external/downloads/3" to OutputDeleteStatus.Absent,
+                    "content://media/external/images/media/1" to OutputDeleteStatus.Deleted,
+                    "content://media/external/images/media/2" to OutputDeleteStatus.Failed,
+                ),
+            )
+
+        assertEquals(null, reduced.metadata.pdf)
+        assertEquals(listOf(metadata.images[1]), reduced.metadata.images)
+        assertFalse(reduced.allRequestedRemoved)
+    }
+
+    @Test
+    fun deleteAfterShareSettingsRoundTripAndWrongTypesFailClosed() {
+        val (preferences, values) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val enabled =
+            AppSettings(deletePdfAfterShare = true, deleteImagesAfterShare = true)
+
+        store.save(enabled)
+
+        assertTrue(store.load().deletePdfAfterShare)
+        assertTrue(store.load().deleteImagesAfterShare)
+
+        values["delete_pdf_after_share"] = "wrong"
+        values["delete_images_after_share"] = 1
+
+        assertFalse(store.load().deletePdfAfterShare)
+        assertFalse(store.load().deleteImagesAfterShare)
+    }
+
+    @Test
+    fun selectedShareCleanupQueueRetriesTransientFailureAndDrainsTerminalResults() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val first = ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf)
+        val second = ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Images)
+        var attempts = 0
+        var refreshes = 0
+
+        store.savePendingShareCleanup(first)
+        assertTrue(store.canSavePendingShareCleanup(second))
+        store.savePendingShareCleanup(second)
+        store.savePendingShareCleanup(first)
+        assertEquals(listOf(first, second), store.pendingShareCleanups())
+        assertEquals(
+            OutputDeleteOperationResult.Failed,
+            processPendingShareCleanup(
+                store,
+                delete = { attempts++; OutputDeleteOperationResult.Failed },
+                afterDelete = { refreshes++ },
+            )?.result,
+        )
+        assertEquals(listOf(first, second), store.pendingShareCleanups())
+        assertEquals(
+            OutputDeleteOperationResult.IdentityMismatch,
+            processPendingShareCleanup(
+                store,
+                delete = { attempts++; OutputDeleteOperationResult.IdentityMismatch },
+                afterDelete = { refreshes++ },
+            )?.result,
+        )
+        assertEquals(listOf(second), store.pendingShareCleanups())
+        assertEquals(
+            OutputDeleteOperationResult.Completed,
+            processPendingShareCleanup(
+                store,
+                delete = { attempts++; OutputDeleteOperationResult.Completed },
+                afterDelete = { refreshes++ },
+            )?.result,
+        )
+        assertTrue(store.pendingShareCleanups().isEmpty())
+        assertEquals(3, attempts)
+        assertEquals(3, refreshes)
+        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.Failed).warn)
+        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.IdentityMismatch).clear)
+        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.IdentityMismatch).warn)
+    }
+
+    @Test
+    fun selectedShareCleanupQueueIsBoundedAndMalformedValuesFailClosed() {
+        val (preferences, values) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        repeat(MAX_PENDING_SHARE_CLEANUPS) { index ->
+            store.savePendingShareCleanup(
+                ShareCleanupRequest(
+                    CACHE_ID,
+                    "00000000-0000-0000-0000-${(index + 1).toString().padStart(12, '0')}",
+                    ShareCleanupKind.Images,
+                ),
+            )
+        }
+        assertThrows(IOException::class.java) {
+            store.savePendingShareCleanup(
+                ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Pdf),
+            )
+        }
+        assertFalse(
+            store.canSavePendingShareCleanup(
+                ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Pdf),
+            ),
+        )
+        values["pending_share_cleanup"] = "1:$CACHE_ID:$ENTRY_ID:pdf\n1:../outside:$ENTRY_ID:pdf"
+        assertTrue(store.pendingShareCleanups().isEmpty())
+        val longCacheId = "x".repeat(129)
+        assertThrows(IllegalArgumentException::class.java) {
+            encodePendingShareCleanup(
+                ShareCleanupRequest(longCacheId, ENTRY_ID, ShareCleanupKind.Pdf),
+            )
+        }
+        values["pending_share_cleanup"] = "1:$longCacheId:$ENTRY_ID:pdf"
+        assertNull(store.pendingShareCleanup())
+    }
+
+    @Test
+    fun canonicalPdfTreeUriIgnoresAStaleStoreSnapshot() {
+        val (preferences, _) = inMemoryPreferences()
+        val stale = SettingsStore(preferences, "Scanned document")
+        val current = SettingsStore(preferences, "Scanned document")
+
+        stale.savePdfTreeUris(current = "content://docs/tree/old", pending = null)
+        current.savePdfTreeUris(current = "content://docs/tree/current", pending = null)
+        stale.save(AppSettings(pdfTreeUri = "content://docs/tree/old"))
+
+        assertEquals("content://docs/tree/current", canonicalPdfTreeUri(stale))
+    }
+
+    @Test
+    fun dirtyRefreshGateRunsAgainWhenARequestArrivesDuringRefresh() {
+        val gate = DirtyRefreshGate()
+
+        assertTrue(gate.request())
+        assertTrue(gate.consume())
+        assertFalse(gate.request())
+        assertTrue(gate.consume())
+        assertFalse(gate.consume())
+        assertTrue(gate.request())
+    }
+
+    @Test
+    fun settingsInstancesDoNotResurrectAReleasedPendingTreeGrant() {
+        val (preferences, _) = inMemoryPreferences()
+        val first = SettingsStore(preferences, "Scanned document")
+        val second = SettingsStore(preferences, "Scanned document")
+
+        first.savePdfTreeUris(
+            current = "content://docs/tree/current",
+            pending = "content://docs/tree/old",
+        )
+        second.save(AppSettings(pdfTreeUri = "content://docs/tree/current"))
+        assertEquals("content://docs/tree/old", first.pendingPdfTreeUri())
+
+        second.savePdfTreeUris(current = "content://docs/tree/current", pending = null)
+        first.save(AppSettings(pdfTreeUri = "content://docs/tree/current"))
+        assertNull(first.pendingPdfTreeUri())
+    }
+
+    @Test
+    fun pdfSaveFailureReportsSafAndProviderCleanupWarnings() {
+        val warning = UiMessage(R.string.saf_cleanup_warning)
+        val failure =
+            PdfSaveFailure(
+                warning,
+                IOException("metadata write failed"),
+                rollbackFailed = true,
+            )
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                warning,
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            pdfSaveFailureMessages(failure),
+        )
+    }
+
+    @Test
+    fun pdfSaveFailureOmitsPartialWarningAfterSuccessfulRollback() {
+        val warning = UiMessage(R.string.saf_cleanup_warning)
+
+        assertEquals(
+            listOf(UiMessage(R.string.pdf_save_failed), warning),
+            pdfSaveFailureMessages(PdfSaveFailure(warning, IOException("failed"))),
+        )
+    }
+
+    @Test
+    fun safCleanupWarningClaimsDownloadsOnlyAfterSuccessfulFallback() {
+        assertEquals(
+            null,
+            safFallbackWarning(cleanupFailed = false, savedToDownloads = false),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_fallback_warning),
+            safFallbackWarning(cleanupFailed = false, savedToDownloads = true),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_cleanup_warning),
+            safFallbackWarning(cleanupFailed = true, savedToDownloads = false),
+        )
+        assertEquals(
+            UiMessage(R.string.saf_incomplete_warning),
+            safFallbackWarning(cleanupFailed = true, savedToDownloads = true),
+        )
+    }
+
+    @Test
+    fun pdfSaveFailureMessagesAreDeduplicated() {
+        val warning = UiMessage(R.string.document_save_partial_failed)
+
+        assertEquals(
+            listOf(UiMessage(R.string.pdf_save_failed), warning),
+            pdfSaveFailureMessages(
+                PdfSaveFailure(warning, IOException("failed"), rollbackFailed = true),
+            ),
+        )
+    }
+
+    @Test
+    fun pdfCurrentPendingRowCleanupFailureIsReported() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { false }) {
+                    throw IOException("copy failed")
+                }
+            }
+        val warning = UiMessage(R.string.saf_cleanup_warning)
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                warning,
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            pdfSaveFailureMessages(PdfSaveFailure(warning, pendingFailure)),
+        )
+    }
+
+    @Test
+    fun imageCurrentPendingRowCleanupFailureIsReported() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { false }) {
+                    throw IOException("publish failed")
+                }
+            }
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            imageSaveFailureMessages(ImageSaveFailure(pendingFailure)),
+        )
+    }
+
+    @Test
+    fun currentPendingRowCleanupSuccessDoesNotReportPartialOutput() {
+        val pendingFailure =
+            assertThrows(PendingMediaFailure::class.java) {
+                pendingMediaWrite(rollback = { true }) {
+                    throw IOException("publish failed")
+                }
+            }
+
+        assertFalse(pendingFailure.rollbackFailed)
+        assertEquals(
+            listOf(UiMessage(R.string.images_save_failed)),
+            imageSaveFailureMessages(ImageSaveFailure(pendingFailure)),
+        )
+    }
+
+    @Test
+    fun imagePriorRowCleanupFailureIsReported() {
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+            ),
+            imageSaveFailureMessages(
+                ImageSaveFailure(IOException("metadata failed"), rollbackFailed = true),
+            ),
+        )
+    }
+
+    @Test
+    fun pendingMediaCancellationCleanupFailureIsSuppressedAndRethrown() {
+        val cancellation = CancellationException("cancelled")
+        val cleanupFailure = IOException("cleanup failed")
+
+        val thrown =
+            assertThrows(CancellationException::class.java) {
+                pendingMediaWrite(
+                    rollback = { failure ->
+                        failure.addSuppressed(cleanupFailure)
+                        false
+                    },
+                ) {
+                    throw cancellation
+                }
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(listOf(cleanupFailure), thrown.suppressed.toList())
     }
 
     @Test
@@ -99,6 +457,252 @@ class PureLogicTest {
     }
 
     @Test
+    fun completingScannerPreparationInvalidatesItsCallback() {
+        val gate = ScannerLaunchGate()
+        val preparing = gate.begin(processing = false)!!
+
+        gate.complete()
+
+        assertEquals(ScannerLaunchStage.Idle, gate.stage)
+        assertEquals(false, gate.markLaunched(preparing))
+        assertEquals(false, gate.fail(preparing))
+    }
+
+    @Test
+    fun recentActionGateRejectsShareAfterLaterAction() {
+        val gate = RecentActionGate()
+        val share = gate.begin("Scan_1", ENTRY_ID)
+
+        gate.invalidate()
+
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_1" to ENTRY_ID)))
+    }
+
+    @Test
+    fun recentActionGateRequiresCurrentRowGenerationIdentity() {
+        val gate = RecentActionGate()
+        val share = gate.begin("Scan_1", ENTRY_ID)
+
+        assertEquals(
+            true,
+            gate.isCurrent(share, listOf("Scan_1" to ENTRY_ID, "Scan_2" to null)),
+        )
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_1" to OTHER_ENTRY_ID)))
+        assertEquals(false, gate.isCurrent(share, listOf("Scan_2" to ENTRY_ID)))
+    }
+
+    @Test
+    fun invalidatedRecentDeletionCannotChangeTheNewScreen() {
+        val gate = RecentDeletionGate()
+        val deletion = gate.begin("Scan_1")
+
+        gate.invalidateCurrent()
+
+        assertEquals(false, gate.isCurrent(deletion))
+        gate.complete(deletion)
+    }
+
+    @Test
+    fun completingEarlierDeletionKeepsLaterDeletionCurrent() {
+        val gate = RecentDeletionGate()
+        val earlier = gate.begin("Scan_1")
+        val later = gate.begin("Scan_2")
+
+        gate.complete(earlier)
+
+        assertEquals(true, gate.isCurrent(later))
+    }
+
+    @Test
+    fun routeMutationGateRejectsEveryStaleCompletion() {
+        val gate = RouteMutationGate()
+        val first = gate.begin()
+        val second = gate.begin()
+
+        assertFalse(gate.isCurrent(first))
+        assertTrue(gate.isCurrent(second))
+
+        val third = gate.begin()
+
+        assertFalse(gate.isCurrent(second))
+        assertTrue(gate.isCurrent(third))
+    }
+
+    @Test
+    fun saveNowTargetMatrixOnlyOffersMissingCompleteOutputs() {
+        assertEquals(
+            listOf(SaveNowTarget.Pdf, SaveNowTarget.Images, SaveNowTarget.Both),
+            saveNowTargets(pdfMissing = true, savedImageCount = 0, pageCount = 2),
+        )
+        assertEquals(
+            listOf(SaveNowTarget.Images),
+            saveNowTargets(pdfMissing = false, savedImageCount = 0, pageCount = 2),
+        )
+        assertEquals(
+            listOf(SaveNowTarget.Pdf),
+            saveNowTargets(pdfMissing = true, savedImageCount = 2, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(pdfMissing = false, savedImageCount = 2, pageCount = 2),
+        )
+    }
+
+    @Test
+    fun partialImagesBlockImageTargetsButLeaveIndependentPdfAvailable() {
+        assertEquals(
+            listOf(SaveNowTarget.Pdf),
+            saveNowTargets(pdfMissing = true, savedImageCount = 1, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(pdfMissing = false, savedImageCount = 1, pageCount = 2),
+        )
+        assertEquals(
+            emptyList<SaveNowTarget>(),
+            saveNowTargets(pdfMissing = true, savedImageCount = 3, pageCount = 2),
+        )
+    }
+
+    @Test
+    fun saveNowTargetsFailClosedForLegacyOrUnreadableOutputMetadata() {
+        val legacy = savedScan(entryId = null, outputMetadataValid = false)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
+
+        assertEquals(emptyList<SaveNowTarget>(), saveNowTargets(legacy))
+        assertEquals(emptyList<SaveNowTarget>(), saveNowTargets(unreadable))
+    }
+
+    @Test
+    fun storagePolicyAllowsPdfButRejectsImageCreationForPartialMetadata() {
+        val partial =
+            outputMetadata(images = listOf(ImageOutputRef(1, "content://media/images/1")))
+
+        assertSame(partial, matchingOutputMetadata(partial, CACHE_ID, ENTRY_ID))
+        assertNull(matchingOutputMetadata(partial, "Scan_other", ENTRY_ID))
+        assertNull(matchingOutputMetadata(partial, CACHE_ID, OTHER_ENTRY_ID))
+        assertThrows(IOException::class.java) {
+            existingCompleteImagesForSave(partial, pageCount = 2)
+        }
+        assertNull(existingCompleteImagesForSave(outputMetadata(), pageCount = 2))
+        assertEquals(
+            completeImageRefs(),
+            existingCompleteImagesForSave(
+                outputMetadata(images = completeImageRefs()),
+                pageCount = 2,
+            ),
+        )
+    }
+
+    @Test
+    fun saveNowGateRejectsDoubleTapAndStaleResultCompletion() {
+        val gate = ResultSaveGate()
+        val action = gate.begin(CACHE_ID, ENTRY_ID)!!
+
+        assertNull(gate.begin(CACHE_ID, ENTRY_ID))
+        assertTrue(gate.isCurrent(action, CACHE_ID, ENTRY_ID))
+        assertFalse(gate.isCurrent(action, CACHE_ID, OTHER_ENTRY_ID))
+
+        gate.invalidate()
+
+        assertFalse(gate.isCurrent(action, CACHE_ID, ENTRY_ID))
+        assertTrue(gate.begin(CACHE_ID, ENTRY_ID)!!.generation > action.generation)
+    }
+
+    @Test
+    fun saveNowWarningMergeClearsOnlySuccessfulFormatFailure() {
+        val unrelated = UiMessage(R.string.saf_cleanup_warning)
+        val existing =
+            listOf(
+                UiMessage(R.string.pdf_save_failed),
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+                unrelated,
+            )
+
+        assertEquals(
+            listOf(
+                UiMessage(R.string.images_save_failed),
+                UiMessage(R.string.document_save_partial_failed),
+                unrelated,
+                UiMessage(R.string.saf_fallback_warning),
+            ),
+            mergeSaveNowWarnings(
+                existing,
+                successful = setOf(SavedOutputKind.Pdf),
+                reloadSucceeded = false,
+                added = listOf(UiMessage(R.string.saf_fallback_warning)),
+            ),
+        )
+        assertEquals(
+            existing,
+            mergeSaveNowWarnings(
+                existing,
+                successful = emptySet(),
+                reloadSucceeded = false,
+                added = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun exactReloadClearsStaleStateFailureAndRejectsAnotherGeneration() {
+        val action = ResultSaveAction(CACHE_ID, ENTRY_ID, generation = 1L)
+        val exact = savedScan(entryId = ENTRY_ID, outputMetadataValid = true)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
+        val replacement = savedScan(entryId = OTHER_ENTRY_ID, outputMetadataValid = true)
+
+        assertSame(exact, matchingSavedScan(exact, action))
+        assertNull(matchingSavedScan(unreadable, action))
+        assertNull(matchingSavedScan(replacement, action))
+        assertEquals(
+            emptyList<UiMessage>(),
+            mergeSaveNowWarnings(
+                existing =
+                    listOf(
+                        UiMessage(R.string.state_update_failed),
+                        UiMessage(R.string.pdf_save_failed),
+                    ),
+                successful = setOf(SavedOutputKind.Pdf),
+                reloadSucceeded = true,
+                added = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun backNavigationIsConsumedWhileResultOutputIsSaving() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+                outputSaveInProgress = true,
+            )
+
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun backNavigationIsConsumedWhileRecentDeletionIsRunning() {
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Recent(emptyList(), deletionInProgress = true),
+            ),
+        )
+    }
+
+    @Test
     fun restoredPreparingScannerLaunchCanResume() {
         val gate = ScannerLaunchGate(ScannerLaunchStage.Preparing)
 
@@ -115,6 +719,233 @@ class PureLogicTest {
         gate.complete()
         assertEquals(ScannerLaunchStage.Idle, gate.stage)
         assertEquals(true, gate.begin(processing = false) != null)
+    }
+
+    @Test
+    fun missingSavedRouteKeepsFreshLaunchScanFirst() {
+        assertEquals(RestoredRoute.Scanner, restoredRoute(null, null))
+    }
+
+    @Test
+    fun savedScannerRouteResumesScannerFlow() {
+        assertEquals(RestoredRoute.Scanner, restoredRoute("scanner", null))
+    }
+
+    @Test
+    fun malformedSavedRouteFallsBackToRecentWithoutLaunchingScanner() {
+        assertEquals(RestoredRoute.Recent, restoredRoute("unknown", "Scan_1"))
+    }
+
+    @Test
+    fun savedResultRouteRequiresItsCacheId() {
+        assertEquals("Result", restoredRoute("result", "Scan_1").name)
+        assertEquals(RestoredRoute.Recent, restoredRoute("result", null))
+        assertEquals(RestoredRoute.Recent, restoredRoute("result", ""))
+    }
+
+    @Test
+    fun savedResultStartsInNonInteractiveProcessingState() {
+        assertEquals(
+            ScreenState.Processing(
+                UiMessage(R.string.opening_document),
+                canNavigateBack = false,
+            ),
+            initialScreenState(RestoredRoute.Result),
+        )
+        assertEquals(ScreenState.Recent(emptyList()), initialScreenState(RestoredRoute.Recent))
+    }
+
+    @Test
+    fun coldNavigationStartsNonInteractiveUntilCheckpointPolicyResolves() {
+        assertEquals(
+            ScreenState.Processing(
+                UiMessage(R.string.starting_scanit),
+                canNavigateBack = false,
+            ),
+            initialScreenState(null),
+        )
+    }
+
+    @Test
+    fun activeResultCheckpointRoundTripsOnlySafeVersionedCacheId() {
+        val cacheId = "Scan_2026-08-09_13-47-50"
+
+        assertEquals(cacheId, decodeActiveResultCheckpoint(encodeActiveResultCheckpoint(cacheId)))
+        assertNull(decodeActiveResultCheckpoint(null))
+        assertNull(decodeActiveResultCheckpoint(""))
+        assertNull(decodeActiveResultCheckpoint("2:$cacheId"))
+        assertNull(decodeActiveResultCheckpoint("1:../outside"))
+        assertNull(decodeActiveResultCheckpoint("1:..\\outside"))
+        assertNull(decodeActiveResultCheckpoint("1:.hidden"))
+        assertNull(decodeActiveResultCheckpoint("1:C:outside"))
+        assertNull(decodeActiveResultCheckpoint("1:Scan\u0000outside"))
+        assertNull(decodeActiveResultCheckpoint("1:${"a".repeat(129)}"))
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeActiveResultCheckpoint("../outside")
+        }
+    }
+
+    @Test
+    fun durableActiveResultCheckpointPrecedesSavedRoute() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            initialNavigation(
+                savedRoute = "result",
+                savedCacheId = "Scan_saved",
+                activeResultCacheId = "Scan_durable",
+            ),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            initialNavigation(
+                savedRoute = "recent",
+                savedCacheId = null,
+                activeResultCacheId = "Scan_durable",
+            ),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            initialNavigation("scanner", null, "Scan_durable"),
+        )
+    }
+
+    @Test
+    fun absentCheckpointCannotRecreateSavedResult() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Recent, null),
+            initialNavigation("result", "Scan_saved", null),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Recent, null),
+            initialNavigation("result", null, null),
+        )
+    }
+
+    @Test
+    fun coldNavigationUsesOnlyValidDurableActiveResultCheckpoint() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            initialNavigation(null, null, "Scan_durable"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, null),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, "../outside"),
+        )
+        assertEquals(
+            InitialNavigation(RestoredRoute.Scanner, null),
+            initialNavigation(null, null, "a".repeat(129)),
+        )
+    }
+
+    @Test
+    fun scannerPreparationResumeUsesCurrentPersistedRoute() {
+        assertFalse(scannerPreparationMayResume(false, "scanner"))
+        assertTrue(scannerPreparationMayResume(true, "scanner"))
+        assertFalse(scannerPreparationMayResume(true, "result"))
+        assertFalse(scannerPreparationMayResume(true, "recent"))
+        assertFalse(scannerPreparationMayResume(true, null))
+    }
+
+    @Test
+    fun backNavigationUsesScannerRecentResultMap() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+            )
+
+        assertEquals(
+            AppBackAction.ShowRecent,
+            appBackAction(settingsOpen = false, fileDetailsOpen = false, state = result),
+        )
+        assertEquals(
+            AppBackAction.LaunchScanner,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Recent(emptyList()),
+            ),
+        )
+    }
+
+    @Test
+    fun backNavigationClosesOverlaysBeforeChangingResultRoute() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+            )
+
+        assertEquals(
+            AppBackAction.CloseSettings,
+            appBackAction(settingsOpen = true, fileDetailsOpen = true, state = result),
+        )
+        assertEquals(
+            AppBackAction.CollapseFileDetails,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun backNavigationConsumesReadyAndProcessingStates() {
+        assertEquals(
+            AppBackAction.ShowRecent,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = ScreenState.Ready,
+            ),
+        )
+        assertEquals(
+            AppBackAction.ShowRecent,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state =
+                    ScreenState.Processing(
+                        UiMessage(R.string.opening_document),
+                        canNavigateBack = true,
+                    ),
+            ),
+        )
+    }
+
+    @Test
+    fun backNavigationConsumesNonCancellableProcessingWithoutChangingRoute() {
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state =
+                    ScreenState.Processing(
+                        UiMessage(R.string.opening_document),
+                        canNavigateBack = false,
+                    ),
+            ),
+        )
+    }
+
+    @Test
+    fun obsoleteBackStackRoutesFallBackToRecent() {
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", "Scan_1"))
+        assertEquals(RestoredRoute.Recent, restoredRoute("recent_with_result_back", null))
+        assertEquals(RestoredRoute.Recent, restoredRoute("result_with_recent_back", "Scan_1"))
+        assertEquals(RestoredRoute.Recent, restoredRoute("result_with_recent_back", null))
     }
 
     @Test
@@ -158,145 +989,18 @@ class PureLogicTest {
     }
 
     @Test
-    fun validGeminiResponseUsesFinalModelOutputImage() {
-        val oldBytes =
-            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0x01, 0xff.toByte(), 0xd9.toByte())
-        val expected =
-            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0x02, 0xff.toByte(), 0xd9.toByte())
-        val old = Base64.getEncoder().encodeToString(oldBytes)
-        val current = Base64.getEncoder().encodeToString(expected)
-        val response =
-            """
-            {
-              "status": "completed",
-              "steps": [
-                {"type": "model_output", "content": [
-                  {"type": "image", "mime_type": "image/jpeg", "data": "$old"}
-                ]},
-                {"type": "thought"},
-                {"type": "model_output", "content": [
-                  {"type": "text", "text": "done"},
-                  {"type": "image", "mime_type": "image/jpeg", "data": "$current"}
-                ]}
-              ]
-            }
-            """.trimIndent()
-
-        assertArrayEquals(expected, parseGeminiImageResponse(response))
-    }
-
-    @Test
-    fun geminiResponseWithoutImageIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[{"type":"text","text":"none"}]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithInvalidBase64IsRejected() {
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = "not base64!"))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithNullImageDataIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[
-                {"type":"image","mime_type":"image/jpeg","data":null}
-              ]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithNonStringImageDataIsRejected() {
-        val response =
-            """
-            {"status":"completed","steps":[
-              {"type":"model_output","content":[
-                {"type":"image","mime_type":"image/jpeg","data":1234}
-              ]}
-            ]}
-            """.trimIndent()
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(response)
-        }
-    }
-
-    @Test
-    fun geminiResponseWithBase64NonJpegIsRejected() {
-        val data = Base64.getEncoder().encodeToString("not-jpeg".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = data))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithEmptyImageIsRejected() {
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(data = ""))
-        }
-    }
-
-    @Test
-    fun geminiResponseWithWrongMimeIsRejected() {
-        val data = Base64.getEncoder().encodeToString("png".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(mimeType = "image/png", data = data))
-        }
-    }
-
-    @Test
-    fun incompleteGeminiResponseIsRejected() {
-        val data = Base64.getEncoder().encodeToString("jpeg".toByteArray())
-
-        assertThrows(IllegalArgumentException::class.java) {
-            parseGeminiImageResponse(imageResponse(status = "in_progress", data = data))
-        }
-    }
-
-    @Test
-    fun scanFileNamesDistinguishOriginalAndAiCopies() {
+    fun scanFileNamesUseStableOriginalNames() {
         val baseName = "Scan_2026-08-06_12-34-56"
 
         assertEquals("${baseName}_01.jpg", scanPageFileName(baseName, 1))
         assertEquals("${baseName}_12.jpg", scanPageFileName(baseName, 12))
-        assertEquals("${baseName}_01_AI.jpg", scanPageFileName(baseName, 1, isAiCopy = true))
         assertEquals("$baseName.pdf", scanPdfFileName(baseName))
-        assertEquals("${baseName}_AI.pdf", scanPdfFileName(baseName, isAiCopy = true))
     }
 
     @Test
     fun scanPageFileNameRejectsInvalidPageNumber() {
         assertThrows(IllegalArgumentException::class.java) {
             scanPageFileName("Scan", 0)
-        }
-    }
-
-    @Test
-    fun aiReviewPageSelectionStaysInsideDocument() {
-        assertEquals(0, aiReviewPageIndex(-1, 3))
-        assertEquals(1, aiReviewPageIndex(1, 3))
-        assertEquals(2, aiReviewPageIndex(8, 3))
-        assertThrows(IllegalArgumentException::class.java) {
-            aiReviewPageIndex(0, 0)
         }
     }
 
@@ -396,16 +1100,80 @@ class PureLogicTest {
         }
     }
 
-    private fun imageResponse(
-        status: String = "completed",
-        mimeType: String = "image/jpeg",
-        data: String,
-    ): String =
-        """
-        {"status":"$status","steps":[
-          {"type":"model_output","content":[
-            {"type":"image","mime_type":"$mimeType","data":"$data"}
-          ]}
-        ]}
-        """.trimIndent()
+    private fun outputMetadata(
+        images: List<ImageOutputRef> = emptyList(),
+    ): OutputMetadata =
+        OutputMetadata(
+            entryId = ENTRY_ID,
+            cacheId = CACHE_ID,
+            createdAtEpochMs = 1L,
+            images = images,
+        )
+
+    private fun completeImageRefs(): List<ImageOutputRef> =
+        listOf(
+            ImageOutputRef(1, "content://media/images/1"),
+            ImageOutputRef(2, "content://media/images/2"),
+        )
+
+    private fun savedScan(
+        entryId: String?,
+        outputMetadataValid: Boolean,
+    ): SavedScan =
+        SavedScan(
+            cached =
+                CachedScan(
+                    baseName = CACHE_ID,
+                    pages = listOf(File("page-1.jpg"), File("page-2.jpg")),
+                    pdf = File("scan.pdf"),
+                    entryId = entryId,
+                ),
+            galleryPages = emptyList(),
+            savedPdf = null,
+            outputMetadataValid = outputMetadataValid,
+        )
+
+    private fun inMemoryPreferences(): Pair<SharedPreferences, MutableMap<String, Any?>> {
+        val values = mutableMapOf<String, Any?>()
+        lateinit var editor: SharedPreferences.Editor
+        editor =
+            Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences.Editor::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "putBoolean", "putString" -> editor.also { values[args!![0] as String] = args[1] }
+                    "remove" -> editor.also { values.remove(args!![0] as String) }
+                    "apply" -> null
+                    "commit" -> true
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as SharedPreferences.Editor
+        val preferences =
+            Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(SharedPreferences::class.java),
+            ) { _, method, args ->
+                val key = args?.firstOrNull() as? String
+                when (method.name) {
+                    "getBoolean" ->
+                        values[key]?.let { it as? Boolean ?: throw ClassCastException() }
+                            ?: args!![1] as Boolean
+                    "getString" ->
+                        values[key]?.let { it as? String ?: throw ClassCastException() }
+                            ?: args!![1] as String?
+                    "contains" -> values.containsKey(key)
+                    "edit" -> editor
+                    else -> throw UnsupportedOperationException(method.name)
+                }
+            } as SharedPreferences
+        return preferences to values
+    }
+
+    private companion object {
+        const val CACHE_ID = "Scan_2026-08-09_12-12-00"
+        const val ENTRY_ID = "00000000-0000-0000-0000-000000000001"
+        const val OTHER_ENTRY_ID = "00000000-0000-0000-0000-000000000002"
+    }
+
 }

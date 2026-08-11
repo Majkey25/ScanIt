@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="internal_gemini_title">Internal Gemini harness</string>
+    <string name="internal_gemini_warning">Debug only. The selected image is sent to Gemini. Review the result before use.</string>
+    <string name="internal_gemini_api_key">Gemini API key</string>
+    <string name="internal_gemini_save_key">Save key</string>
+    <string name="internal_gemini_delete_key">Delete key</string>
+    <string name="internal_gemini_key_present">Encrypted key is stored.</string>
+    <string name="internal_gemini_key_missing">No encrypted key is stored.</string>
+    <string name="internal_gemini_key_invalid">Enter a valid API key.</string>
+    <string name="internal_gemini_key_error">Could not update encrypted key storage.</string>
+    <string name="internal_gemini_select_image">Select one image</string>
+    <string name="internal_gemini_image_selected">Image selected.</string>
+    <string name="internal_gemini_image_error">Could not use the selected image.</string>
+    <string name="internal_gemini_process">Process with Gemini</string>
+    <string name="internal_gemini_process_error">Gemini processing failed.</string>
+    <string name="internal_gemini_preview">Gemini output preview</string>
+</resources>

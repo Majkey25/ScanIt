@@ -2,16 +2,20 @@ package com.majkeylab.scanit
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -22,23 +26,32 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -46,24 +59,33 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import java.io.File
 import java.io.IOException
+import java.text.DateFormat
+import java.util.Date
+import kotlinx.coroutines.CancellationException
 
 internal enum class AppLanguage(val languageTag: String?) {
     System(null),
@@ -72,7 +94,9 @@ internal enum class AppLanguage(val languageTag: String?) {
 }
 
 private const val PRIVACY_POLICY_URL =
-    "https://github.com/Majkey25/ScanIt/blob/main/PRIVACY.md"
+    "https://majkey25.github.io/ScanIt/privacy.html"
+private const val THIRD_PARTY_NOTICES_URL =
+    "https://majkey25.github.io/ScanIt/third-party-notices.txt"
 
 private val LightColorScheme =
     lightColorScheme(
@@ -114,81 +138,88 @@ internal fun ScanItApp(
     settings: AppSettings,
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
-    aiKeyStatus: AiKeyStatus,
     onScan: () -> Unit,
     onSaveSettings: (AppSettings) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
-    onRefreshGeminiKey: () -> Unit,
-    onSaveGeminiKey: (String) -> Unit,
-    onDeleteGeminiKey: () -> Unit,
+    onRecent: () -> Unit,
+    onOpenRecent: (String) -> Unit,
+    onShareRecentPdf: (String) -> Unit,
+    onDeleteRecent: (OutputDeleteRequest) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onSelectResultPage: (Int) -> Unit,
+    onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
-    onAiCleanup: () -> Unit,
-    onAiReviewPage: (Int) -> Unit,
-    onAiReviewSource: (AiReviewSource) -> Unit,
-    onAcceptAi: () -> Unit,
-    onDiscardAi: () -> Unit,
-    onUseOriginal: () -> Unit,
+    onSaveNow: (SaveNowTarget) -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
-    BackHandler(showSettings) { showSettings = false }
-    val settingsOnly = state === ScreenState.Ready
+    val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
+    var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
+    val backAction = appBackAction(showSettings, fileDetailsExpanded, state)
+    BackHandler {
+        when (backAction) {
+            AppBackAction.CloseSettings -> showSettings = false
+            AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
+            AppBackAction.ShowRecent -> onNavigateBack()
+            AppBackAction.LaunchScanner -> onScan()
+            AppBackAction.Consume -> Unit
+        }
+    }
 
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
-        if (showSettings || settingsOnly) {
+        if (showSettings) {
             SettingsScreen(
                 settings = settings,
                 language = language,
                 defaultEmailSubjects = defaultEmailSubjects,
-                aiKeyStatus = aiKeyStatus,
                 onClose = {
                     showSettings = false
-                    if (settingsOnly) {
-                        onScan()
-                    }
                 },
                 onSave = onSaveSettings,
                 onLanguageChange = onLanguageChange,
                 onPdfFolderSelected = onPdfFolderSelected,
                 onPdfFolderCleared = onPdfFolderCleared,
-                onRefreshGeminiKey = onRefreshGeminiKey,
-                onSaveGeminiKey = onSaveGeminiKey,
-                onDeleteGeminiKey = onDeleteGeminiKey,
             )
         } else {
             when (state) {
                 ScreenState.Ready -> ProcessingScreen(stringResource(R.string.opening_scanner))
                 is ScreenState.Processing -> ProcessingScreen(state.message.resolve())
-                is ScreenState.AiReview ->
-                    AiReviewScreen(
-                        review = state,
-                        onPageSelected = onAiReviewPage,
-                        onSourceSelected = onAiReviewSource,
-                        onAccept = onAcceptAi,
-                        onDiscard = onDiscardAi,
-                    )
                 is ScreenState.Failure ->
                     FailureScreen(
                         message = state.message.resolve(),
                         onRetry = onScan,
+                        onRecent = onRecent,
+                        onSettings = { showSettings = true },
+                    )
+                is ScreenState.Recent ->
+                    RecentScreen(
+                        state = state,
+                        onNewScan = onScan,
+                        onOpen = onOpenRecent,
+                        onSharePdf = onShareRecentPdf,
+                        onDelete = onDeleteRecent,
+                        onLoadThumbnail = onLoadThumbnail,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
                     ResultScreen(
                         result = state,
-                        aiEnabled = settings.aiEnabled,
                         onNewScan = onScan,
+                        onRecent = onRecent,
                         onSettings = { showSettings = true },
                         onSharePdf = onSharePdf,
                         onShareImages = onShareImages,
                         onPrint = onPrint,
-                        onAiCleanup = onAiCleanup,
-                        onUseOriginal = onUseOriginal,
+                        fileDetailsExpanded = fileDetailsExpanded,
+                        onFileDetailsChange = { fileDetailsExpanded = it },
+                        onSaveNow = onSaveNow,
+                        onSelectPage = onSelectResultPage,
+                        onLoadThumbnail = onLoadThumbnail,
                     )
             }
         }
@@ -214,9 +245,10 @@ private fun ProcessingScreen(message: String) {
 private fun FailureScreen(
     message: String,
     onRetry: () -> Unit,
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    MainScaffold(onSettings) { modifier ->
+    MainScaffold(onRecent, onSettings) { modifier ->
         Column(
             modifier = modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -234,166 +266,33 @@ private fun FailureScreen(
 @Composable
 private fun ResultScreen(
     result: ScreenState.Result,
-    aiEnabled: Boolean,
     onNewScan: () -> Unit,
+    onRecent: () -> Unit,
     onSettings: () -> Unit,
     onSharePdf: (() -> Unit)?,
     onShareImages: (() -> Unit)?,
     onPrint: (() -> Unit)?,
-    onAiCleanup: () -> Unit,
-    onUseOriginal: () -> Unit,
+    fileDetailsExpanded: Boolean,
+    onFileDetailsChange: (Boolean) -> Unit,
+    onSaveNow: (SaveNowTarget) -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
-    MainScaffold(onSettings) { modifier ->
-        LazyColumn(
-            modifier = modifier.padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                if (result.thumbnail == null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(160.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(stringResource(R.string.preview_unavailable))
-                    }
-                } else {
-                    Image(
-                        bitmap = result.thumbnail.asImageBitmap(),
-                        contentDescription = stringResource(R.string.scan_preview),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-            }
-            item {
-                Text(
-                    pluralStringResource(R.plurals.page_count, pageCount, pageCount),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
-            item {
-                val savedPdf = scan.savedPdf
-                Text(
-                    when {
-                        savedPdf == null -> stringResource(R.string.pdf_temporary)
-                        savedPdf.authority == MediaStore.AUTHORITY ->
-                            stringResource(
-                                R.string.pdf_saved_downloads,
-                                scan.cached.pdf.name,
-                            )
-                        else ->
-                            stringResource(
-                                R.string.pdf_saved_selected_folder,
-                                scan.cached.pdf.name,
-                            )
-                    },
-                )
-                Text(
-                    if (scan.galleryPages.isEmpty()) {
-                        stringResource(R.string.images_temporary)
-                    } else {
-                        stringResource(
-                            R.string.images_saved_gallery,
-                            scan.cached.pages.first().name,
-                        )
-                    },
-                )
-                scan.warnings.forEach {
-                    Text(it.resolve(), color = MaterialTheme.colorScheme.error)
-                }
-                result.message?.let {
-                    Text(it.resolve(), color = MaterialTheme.colorScheme.error)
-                }
-            }
-            item {
-                Button(
-                    onClick = { onSharePdf?.invoke() },
-                    enabled = onSharePdf != null,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Text(stringResource(R.string.send_pdf))
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { onShareImages?.invoke() },
-                    enabled = onShareImages != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.send_images))
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { onPrint?.invoke() },
-                    enabled = onPrint != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.print_document))
-                }
-            }
-            if (aiEnabled && !scan.isAiCopy) {
-                item {
-                    OutlinedButton(
-                        onClick = onAiCleanup,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.clean_with_ai))
-                    }
-                }
-            }
-            if (scan.isAiCopy && result.original != null) {
-                item {
-                    OutlinedButton(
-                        onClick = onUseOriginal,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.use_original))
-                    }
-                }
-            }
-            item {
-                TextButton(onClick = onNewScan, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.new_scan))
-                }
-            }
-            item { Spacer(Modifier.height(4.dp)) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AiReviewScreen(
-    review: ScreenState.AiReview,
-    onPageSelected: (Int) -> Unit,
-    onSourceSelected: (AiReviewSource) -> Unit,
-    onAccept: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    BackHandler(onBack = onDiscard)
-    val pageCount = review.ai.pages.size
-    val backDescription = stringResource(R.string.discard_ai_copy)
+    val selectedPageIndex = resolvedPageIndex(result.selectedPageIndex, pageCount)
+    val pagePosition =
+        stringResource(R.string.page_position, selectedPageIndex + 1, pageCount)
+    val saveTargets = saveNowTargets(scan)
+    var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.ai_review_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onDiscard,
-                        modifier = Modifier.semantics {
-                            contentDescription = backDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.back_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
+            CompactTopBar(
+                title = "",
+                onRecent = onRecent,
+                onSettings = onSettings,
+                actionsEnabled = !result.outputSaveInProgress,
             )
         },
     ) { padding ->
@@ -402,139 +301,678 @@ private fun AiReviewScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Text(
-                    stringResource(R.string.ai_review_warning),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    FilterChip(
-                        selected = review.source == AiReviewSource.Original,
-                        onClick = { onSourceSelected(AiReviewSource.Original) },
-                        enabled = review.preview != null,
-                        label = { Text(stringResource(R.string.original)) },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    )
-                    FilterChip(
-                        selected = review.source == AiReviewSource.Ai,
-                        onClick = { onSourceSelected(AiReviewSource.Ai) },
-                        enabled = review.preview != null,
-                        label = { Text(stringResource(R.string.ai_copy)) },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    )
-                }
-            }
-            item {
-                if (review.preview == null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
+                when {
+                    result.pagePreviewLoading -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
                     }
-                } else {
-                    Image(
-                        bitmap = review.preview.asImageBitmap(),
-                        contentDescription = stringResource(R.string.ai_review_preview),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 440.dp),
-                        contentScale = ContentScale.Fit,
-                    )
+                    result.thumbnail == null -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(160.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(stringResource(R.string.preview_unavailable))
+                        }
+                    }
+                    else -> {
+                        Image(
+                            bitmap = result.thumbnail.asImageBitmap(),
+                            contentDescription = pagePosition,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
                 }
             }
             item {
                 Text(
-                    stringResource(R.string.ai_review_page, review.pageIndex + 1, pageCount),
+                    pagePosition,
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { onPageSelected(review.pageIndex - 1) },
-                        enabled = review.preview != null && review.pageIndex > 0,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.previous_page))
-                    }
-                    OutlinedButton(
-                        onClick = { onPageSelected(review.pageIndex + 1) },
-                        enabled = review.preview != null && review.pageIndex < pageCount - 1,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.next_page))
-                    }
+            }
+            if (pageCount > 1) {
+                item {
+                    ResultPageStrip(
+                        pages = scan.cached.pages,
+                        selectedPageIndex = selectedPageIndex,
+                        enabled = !result.outputSaveInProgress,
+                        onSelectPage = onSelectPage,
+                        onLoadThumbnail = onLoadThumbnail,
+                    )
                 }
             }
             item {
                 Button(
-                    onClick = onAccept,
-                    enabled = review.preview != null,
+                    onClick = { onSharePdf?.invoke() },
+                    enabled = onSharePdf != null && !result.outputSaveInProgress,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
-                    Text(stringResource(R.string.accept_ai_copy))
+                    Text(stringResource(R.string.send_pdf))
                 }
+            }
+            item {
+                OutlinedButton(
+                    onClick = { onShareImages?.invoke() },
+                    enabled = onShareImages != null && !result.outputSaveInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.send_images))
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = { onPrint?.invoke() },
+                    enabled = onPrint != null && !result.outputSaveInProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.print_document))
+                }
+            }
+            item {
+                Button(
+                    onClick = onNewScan,
+                    enabled = !result.outputSaveInProgress,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    Text(stringResource(R.string.new_scan))
+                }
+            }
+            item {
                 TextButton(
-                    onClick = onDiscard,
+                    onClick = { onFileDetailsChange(!fileDetailsExpanded) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
-                    Text(stringResource(R.string.discard_ai_copy))
+                    Text(stringResource(R.string.file_details), modifier = Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_expand_more),
+                        contentDescription =
+                            stringResource(
+                                if (fileDetailsExpanded) {
+                                    R.string.collapse_file_details
+                                } else {
+                                    R.string.expand_file_details
+                                },
+                            ),
+                        modifier = Modifier.size(24.dp).rotate(if (fileDetailsExpanded) 180f else 0f),
+                    )
                 }
+                if (fileDetailsExpanded) {
+                    FileDetails(
+                        scan = scan,
+                        saveTargets = saveTargets,
+                        saveInProgress = result.outputSaveInProgress,
+                        onSaveNow = { showSaveDialog = true },
+                    )
+                }
+            }
+            item { Spacer(Modifier.height(4.dp)) }
+        }
+    }
+    if (showSaveDialog) {
+        SaveNowDialog(
+            targets = saveTargets,
+            onDismiss = { showSaveDialog = false },
+            onSave = { target ->
+                showSaveDialog = false
+                onSaveNow(target)
+            },
+        )
+    }
+}
+
+@Composable
+private fun ResultPageStrip(
+    pages: List<File>,
+    selectedPageIndex: Int,
+    enabled: Boolean,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        itemsIndexed(
+            items = pages,
+            key = { _, page -> page.path },
+        ) { index, page ->
+            val isSelected = index == selectedPageIndex
+            val pageDescription = stringResource(R.string.page_position, index + 1, pages.size)
+            Surface(
+                onClick = { onSelectPage(index) },
+                enabled = enabled,
+                shape = MaterialTheme.shapes.small,
+                color =
+                    if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                border =
+                    BorderStroke(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color =
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                    ),
+                modifier =
+                    Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = pageDescription
+                        selected = isSelected
+                    },
+            ) {
+                Column(
+                    modifier = Modifier.padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    ResultPageThumbnail(page, onLoadThumbnail)
+                    Text((index + 1).toString(), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultPageThumbnail(
+    page: File,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    val thumbnail by produceState<Bitmap?>(null, page) {
+        value =
+            try {
+                onLoadThumbnail(page)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+    }
+    if (thumbnail == null) {
+        Box(
+            modifier = Modifier.width(64.dp).height(84.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                stringResource(R.string.preview_unavailable),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    } else {
+        Image(
+            bitmap = requireNotNull(thumbnail).asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.width(64.dp).height(84.dp),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
+@Composable
+private fun FileDetails(
+    scan: SavedScan,
+    saveTargets: List<SaveNowTarget>,
+    saveInProgress: Boolean,
+    onSaveNow: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val savedPdf = scan.savedPdf
+        Text(
+            when {
+                savedPdf == null -> stringResource(R.string.pdf_temporary)
+                savedPdf.authority == MediaStore.AUTHORITY ->
+                    stringResource(R.string.pdf_saved_downloads, scan.cached.pdf.name)
+                else -> stringResource(R.string.pdf_saved_selected_folder, scan.cached.pdf.name)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (scan.galleryPages.isEmpty()) {
+                stringResource(R.string.images_temporary)
+            } else {
+                stringResource(R.string.images_saved_gallery, scan.cached.pages.first().name)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (scan.savedPdf == null || scan.galleryPages.size != scan.cached.pages.size) {
+            Text(
+                stringResource(R.string.automatic_saving_hint),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (saveTargets.isNotEmpty()) {
+            Button(
+                onClick = onSaveNow,
+                enabled = !saveInProgress,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(
+                        if (saveInProgress) R.string.saving_now else R.string.save_now,
+                    ),
+                )
+            }
+        }
+        scan.warnings.forEach {
+            Text(
+                it.resolve(),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaveNowDialog(
+    targets: List<SaveNowTarget>,
+    onDismiss: () -> Unit,
+    onSave: (SaveNowTarget) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.save_now)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                targets.forEach { target ->
+                    OutlinedButton(
+                        onClick = { onSave(target) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                when (target) {
+                                    SaveNowTarget.Pdf -> R.string.save_pdf_now
+                                    SaveNowTarget.Images -> R.string.save_images_now
+                                    SaveNowTarget.Both -> R.string.save_pdf_and_images_now
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun RecentScreen(
+    state: ScreenState.Recent,
+    onNewScan: () -> Unit,
+    onOpen: (String) -> Unit,
+    onSharePdf: (String) -> Unit,
+    onDelete: (OutputDeleteRequest) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onSettings: () -> Unit,
+) {
+    MainScaffold(
+        onRecent = null,
+        onSettings = onSettings,
+        titleRes = R.string.recent_scans,
+        onScan = onNewScan,
+        actionsEnabled = !state.deletionInProgress,
+    ) { modifier ->
+        LazyColumn(
+            modifier = modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            state.message?.let { message ->
+                item {
+                    Text(
+                        message.resolve(),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+            if (state.deletionInProgress) {
+                item {
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth().semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.deleting_scan))
+                    }
+                }
+            }
+            if (state.scans.isEmpty()) {
+                item { Text(stringResource(R.string.recent_scans_empty)) }
+            } else {
+                items(state.scans, key = RecentScan::cacheId) { scan ->
+                    RecentScanRow(
+                        scan = scan,
+                        onOpen = onOpen,
+                        onSharePdf = onSharePdf,
+                        onDelete = onDelete,
+                        onLoadThumbnail = onLoadThumbnail,
+                        deletionInProgress = state.deletionInProgress,
+                    )
+                    HorizontalDivider()
+                }
+            }
+            item {
+                Button(
+                    onClick = onNewScan,
+                    enabled = !state.deletionInProgress,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    Text(stringResource(R.string.new_scan))
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.recent_scans_temporary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentScanRow(
+    scan: RecentScan,
+    onOpen: (String) -> Unit,
+    onSharePdf: (String) -> Unit,
+    onDelete: (OutputDeleteRequest) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    deletionInProgress: Boolean,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val deleteTargets =
+        recentDeleteTargets(
+            metadataValid = scan.entryId != null,
+            hasPdf = scan.hasSavedPdf,
+            savedImageCount = scan.savedImageCount,
+            removeRecentPending = scan.removeRecentPending,
+        )
+    val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    val formattedDate =
+        remember(scan.createdAt, locale) {
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+                .format(Date.from(scan.createdAt))
+        }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RecentThumbnail(scan.firstPage, onLoadThumbnail)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(scan.displayName, style = MaterialTheme.typography.titleMedium)
+            Text(formattedDate, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "${pluralStringResource(R.plurals.page_count, scan.pageCount, scan.pageCount)} · " +
+                    Formatter.formatShortFileSize(context, scan.pdfBytes),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Box {
+            IconButton(
+                onClick = { menuExpanded = true },
+                enabled = !deletionInProgress,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more_vert),
+                    contentDescription = stringResource(R.string.more_actions),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.open_scan)) },
+                    enabled = !deletionInProgress,
+                    onClick = {
+                        menuExpanded = false
+                        onOpen(scan.cacheId)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.send_pdf)) },
+                    enabled = !deletionInProgress,
+                    onClick = {
+                        menuExpanded = false
+                        onSharePdf(scan.cacheId)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete_scan)) },
+                    enabled = !deletionInProgress,
+                    onClick = {
+                        menuExpanded = false
+                        showDeleteDialog = true
+                    },
+                )
+            }
+        }
+    }
+    if (showDeleteDialog) {
+        RecentDeleteDialog(
+            targets = deleteTargets,
+            removeRecentPending = scan.removeRecentPending,
+            onDismiss = { showDeleteDialog = false },
+            onDelete = { target ->
+                showDeleteDialog = false
+                onDelete(OutputDeleteRequest(scan.cacheId, scan.entryId, target))
+            },
+        )
+    }
+}
+
+@Composable
+private fun RecentDeleteDialog(
+    targets: List<RecentDeleteTarget>,
+    removeRecentPending: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: (RecentDeleteTarget) -> Unit,
+) {
+    val legacy = targets == listOf(RecentDeleteTarget.RemoveFromRecent)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_scan)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (removeRecentPending) {
+                    Text(stringResource(R.string.recent_delete_pending_hint))
+                } else if (legacy) {
+                    Text(stringResource(R.string.recent_delete_legacy_hint))
+                } else {
+                    Text(stringResource(R.string.recent_delete_saved_hint))
+                }
+                targets.forEach { target ->
+                    OutlinedButton(
+                        onClick = { onDelete(target) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                when (target) {
+                                    RecentDeleteTarget.Pdf -> R.string.delete_pdf
+                                    RecentDeleteTarget.Images -> R.string.delete_images
+                                    RecentDeleteTarget.Both -> R.string.delete_pdf_and_images
+                                    RecentDeleteTarget.RemoveFromRecent -> R.string.remove_from_recent
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun RecentThumbnail(
+    firstPage: File,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+) {
+    val thumbnail by produceState<Bitmap?>(null, firstPage) {
+        value =
+            try {
+                onLoadThumbnail(firstPage)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                null
+            }
+    }
+    if (thumbnail == null) {
+        Box(
+            modifier = Modifier.width(72.dp).height(96.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(stringResource(R.string.preview_unavailable))
+        }
+    } else {
+        Image(
+            bitmap = requireNotNull(thumbnail).asImageBitmap(),
+            contentDescription = stringResource(R.string.recent_scan_preview),
+            modifier = Modifier.width(72.dp).height(96.dp),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
+
 @Composable
 private fun MainScaffold(
+    onRecent: (() -> Unit)?,
     onSettings: () -> Unit,
+    titleRes: Int = R.string.app_name,
+    onScan: (() -> Unit)? = null,
+    actionsEnabled: Boolean = true,
     content: @Composable (Modifier) -> Unit,
 ) {
-    val settingsDescription = stringResource(R.string.open_settings)
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                actions = {
-                    IconButton(
-                        onClick = onSettings,
-                        modifier = Modifier.semantics {
-                            contentDescription = settingsDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.settings_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
+            CompactTopBar(
+                title = stringResource(titleRes),
+                onRecent = onRecent,
+                onScan = onScan,
+                onSettings = onSettings,
+                actionsEnabled = actionsEnabled,
             )
         },
     ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactTopBar(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    onRecent: (() -> Unit)? = null,
+    onScan: (() -> Unit)? = null,
+    onSettings: (() -> Unit)? = null,
+    actionsEnabled: Boolean = true,
+) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Column {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .height(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onBack != null) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_back),
+                            contentDescription = stringResource(R.string.back),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Text(
+                    title,
+                    modifier =
+                        Modifier.weight(1f).padding(start = if (onBack == null) 16.dp else 0.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                if (onRecent != null) {
+                    IconButton(
+                        onClick = onRecent,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_dashboard),
+                            contentDescription = stringResource(R.string.open_recent_scans),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                if (onScan != null) {
+                    IconButton(
+                        onClick = onScan,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_camera),
+                            contentDescription = stringResource(R.string.start_new_scan),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                if (onSettings != null) {
+                    IconButton(
+                        onClick = onSettings,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = stringResource(R.string.open_settings),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SettingsScreen(
     settings: AppSettings,
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
-    aiKeyStatus: AiKeyStatus,
     onClose: () -> Unit,
     onSave: (AppSettings) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
-    onRefreshGeminiKey: () -> Unit,
-    onSaveGeminiKey: (String) -> Unit,
-    onDeleteGeminiKey: () -> Unit,
 ) {
     val folderPermissionMissing = UiMessage(R.string.folder_permission_missing)
     val folderPermissionFailed = UiMessage(R.string.folder_permission_failed)
@@ -547,14 +985,13 @@ private fun SettingsScreen(
     var allowGallery by rememberSaveable { mutableStateOf(settings.allowGallery) }
     var emailSubject by rememberSaveable { mutableStateOf(settings.emailSubject) }
     var emailBody by rememberSaveable { mutableStateOf(settings.emailBody) }
+    var deletePdfAfterShare by rememberSaveable { mutableStateOf(settings.deletePdfAfterShare) }
+    var deleteImagesAfterShare by rememberSaveable {
+        mutableStateOf(settings.deleteImagesAfterShare)
+    }
     var pdfTreeUri by rememberSaveable { mutableStateOf(settings.pdfTreeUri) }
-    var aiEnabled by rememberSaveable { mutableStateOf(settings.aiEnabled) }
-    var aiConsent by rememberSaveable { mutableStateOf(settings.aiConsent) }
-    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
-    var apiKey by remember { mutableStateOf("") }
-    var keyOperationPending by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
 
     LaunchedEffect(settings.emailSubject, defaultEmailSubjects) {
@@ -564,17 +1001,6 @@ private fun SettingsScreen(
                 targetDefault = settings.emailSubject,
                 supportedDefaults = defaultEmailSubjects,
             )
-    }
-
-    LaunchedEffect(aiKeyStatus) {
-        when (aiKeyStatus) {
-            AiKeyStatus.Saving -> keyOperationPending = true
-            AiKeyStatus.Missing, AiKeyStatus.Present, is AiKeyStatus.Error -> {
-                if (keyOperationPending) apiKey = ""
-                keyOperationPending = false
-            }
-            AiKeyStatus.Checking, AiKeyStatus.Unknown -> Unit
-        }
     }
 
     val folderLauncher =
@@ -600,31 +1026,19 @@ private fun SettingsScreen(
             }
         }
 
-    val backDescription = stringResource(R.string.back)
     Scaffold(
         modifier = Modifier.imePadding(),
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.semantics {
-                            contentDescription = backDescription
-                        },
-                    ) {
-                        Text(
-                            stringResource(R.string.back_symbol),
-                            modifier = Modifier.clearAndSetSemantics {},
-                        )
-                    }
-                },
-            )
+            CompactTopBar(title = stringResource(R.string.settings), onBack = onClose)
         },
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            modifier =
+                Modifier.fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SectionTitle(stringResource(R.string.language)) }
@@ -686,10 +1100,6 @@ private fun SettingsScreen(
                         stringResource(R.string.custom_pdf_folder)
                     },
                 )
-                Text(
-                    stringResource(R.string.folder_saved_immediately),
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -745,6 +1155,27 @@ private fun SettingsScreen(
             }
             item { SectionTitle(stringResource(R.string.sharing)) }
             item {
+                SettingsSwitch(
+                    label = stringResource(R.string.delete_pdf_after_share),
+                    checked = deletePdfAfterShare,
+                    onCheckedChange = { deletePdfAfterShare = it },
+                )
+            }
+            item {
+                SettingsSwitch(
+                    label = stringResource(R.string.delete_images_after_share),
+                    checked = deleteImagesAfterShare,
+                    onCheckedChange = { deleteImagesAfterShare = it },
+                )
+            }
+            item {
+                Text(
+                    stringResource(R.string.delete_after_share_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
                 OutlinedTextField(
                     value = emailSubject,
                     onValueChange = { emailSubject = it },
@@ -762,85 +1193,6 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            item { HorizontalDivider() }
-            item {
-                TextButton(
-                    onClick = { advancedExpanded = !advancedExpanded },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(
-                        stringResource(
-                            if (advancedExpanded) {
-                                R.string.advanced_collapse
-                            } else {
-                                R.string.advanced_expand
-                            },
-                        ),
-                    )
-                }
-            }
-            if (advancedExpanded) {
-                item {
-                    SettingsSwitch(
-                        label = stringResource(R.string.enable_cloud_ai),
-                        checked = aiEnabled,
-                        onCheckedChange = { aiEnabled = it },
-                    )
-                }
-                item {
-                    SettingsSwitch(
-                        label = stringResource(R.string.ai_cloud_consent),
-                        checked = aiConsent,
-                        onCheckedChange = { aiConsent = it },
-                    )
-                }
-                item {
-                    Text(
-                        stringResource(R.string.ai_warning),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text(stringResource(R.string.gemini_api_key)) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item { Text(aiKeyStatusText(aiKeyStatus)) }
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = { onSaveGeminiKey(apiKey) },
-                            enabled = apiKey.isNotBlank() && !aiKeyStatus.isBusy(),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.save_key))
-                        }
-                        OutlinedButton(
-                            onClick = onDeleteGeminiKey,
-                            enabled =
-                                aiKeyStatus is AiKeyStatus.Present ||
-                                    aiKeyStatus is AiKeyStatus.Error,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.delete_key))
-                        }
-                    }
-                    if (aiKeyStatus is AiKeyStatus.Error) {
-                        TextButton(onClick = onRefreshGeminiKey) {
-                            Text(stringResource(R.string.check_key_again))
-                        }
-                    }
-                }
-            }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 Button(
@@ -856,8 +1208,8 @@ private fun SettingsScreen(
                                     emailSubject = emailSubject,
                                     emailBody = emailBody,
                                     pdfTreeUri = pdfTreeUri,
-                                    aiEnabled = aiEnabled,
-                                    aiConsent = aiConsent,
+                                    deletePdfAfterShare = deletePdfAfterShare,
+                                    deleteImagesAfterShare = deleteImagesAfterShare,
                                 ),
                             )
                             onClose()
@@ -877,6 +1229,12 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.privacy_policy))
+                }
+                TextButton(
+                    onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.third_party_notices))
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }
@@ -910,19 +1268,5 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun aiKeyStatusText(status: AiKeyStatus): String =
-    when (status) {
-        AiKeyStatus.Unknown -> stringResource(R.string.key_status_unknown)
-        AiKeyStatus.Checking -> stringResource(R.string.key_status_checking)
-        AiKeyStatus.Missing -> stringResource(R.string.key_status_missing)
-        AiKeyStatus.Present -> stringResource(R.string.key_status_present)
-        AiKeyStatus.Saving -> stringResource(R.string.key_status_saving)
-        is AiKeyStatus.Error -> status.message.resolve()
-    }
-
-@Composable
 private fun UiMessage.resolve(): String =
     stringResource(resourceId, *formatArgs.toTypedArray())
-
-private fun AiKeyStatus.isBusy(): Boolean =
-    this is AiKeyStatus.Unknown || this is AiKeyStatus.Checking || this is AiKeyStatus.Saving

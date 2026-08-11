@@ -19,8 +19,8 @@ android {
         applicationId = "com.majkeylab.scanit"
         minSdk = 35
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0-alpha.1"
+        versionCode = 5
+        versionName = "1.2.0-beta.1"
     }
 
     signingConfigs {
@@ -51,6 +51,28 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
+        }
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+        }
+        create("github") {
+            dimension = "distribution"
+            applicationIdSuffix = ".github"
+        }
+        create("internal") {
+            dimension = "distribution"
+            applicationIdSuffix = ".internal"
+            versionNameSuffix = "-internal"
         }
     }
 
@@ -67,6 +89,16 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+androidComponents {
+    beforeVariants { variantBuilder ->
+        variantBuilder.enable = variantBuilder.name in setOf(
+            "playRelease",
+            "githubRelease",
+            "internalDebug",
+        )
     }
 }
 

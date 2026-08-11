@@ -11,14 +11,19 @@ Security fixes are provided only for the latest published preview or release.
 
 ## Report a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/Majkey25/ScanIt/security/advisories/new). Do not open a public issue for a vulnerability that could expose documents, API keys, file URIs, or device data.
+Use [GitHub private vulnerability reporting](https://github.com/Majkey25/ScanIt/security/advisories/new).
+Do not open a public issue for a vulnerability that could expose documents,
+file URIs, signing material, or device data.
 
-Include the affected version, Android version, reproduction steps, impact, and the smallest safe proof of concept. Never attach real private documents or credentials.
+Include the affected version, Android version, reproduction steps, impact, and
+the smallest safe proof of concept. Never attach real private documents or
+credentials.
 
-## Security boundaries
+## Public-build boundaries
 
-- The repository never contains signing keys or Gemini API keys.
-- The frozen GitHub stable APK is a legacy debug-signed artifact and is not the Google Play build.
-- The Play upload key and local signing properties stay outside the repository; Google Play App Signing manages the delivery key.
-- Client-side Gemini credentials are suitable only for private, user-owned builds.
-- The experimental AI workflow sends every page in the current scan to a third-party cloud service only after explicit opt-in.
+- The Google Play and GitHub public variants contain no public cloud-processing feature and declare no app-owned `INTERNET` permission.
+- Google Play services supplies the ML Kit scanner UI and may download modules and process diagnostic telemetry under Google's terms.
+- Scans are held in a bounded app-private cache and exposed for sharing only through scoped content URIs.
+- Android backup and device-to-device transfer are disabled for ScanIt app data.
+- Release signing keys and local signing properties are never stored in this repository.
+- The frozen GitHub preview APK is a historical debug-signed artifact, not the Google Play build.

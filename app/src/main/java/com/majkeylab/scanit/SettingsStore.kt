@@ -2,17 +2,9 @@ package com.majkeylab.scanit
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import java.io.IOException
-import java.nio.charset.StandardCharsets
-import java.security.GeneralSecurityException
-import java.security.KeyStore
-import java.util.Base64
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 private const val MAX_ALBUM_NAME_LENGTH = 64
 private const val PREFERENCES_NAME = "settings"
@@ -23,16 +15,68 @@ private const val KEY_MULTIPAGE = "multipage"
 private const val KEY_ALLOW_GALLERY = "allow_gallery"
 private const val KEY_EMAIL_SUBJECT = "email_subject"
 private const val KEY_EMAIL_BODY = "email_body"
+private const val KEY_DELETE_PDF_AFTER_SHARE = "delete_pdf_after_share"
+private const val KEY_DELETE_IMAGES_AFTER_SHARE = "delete_images_after_share"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
-private const val KEY_AI_ENABLED = "ai_enabled"
-private const val KEY_AI_CONSENT = "ai_consent"
-private const val KEY_GEMINI_CIPHERTEXT = "gemini_ciphertext"
-private const val KEY_GEMINI_IV = "gemini_iv"
-private const val GEMINI_KEY_ALIAS = "com.majkeylab.scanit.gemini_api_key"
-private const val ANDROID_KEYSTORE = "AndroidKeyStore"
-private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
-private const val GCM_TAG_LENGTH_BITS = 128
+private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
+private const val KEY_PENDING_SHARE_CLEANUP = "pending_share_cleanup"
+private const val ACTIVE_RESULT_CHECKPOINT_PREFIX = "1:"
+private const val MAX_ACTIVE_RESULT_CACHE_ID_LENGTH = 128
+private const val PENDING_SHARE_CLEANUP_PREFIX = "1:"
+private const val CANONICAL_UUID_LENGTH = 36
+private const val MAX_SHARE_CLEANUP_KIND_LENGTH = 6
+private const val MAX_PENDING_SHARE_CLEANUP_LENGTH =
+    PENDING_SHARE_CLEANUP_PREFIX.length +
+        MAX_ACTIVE_RESULT_CACHE_ID_LENGTH + 1 +
+        CANONICAL_UUID_LENGTH + 1 +
+        MAX_SHARE_CLEANUP_KIND_LENGTH
+internal const val MAX_PENDING_SHARE_CLEANUPS = 8
+private val shareCleanupQueueLock = ReentrantLock()
+
+internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
+    cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
+
+internal fun encodeActiveResultCheckpoint(cacheId: String): String {
+    require(isSafeActiveResultCacheId(cacheId)) {
+        "Active result cache ID is unsafe"
+    }
+    return "$ACTIVE_RESULT_CHECKPOINT_PREFIX$cacheId"
+}
+
+internal fun decodeActiveResultCheckpoint(value: String?): String? {
+    if (
+        value == null ||
+            value.length >
+            ACTIVE_RESULT_CHECKPOINT_PREFIX.length + MAX_ACTIVE_RESULT_CACHE_ID_LENGTH ||
+            !value.startsWith(ACTIVE_RESULT_CHECKPOINT_PREFIX)
+    ) {
+        return null
+    }
+    return value.removePrefix(ACTIVE_RESULT_CHECKPOINT_PREFIX)
+        .takeIf(::isSafeActiveResultCacheId)
+}
+
+internal fun encodePendingShareCleanup(request: ShareCleanupRequest): String {
+    require(isSafeActiveResultCacheId(request.cacheId) && isCanonicalUuid(request.entryId)) {
+        "Pending share cleanup identity is unsafe"
+    }
+    return "$PENDING_SHARE_CLEANUP_PREFIX${request.cacheId}:${request.entryId}:${request.kind.wireValue}"
+}
+
+internal fun decodePendingShareCleanup(value: String?): ShareCleanupRequest? {
+    if (
+        value == null ||
+            value.length > MAX_PENDING_SHARE_CLEANUP_LENGTH ||
+            !value.startsWith(PENDING_SHARE_CLEANUP_PREFIX)
+    ) {
+        return null
+    }
+    val parts = value.removePrefix(PENDING_SHARE_CLEANUP_PREFIX).split(':')
+    if (parts.size != 3) return null
+    return decodeShareCleanupRequest(parts[0], parts[1], parts[2])
+        ?.takeIf { isSafeActiveResultCacheId(it.cacheId) }
+}
 
 internal fun normalizeAlbumName(value: String): String {
     val trimmed = value.trim()
@@ -56,18 +100,19 @@ internal inline fun <T> readPreferenceOrDefault(default: T, read: () -> T): T =
         default
     }
 
-internal class SettingsStore(private val context: Context) {
-    private val preferences: SharedPreferences =
-        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-    @Volatile
-    private var pendingPdfTreeUriValue =
-        readPreferenceOrDefault<String?>(null) {
-            preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
-    }
+internal fun canonicalPdfTreeUri(store: SettingsStore): String? = store.currentPdfTreeUri()
+
+internal class SettingsStore(
+    private val preferences: SharedPreferences,
+    private val defaultEmailSubject: String,
+) {
+    constructor(context: Context) : this(
+        context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
+        context.getString(R.string.default_email_subject),
+    )
 
     fun load(): AppSettings {
-        val defaults =
-            AppSettings(emailSubject = context.getString(R.string.default_email_subject))
+        val defaults = AppSettings(emailSubject = defaultEmailSubject)
         return AppSettings(
             savePdf = readPreferenceOrDefault(defaults.savePdf) {
                 preferences.getBoolean(KEY_SAVE_PDF, defaults.savePdf)
@@ -98,11 +143,14 @@ internal class SettingsStore(private val context: Context) {
             pdfTreeUri = readPreferenceOrDefault(defaults.pdfTreeUri) {
                 preferences.getString(KEY_PDF_TREE_URI, defaults.pdfTreeUri)
             },
-            aiEnabled = readPreferenceOrDefault(defaults.aiEnabled) {
-                preferences.getBoolean(KEY_AI_ENABLED, defaults.aiEnabled)
+            deletePdfAfterShare = readPreferenceOrDefault(defaults.deletePdfAfterShare) {
+                preferences.getBoolean(KEY_DELETE_PDF_AFTER_SHARE, defaults.deletePdfAfterShare)
             },
-            aiConsent = readPreferenceOrDefault(defaults.aiConsent) {
-                preferences.getBoolean(KEY_AI_CONSENT, defaults.aiConsent)
+            deleteImagesAfterShare = readPreferenceOrDefault(defaults.deleteImagesAfterShare) {
+                preferences.getBoolean(
+                    KEY_DELETE_IMAGES_AFTER_SHARE,
+                    defaults.deleteImagesAfterShare,
+                )
             },
         )
     }
@@ -117,14 +165,126 @@ internal class SettingsStore(private val context: Context) {
             .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
             .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
             .putString(KEY_EMAIL_BODY, settings.emailBody)
-            .putString(KEY_PDF_TREE_URI, settings.pdfTreeUri)
-            .putString(KEY_PENDING_PDF_TREE_URI, pendingPdfTreeUriValue)
-            .putBoolean(KEY_AI_ENABLED, settings.aiEnabled)
-            .putBoolean(KEY_AI_CONSENT, settings.aiConsent)
+            .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
+            .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
             .apply()
     }
 
-    internal fun pendingPdfTreeUri(): String? = pendingPdfTreeUriValue
+    @Throws(IOException::class)
+    internal fun activeResultCacheId(): String? {
+        val storedValue =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
+            }
+        val cacheId = decodeActiveResultCheckpoint(storedValue)
+        if (cacheId == null && preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
+            clearActiveResult()
+        }
+        return cacheId
+    }
+
+    @Throws(IOException::class)
+    internal fun saveActiveResult(cacheId: String) {
+        val checkpoint = encodeActiveResultCheckpoint(cacheId)
+        val stored =
+            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, checkpoint).commit()
+        val verified =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
+            } == checkpoint
+        if (!stored || !verified) {
+            throw IOException("Active result could not be stored")
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun clearActiveResult() {
+        if (!preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) return
+        val cleared = preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
+        if (!cleared || preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
+            throw IOException("Active result could not be cleared")
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun pendingShareCleanups(): List<ShareCleanupRequest> =
+        shareCleanupQueueLock.withLock {
+            readPendingShareCleanups()
+        }
+
+    @Throws(IOException::class)
+    internal fun pendingShareCleanup(): ShareCleanupRequest? = pendingShareCleanups().firstOrNull()
+
+    @Throws(IOException::class)
+    internal fun canSavePendingShareCleanup(request: ShareCleanupRequest): Boolean =
+        shareCleanupQueueLock.withLock {
+            val pending = readPendingShareCleanups()
+            request in pending || pending.size < MAX_PENDING_SHARE_CLEANUPS
+        }
+
+    private fun readPendingShareCleanups(): List<ShareCleanupRequest> {
+        val stored =
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
+            }
+        val requests =
+            stored?.split('\n')?.takeIf { it.size <= MAX_PENDING_SHARE_CLEANUPS }
+                ?.mapNotNull(::decodePendingShareCleanup)
+                ?.takeIf { it.size == stored.split('\n').size && it.distinct().size == it.size }
+        if (requests == null && preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+            val cleared = preferences.edit().remove(KEY_PENDING_SHARE_CLEANUP).commit()
+            if (!cleared || preferences.contains(KEY_PENDING_SHARE_CLEANUP)) {
+                throw IOException("Invalid pending share cleanup could not be cleared")
+            }
+        }
+        return requests.orEmpty()
+    }
+
+    @Throws(IOException::class)
+    internal fun savePendingShareCleanup(request: ShareCleanupRequest) =
+        shareCleanupQueueLock.withLock {
+            val existing = readPendingShareCleanups()
+            if (request in existing) return@withLock
+            if (existing.size >= MAX_PENDING_SHARE_CLEANUPS) {
+                throw IOException("Pending share cleanup queue is full")
+            }
+            writePendingShareCleanups(existing + request)
+        }
+
+    @Throws(IOException::class)
+    internal fun clearPendingShareCleanup(request: ShareCleanupRequest) =
+        shareCleanupQueueLock.withLock {
+            val pending = readPendingShareCleanups()
+            if (pending.firstOrNull() != request) return@withLock
+            writePendingShareCleanups(pending.drop(1))
+        }
+
+    private fun writePendingShareCleanups(requests: List<ShareCleanupRequest>) {
+        val encoded = requests.joinToString("\n", transform = ::encodePendingShareCleanup)
+        val editor = preferences.edit()
+        if (requests.isEmpty()) editor.remove(KEY_PENDING_SHARE_CLEANUP)
+        else editor.putString(KEY_PENDING_SHARE_CLEANUP, encoded)
+        val stored = editor.commit()
+        val verified =
+            if (requests.isEmpty()) {
+                !preferences.contains(KEY_PENDING_SHARE_CLEANUP)
+            } else {
+                readPreferenceOrDefault<String?>(null) {
+                    preferences.getString(KEY_PENDING_SHARE_CLEANUP, null)
+                } == encoded
+            }
+        if (!stored || !verified) throw IOException("Pending share cleanup could not be stored")
+    }
+
+    internal fun pendingPdfTreeUri(): String? =
+        readPreferenceOrDefault<String?>(null) {
+            preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
+        }
+
+    internal fun currentPdfTreeUri(): String? =
+        readPreferenceOrDefault<String?>(null) {
+            preferences.getString(KEY_PDF_TREE_URI, null)
+        }
 
     @Throws(IOException::class)
     internal fun savePdfTreeUris(current: String?, pending: String?) {
@@ -137,122 +297,6 @@ internal class SettingsStore(private val context: Context) {
         if (!stored) {
             throw IOException("PDF destinations could not be stored")
         }
-        pendingPdfTreeUriValue = pending
     }
 
-    @Throws(GeneralSecurityException::class)
-    fun saveGeminiApiKey(apiKey: String) {
-        if (apiKey.isBlank()) {
-            clearGeminiApiKey()
-            return
-        }
-
-        val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateGeminiKey())
-        val ciphertext = cipher.doFinal(apiKey.toByteArray(StandardCharsets.UTF_8))
-        val stored =
-            preferences
-                .edit()
-                .putString(KEY_GEMINI_CIPHERTEXT, Base64.getEncoder().encodeToString(ciphertext))
-                .putString(KEY_GEMINI_IV, Base64.getEncoder().encodeToString(cipher.iv))
-                .commit()
-        if (!stored) {
-            throw GeneralSecurityException("Gemini API key ciphertext could not be stored")
-        }
-    }
-
-    @Throws(GeneralSecurityException::class)
-    fun loadGeminiApiKey(): String? {
-        val ciphertextValue = storedSecretValue(KEY_GEMINI_CIPHERTEXT)
-        val ivValue = storedSecretValue(KEY_GEMINI_IV)
-        if (ciphertextValue == null && ivValue == null) {
-            return null
-        }
-        if (ciphertextValue == null || ivValue == null) {
-            throw GeneralSecurityException("Stored Gemini API key is incomplete")
-        }
-
-        val ciphertext = decodeStoredBase64(ciphertextValue)
-        val iv = decodeStoredBase64(ivValue)
-        if (ciphertext.isEmpty() || iv.isEmpty()) {
-            throw GeneralSecurityException("Stored Gemini API key is empty")
-        }
-
-        val key = androidKeyStore().getKey(GEMINI_KEY_ALIAS, null) as? SecretKey
-            ?: throw GeneralSecurityException("Gemini API key encryption key is missing")
-        val cipher = Cipher.getInstance(AES_GCM_TRANSFORMATION)
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
-        val plaintext = cipher.doFinal(ciphertext)
-        if (plaintext.isEmpty()) {
-            throw GeneralSecurityException("Stored Gemini API key decrypts to an empty value")
-        }
-        return String(plaintext, StandardCharsets.UTF_8)
-    }
-
-    @Throws(GeneralSecurityException::class)
-    fun clearGeminiApiKey() {
-        val cleared =
-            preferences
-                .edit()
-                .remove(KEY_GEMINI_CIPHERTEXT)
-                .remove(KEY_GEMINI_IV)
-                .commit()
-        if (!cleared) {
-            throw GeneralSecurityException("Stored Gemini API key could not be cleared")
-        }
-
-        val keyStore = androidKeyStore()
-        if (keyStore.containsAlias(GEMINI_KEY_ALIAS)) {
-            keyStore.deleteEntry(GEMINI_KEY_ALIAS)
-        }
-    }
-
-    @Throws(GeneralSecurityException::class)
-    private fun getOrCreateGeminiKey(): SecretKey {
-        val keyStore = androidKeyStore()
-        val storedKey = keyStore.getKey(GEMINI_KEY_ALIAS, null)
-        if (storedKey != null) {
-            return storedKey as? SecretKey
-                ?: throw GeneralSecurityException("Gemini API key alias is not an AES key")
-        }
-        if (keyStore.containsAlias(GEMINI_KEY_ALIAS)) {
-            throw GeneralSecurityException("Gemini API key alias is unusable")
-        }
-
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
-        generator.init(
-            KeyGenParameterSpec.Builder(
-                GEMINI_KEY_ALIAS,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-            ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build(),
-        )
-        return generator.generateKey()
-    }
-
-    @Throws(GeneralSecurityException::class)
-    private fun androidKeyStore(): KeyStore =
-        try {
-            KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-        } catch (exception: IOException) {
-            throw GeneralSecurityException("Android Keystore could not be loaded", exception)
-        }
-
-    @Throws(GeneralSecurityException::class)
-    private fun storedSecretValue(key: String): String? =
-        try {
-            preferences.getString(key, null)
-        } catch (exception: ClassCastException) {
-            throw GeneralSecurityException("Stored Gemini API key is malformed", exception)
-        }
-
-    @Throws(GeneralSecurityException::class)
-    private fun decodeStoredBase64(value: String): ByteArray =
-        try {
-            Base64.getDecoder().decode(value)
-        } catch (exception: IllegalArgumentException) {
-            throw GeneralSecurityException("Stored Gemini API key is not valid Base64", exception)
-        }
 }

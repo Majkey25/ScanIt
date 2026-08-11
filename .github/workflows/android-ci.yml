@@ -36,7 +36,8 @@ jobs:
           cache-provider: basic
 
       - name: Run quality gate
-        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:bundleRelease
+        shell: pwsh
+        run: ./tools/build.ps1 -AllowUnsigned
 
       - name: Upload build outputs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -45,6 +46,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/bundle/release/app-release.aab
-            app/build/reports/lint-results-debug.html
+            app/build/outputs/apk/internal/debug/app-internal-debug.apk
+            app/build/outputs/apk/github/release/app-github-release-unsigned.apk
+            app/build/outputs/bundle/playRelease/app-play-release.aab
+            app/build/outputs/bundle/githubRelease/app-github-release.aab
+            app/build/reports/lint-results-internalDebug.html
+            app/build/reports/lint-results-playRelease.html
+            app/build/reports/lint-results-githubRelease.html

@@ -2,8 +2,10 @@ package com.majkeylab.scanit
 
 import android.app.Activity
 import android.app.LocaleManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.os.Bundle
 import android.os.LocaleList
@@ -17,14 +19,30 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal fun scannerPageLimit(multipage: Boolean): Int? = if (multipage) null else 1
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
+    private val savedOutputsChangedReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == ACTION_SAVED_OUTPUTS_CHANGED) {
+                    viewModel.refreshAfterShareCleanup()
+                }
+            }
+        }
     private val scannerLauncher =
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
             handleScannerResult(it)
@@ -40,41 +58,68 @@ class MainActivity : ComponentActivity() {
         setContent {
             val state by viewModel.state.collectAsState()
             val settings by viewModel.settings.collectAsState()
-            val aiKeyStatus by viewModel.aiKeyStatus.collectAsState()
             ScanItApp(
                 state = state,
                 settings = settings,
                 language = currentAppLanguage(),
                 defaultEmailSubjects = defaultEmailSubjects,
-                aiKeyStatus = aiKeyStatus,
                 onScan = ::startScan,
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
                 onPdfFolderCleared = viewModel::clearPdfTreeUri,
-                onRefreshGeminiKey = viewModel::refreshGeminiKeyStatus,
-                onSaveGeminiKey = viewModel::saveGeminiApiKey,
-                onDeleteGeminiKey = viewModel::deleteGeminiApiKey,
+                onRecent = viewModel::showRecent,
+                onOpenRecent = viewModel::openRecentScan,
+                onShareRecentPdf = ::shareRecentPdf,
+                onDeleteRecent = viewModel::deleteRecentScan,
+                onLoadThumbnail = viewModel::loadThumbnail,
+                onSelectResultPage = viewModel::selectResultPage,
+                onNavigateBack = viewModel::navigateBack,
                 onSharePdf = ::shareCurrentPdf,
                 onShareImages = ::shareCurrentImages,
                 onPrint = ::printCurrentScan,
-                onAiCleanup = viewModel::startAiCleanup,
-                onAiReviewPage = viewModel::selectAiReviewPage,
-                onAiReviewSource = viewModel::selectAiReviewSource,
-                onAcceptAi = viewModel::acceptAiCleanup,
-                onDiscardAi = viewModel::discardAiCleanup,
-                onUseOriginal = viewModel::useOriginal,
+                onSaveNow = viewModel::saveCurrentOutputs,
             )
         }
-        if (savedInstanceState == null) {
-            startScan()
-        } else {
-            viewModel.resumeScannerPreparation()?.let(::requestScannerIntent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.scannerRequest.collect { request ->
+                    if (request != null && viewModel.claimScannerRequest(request)) {
+                        requestScannerIntent(request)
+                    }
+                }
+            }
+        }
+        viewModel.resumeScannerPreparation()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = retryPendingShareCleanup(applicationContext)
+            if (result != null && shareCleanupCompletionPolicy(result).warn) {
+                showShareCleanupFailure(applicationContext)
+            }
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        registerReceiver(
+            savedOutputsChangedReceiver,
+            IntentFilter(ACTION_SAVED_OUTPUTS_CHANGED),
+            Context.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    override fun onStop() {
+        unregisterReceiver(savedOutputsChangedReceiver)
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshAfterShareCleanup()
+    }
+
     internal fun startScan() {
-        viewModel.beginScannerLaunch()?.let(::requestScannerIntent)
+        viewModel.beginScannerLaunch()
     }
 
     private fun requestScannerIntent(requestGeneration: Long) {
@@ -186,23 +231,78 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun shareCurrentPdf() {
-        shareCurrentScan(::pdfShareIntent)
+        shareCurrentScan(ShareCleanupKind.Pdf, ::pdfShareIntent)
+    }
+
+    private fun shareRecentPdf(cacheId: String) {
+        val action = viewModel.beginRecentShare(cacheId)
+        if (action == null) {
+            showToast(R.string.share_failed)
+            return
+        }
+        val settings = viewModel.currentSettings()
+        lifecycleScope.launch {
+            val prepared =
+                try {
+                    withContext(Dispatchers.IO) {
+                        val scan = viewModel.recentScanForShare(action) ?: return@withContext null
+                        pdfShareIntent(this@MainActivity, scan.cached, settings) to
+                            shareCleanupRequest(
+                                scan,
+                                ShareCleanupKind.Pdf,
+                                settings.deletePdfAfterShare,
+                            )
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+            if (prepared == null) {
+                if (viewModel.recentShareUnavailable(action)) {
+                    showToast(R.string.share_failed)
+                }
+                return@launch
+            }
+            if (!viewModel.claimRecentShare(action)) {
+                return@launch
+            }
+            try {
+                if (!launchShareChooser(prepared.first, prepared.second)) {
+                    showToast(R.string.share_failed)
+                }
+            } catch (_: RuntimeException) {
+                showToast(R.string.share_failed)
+            }
+        }
     }
 
     private fun shareCurrentImages() {
-        shareCurrentScan(::imageShareIntent)
+        shareCurrentScan(ShareCleanupKind.Images, ::imageShareIntent)
     }
 
     private fun shareCurrentScan(
+        cleanupKind: ShareCleanupKind,
         createIntent: (Context, CachedScan, AppSettings) -> Intent,
     ) {
-        val scan = (viewModel.state.value as? ScreenState.Result)?.scan?.cached
+        val scan = (viewModel.state.value as? ScreenState.Result)?.scan
         if (scan == null) {
             showToast(R.string.share_failed)
             return
         }
+        val settings = viewModel.currentSettings()
+        val cleanupEnabled =
+            when (cleanupKind) {
+                ShareCleanupKind.Pdf -> settings.deletePdfAfterShare
+                ShareCleanupKind.Images -> settings.deleteImagesAfterShare
+            }
         try {
-            if (!launchShareChooser(createIntent(this, scan, viewModel.currentSettings()))) {
+            if (
+                !launchShareChooser(
+                    createIntent(this, scan.cached, settings),
+                    shareCleanupRequest(scan, cleanupKind, cleanupEnabled),
+                )
+            ) {
                 showToast(R.string.share_failed)
             }
         } catch (_: Exception) {

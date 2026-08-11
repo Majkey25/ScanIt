@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="internal_gemini_title">Interní test Gemini</string>
+    <string name="internal_gemini_warning">Pouze pro ladění. Vybraný obrázek se odešle do Gemini. Před použitím výsledek zkontrolujte.</string>
+    <string name="internal_gemini_api_key">Gemini API klíč</string>
+    <string name="internal_gemini_save_key">Uložit klíč</string>
+    <string name="internal_gemini_delete_key">Smazat klíč</string>
+    <string name="internal_gemini_key_present">Šifrovaný klíč je uložený.</string>
+    <string name="internal_gemini_key_missing">Šifrovaný klíč není uložený.</string>
+    <string name="internal_gemini_key_invalid">Zadejte platný API klíč.</string>
+    <string name="internal_gemini_key_error">Šifrované úložiště klíče se nepodařilo aktualizovat.</string>
+    <string name="internal_gemini_select_image">Vybrat jeden obrázek</string>
+    <string name="internal_gemini_image_selected">Obrázek je vybraný.</string>
+    <string name="internal_gemini_image_error">Vybraný obrázek nelze použít.</string>
+    <string name="internal_gemini_process">Zpracovat pomocí Gemini</string>
+    <string name="internal_gemini_process_error">Zpracování pomocí Gemini se nepodařilo.</string>
+    <string name="internal_gemini_preview">Náhled výstupu Gemini</string>
+</resources>

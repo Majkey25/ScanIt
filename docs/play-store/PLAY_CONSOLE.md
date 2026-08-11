@@ -1,98 +1,257 @@
-# Google Play Console copy
+# Google Play Console publication worksheet
 
-Use this file for the internal alpha first. Recheck every declaration before closed or production release.
+Prepared for the public `playRelease` build only. Do not reuse these answers for
+an internal developer build or after adding an SDK without re-auditing the
+merged manifest and resolved runtime graph.
+
+Google requires accurate app metadata, a Privacy Policy, and Data Safety answers
+that include third-party SDK behavior. The developer remains responsible for the
+submitted declarations:
+
+- [Play Console requirements](https://support.google.com/googleplay/android-developer/answer/10788890)
+- [Data Safety form guidance](https://support.google.com/googleplay/android-developer/answer/10787469)
+- [Privacy Policy requirements](https://support.google.com/googleplay/android-developer/answer/17105854)
+- [ML Kit Android disclosure](https://developers.google.com/ml-kit/android-data-disclosure)
 
 ## App identity
 
-- App name: `ScanIt`
-- Package: `com.majkeylab.scanit`
-- Default language: English (United States)
-- App or game: App
-- Free or paid: Free
-- Category: Productivity
-- Contact email: `majkeylab@gmail.com`
-- Privacy policy: `https://github.com/Majkey25/ScanIt/blob/main/PRIVACY.md`
-- Ads: No
+| Field | Value |
+|---|---|
+| App name | `ScanIt` |
+| Package | `com.majkeylab.scanit` |
+| Version code | `5` |
+| Version name | `1.2.0-beta.1` |
+| Default language | English (United States) |
+| App or game | App |
+| Category | Productivity |
+| Free or paid | Free |
+| Contact email | `majkeylab@gmail.com` |
+| Website | `https://majkey25.github.io/ScanIt/` |
+| Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
+| Ads | No |
 
-## English listing
+Do not invent a legal developer name, address, phone number, organization, or
+other account-holder detail here. Use only the verified values already held by
+the Play developer account.
 
-Short description:
+## English (United States) listing
 
-> Scan documents to PDF and share them in seconds. Free, simple, no ads.
+### App name
 
-Full description:
+> ScanIt
+
+### Short description
+
+71 characters including spaces:
+
+> Scan documents to PDF and share in seconds. Simple, local, and ad-free.
+
+### Full description
 
 > ScanIt removes the file-management work from document scanning.
 >
-> Open the app and the scanner starts immediately. Capture one or more pages, review the automatic crop and enhancement, then share the finished PDF or images through Android's standard share sheet.
+> Open the app and the scanner starts immediately. Capture one or more pages, review the automatic crop and enhancement, then save, share, or print the result.
 >
 > Features:
 > - automatic document detection and capture
-> - crop, perspective correction, rotation, filters, and cleanup
-> - single-page and multi-page PDF/JPEG output
-> - automatic PDF and Gallery saving, both configurable
-> - selectable PDF folder
-> - PDF/image sharing and system printing
+> - crop, perspective correction, rotation, filters, shadow removal, and cleanup
+> - single-page and multi-page PDF and JPEG output
+> - Recent scans with page previews
+> - automatic or manual saving of PDFs and Gallery images
+> - PDF saving to Downloads or a folder you choose
+> - PDF/image sharing with an optional subject and message
+> - optional deletion of saved PDFs or images after sharing
+> - deletion of saved outputs from Recent scans
+> - Android system printing
 > - monochrome light and dark interface
 > - system, English, and Czech language selection
-> - optional experimental Gemini cleanup behind Advanced settings
 >
-> ScanIt is free, open source, and contains no advertising, subscription, account, or first-party analytics.
+> ScanIt has no ads, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
 >
-> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Experimental cloud AI is disabled by default and requires explicit consent plus the user's own API key.
+> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner module and process limited diagnostic and usage telemetry.
 
 ## Czech listing
 
-Short description:
+### App name
 
-> Naskenujte dokument do PDF a během pár sekund ho sdílejte. Zdarma, bez reklam.
+> ScanIt
 
-Full description:
+### Short description
 
-> ScanIt odstraňuje zbytečnou práci se soubory při skenování dokumentů.
+70 characters including spaces:
+
+> Naskenujte dokument do PDF a během pár sekund ho sdílejte. Bez reklam.
+
+### Full description
+
+> ScanIt usnadňuje skenování a odesílání dokumentů.
 >
-> Po otevření aplikace se skener spustí okamžitě. Vyfoťte jednu nebo více stran, zkontrolujte automatický ořez a vylepšení a hotové PDF nebo obrázky sdílejte přes systémovou nabídku Androidu.
+> Po otevření aplikace se skener spustí okamžitě. Naskenujte jednu nebo více stran, zkontrolujte automatický ořez a vylepšení a výsledek uložte, sdílejte nebo vytiskněte.
 >
 > Funkce:
 > - automatická detekce a zachycení dokumentu
-> - ořez, korekce perspektivy, otočení, filtry a vyčištění
-> - jednostránkový i vícestránkový PDF/JPEG výstup
-> - nastavitelné automatické ukládání PDF a obrázků
-> - volitelná složka pro PDF
-> - sdílení PDF/obrázků a systémový tisk
+> - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
+> - jednostránkový i vícestránkový výstup do PDF a JPEG
+> - Nedávné skeny s náhledy stránek
+> - automatické nebo ruční ukládání PDF a obrázků do Galerie
+> - ukládání PDF do Stažených souborů nebo zvolené složky
+> - sdílení PDF nebo obrázků s volitelným předmětem a zprávou
+> - volitelné smazání uložených PDF nebo obrázků po sdílení
+> - mazání uložených výstupů v Nedávných skenech
+> - systémový tisk Androidu
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický a český jazyk
-> - volitelné experimentální čištění Gemini skryté v pokročilém nastavení
 >
-> ScanIt je zdarma, open source a neobsahuje reklamy, předplatné, účet ani vlastní analytiku.
+> ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
 >
-> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Experimentální cloudová AI je ve výchozím stavu vypnutá a vyžaduje výslovný souhlas a vlastní API klíč uživatele.
+> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou stáhnout modul skeneru a zpracovávat omezené diagnostické a provozní údaje.
 
-## Internal-test reviewer notes
+The listing describes current implemented public behavior only. It does not
+advertise compression targets, signatures, stamps, cloud processing, donations,
+or any other unfinished feature.
 
-- No account or sign-in is required.
-- Opening ScanIt immediately starts Google ML Kit Document Scanner.
-- Finish or cancel the scanner to reach ScanIt, then use the gear icon for settings.
-- Advanced Gemini cleanup is optional, disabled by default, and requires a user-owned key. It is not required for the scanner, saving, sharing, or printing flow.
-- The internal alpha supports Android 15 and newer and requires Google Play services plus at least 1.7 GB total RAM.
+## App Content worksheet
 
-## Data Safety draft
+### Privacy Policy
 
-- Account data: none.
-- Advertising: none.
-- First-party analytics: none.
-- Local scans: processed on-device and saved only according to user settings/actions.
-- ML Kit: declare the device/app information, identifiers, performance, diagnostics, configuration, and usage events listed in Google's current ML Kit disclosure.
-- Optional Gemini: every current scan page is sent as an encrypted-in-transit JPEG only after opt-in and a user-triggered cleanup action. Mark this collection optional and for app functionality. Confirm Google's current retention and the exact Play data-type mapping before closed or production testing.
-- Deletion: the saved Gemini key can be deleted in Advanced settings; uninstall removes app-private settings/cache; users delete Gallery/Downloads files through Android.
+- URL: `https://majkey25.github.io/ScanIt/privacy.html`
+- Publicly accessible without login: **Yes; verified HTTP 200 on 2026-08-09.**
+- Names ScanIt and provides privacy contact: Yes.
+- Covers SDK data, retention/deletion, sharing, and security: Yes.
+- GitHub Pages is enabled and the URL returns the policy without login.
+- The in-app link points to this same URL.
 
-## Required assets before public listing
+### App access
 
-- App icon: 512 x 512 PNG, at most 1 MB.
-- Feature graphic: 1024 x 500 PNG or JPEG.
-- Phone screenshots: at least two; prepare four accurate 1080 x 1920 captures.
-- Do not use private documents, notifications, contact names, device identifiers, or misleading edited UI.
+- Is all functionality available without special access? **Yes**.
+- Account or sign-in required? **No**.
+- Reviewer credentials, QR code, membership, location, or special instructions required? **No**.
 
-## Release gate
+Reviewer note:
 
-Internal testing may use the BYOK Gemini alpha. Do not move to closed or production until Gemini has been live-tested, reviewer access is resolved, the exact Data Safety form is confirmed, and the Play asset set is complete.
+> ScanIt requires no account. Opening it starts the Google ML Kit document scanner. Finish a scan to reach Result, or cancel to reach Recent scans. The camera and editing flow is supplied by Google Play services. Settings is available from the gear icon. The app supports Android 15 and newer, requires Google Play services, and ML Kit requires at least 1.7 GB total device RAM.
+
+### Ads
+
+- Does the app contain ads? **No**.
+- Advertising SDK present? **No**.
+- Donation or payment prompt in the app or Play listing? **No**.
+
+### Target audience and content
+
+- Selected age group: **18 and over**.
+- Designed for children: **No**.
+- Families program: **No**.
+- Social features or communication between users: **No**.
+- User-generated content published or exchanged inside ScanIt: **No**.
+- Content rating: answer the current IARC questionnaire from the shipped app; the maintainer provides no violence, sexual content, gambling, controlled substances, profanity, or user communication.
+
+The app can scan user-owned documents, but it does not publish or distribute
+that content itself. Reassess the audience and rating if marketing or app
+features change.
+
+### Required declarations
+
+| Declaration | Answer |
+|---|---|
+| News or magazine app | No |
+| Government app | No |
+| Financial features | No |
+| Health features | No |
+| COVID-19 contact tracing or status app | No |
+| Account creation | No |
+| Account deletion requirement | Not applicable; no accounts |
+
+### Permissions and sensitive APIs
+
+The public manifest does not request ScanIt's own camera, broad storage,
+contacts, location, accounts, notifications, advertising ID, or app-owned
+internet permission. The user explicitly chooses any imported image and custom
+PDF folder through Android system pickers. Verify the final merged manifest
+again before submission.
+
+## Data Safety worksheet
+
+### Top-level answers
+
+| Question | Answer |
+|---|---|
+| Does the app collect or share required user data types? | Collects: Yes, because the ML Kit SDK transmits telemetry. Shares: No. |
+| Is all transmitted data encrypted in transit? | Yes, Google states ML Kit uses HTTPS. |
+| Can users request account deletion? | Not applicable; ScanIt has no accounts. |
+| Does the app provide an independent deletion-request mechanism for ML Kit telemetry? | No. Google processes that telemetry under Google's Privacy Policy. |
+| Does the app follow the Families policy? | Not applicable; target audience is 18+. |
+
+### Data types to declare
+
+Conservative mapping for
+`com.google.android.gms:play-services-mlkit-document-scanner:16.0.0`:
+
+| Play data type | Collected | Shared | Required | Ephemeral | Purpose |
+|---|---:|---:|---:|---:|---|
+| Device or other IDs | Yes | No | Yes | No | Analytics |
+| App activity → App interactions | Yes | No | Yes | No | Analytics |
+| App info and performance → Diagnostics | Yes | No | Yes | No | Analytics |
+
+Google's disclosure says ML Kit may process device and application information,
+device or per-installation identifiers, performance metrics, API configuration,
+input/output size, feature version, event type, and error codes for diagnostics
+and usage analytics. Google states that these metrics are encrypted in transit
+and are not transferred to third parties. “Required” and “not ephemeral” are the
+conservative choices because ScanIt provides no SDK telemetry toggle and Google
+does not state that all metrics are processed only in memory.
+
+### Data types not declared as collected by ScanIt
+
+- Scanned pages, imported document images, generated PDFs, and file names: processed and stored on-device; explicit user-directed sharing to another app is not developer collection.
+- Email subject/message defaults and folder choices: local app settings only.
+- Contacts, location, payment information, health data, financial information, messages, audio, calendar, and browsing history: not accessed by ScanIt.
+
+### Local retention and deletion
+
+- App-private working copies: at most eight scan directories; Android may clear them; removing a Recent item removes its temporary working copy; uninstall removes the remaining app-private cache.
+- App settings: retained locally until changed, cleared, or the app is uninstalled; Android backup and transfer are disabled.
+- Gallery, Downloads, and selected-folder files: retained until the user deletes them through ScanIt or the corresponding storage provider. Optional default-off settings can delete the matching saved format after a sharing app is selected. Uninstall does not delete saved files outside app-private storage.
+- External share/print destination: retention is controlled by the app or service selected by the user.
+- Google ML Kit telemetry: retention and deletion are controlled by Google under Google's policies, not by ScanIt.
+
+### Final Data Safety gate
+
+Before submission, compare this worksheet with:
+
+1. the exact signed `playRelease` AAB;
+2. the merged release manifest;
+3. `playReleaseRuntimeClasspath`;
+4. the current ML Kit disclosure and Play form wording.
+
+Stop submission if the artifact contains another data-processing SDK, a public
+cloud endpoint, advertising, analytics, or an app-owned `INTERNET` permission.
+
+## Store assets and localization
+
+Use the current official [Google Play preview-asset requirements](https://support.google.com/googleplay/android-developer/answer/9866151):
+
+- App icon: 512 × 512, 32-bit PNG with alpha, at most 1,024 KB.
+- Feature graphic: 1024 × 500, JPEG or 24-bit PNG without alpha.
+- Phone screenshots: prepare six accurate English and six accurate Czech 1080 × 1920 images; Google Play requires at least two and recommends at least four 1080px 9:16 images for app promotion surfaces.
+- Screenshots must show the real current UI, use `12:12`, omit notifications, carrier identity, and battery percentage, and contain no private documents or third-party copyrighted sheet music.
+- Provide English and Czech alt text for every uploaded graphic.
+
+Do not show a Play badge, price/free claim, ranking, award, download call to
+action, donation, unfinished feature, or device mockup in the feature graphic.
+
+## Submission checklist
+
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 5, version `1.2.0-beta.1`.
+- [ ] R8 mapping and real native debug symbols from that exact build are retained for upload.
+- [ ] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
+- [ ] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
+- [ ] In-app Privacy Policy link opens the Pages URL above.
+- [ ] Pages root, Privacy, and Terms URLs return successfully over HTTPS.
+- [ ] Listing text matches the device-tested feature set.
+- [ ] English and Czech short descriptions remain within 80 characters.
+- [ ] Data Safety answers are rechecked against the exact runtime graph and current official guidance.
+- [ ] Developer identity and public contact fields use verified Play account data.
+- [ ] App icon, feature graphic, screenshots, and alt text pass the current asset rules.
+- [ ] No account credentials are entered in App access because none are required.
+- [ ] Closed/production submission happens only after the signed artifact and all declarations receive final account-holder review.
