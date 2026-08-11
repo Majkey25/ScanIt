@@ -258,6 +258,7 @@ internal data class CachedScan(
     val lineageCacheId: String = baseName,
     val parentCacheId: String? = null,
     val parentEntryId: String? = null,
+    val restoreAppearanceSettings: Boolean = true,
 )
 
 private const val PDF_DISPLAY_BYTES = 1_000_000L
@@ -278,6 +279,17 @@ internal enum class SaveNowTarget {
     Images,
     Both,
 }
+
+internal data class VisualMarkEditorState(
+    val source: MarkEditorSource,
+    val templateIds: List<String> = emptyList(),
+    val selectedTemplateId: String? = null,
+    val placement: MarkPlacement = MarkPlacement(),
+    val drawingStrokes: List<MarkStroke>? = null,
+    val busy: Boolean = false,
+    val applying: Boolean = false,
+    val message: UiMessage? = null,
+)
 
 internal enum class SavedOutputKind {
     Pdf,
@@ -496,6 +508,7 @@ internal sealed interface ScreenState {
         val outputSaveInProgress: Boolean = false,
         val appearanceApplyInProgress: Boolean = false,
         val appearanceMessage: UiMessage? = null,
+        val visualMarkEditor: VisualMarkEditorState? = null,
     ) : ScreenState
 
     data class Recent(
@@ -506,6 +519,12 @@ internal sealed interface ScreenState {
 
     data class Failure(val message: UiMessage) : ScreenState
 }
+
+internal val ScreenState.Result.resultActionsBlocked: Boolean
+    get() =
+        outputSaveInProgress ||
+            appearanceApplyInProgress ||
+            visualMarkEditor != null
 
 internal enum class AppBackAction {
     CloseSettings,

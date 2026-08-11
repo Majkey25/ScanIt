@@ -61,11 +61,15 @@ internal class MarkTemplateStore(context: Context) {
         }
     }
 
-    fun load(id: String): Bitmap? = synchronized(MARK_STORAGE_LOCK) {
+    fun load(
+        id: String,
+        maxSide: Int = MARK_OUTPUT_MAX_SIDE,
+    ): Bitmap? = synchronized(MARK_STORAGE_LOCK) {
+        require(maxSide in 1..MARK_OUTPUT_MAX_SIDE) { "Mark preview size is invalid" }
         val targetDirectory = requireDirectory()
         val file = canonicalMarkTemplateFile(targetDirectory, id) ?: return@synchronized null
         if (!file.isFile || file.length() !in 1..MAX_MARK_INPUT_BYTES) return@synchronized null
-        decodeMarkBitmap(file, MARK_OUTPUT_MAX_SIDE)
+        decodeMarkBitmap(file, maxSide)
     }
 
     fun delete(id: String): Boolean = synchronized(MARK_STORAGE_LOCK) {

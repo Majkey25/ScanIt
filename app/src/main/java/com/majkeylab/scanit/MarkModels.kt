@@ -5,6 +5,10 @@ internal const val MAX_MARK_INPUT_BYTES = 20_000_000L
 internal const val MARK_DECODE_MAX_SIDE = 2_048
 internal const val MARK_OUTPUT_MAX_SIDE = 1_024
 internal const val MARK_VISIBLE_ALPHA = 16
+internal const val MAX_MARK_DRAWING_STROKES = 128
+internal const val MAX_MARK_DRAWING_POINTS = 8_192
+internal const val MIN_MARK_WIDTH_FRACTION = 0.1f
+internal const val MAX_MARK_WIDTH_FRACTION = 0.8f
 
 private const val MARK_TEMPLATE_PREFIX = "mark_"
 private const val MARK_TEMPLATE_SUFFIX = ".png"
@@ -37,10 +41,34 @@ internal data class MarkPlacement(
     init {
         require(centerX.isFinite() && centerX in 0f..1f) { "Mark horizontal position is invalid" }
         require(centerY.isFinite() && centerY in 0f..1f) { "Mark vertical position is invalid" }
-        require(widthFraction.isFinite() && widthFraction > 0f && widthFraction <= 1f) {
+        require(
+            widthFraction.isFinite() &&
+                widthFraction in MIN_MARK_WIDTH_FRACTION..MAX_MARK_WIDTH_FRACTION,
+        ) {
             "Mark width is invalid"
         }
     }
+}
+
+internal data class MarkEditorSource(
+    val cacheId: String,
+    val entryId: String,
+    val pageIndex: Int,
+) {
+    init {
+        require(isSafeCacheId(cacheId)) { "Mark source cache ID is unsafe" }
+        require(isCanonicalUuid(entryId)) { "Mark source entry ID is invalid" }
+        require(pageIndex >= 0) { "Mark source page is invalid" }
+    }
+
+    fun isCurrent(
+        cacheId: String,
+        entryId: String?,
+        selectedPageIndex: Int,
+    ): Boolean =
+        this.cacheId == cacheId &&
+            this.entryId == entryId &&
+            pageIndex == selectedPageIndex
 }
 
 internal data class MarkRect(
@@ -114,6 +142,33 @@ internal fun resolveMarkRect(
         right = (left + width).coerceAtMost(pageWidthDouble).toFloat(),
         bottom = (top + height).coerceAtMost(pageHeightDouble).toFloat(),
     )
+}
+
+internal fun scaleNormalizedMarkStrokes(
+    strokes: List<MarkStroke>,
+    width: Int,
+    height: Int,
+): List<MarkStroke> {
+    validateNormalizedMarkStrokes(strokes)
+    require(width > 0 && height > 0) { "Mark drawing dimensions are invalid" }
+    return strokes.map { stroke ->
+        MarkStroke(
+            stroke.points.map { point ->
+                MarkPoint(point.x * width, point.y * height)
+            },
+        )
+    }
+}
+
+internal fun validateNormalizedMarkStrokes(strokes: List<MarkStroke>) {
+    require(strokes.isNotEmpty()) { "Mark drawing has no strokes" }
+    require(strokes.size <= MAX_MARK_DRAWING_STROKES) { "Mark drawing has too many strokes" }
+    require(strokes.sumOf { it.points.size.toLong() } <= MAX_MARK_DRAWING_POINTS) {
+        "Mark drawing has too many points"
+    }
+    require(strokes.all { stroke -> stroke.points.all { it.x in 0f..1f && it.y in 0f..1f } }) {
+        "Mark drawing points must be normalized"
+    }
 }
 
 internal fun signedBaseName(

@@ -46,7 +46,7 @@ internal fun pdfSizeTargetWarning(result: ScanPdfBuildResult): UiMessage {
 }
 
 internal fun settingsSaveAllowed(state: ScreenState): Boolean =
-    (state as? ScreenState.Result)?.appearanceApplyInProgress != true
+    (state as? ScreenState.Result)?.resultActionsBlocked != true
 
 internal fun scannerPreparationMayResume(
     navigationInitialized: Boolean,
@@ -238,7 +238,7 @@ internal fun checkpointRestoreSettings(
     authoritative: CachedScan?,
     provisional: Boolean,
 ): AppSettings {
-    if (!provisional) return current
+    if (!provisional || authoritative?.restoreAppearanceSettings == false) return current
     val cached = checkNotNull(authoritative)
     return current.copy(
         appearance = checkNotNull(cached.appearanceSettings),
@@ -298,6 +298,7 @@ internal class ScanViewModel(
     private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val storage = ScanStorage(application)
+    private val markTemplateStore = MarkTemplateStore(application)
     private val scannerLaunchGate =
         ScannerLaunchGate(
             ScannerLaunchStage.entries.firstOrNull {
@@ -318,6 +319,9 @@ internal class ScanViewModel(
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
     private var appearanceApplyJob: Job? = null
+    private var visualMarkTemplateJob: Job? = null
+    private var visualMarkApplyJob: Job? = null
+    private var visualMarkScanSource: MarkEditorSource? = null
     private var resultPreviewJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
@@ -712,7 +716,7 @@ internal class ScanViewModel(
 
     fun selectResultPage(selectedPageIndex: Int) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.outputSaveInProgress || current.appearanceApplyInProgress) return
+        if (current.resultActionsBlocked) return
         val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
         if (
             pageIndex == current.selectedPageIndex &&
@@ -766,12 +770,307 @@ internal class ScanViewModel(
             }
     }
 
+    fun openVisualMarkEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val cached = current.scan.cached
+        val entryId = cached.entryId ?: return
+        if (
+            current.resultActionsBlocked ||
+                current.pagePreviewLoading ||
+                current.thumbnail == null ||
+                cached.sourcePages.size != cached.pages.size ||
+                cached.sourcePages.isEmpty() ||
+                cached.appearanceSettings == null ||
+                !current.scan.outputMetadataValid
+        ) {
+            return
+        }
+        val source =
+            MarkEditorSource(
+                cacheId = cached.baseName,
+                entryId = entryId,
+                pageIndex = resolvedPageIndex(current.selectedPageIndex, cached.pages.size),
+            )
+        mutableState.value =
+            current.copy(
+                visualMarkEditor = VisualMarkEditorState(source = source, busy = true),
+            )
+        startVisualMarkTemplateJob(
+            source = source,
+            failureMessage = UiMessage(R.string.visual_mark_load_failed),
+        ) { null }
+    }
+
+    fun closeVisualMarkEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.visualMarkEditor?.applying == true) return
+        visualMarkTemplateJob?.cancel()
+        visualMarkScanSource = null
+        mutableState.value = current.copy(visualMarkEditor = null)
+    }
+
+    fun selectVisualMarkTemplate(id: String) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || id !in editor.templateIds) return
+        mutableState.value =
+            current.copy(
+                visualMarkEditor = editor.copy(selectedTemplateId = id, message = null),
+            )
+    }
+
+    fun updateVisualMarkPlacement(placement: MarkPlacement) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy) return
+        mutableState.value =
+            current.copy(visualMarkEditor = editor.copy(placement = placement, message = null))
+    }
+
+    fun beginVisualMarkDrawing() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy) return
+        mutableState.value =
+            current.copy(
+                visualMarkEditor = editor.copy(drawingStrokes = emptyList(), message = null),
+            )
+    }
+
+    fun updateVisualMarkDrawing(strokes: List<MarkStroke>) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || editor.drawingStrokes == null) return
+        if (strokes.isNotEmpty()) validateNormalizedMarkStrokes(strokes)
+        mutableState.value =
+            current.copy(visualMarkEditor = editor.copy(drawingStrokes = strokes, message = null))
+    }
+
+    fun cancelVisualMarkDrawing() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || editor.drawingStrokes == null) return
+        mutableState.value = current.copy(visualMarkEditor = editor.copy(drawingStrokes = null))
+    }
+
+    fun importVisualMark(uri: Uri) {
+        beginVisualMarkTemplateMutation { markTemplateStore.import(uri) }
+    }
+
+    fun saveDrawnVisualMark(strokes: List<MarkStroke>) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || editor.drawingStrokes == null) return
+        try {
+            validateNormalizedMarkStrokes(strokes)
+        } catch (_: IllegalArgumentException) {
+            mutableState.value =
+                current.copy(
+                    visualMarkEditor =
+                        editor.copy(message = UiMessage(R.string.visual_mark_template_failed)),
+                )
+            return
+        }
+        beginVisualMarkTemplateMutation(clearDrawingOnSuccess = true) {
+            val bitmap = renderDrawnMark(strokes)
+            try {
+                markTemplateStore.save(bitmap)
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    fun deleteVisualMarkTemplate(id: String) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || editor.selectedTemplateId != id || id !in editor.templateIds) return
+        beginVisualMarkTemplateMutation {
+            if (!markTemplateStore.delete(id)) {
+                throw IOException("Mark template is unavailable")
+            }
+            null
+        }
+    }
+
+    suspend fun loadVisualMarkTemplate(
+        id: String,
+        maxSide: Int,
+    ): Bitmap? =
+        try {
+            withContext(Dispatchers.IO) { markTemplateStore.load(id, maxSide) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    fun beginVisualMarkScan(): MarkEditorSource? {
+        val current = mutableState.value as? ScreenState.Result ?: return null
+        val editor = current.visualMarkEditor ?: return null
+        if (editor.busy || !isVisualMarkSourceCurrent(editor.source)) return null
+        visualMarkScanSource = editor.source
+        mutableState.value =
+            current.copy(visualMarkEditor = editor.copy(busy = true, message = null))
+        return editor.source
+    }
+
+    fun currentVisualMarkScanSource(): MarkEditorSource? = visualMarkScanSource
+
+    fun visualMarkScannerCancelled(source: MarkEditorSource) {
+        finishVisualMarkScanner(source, null)
+    }
+
+    fun visualMarkScannerFailed(source: MarkEditorSource) {
+        finishVisualMarkScanner(source, UiMessage(R.string.visual_mark_scanner_failed))
+    }
+
+    fun importScannedVisualMark(
+        source: MarkEditorSource,
+        uri: Uri,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (
+            visualMarkScanSource != source ||
+                editor.source != source ||
+                !editor.busy ||
+                !isVisualMarkSourceCurrent(source)
+        ) {
+            return
+        }
+        visualMarkScanSource = null
+        startVisualMarkTemplateJob(source) { markTemplateStore.import(uri) }
+    }
+
+    fun applyVisualMark() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        val templateId = editor.selectedTemplateId ?: return
+        if (
+            editor.busy ||
+                templateId !in editor.templateIds ||
+                !isVisualMarkSourceCurrent(editor.source) ||
+                visualMarkApplyJob?.isActive == true
+        ) {
+            return
+        }
+        val source = editor.source
+        val generation = beginRouteMutation(keepVisualMarkEditor = true)
+        mutableState.value =
+            current.copy(
+                visualMarkEditor =
+                    editor.copy(
+                        drawingStrokes = null,
+                        busy = true,
+                        applying = true,
+                        message = null,
+                    ),
+            )
+        visualMarkApplyJob =
+            viewModelScope.launch {
+                var candidate: CachedScan? = null
+                var checkpointCommitted = false
+                var thumbnail: Bitmap? = null
+                var warnings: List<UiMessage> = emptyList()
+                try {
+                    val build =
+                        withContext(Dispatchers.IO) {
+                            val template = markTemplateStore.load(templateId)
+                                ?: throw IOException("Mark template is unavailable")
+                            try {
+                                val coroutineContext = currentCoroutineContext()
+                                storage.createMarkedVariant(
+                                    source = current.scan.cached,
+                                    selectedPageIndex = source.pageIndex,
+                                    mark = template,
+                                    placement = editor.placement,
+                                    isCancelled = { !coroutineContext.isActive },
+                                )
+                            } finally {
+                                template.recycle()
+                            }
+                        }
+                    candidate = build.cached
+                    if (!build.pdf.targetMet) {
+                        warnings = listOf(pdfSizeTargetWarning(build.pdf))
+                    }
+                    thumbnail =
+                        withContext(Dispatchers.IO) {
+                            storage.loadThumbnail(
+                                build.cached.pages[source.pageIndex],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                        }
+                    when (persistResultCheckpoint(generation, build.cached.baseName)) {
+                        ResultActivation.Applied -> checkpointCommitted = true
+                        ResultActivation.Rejected,
+                        ResultActivation.Stale,
+                        -> return@launch restoreVisualMarkApplyFailure(source, generation, candidate)
+                    }
+                    val saved =
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            completeDerivedCandidate(build.cached, warnings)
+                        }
+                    routeMutationMutex.withLock {
+                        if (routeMutationGate.isCurrent(generation)) {
+                            publishResult(
+                                ScreenState.Result(
+                                    scan = saved,
+                                    thumbnail = thumbnail,
+                                    selectedPageIndex = source.pageIndex,
+                                ),
+                            )
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    if (!checkpointCommitted) candidate?.let { discardAppearanceVariantUnlessActive(it) }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (!checkpointCommitted) {
+                        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+                        restoreVisualMarkApplyFailure(source, generation, null)
+                    } else {
+                        val recovered =
+                            try {
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    candidate?.let {
+                                        completeDerivedCandidate(
+                                            it,
+                                            warnings + UiMessage(R.string.state_update_failed),
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = recovered,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = source.pageIndex,
+                                    ),
+                                )
+                            } else if (routeMutationGate.isCurrent(generation)) {
+                                persistRoute(ROUTE_FAILURE)
+                                mutableState.value =
+                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                            }
+                        }
+                    }
+                } finally {
+                    visualMarkApplyJob = null
+                }
+            }
+    }
+
     fun applyCurrentAppearance(requested: ScanAppearanceSettings) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val cached = current.scan.cached
         if (
-            current.outputSaveInProgress ||
-                current.appearanceApplyInProgress ||
+            current.resultActionsBlocked ||
                 current.pagePreviewLoading ||
                 appearanceApplyJob?.isActive == true ||
                 cached.sourcePages.size != cached.pages.size ||
@@ -951,7 +1250,7 @@ internal class ScanViewModel(
 
     fun saveCurrentOutputs(target: SaveNowTarget) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.appearanceApplyInProgress) return
+        if (current.resultActionsBlocked) return
         val entryId = current.scan.cached.entryId ?: return
         if (target !in saveNowTargets(current.scan)) return
         val action = resultSaveGate.begin(current.scan.cached.baseName, entryId) ?: return
@@ -1412,8 +1711,17 @@ internal class ScanViewModel(
         savedStateHandle[ROUTE_CACHE_ID_KEY] = cacheId
     }
 
-    private fun beginRouteMutation(): Long {
+    private fun beginRouteMutation(keepVisualMarkEditor: Boolean = false): Long {
         appearanceApplyJob?.cancel()
+        visualMarkTemplateJob?.cancel()
+        if (!keepVisualMarkEditor) {
+            visualMarkApplyJob?.cancel()
+            visualMarkScanSource = null
+            val result = mutableState.value as? ScreenState.Result
+            if (result?.visualMarkEditor != null) {
+                mutableState.value = result.copy(visualMarkEditor = null)
+            }
+        }
         resultSaveGate.invalidate()
         outputSaveJob?.cancel()
         recentActionGate.invalidate()
@@ -1421,6 +1729,129 @@ internal class ScanViewModel(
         recentJob?.cancel()
         resultPreviewJob?.cancel()
         return routeMutationGate.begin()
+    }
+
+    private fun beginVisualMarkTemplateMutation(
+        clearDrawingOnSuccess: Boolean = false,
+        operation: () -> String?,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || !isVisualMarkSourceCurrent(editor.source)) return
+        mutableState.value =
+            current.copy(visualMarkEditor = editor.copy(busy = true, message = null))
+        startVisualMarkTemplateJob(
+            source = editor.source,
+            clearDrawingOnSuccess = clearDrawingOnSuccess,
+            operation = operation,
+        )
+    }
+
+    private fun startVisualMarkTemplateJob(
+        source: MarkEditorSource,
+        clearDrawingOnSuccess: Boolean = false,
+        failureMessage: UiMessage = UiMessage(R.string.visual_mark_template_failed),
+        operation: () -> String?,
+    ) {
+        visualMarkTemplateJob?.cancel()
+        visualMarkTemplateJob =
+            viewModelScope.launch {
+                val update =
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val preferred = operation()
+                            preferred to markTemplateStore.list()
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                val editor = latest.visualMarkEditor ?: return@launch
+                if (editor.source != source || !isVisualMarkSourceCurrent(source)) return@launch
+                if (update == null) {
+                    mutableState.value =
+                        latest.copy(
+                            visualMarkEditor =
+                                editor.copy(
+                                    busy = false,
+                                    applying = false,
+                                    message = failureMessage,
+                                ),
+                        )
+                    return@launch
+                }
+                val (preferred, ids) = update
+                val selected =
+                    preferred?.takeIf(ids::contains)
+                        ?: editor.selectedTemplateId?.takeIf(ids::contains)
+                        ?: ids.firstOrNull()
+                mutableState.value =
+                    latest.copy(
+                        visualMarkEditor =
+                            editor.copy(
+                                templateIds = ids,
+                                selectedTemplateId = selected,
+                                drawingStrokes =
+                                    if (clearDrawingOnSuccess) null else editor.drawingStrokes,
+                                busy = false,
+                                applying = false,
+                                message = null,
+                            ),
+                    )
+            }
+    }
+
+    private fun finishVisualMarkScanner(
+        source: MarkEditorSource,
+        message: UiMessage?,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (visualMarkScanSource != source || editor.source != source) return
+        visualMarkScanSource = null
+        mutableState.value =
+            current.copy(visualMarkEditor = editor.copy(busy = false, message = message))
+    }
+
+    private fun isVisualMarkSourceCurrent(source: MarkEditorSource): Boolean {
+        val current = mutableState.value as? ScreenState.Result ?: return false
+        return source.isCurrent(
+            cacheId = current.scan.cached.baseName,
+            entryId = current.scan.cached.entryId,
+            selectedPageIndex = current.selectedPageIndex,
+        ) && current.visualMarkEditor?.source == source
+    }
+
+    private suspend fun restoreVisualMarkApplyFailure(
+        source: MarkEditorSource,
+        generation: Long,
+        candidate: CachedScan?,
+    ) {
+        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) return@withLock
+            val current = mutableState.value as? ScreenState.Result ?: return@withLock
+            val editor = current.visualMarkEditor ?: return@withLock
+            if (editor.source != source || !source.isCurrent(
+                    current.scan.cached.baseName,
+                    current.scan.cached.entryId,
+                    current.selectedPageIndex,
+                )
+            ) {
+                return@withLock
+            }
+            mutableState.value =
+                current.copy(
+                    visualMarkEditor =
+                        editor.copy(
+                            busy = false,
+                            applying = false,
+                            message = UiMessage(R.string.visual_mark_apply_failed),
+                        ),
+                )
+        }
     }
 
     private suspend fun discardAppearanceVariantUnlessActive(variant: CachedScan) {
@@ -1548,6 +1979,7 @@ internal class ScanViewModel(
                     val appearance = candidate.appearanceSettings
                         ?: throw IOException("Appearance authority metadata is unavailable")
                     if (
+                        candidate.restoreAppearanceSettings &&
                         settingsStore.restoreAppearanceAuthority(
                             appearance,
                             candidate.pdfSizeTarget,
@@ -1567,6 +1999,29 @@ internal class ScanViewModel(
         return saved.copy(
             warnings = (initialWarnings + saved.warnings).distinct(),
         )
+    }
+
+    private suspend fun completeDerivedCandidate(
+        candidate: CachedScan,
+        initialWarnings: List<UiMessage>,
+    ): SavedScan {
+        val owner = activeResultOwner
+            ?: throw IOException("Active result authority is unavailable")
+        val activated =
+            withActiveResultAuthority {
+                if (!settingsStore.ownsActiveResult(owner)) {
+                    throw IOException("Active result checkpoint ownership changed")
+                }
+                if (storage.isProvisionalCacheEntry(candidate)) {
+                    storage.activateCheckpointProvisional(candidate)
+                } else {
+                    candidate
+                }
+            }
+        val saved =
+            storage.openSavedScan(activated.baseName)
+                ?: throw IOException("Cached marked scan metadata is unavailable")
+        return saved.copy(warnings = (initialWarnings + saved.warnings).distinct())
     }
 
     private suspend fun saveAutomaticInitialOutputs(

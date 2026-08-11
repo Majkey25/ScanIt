@@ -157,6 +157,19 @@ internal fun ScanItApp(
     onPrint: (() -> Unit)? = null,
     onSaveNow: (SaveNowTarget) -> Unit = {},
     onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
+    onOpenVisualMarkEditor: () -> Unit = {},
+    onCloseVisualMarkEditor: () -> Unit = {},
+    onSelectVisualMarkTemplate: (String) -> Unit = {},
+    onUpdateVisualMarkPlacement: (MarkPlacement) -> Unit = {},
+    onBeginVisualMarkDrawing: () -> Unit = {},
+    onUpdateVisualMarkDrawing: (List<MarkStroke>) -> Unit = {},
+    onCancelVisualMarkDrawing: () -> Unit = {},
+    onImportVisualMark: (Uri) -> Unit = {},
+    onSaveDrawnVisualMark: (List<MarkStroke>) -> Unit = {},
+    onDeleteVisualMarkTemplate: (String) -> Unit = {},
+    onLoadVisualMarkTemplate: suspend (String, Int) -> Bitmap? = { _, _ -> null },
+    onScanVisualMark: () -> Unit = {},
+    onApplyVisualMark: () -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
@@ -170,20 +183,39 @@ internal fun ScanItApp(
             appearanceOpen = appearanceEditorExpanded,
         )
     BackHandler {
-        when (backAction) {
-            AppBackAction.CloseSettings -> showSettings = false
-            AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
-            AppBackAction.CollapseAppearance -> appearanceEditorExpanded = false
-            AppBackAction.ShowRecent -> onNavigateBack()
-            AppBackAction.LaunchScanner -> onScan()
-            AppBackAction.Consume -> Unit
+        val visualMarkEditor = (state as? ScreenState.Result)?.visualMarkEditor
+        when {
+            visualMarkEditor != null -> onCloseVisualMarkEditor()
+            backAction == AppBackAction.CloseSettings -> showSettings = false
+            backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
+            backAction == AppBackAction.CollapseAppearance -> appearanceEditorExpanded = false
+            backAction == AppBackAction.ShowRecent -> onNavigateBack()
+            backAction == AppBackAction.LaunchScanner -> onScan()
+            else -> Unit
         }
     }
 
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
-        if (showSettings) {
+        if (state is ScreenState.Result && state.visualMarkEditor != null) {
+            VisualMarkEditorScreen(
+                result = state,
+                editor = state.visualMarkEditor,
+                onClose = onCloseVisualMarkEditor,
+                onSelectTemplate = onSelectVisualMarkTemplate,
+                onPlacementChange = onUpdateVisualMarkPlacement,
+                onBeginDrawing = onBeginVisualMarkDrawing,
+                onUpdateDrawing = onUpdateVisualMarkDrawing,
+                onCancelDrawing = onCancelVisualMarkDrawing,
+                onImport = onImportVisualMark,
+                onSaveDrawing = onSaveDrawnVisualMark,
+                onDeleteTemplate = onDeleteVisualMarkTemplate,
+                onLoadTemplate = onLoadVisualMarkTemplate,
+                onScan = onScanVisualMark,
+                onApply = onApplyVisualMark,
+            )
+        } else if (showSettings) {
             SettingsScreen(
                 settings = settings,
                 language = language,
@@ -249,6 +281,11 @@ internal fun ScanItApp(
                             if (expanded) fileDetailsExpanded = false
                         },
                         onApplyAppearance = onApplyAppearance,
+                        onAddVisualMark = {
+                            appearanceEditorExpanded = false
+                            fileDetailsExpanded = false
+                            onOpenVisualMarkEditor()
+                        },
                     )
             }
         }
@@ -310,6 +347,7 @@ private fun ResultScreen(
     appearanceEditorExpanded: Boolean,
     onAppearanceEditorChange: (Boolean) -> Unit,
     onApplyAppearance: (ScanAppearanceSettings) -> Unit,
+    onAddVisualMark: () -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
@@ -336,7 +374,7 @@ private fun ResultScreen(
     var shadows by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
         mutableStateOf(initialAppearance.shadows)
     }
-    val actionsEnabled = !result.outputSaveInProgress && !result.appearanceApplyInProgress
+    val actionsEnabled = !result.resultActionsBlocked
     val appearanceActionsEnabled = actionsEnabled && !result.pagePreviewLoading
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
@@ -492,6 +530,22 @@ private fun ResultScreen(
                             },
                         )
                     }
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onAddVisualMark,
+                    enabled =
+                        actionsEnabled &&
+                            !result.pagePreviewLoading &&
+                            result.thumbnail != null &&
+                            scan.cached.entryId != null &&
+                            scan.cached.sourcePages.size == scan.cached.pages.size &&
+                            scan.cached.appearanceSettings != null &&
+                            scan.outputMetadataValid,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.add_signature_or_stamp))
                 }
             }
             item {
@@ -1577,5 +1631,5 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun UiMessage.resolve(): String =
+internal fun UiMessage.resolve(): String =
     stringResource(resourceId, *formatArgs.toTypedArray())

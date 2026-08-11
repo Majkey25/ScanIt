@@ -49,6 +49,10 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
             handleScannerResult(it)
         }
+    private val visualMarkScannerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+            handleVisualMarkScannerResult(it)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +86,19 @@ class MainActivity : ComponentActivity() {
                 onPrint = ::printCurrentScan,
                 onSaveNow = viewModel::saveCurrentOutputs,
                 onApplyAppearance = viewModel::applyCurrentAppearance,
+                onOpenVisualMarkEditor = viewModel::openVisualMarkEditor,
+                onCloseVisualMarkEditor = viewModel::closeVisualMarkEditor,
+                onSelectVisualMarkTemplate = viewModel::selectVisualMarkTemplate,
+                onUpdateVisualMarkPlacement = viewModel::updateVisualMarkPlacement,
+                onBeginVisualMarkDrawing = viewModel::beginVisualMarkDrawing,
+                onUpdateVisualMarkDrawing = viewModel::updateVisualMarkDrawing,
+                onCancelVisualMarkDrawing = viewModel::cancelVisualMarkDrawing,
+                onImportVisualMark = viewModel::importVisualMark,
+                onSaveDrawnVisualMark = viewModel::saveDrawnVisualMark,
+                onDeleteVisualMarkTemplate = viewModel::deleteVisualMarkTemplate,
+                onLoadVisualMarkTemplate = viewModel::loadVisualMarkTemplate,
+                onScanVisualMark = ::startVisualMarkScan,
+                onApplyVisualMark = viewModel::applyVisualMark,
             )
         }
         lifecycleScope.launch {
@@ -200,6 +217,66 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startVisualMarkScan() {
+        val source = viewModel.beginVisualMarkScan() ?: return
+        try {
+            val options =
+                GmsDocumentScannerOptions.Builder()
+                    .setGalleryImportAllowed(false)
+                    .setPageLimit(1)
+                    .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                    .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+                    .build()
+            GmsDocumentScanning.getClient(options)
+                .getStartScanIntent(this)
+                .addOnSuccessListener { intentSender ->
+                    if (
+                        isFinishing ||
+                            isDestroyed ||
+                            viewModel.currentVisualMarkScanSource() != source
+                    ) {
+                        viewModel.visualMarkScannerFailed(source)
+                        return@addOnSuccessListener
+                    }
+                    try {
+                        visualMarkScannerLauncher.launch(
+                            IntentSenderRequest.Builder(intentSender).build(),
+                        )
+                    } catch (_: RuntimeException) {
+                        viewModel.visualMarkScannerFailed(source)
+                    }
+                }.addOnFailureListener {
+                    viewModel.visualMarkScannerFailed(source)
+                }
+        } catch (_: RuntimeException) {
+            viewModel.visualMarkScannerFailed(source)
+        }
+    }
+
+    private fun handleVisualMarkScannerResult(activityResult: ActivityResult) {
+        val source = viewModel.currentVisualMarkScanSource() ?: return
+        when (activityResult.resultCode) {
+            Activity.RESULT_CANCELED -> viewModel.visualMarkScannerCancelled(source)
+            Activity.RESULT_OK -> {
+                val uri =
+                    try {
+                        GmsDocumentScanningResult.fromActivityResultIntent(activityResult.data)
+                            ?.pages
+                            ?.singleOrNull()
+                            ?.imageUri
+                    } catch (_: RuntimeException) {
+                        null
+                    }
+                if (uri == null) {
+                    viewModel.visualMarkScannerFailed(source)
+                } else {
+                    viewModel.importScannedVisualMark(source, uri)
+                }
+            }
+            else -> viewModel.visualMarkScannerFailed(source)
+        }
+    }
+
     private fun currentAppLanguage(): AppLanguage {
         val localeManager = getSystemService(LocaleManager::class.java) ?: return AppLanguage.System
         return when (localeManager.applicationLocales.get(0)?.language) {
@@ -281,8 +358,9 @@ class MainActivity : ComponentActivity() {
         cleanupKind: ShareCleanupKind,
         createIntent: (Context, CachedScan, AppSettings) -> Intent,
     ) {
-        val scan = (viewModel.state.value as? ScreenState.Result)?.scan
-        if (scan == null) {
+        val result = viewModel.state.value as? ScreenState.Result
+        val scan = result?.scan
+        if (scan == null || result.resultActionsBlocked) {
             showToast(R.string.share_failed)
             return
         }
@@ -307,8 +385,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun printCurrentScan() {
-        val scan = (viewModel.state.value as? ScreenState.Result)?.scan?.cached
-        if (scan == null) {
+        val result = viewModel.state.value as? ScreenState.Result
+        val scan = result?.scan?.cached
+        if (scan == null || result.resultActionsBlocked) {
             showToast(R.string.print_open_failed)
             return
         }

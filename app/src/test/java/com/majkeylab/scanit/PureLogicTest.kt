@@ -688,6 +688,14 @@ class PureLogicTest {
             ),
             checkpointRestoreSettings(newerDefaults, authoritative, provisional = true),
         )
+        assertEquals(
+            newerDefaults,
+            checkpointRestoreSettings(
+                newerDefaults,
+                authoritative.copy(restoreAppearanceSettings = false),
+                provisional = true,
+            ),
+        )
     }
 
     @Test
