@@ -9,6 +9,11 @@ All notable changes are documented here.
 - Prepared the source-visible proprietary license for the first new release at `v1.2.0-beta.1` while preserving every historical MIT grant.
 - Removed cloud processing and app-owned network access from the public Google Play and GitHub variants.
 - Added a Recent scans dashboard for bounded, temporary working copies.
+- Added lazy multi-page result browsing with bounded thumbnails.
+- Added remembered color, grayscale, and black-and-white intensity controls with shadow adjustment.
+- Added measured Original, 5 MB, 10 MB, and 20 MB PDF size goals with an honest target-miss warning.
+- Added manual PDF/image saving, exact saved-output deletion, and optional deletion after a sharing app is chosen.
+- Added reusable visual marks for a selected page, with an explicit non-digital-signature disclaimer.
 - Added a static privacy, terms, support, and product site for GitHub Pages.
 - Updated Google Play listing and App Content/Data Safety worksheets for the public no-cloud build.
 

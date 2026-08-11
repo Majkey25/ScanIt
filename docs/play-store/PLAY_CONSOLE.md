@@ -56,17 +56,22 @@ the Play developer account.
 > - automatic document detection and capture
 > - crop, perspective correction, rotation, filters, shadow removal, and cleanup
 > - single-page and multi-page PDF and JPEG output
-> - Recent scans with page previews
+> - page thumbnails for browsing multi-page results
+> - color, grayscale, and black-and-white controls with adjustable intensity and shadows
+> - measured Original, 5 MB, 10 MB, and 20 MB PDF size goals
+> - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
 > - PDF saving to Downloads or a folder you choose
 > - PDF/image sharing with an optional subject and message
 > - optional deletion of saved PDFs or images after sharing
-> - deletion of saved outputs from Recent scans
+> - reusable visual marks placed on a selected page
 > - Android system printing
 > - monochrome light and dark interface
 > - system, English, and Czech language selection
 >
 > ScanIt has no ads, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
+>
+> Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, ScanIt keeps the smallest readable result and shows its actual size.
 >
 > The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner module and process limited diagnostic and usage telemetry.
 
@@ -92,23 +97,28 @@ the Play developer account.
 > - automatická detekce a zachycení dokumentu
 > - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
 > - jednostránkový i vícestránkový výstup do PDF a JPEG
-> - Nedávné skeny s náhledy stránek
+> - náhledy stránek pro procházení vícestránkových výsledků
+> - barevný, šedotónový a černobílý režim s nastavitelnou intenzitou a stíny
+> - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB a 20 MB
+> - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
 > - ukládání PDF do Stažených souborů nebo zvolené složky
 > - sdílení PDF nebo obrázků s volitelným předmětem a zprávou
 > - volitelné smazání uložených PDF nebo obrázků po sdílení
-> - mazání uložených výstupů v Nedávných skenech
+> - opakovaně použitelné vizuální značky umístěné na vybranou stránku
 > - systémový tisk Androidu
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický a český jazyk
 >
 > ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
 >
+> Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, ScanIt ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
+>
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou stáhnout modul skeneru a zpracovávat omezené diagnostické a provozní údaje.
 
 The listing describes current implemented public behavior only. It does not
-advertise compression targets, signatures, stamps, cloud processing, donations,
-or any other unfinished feature.
+claim certificate-backed signatures, guaranteed PDF compression, cloud
+processing, donations, or any unfinished feature.
 
 ## App Content worksheet
 
@@ -269,16 +279,16 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 5, version `1.2.0-beta.1`.
-- [ ] R8 mapping and real native debug symbols from that exact build are retained for upload.
-- [ ] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
-- [ ] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
-- [ ] In-app Privacy Policy link opens the Pages URL above.
-- [ ] Pages root, Privacy, and Terms URLs return successfully over HTTPS.
-- [ ] Listing text matches the device-tested feature set.
-- [ ] English and Czech short descriptions remain within 80 characters.
-- [ ] Data Safety answers are rechecked against the exact runtime graph and current official guidance.
-- [ ] Developer identity and public contact fields use verified Play account data.
+- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 5, version `1.2.0-beta.1`.
+- [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
+- [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
+- [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
+- [x] In-app Privacy Policy link opens the Pages URL above.
+- [x] Pages root, Privacy, and Terms URLs return successfully over HTTPS.
+- [x] Listing text matches the device-tested feature set.
+- [x] English and Czech short descriptions remain within 80 characters.
+- [x] Data Safety answers are rechecked against the exact runtime graph and current official guidance.
+- [x] Developer identity and public contact fields use verified Play account data.
 - [x] App icon, feature graphic, screenshots, and alt text pass the current asset rules.
-- [ ] No account credentials are entered in App access because none are required.
+- [x] No account credentials are entered in App access because none are required.
 - [ ] Closed/production submission happens only after the signed artifact and all declarations receive final account-holder review.
