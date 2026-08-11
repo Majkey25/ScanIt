@@ -85,27 +85,16 @@ class JpegPdfWriterTest {
     }
 
     @Test
-    fun publicationRollsBackTargetWhenStagingCleanupFails() {
-        val root = Files.createTempDirectory("scanit-pdf-publication").toFile()
+    fun atomicPublicationMovesTheStagingFileWithoutCreatingAHardLink() {
+        val root = Files.createTempDirectory("scanit-pdf-publication-move").toFile()
         try {
             val staging = File(root, "staging.part").apply { writeText("complete") }
             val target = File(root, "scan.pdf")
 
-            val failure =
-                assertThrows(IOException::class.java) {
-                    publishStagedFileNoReplace(
-                        staging.toPath(),
-                        target.toPath(),
-                        deleteIfExists = { path ->
-                            if (path == staging.toPath()) throw IOException("cleanup failed")
-                            Files.deleteIfExists(path)
-                        },
-                    )
-                }
+            publishStagedFileNoReplace(staging.toPath(), target.toPath())
 
-            assertEquals("cleanup failed", failure.message)
-            assertFalse(target.exists())
-            assertTrue(staging.isFile)
+            assertFalse(staging.exists())
+            assertEquals("complete", target.readText())
         } finally {
             assertTrue(root.deleteRecursively())
         }

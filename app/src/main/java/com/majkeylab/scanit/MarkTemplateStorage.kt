@@ -211,8 +211,7 @@ internal fun atomicSaveMarkTemplate(
             output.flush()
             output.fd.sync()
         }
-        Files.createLink(target.toPath(), temporary.toPath())
-        temporary.delete()
+        publishStagedFileNoReplace(temporary.toPath(), target.toPath())
     } catch (error: Exception) {
         runCatching { Files.deleteIfExists(temporary.toPath()) }
             .exceptionOrNull()
