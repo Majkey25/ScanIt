@@ -16,6 +16,71 @@ internal data class ScanAppearance(
     val shadows: Int = DEFAULT_SHADOWS,
 )
 
+internal data class ScanAppearanceSettings(
+    val colorMode: ScanColorMode = ScanColorMode.BlackWhite,
+    val colorIntensity: Int = DEFAULT_FILTER_INTENSITY,
+    val grayscaleIntensity: Int = DEFAULT_FILTER_INTENSITY,
+    val blackWhiteIntensity: Int = DEFAULT_FILTER_INTENSITY,
+    val shadows: Int = DEFAULT_SHADOWS,
+) {
+    fun selected(): ScanAppearance =
+        ScanAppearance(
+            colorMode = colorMode,
+            intensity = intensity(colorMode),
+            shadows = clampAppearancePercent(shadows),
+        )
+
+    fun intensity(mode: ScanColorMode): Int =
+        clampAppearancePercent(
+            when (mode) {
+                ScanColorMode.Color -> colorIntensity
+                ScanColorMode.Grayscale -> grayscaleIntensity
+                ScanColorMode.BlackWhite -> blackWhiteIntensity
+            },
+        )
+
+    fun withApplied(appearance: ScanAppearance): ScanAppearanceSettings =
+        copy(
+            colorMode = appearance.colorMode,
+            colorIntensity =
+                if (appearance.colorMode == ScanColorMode.Color) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    colorIntensity
+                },
+            grayscaleIntensity =
+                if (appearance.colorMode == ScanColorMode.Grayscale) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    grayscaleIntensity
+                },
+            blackWhiteIntensity =
+                if (appearance.colorMode == ScanColorMode.BlackWhite) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    blackWhiteIntensity
+                },
+            shadows = clampAppearancePercent(appearance.shadows),
+        )
+}
+
+internal fun parseScanAppearanceSettings(
+    colorModeWireValue: String?,
+    colorIntensity: Int?,
+    grayscaleIntensity: Int?,
+    blackWhiteIntensity: Int?,
+    shadows: Int?,
+): ScanAppearanceSettings =
+    ScanAppearanceSettings(
+        colorMode =
+            ScanColorMode.entries.firstOrNull { it.wireValue == colorModeWireValue }
+                ?: ScanColorMode.BlackWhite,
+        colorIntensity = clampAppearancePercent(colorIntensity ?: DEFAULT_FILTER_INTENSITY),
+        grayscaleIntensity = clampAppearancePercent(grayscaleIntensity ?: DEFAULT_FILTER_INTENSITY),
+        blackWhiteIntensity = clampAppearancePercent(blackWhiteIntensity ?: DEFAULT_FILTER_INTENSITY),
+        shadows = clampAppearancePercent(shadows ?: DEFAULT_SHADOWS),
+    )
+
 internal fun clampAppearancePercent(value: Int): Int = value.coerceIn(0, 100)
 
 internal fun parseScanAppearance(

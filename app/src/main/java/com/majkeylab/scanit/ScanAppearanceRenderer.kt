@@ -27,6 +27,7 @@ internal object ScanAppearanceRenderer {
         source: File,
         destination: File,
         appearance: ScanAppearance,
+        minimumSampleSize: Int = 1,
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): RenderedJpeg {
         val input = source.canonicalFile
@@ -41,7 +42,12 @@ internal object ScanAppearanceRenderer {
         val sourceLength = input.length()
         val sourceModified = input.lastModified()
         val bounds = readJpegBounds(input)
-        val sampleSize = appearanceDecodeSampleSize(bounds.width, bounds.height)
+        val sampleSize =
+            appearanceDecodeSampleSize(
+                bounds.width,
+                bounds.height,
+                minimumSampleSize = minimumSampleSize,
+            )
         val bitmap = decodeMutableBitmap(input, sampleSize)
         val width = bitmap.width
         val height = bitmap.height
@@ -272,10 +278,15 @@ internal fun appearanceDecodeSampleSize(
     height: Int,
     maxPixels: Long = MAX_RENDER_PIXELS,
     maxEdge: Int = MAX_RENDER_EDGE,
+    minimumSampleSize: Int = 1,
 ): Int {
     require(width > 0 && height > 0) { "Image dimensions must be positive" }
     require(maxPixels > 0 && maxEdge > 0) { "Render bounds must be positive" }
-    var sampleSize = 1
+    require(
+        minimumSampleSize > 0 &&
+            minimumSampleSize and (minimumSampleSize - 1) == 0,
+    ) { "Minimum sample size must be a positive power of two" }
+    var sampleSize = minimumSampleSize
     while (true) {
         val sampledWidth = sampledDimensionUpperBound(width, sampleSize)
         val sampledHeight = sampledDimensionUpperBound(height, sampleSize)

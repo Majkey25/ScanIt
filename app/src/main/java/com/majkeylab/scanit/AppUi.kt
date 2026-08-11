@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -85,6 +86,7 @@ import java.io.File
 import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 
 internal enum class AppLanguage(val languageTag: String?) {
@@ -139,7 +141,7 @@ internal fun ScanItApp(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onScan: () -> Unit,
-    onSaveSettings: (AppSettings) -> Unit,
+    onSaveSettings: (AppSettings) -> Boolean,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
@@ -154,15 +156,24 @@ internal fun ScanItApp(
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
     onSaveNow: (SaveNowTarget) -> Unit = {},
+    onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
     var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
-    val backAction = appBackAction(showSettings, fileDetailsExpanded, state)
+    var appearanceEditorExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
+    val backAction =
+        appBackAction(
+            showSettings,
+            fileDetailsExpanded,
+            state,
+            appearanceOpen = appearanceEditorExpanded,
+        )
     BackHandler {
         when (backAction) {
             AppBackAction.CloseSettings -> showSettings = false
             AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
+            AppBackAction.CollapseAppearance -> appearanceEditorExpanded = false
             AppBackAction.ShowRecent -> onNavigateBack()
             AppBackAction.LaunchScanner -> onScan()
             AppBackAction.Consume -> Unit
@@ -194,7 +205,11 @@ internal fun ScanItApp(
                         message = state.message.resolve(),
                         onRetry = onScan,
                         onRecent = onRecent,
-                        onSettings = { showSettings = true },
+                        onSettings = {
+                            appearanceEditorExpanded = false
+                            fileDetailsExpanded = false
+                            showSettings = true
+                        },
                     )
                 is ScreenState.Recent ->
                     RecentScreen(
@@ -211,15 +226,29 @@ internal fun ScanItApp(
                         result = state,
                         onNewScan = onScan,
                         onRecent = onRecent,
-                        onSettings = { showSettings = true },
+                        onSettings = {
+                            appearanceEditorExpanded = false
+                            fileDetailsExpanded = false
+                            showSettings = true
+                        },
                         onSharePdf = onSharePdf,
                         onShareImages = onShareImages,
                         onPrint = onPrint,
                         fileDetailsExpanded = fileDetailsExpanded,
-                        onFileDetailsChange = { fileDetailsExpanded = it },
+                        onFileDetailsChange = { expanded ->
+                            fileDetailsExpanded = expanded
+                            if (expanded) appearanceEditorExpanded = false
+                        },
                         onSaveNow = onSaveNow,
                         onSelectPage = onSelectResultPage,
                         onLoadThumbnail = onLoadThumbnail,
+                        defaultAppearance = settings.appearance,
+                        appearanceEditorExpanded = appearanceEditorExpanded,
+                        onAppearanceEditorChange = { expanded ->
+                            appearanceEditorExpanded = expanded
+                            if (expanded) fileDetailsExpanded = false
+                        },
+                        onApplyAppearance = onApplyAppearance,
                     )
             }
         }
@@ -277,6 +306,10 @@ private fun ResultScreen(
     onSaveNow: (SaveNowTarget) -> Unit,
     onSelectPage: (Int) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
+    defaultAppearance: ScanAppearanceSettings,
+    appearanceEditorExpanded: Boolean,
+    onAppearanceEditorChange: (Boolean) -> Unit,
+    onApplyAppearance: (ScanAppearanceSettings) -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
@@ -285,6 +318,26 @@ private fun ResultScreen(
         stringResource(R.string.page_position, selectedPageIndex + 1, pageCount)
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    val appliedAppearance = scan.cached.appearance
+    val initialAppearance =
+        appliedAppearance?.let(defaultAppearance::withApplied) ?: defaultAppearance
+    var appearanceMode by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
+        mutableStateOf(initialAppearance.colorMode.wireValue)
+    }
+    var colorIntensity by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
+        mutableStateOf(initialAppearance.colorIntensity)
+    }
+    var grayscaleIntensity by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
+        mutableStateOf(initialAppearance.grayscaleIntensity)
+    }
+    var blackWhiteIntensity by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
+        mutableStateOf(initialAppearance.blackWhiteIntensity)
+    }
+    var shadows by rememberSaveable(scan.cached.entryId, appearanceEditorExpanded) {
+        mutableStateOf(initialAppearance.shadows)
+    }
+    val actionsEnabled = !result.outputSaveInProgress && !result.appearanceApplyInProgress
+    val appearanceActionsEnabled = actionsEnabled && !result.pagePreviewLoading
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -292,7 +345,7 @@ private fun ResultScreen(
                 title = "",
                 onRecent = onRecent,
                 onSettings = onSettings,
-                actionsEnabled = !result.outputSaveInProgress,
+                actionsEnabled = actionsEnabled,
             )
         },
     ) { padding ->
@@ -339,16 +392,112 @@ private fun ResultScreen(
                     ResultPageStrip(
                         pages = scan.cached.pages,
                         selectedPageIndex = selectedPageIndex,
-                        enabled = !result.outputSaveInProgress,
+                        enabled = actionsEnabled,
                         onSelectPage = onSelectPage,
                         onLoadThumbnail = onLoadThumbnail,
                     )
                 }
             }
+            if (
+                appliedAppearance != null &&
+                    scan.cached.sourcePages.size == scan.cached.pages.size &&
+                    scan.cached.entryId != null &&
+                    scan.outputMetadataValid
+            ) {
+                item {
+                    OutlinedButton(
+                        onClick = { onAppearanceEditorChange(!appearanceEditorExpanded) },
+                        enabled = appearanceActionsEnabled,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.edit_appearance))
+                    }
+                    if (appearanceEditorExpanded) {
+                        val selectedMode =
+                            ScanColorMode.entries.firstOrNull { it.wireValue == appearanceMode }
+                                ?: ScanColorMode.BlackWhite
+                        AppearanceControls(
+                            colorMode = selectedMode,
+                            filterIntensity =
+                                when (selectedMode) {
+                                    ScanColorMode.Color -> colorIntensity
+                                    ScanColorMode.Grayscale -> grayscaleIntensity
+                                    ScanColorMode.BlackWhite -> blackWhiteIntensity
+                                },
+                            shadows = shadows,
+                            onColorModeChange = { appearanceMode = it.wireValue },
+                            onFilterIntensityChange = { value ->
+                                when (selectedMode) {
+                                    ScanColorMode.Color -> colorIntensity = value
+                                    ScanColorMode.Grayscale -> grayscaleIntensity = value
+                                    ScanColorMode.BlackWhite -> blackWhiteIntensity = value
+                                }
+                            },
+                            onShadowsChange = { shadows = it },
+                            enabled = appearanceActionsEnabled,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { onAppearanceEditorChange(false) },
+                                enabled = !result.appearanceApplyInProgress,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                            Button(
+                                onClick = {
+                                    onApplyAppearance(
+                                        parseScanAppearanceSettings(
+                                            colorModeWireValue = appearanceMode,
+                                            colorIntensity = colorIntensity,
+                                            grayscaleIntensity = grayscaleIntensity,
+                                            blackWhiteIntensity = blackWhiteIntensity,
+                                            shadows = shadows,
+                                        ),
+                                    )
+                                },
+                                enabled = appearanceActionsEnabled,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (result.appearanceApplyInProgress) {
+                                            R.string.applying_appearance
+                                        } else {
+                                            R.string.apply_appearance
+                                        },
+                                    ),
+                                )
+                            }
+                        }
+                        if (result.appearanceApplyInProgress) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
+                    result.appearanceMessage?.let { message ->
+                        Text(
+                            message.resolve(),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        )
+                    }
+                }
+            }
             item {
                 Button(
                     onClick = { onSharePdf?.invoke() },
-                    enabled = onSharePdf != null && !result.outputSaveInProgress,
+                    enabled = onSharePdf != null && actionsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
                     Text(stringResource(R.string.send_pdf))
@@ -357,7 +506,7 @@ private fun ResultScreen(
             item {
                 OutlinedButton(
                     onClick = { onShareImages?.invoke() },
-                    enabled = onShareImages != null && !result.outputSaveInProgress,
+                    enabled = onShareImages != null && actionsEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.send_images))
@@ -366,7 +515,7 @@ private fun ResultScreen(
             item {
                 OutlinedButton(
                     onClick = { onPrint?.invoke() },
-                    enabled = onPrint != null && !result.outputSaveInProgress,
+                    enabled = onPrint != null && actionsEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.print_document))
@@ -375,7 +524,7 @@ private fun ResultScreen(
             item {
                 Button(
                     onClick = onNewScan,
-                    enabled = !result.outputSaveInProgress,
+                    enabled = actionsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
                     Text(stringResource(R.string.new_scan))
@@ -384,6 +533,7 @@ private fun ResultScreen(
             item {
                 TextButton(
                     onClick = { onFileDetailsChange(!fileDetailsExpanded) },
+                    enabled = actionsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
                     Text(stringResource(R.string.file_details), modifier = Modifier.weight(1f))
@@ -527,6 +677,22 @@ private fun FileDetails(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        if (scan.warnings.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().semantics {
+                    liveRegion = LiveRegionMode.Polite
+                },
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                scan.warnings.forEach { warning ->
+                    Text(
+                        warning.resolve(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
         val savedPdf = scan.savedPdf
         Text(
             when {
@@ -563,13 +729,6 @@ private fun FileDetails(
                     ),
                 )
             }
-        }
-        scan.warnings.forEach {
-            Text(
-                it.resolve(),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
 }
@@ -969,7 +1128,7 @@ private fun SettingsScreen(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onClose: () -> Unit,
-    onSave: (AppSettings) -> Unit,
+    onSave: (AppSettings) -> Boolean,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
@@ -990,6 +1149,22 @@ private fun SettingsScreen(
         mutableStateOf(settings.deleteImagesAfterShare)
     }
     var pdfTreeUri by rememberSaveable { mutableStateOf(settings.pdfTreeUri) }
+    var appearanceMode by rememberSaveable {
+        mutableStateOf(settings.appearance.colorMode.wireValue)
+    }
+    var colorIntensity by rememberSaveable {
+        mutableStateOf(settings.appearance.colorIntensity)
+    }
+    var grayscaleIntensity by rememberSaveable {
+        mutableStateOf(settings.appearance.grayscaleIntensity)
+    }
+    var blackWhiteIntensity by rememberSaveable {
+        mutableStateOf(settings.appearance.blackWhiteIntensity)
+    }
+    var shadows by rememberSaveable { mutableStateOf(settings.appearance.shadows) }
+    var pdfSizeTargetWire by rememberSaveable {
+        mutableStateOf(settings.pdfSizeTarget.wireValue)
+    }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val uriHandler = LocalUriHandler.current
@@ -1068,6 +1243,53 @@ private fun SettingsScreen(
                 }
             }
             item { HorizontalDivider() }
+            item { SectionTitle(stringResource(R.string.default_appearance)) }
+            item {
+                val selectedMode =
+                    ScanColorMode.entries.firstOrNull { it.wireValue == appearanceMode }
+                        ?: ScanColorMode.BlackWhite
+                AppearanceControls(
+                    colorMode = selectedMode,
+                    filterIntensity =
+                        when (selectedMode) {
+                            ScanColorMode.Color -> colorIntensity
+                            ScanColorMode.Grayscale -> grayscaleIntensity
+                            ScanColorMode.BlackWhite -> blackWhiteIntensity
+                        },
+                    shadows = shadows,
+                    onColorModeChange = { appearanceMode = it.wireValue },
+                    onFilterIntensityChange = { value ->
+                        when (selectedMode) {
+                            ScanColorMode.Color -> colorIntensity = value
+                            ScanColorMode.Grayscale -> grayscaleIntensity = value
+                            ScanColorMode.BlackWhite -> blackWhiteIntensity = value
+                        }
+                    },
+                    onShadowsChange = { shadows = it },
+                )
+            }
+            item { SectionTitle(stringResource(R.string.pdf_size)) }
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(PdfSizeTarget.entries) { target ->
+                        FilterChip(
+                            selected = target.wireValue == pdfSizeTargetWire,
+                            onClick = { pdfSizeTargetWire = target.wireValue },
+                            label = { Text(pdfSizeTargetLabel(target)) },
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.pdf_size_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item { HorizontalDivider() }
             item { SectionTitle(stringResource(R.string.saving)) }
             item {
                 SettingsSwitch(
@@ -1081,6 +1303,13 @@ private fun SettingsScreen(
                     label = stringResource(R.string.save_images),
                     checked = saveImages,
                     onCheckedChange = { saveImages = it },
+                )
+            }
+            item {
+                Text(
+                    stringResource(R.string.automatic_saving_scope),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             item {
@@ -1198,21 +1427,35 @@ private fun SettingsScreen(
                 Button(
                     onClick = {
                         try {
-                            onSave(
-                                AppSettings(
-                                    savePdf = savePdf,
-                                    saveImages = saveImages,
-                                    albumName = albumName,
-                                    multipage = multipage,
-                                    allowGallery = allowGallery,
-                                    emailSubject = emailSubject,
-                                    emailBody = emailBody,
-                                    pdfTreeUri = pdfTreeUri,
-                                    deletePdfAfterShare = deletePdfAfterShare,
-                                    deleteImagesAfterShare = deleteImagesAfterShare,
-                                ),
-                            )
-                            onClose()
+                            val saved =
+                                onSave(
+                                    AppSettings(
+                                        savePdf = savePdf,
+                                        saveImages = saveImages,
+                                        albumName = albumName,
+                                        multipage = multipage,
+                                        allowGallery = allowGallery,
+                                        emailSubject = emailSubject,
+                                        emailBody = emailBody,
+                                        pdfTreeUri = pdfTreeUri,
+                                        deletePdfAfterShare = deletePdfAfterShare,
+                                        deleteImagesAfterShare = deleteImagesAfterShare,
+                                        appearance =
+                                            parseScanAppearanceSettings(
+                                                colorModeWireValue = appearanceMode,
+                                                colorIntensity = colorIntensity,
+                                                grayscaleIntensity = grayscaleIntensity,
+                                                blackWhiteIntensity = blackWhiteIntensity,
+                                                shadows = shadows,
+                                            ),
+                                        pdfSizeTarget = parsePdfSizeTarget(pdfSizeTargetWire),
+                                    ),
+                                )
+                            if (saved) {
+                                onClose()
+                            } else {
+                                settingsError = settingsSaveFailed
+                            }
                         } catch (_: RuntimeException) {
                             settingsError = settingsSaveFailed
                         }
@@ -1241,6 +1484,72 @@ private fun SettingsScreen(
         }
     }
 }
+
+@Composable
+private fun AppearanceControls(
+    colorMode: ScanColorMode,
+    filterIntensity: Int,
+    shadows: Int,
+    onColorModeChange: (ScanColorMode) -> Unit,
+    onFilterIntensityChange: (Int) -> Unit,
+    onShadowsChange: (Int) -> Unit,
+    enabled: Boolean = true,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(ScanColorMode.entries) { mode ->
+                FilterChip(
+                    selected = mode == colorMode,
+                    onClick = { onColorModeChange(mode) },
+                    enabled = enabled,
+                    label = { Text(scanColorModeLabel(mode)) },
+                )
+            }
+        }
+        val filterIntensityText =
+            stringResource(R.string.filter_intensity_percent, filterIntensity)
+        Text(filterIntensityText)
+        Slider(
+            value = clampAppearancePercent(filterIntensity).toFloat(),
+            onValueChange = { onFilterIntensityChange(it.roundToInt()) },
+            valueRange = 0f..100f,
+            enabled = enabled,
+            modifier = Modifier.semantics { contentDescription = filterIntensityText },
+        )
+        val shadowsText = stringResource(R.string.shadows_percent, shadows)
+        Text(shadowsText)
+        Slider(
+            value = clampAppearancePercent(shadows).toFloat(),
+            onValueChange = { onShadowsChange(it.roundToInt()) },
+            valueRange = 0f..100f,
+            enabled = enabled,
+            modifier = Modifier.semantics { contentDescription = shadowsText },
+        )
+    }
+}
+
+@Composable
+private fun scanColorModeLabel(mode: ScanColorMode): String =
+    stringResource(
+        when (mode) {
+            ScanColorMode.Color -> R.string.filter_color
+            ScanColorMode.Grayscale -> R.string.filter_grayscale
+            ScanColorMode.BlackWhite -> R.string.filter_black_white
+        },
+    )
+
+@Composable
+private fun pdfSizeTargetLabel(target: PdfSizeTarget): String =
+    stringResource(
+        when (target) {
+            PdfSizeTarget.Original -> R.string.pdf_size_original
+            PdfSizeTarget.Mb5 -> R.string.pdf_size_5_mb
+            PdfSizeTarget.Mb10 -> R.string.pdf_size_10_mb
+            PdfSizeTarget.Mb20 -> R.string.pdf_size_20_mb
+        },
+    )
 
 @Composable
 private fun SettingsSwitch(

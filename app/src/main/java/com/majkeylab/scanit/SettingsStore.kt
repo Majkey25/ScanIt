@@ -17,12 +17,20 @@ private const val KEY_EMAIL_SUBJECT = "email_subject"
 private const val KEY_EMAIL_BODY = "email_body"
 private const val KEY_DELETE_PDF_AFTER_SHARE = "delete_pdf_after_share"
 private const val KEY_DELETE_IMAGES_AFTER_SHARE = "delete_images_after_share"
+private const val KEY_APPEARANCE_MODE = "appearance_mode"
+private const val KEY_APPEARANCE_COLOR_INTENSITY = "appearance_color_intensity"
+private const val KEY_APPEARANCE_GRAYSCALE_INTENSITY = "appearance_grayscale_intensity"
+private const val KEY_APPEARANCE_BLACK_WHITE_INTENSITY = "appearance_black_white_intensity"
+private const val KEY_APPEARANCE_SHADOWS = "appearance_shadows"
+private const val KEY_PDF_SIZE_TARGET = "pdf_size_target"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
 private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
 private const val KEY_PENDING_SHARE_CLEANUP = "pending_share_cleanup"
-private const val ACTIVE_RESULT_CHECKPOINT_PREFIX = "1:"
+private const val ACTIVE_RESULT_CHECKPOINT_V1_PREFIX = "1:"
+private const val ACTIVE_RESULT_CHECKPOINT_V2_PREFIX = "2:"
 private const val MAX_ACTIVE_RESULT_CACHE_ID_LENGTH = 128
+private const val MAX_ACTIVE_RESULT_CHECKPOINT_LENGTH = 192
 private const val PENDING_SHARE_CLEANUP_PREFIX = "1:"
 private const val CANONICAL_UUID_LENGTH = 36
 private const val MAX_SHARE_CLEANUP_KIND_LENGTH = 6
@@ -34,6 +42,45 @@ private const val MAX_PENDING_SHARE_CLEANUP_LENGTH =
 internal const val MAX_PENDING_SHARE_CLEANUPS = 8
 private val shareCleanupQueueLock = ReentrantLock()
 
+private val ACTIVE_RESULT_AUTHORITY_LOCK = ReentrantLock()
+private var activeResultAuthorityRevision = 0L
+
+internal fun <T> withActiveResultAuthority(block: () -> T): T =
+    ACTIVE_RESULT_AUTHORITY_LOCK.withLock(block)
+
+internal enum class AuthorityMutationResult {
+    Applied,
+    Stale,
+    Busy,
+}
+
+internal fun settingsSaveApplied(result: AuthorityMutationResult): Boolean =
+    result == AuthorityMutationResult.Applied
+
+internal enum class AppearanceCommitResult {
+    Applied,
+    NotApplied,
+    Stale,
+}
+
+internal data class ActiveResultCheckpoint(
+    val cacheId: String,
+)
+
+internal data class ActiveResultOwner(
+    val revision: Long,
+    val checkpoint: ActiveResultCheckpoint?,
+) {
+    fun withCheckpoint(checkpoint: ActiveResultCheckpoint?): ActiveResultOwner =
+        copy(checkpoint = checkpoint)
+}
+
+internal data class ActiveResultAuthoritySnapshot(
+    val settings: AppSettings,
+    val checkpoint: ActiveResultCheckpoint?,
+    val owner: ActiveResultOwner,
+)
+
 internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
     cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
 
@@ -41,20 +88,25 @@ internal fun encodeActiveResultCheckpoint(cacheId: String): String {
     require(isSafeActiveResultCacheId(cacheId)) {
         "Active result cache ID is unsafe"
     }
-    return "$ACTIVE_RESULT_CHECKPOINT_PREFIX$cacheId"
+    return "$ACTIVE_RESULT_CHECKPOINT_V1_PREFIX$cacheId"
 }
 
-internal fun decodeActiveResultCheckpoint(value: String?): String? {
-    if (
-        value == null ||
-            value.length >
-            ACTIVE_RESULT_CHECKPOINT_PREFIX.length + MAX_ACTIVE_RESULT_CACHE_ID_LENGTH ||
-            !value.startsWith(ACTIVE_RESULT_CHECKPOINT_PREFIX)
-    ) {
-        return null
+internal fun decodeActiveResultCheckpointPayload(value: String?): ActiveResultCheckpoint? {
+    if (value == null || value.length > MAX_ACTIVE_RESULT_CHECKPOINT_LENGTH) return null
+    if (value.startsWith(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)) {
+        val cacheId = value.removePrefix(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)
+        return cacheId.takeIf(::isSafeActiveResultCacheId)?.let {
+            ActiveResultCheckpoint(it)
+        }
     }
-    return value.removePrefix(ACTIVE_RESULT_CHECKPOINT_PREFIX)
-        .takeIf(::isSafeActiveResultCacheId)
+    if (!value.startsWith(ACTIVE_RESULT_CHECKPOINT_V2_PREFIX)) return null
+    val fields = value.split(':')
+    if (fields.size != 7 || fields[0] != "2") return null
+    val cacheId = fields[1].takeIf(::isSafeActiveResultCacheId) ?: return null
+    val colorMode = ScanColorMode.entries.firstOrNull { it.wireValue == fields[2] } ?: return null
+    val percentages = fields.drop(3).map { it.toIntOrNull()?.takeIf { value -> value in 0..100 } }
+    if (percentages.any { it == null }) return null
+    return ActiveResultCheckpoint(cacheId)
 }
 
 internal fun encodePendingShareCleanup(request: ShareCleanupRequest): String {
@@ -77,6 +129,9 @@ internal fun decodePendingShareCleanup(value: String?): ShareCleanupRequest? {
     return decodeShareCleanupRequest(parts[0], parts[1], parts[2])
         ?.takeIf { isSafeActiveResultCacheId(it.cacheId) }
 }
+
+internal fun decodeActiveResultCheckpoint(value: String?): String? =
+    decodeActiveResultCheckpointPayload(value)?.cacheId
 
 internal fun normalizeAlbumName(value: String): String {
     val trimmed = value.trim()
@@ -113,6 +168,7 @@ internal class SettingsStore(
 
     fun load(): AppSettings {
         val defaults = AppSettings(emailSubject = defaultEmailSubject)
+        val appearance = defaults.appearance
         return AppSettings(
             savePdf = readPreferenceOrDefault(defaults.savePdf) {
                 preferences.getBoolean(KEY_SAVE_PDF, defaults.savePdf)
@@ -152,10 +208,70 @@ internal class SettingsStore(
                     defaults.deleteImagesAfterShare,
                 )
             },
+            appearance =
+                parseScanAppearanceSettings(
+                    colorModeWireValue =
+                        readPreferenceOrDefault<String?>(null) {
+                            preferences.getString(KEY_APPEARANCE_MODE, null)
+                        },
+                    colorIntensity =
+                        readPreferenceOrDefault(appearance.colorIntensity) {
+                            preferences.getInt(
+                                KEY_APPEARANCE_COLOR_INTENSITY,
+                                appearance.colorIntensity,
+                            )
+                        },
+                    grayscaleIntensity =
+                        readPreferenceOrDefault(appearance.grayscaleIntensity) {
+                            preferences.getInt(
+                                KEY_APPEARANCE_GRAYSCALE_INTENSITY,
+                                appearance.grayscaleIntensity,
+                            )
+                        },
+                    blackWhiteIntensity =
+                        readPreferenceOrDefault(appearance.blackWhiteIntensity) {
+                            preferences.getInt(
+                                KEY_APPEARANCE_BLACK_WHITE_INTENSITY,
+                                appearance.blackWhiteIntensity,
+                            )
+                        },
+                    shadows =
+                        readPreferenceOrDefault(appearance.shadows) {
+                            preferences.getInt(KEY_APPEARANCE_SHADOWS, appearance.shadows)
+                        },
+                ),
+            pdfSizeTarget =
+                parsePdfSizeTarget(
+                    readPreferenceOrDefault<String?>(null) {
+                        preferences.getString(KEY_PDF_SIZE_TARGET, null)
+                    },
+                ),
         )
     }
 
     fun save(settings: AppSettings) {
+        saveLocked(settings)
+    }
+
+    @Throws(IOException::class)
+    internal fun trySave(
+        settings: AppSettings,
+        expectedOwner: ActiveResultOwner,
+    ): AuthorityMutationResult {
+        if (!ACTIVE_RESULT_AUTHORITY_LOCK.tryLock()) return AuthorityMutationResult.Busy
+        return try {
+            if (!ownerMatchesLocked(expectedOwner)) {
+                AuthorityMutationResult.Stale
+            } else {
+                saveLocked(settings)
+                AuthorityMutationResult.Applied
+            }
+        } finally {
+            ACTIVE_RESULT_AUTHORITY_LOCK.unlock()
+        }
+    }
+
+    private fun saveLocked(settings: AppSettings) {
         preferences
             .edit()
             .putBoolean(KEY_SAVE_PDF, settings.savePdf)
@@ -167,45 +283,185 @@ internal class SettingsStore(
             .putString(KEY_EMAIL_BODY, settings.emailBody)
             .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
             .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
+            .putAppearance(settings.appearance)
+            .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
             .apply()
     }
 
+    internal fun saveEmailSubject(subject: String) {
+        preferences.edit().putString(KEY_EMAIL_SUBJECT, subject).apply()
+    }
+
     @Throws(IOException::class)
-    internal fun activeResultCacheId(): String? {
+    internal fun saveAppliedAppearanceAndActiveResult(
+        appearance: ScanAppearanceSettings,
+        pdfSizeTarget: PdfSizeTarget,
+        cacheId: String,
+        expectedOwner: ActiveResultOwner,
+    ): AppearanceCommitResult =
+        withActiveResultAuthority {
+            if (!ownerMatchesLocked(expectedOwner)) {
+                return@withActiveResultAuthority AppearanceCommitResult.Stale
+            }
+            val normalized = normalizeAppearanceSettings(appearance)
+            val target = ActiveResultCheckpoint(cacheId)
+            val checkpoint = encodeActiveResultCheckpoint(cacheId)
+            preferences
+                .edit()
+                .putAppearance(normalized)
+                .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
+                .putString(KEY_ACTIVE_RESULT_CHECKPOINT, checkpoint)
+                .commit()
+            val storedCheckpoint = activeResultCheckpointLocked()
+            val loaded = load()
+            when {
+                storedCheckpoint == target &&
+                    loaded.appearance == normalized &&
+                    loaded.pdfSizeTarget == pdfSizeTarget -> AppearanceCommitResult.Applied
+                storedCheckpoint == expectedOwner.checkpoint -> AppearanceCommitResult.NotApplied
+                else -> throw IOException("Applied appearance checkpoint is ambiguous")
+            }
+        }
+
+    @Throws(IOException::class)
+    internal fun restoreAppearanceAuthority(
+        appearance: ScanAppearanceSettings,
+        pdfSizeTarget: PdfSizeTarget,
+        expectedOwner: ActiveResultOwner,
+    ): AuthorityMutationResult =
+        withActiveResultAuthority {
+            if (!ownerMatchesLocked(expectedOwner)) {
+                return@withActiveResultAuthority AuthorityMutationResult.Stale
+            }
+            val normalized = normalizeAppearanceSettings(appearance)
+            preferences
+                .edit()
+                .putAppearance(normalized)
+                .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
+                .commit()
+            val loaded = load()
+            if (loaded.appearance != normalized || loaded.pdfSizeTarget != pdfSizeTarget) {
+                throw IOException("Appearance authority could not be restored")
+            }
+            AuthorityMutationResult.Applied
+        }
+
+    @Throws(IOException::class)
+    internal fun authoritySnapshot(): ActiveResultAuthoritySnapshot =
+        withActiveResultAuthority(::authoritySnapshotLocked)
+
+    @Throws(IOException::class)
+    internal fun <T> withAuthoritySnapshot(
+        block: (ActiveResultAuthoritySnapshot) -> T,
+    ): T = withActiveResultAuthority { block(authoritySnapshotLocked()) }
+
+    private fun authoritySnapshotLocked(): ActiveResultAuthoritySnapshot {
+        val checkpoint = activeResultCheckpointLocked()
+        check(activeResultAuthorityRevision < Long.MAX_VALUE) {
+            "Active result authority revision exhausted"
+        }
+        val owner = ActiveResultOwner(++activeResultAuthorityRevision, checkpoint)
+        return ActiveResultAuthoritySnapshot(
+            settings = load(),
+            checkpoint = checkpoint,
+            owner = owner,
+        )
+    }
+
+    @Throws(IOException::class)
+    internal fun activeResultCheckpoint(): ActiveResultCheckpoint? =
+        withActiveResultAuthority(::activeResultCheckpointLocked)
+
+    @Throws(IOException::class)
+    internal fun ownsActiveResult(owner: ActiveResultOwner): Boolean =
+        withActiveResultAuthority { ownerMatchesLocked(owner) }
+
+    private fun activeResultCheckpointLocked(): ActiveResultCheckpoint? {
         val storedValue =
             readPreferenceOrDefault<String?>(null) {
                 preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
             }
-        val cacheId = decodeActiveResultCheckpoint(storedValue)
-        if (cacheId == null && preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
-            clearActiveResult()
+        val checkpoint = decodeActiveResultCheckpointPayload(storedValue)
+        if (checkpoint == null && preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
+            throw IOException("Active result checkpoint is invalid")
         }
-        return cacheId
+        return checkpoint
     }
 
+    private fun ownerMatchesLocked(owner: ActiveResultOwner): Boolean =
+        owner.revision == activeResultAuthorityRevision &&
+            owner.checkpoint == activeResultCheckpointLocked()
+
     @Throws(IOException::class)
-    internal fun saveActiveResult(cacheId: String) {
-        val checkpoint = encodeActiveResultCheckpoint(cacheId)
-        val stored =
-            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, checkpoint).commit()
-        val verified =
+    internal fun activeResultCacheId(): String? = activeResultCheckpoint()?.cacheId
+
+    @Throws(IOException::class)
+    internal fun saveActiveResult(
+        cacheId: String,
+        expectedOwner: ActiveResultOwner,
+    ): AuthorityMutationResult =
+        withActiveResultAuthority {
+            if (!ownerMatchesLocked(expectedOwner)) {
+                return@withActiveResultAuthority AuthorityMutationResult.Stale
+            }
+            val encoded = encodeActiveResultCheckpoint(cacheId)
+            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
+            val verified =
+                readPreferenceOrDefault<String?>(null) {
+                    preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
+                } == encoded
+            if (!verified) {
+                throw IOException("Active result could not be stored")
+            }
+            AuthorityMutationResult.Applied
+        }
+
+    @Throws(IOException::class)
+    internal fun clearActiveResult(
+        expectedOwner: ActiveResultOwner,
+    ): AuthorityMutationResult =
+        withActiveResultAuthority {
+            if (!ownerMatchesLocked(expectedOwner)) {
+                return@withActiveResultAuthority AuthorityMutationResult.Stale
+            }
+            if (expectedOwner.checkpoint == null) {
+                return@withActiveResultAuthority AuthorityMutationResult.Applied
+            }
+            preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
+            if (activeResultCheckpointLocked() != null) {
+                throw IOException("Active result could not be cleared")
+            }
+            AuthorityMutationResult.Applied
+        }
+
+    internal fun pendingPdfTreeUri(): String? =
+        withStorageTransaction {
             readPreferenceOrDefault<String?>(null) {
-                preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
-            } == checkpoint
-        if (!stored || !verified) {
-            throw IOException("Active result could not be stored")
+                preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
+            }
         }
-    }
 
     @Throws(IOException::class)
-    internal fun clearActiveResult() {
-        if (!preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) return
-        val cleared = preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
-        if (!cleared || preferences.contains(KEY_ACTIVE_RESULT_CHECKPOINT)) {
-            throw IOException("Active result could not be cleared")
+    internal fun savePdfTreeUris(current: String?, pending: String?) =
+        withStorageTransaction {
+            val stored =
+                preferences
+                    .edit()
+                    .putString(KEY_PDF_TREE_URI, current)
+                    .putString(KEY_PENDING_PDF_TREE_URI, pending)
+                    .commit()
+            val currentRead =
+                readPreferenceOrDefault<String?>(null) {
+                    preferences.getString(KEY_PDF_TREE_URI, null)
+                }
+            val pendingRead =
+                readPreferenceOrDefault<String?>(null) {
+                    preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
+                }
+            if (!stored || currentRead != current || pendingRead != pending) {
+                throw IOException("PDF destinations could not be stored")
+            }
         }
-    }
-
     @Throws(IOException::class)
     internal fun pendingShareCleanups(): List<ShareCleanupRequest> =
         shareCleanupQueueLock.withLock {
@@ -276,27 +532,33 @@ internal class SettingsStore(
         if (!stored || !verified) throw IOException("Pending share cleanup could not be stored")
     }
 
-    internal fun pendingPdfTreeUri(): String? =
-        readPreferenceOrDefault<String?>(null) {
-            preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
-        }
-
     internal fun currentPdfTreeUri(): String? =
-        readPreferenceOrDefault<String?>(null) {
-            preferences.getString(KEY_PDF_TREE_URI, null)
+        withStorageTransaction {
+            readPreferenceOrDefault<String?>(null) {
+                preferences.getString(KEY_PDF_TREE_URI, null)
+            }
         }
-
-    @Throws(IOException::class)
-    internal fun savePdfTreeUris(current: String?, pending: String?) {
-        val stored =
-            preferences
-                .edit()
-                .putString(KEY_PDF_TREE_URI, current)
-                .putString(KEY_PENDING_PDF_TREE_URI, pending)
-                .commit()
-        if (!stored) {
-            throw IOException("PDF destinations could not be stored")
-        }
-    }
 
 }
+
+private fun SharedPreferences.Editor.putAppearance(
+    appearance: ScanAppearanceSettings,
+): SharedPreferences.Editor {
+    val normalized = normalizeAppearanceSettings(appearance)
+    return putString(KEY_APPEARANCE_MODE, normalized.colorMode.wireValue)
+        .putInt(KEY_APPEARANCE_COLOR_INTENSITY, normalized.colorIntensity)
+        .putInt(KEY_APPEARANCE_GRAYSCALE_INTENSITY, normalized.grayscaleIntensity)
+        .putInt(KEY_APPEARANCE_BLACK_WHITE_INTENSITY, normalized.blackWhiteIntensity)
+        .putInt(KEY_APPEARANCE_SHADOWS, normalized.shadows)
+}
+
+private fun normalizeAppearanceSettings(
+    appearance: ScanAppearanceSettings,
+): ScanAppearanceSettings =
+    parseScanAppearanceSettings(
+        colorModeWireValue = appearance.colorMode.wireValue,
+        colorIntensity = appearance.colorIntensity,
+        grayscaleIntensity = appearance.grayscaleIntensity,
+        blackWhiteIntensity = appearance.blackWhiteIntensity,
+        shadows = appearance.shadows,
+    )

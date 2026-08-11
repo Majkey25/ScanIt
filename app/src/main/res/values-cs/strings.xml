@@ -66,6 +66,7 @@
     <string name="saving">Ukládání</string>
     <string name="save_pdf">Automaticky ukládat PDF</string>
     <string name="save_images">Ukládat obrázky do Galerie</string>
+    <string name="automatic_saving_scope">Automatické ukládání platí pro nové skeny. Úpravy vzhledu uložte v detailech souboru.</string>
     <string name="album_name">Název alba v Galerii</string>
     <string name="default_pdf_folder">PDF: Výchozí složka Stažené/Scan to PDF</string>
     <string name="custom_pdf_folder">PDF: Vlastní složka je vybraná</string>
@@ -88,6 +89,23 @@
     <string name="privacy_policy">Zásady ochrany osobních údajů</string>
     <string name="third_party_notices">Oznámení třetích stran</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
+    <string name="appearance">Vzhled</string>
+    <string name="default_appearance">Výchozí vzhled skenu</string>
+    <string name="filter_color">Barva</string>
+    <string name="filter_grayscale">Odstíny šedi</string>
+    <string name="filter_black_white">Černobíle</string>
+    <string name="filter_intensity_percent">Intenzita filtru: %1$d%%</string>
+    <string name="shadows_percent">Stíny: %1$d%%</string>
+    <string name="edit_appearance">Upravit vzhled</string>
+    <string name="apply_appearance">Použít</string>
+    <string name="applying_appearance">Používám…</string>
+    <string name="appearance_apply_failed">Vzhled se nepodařilo použít. Předchozí sken zůstal zachovaný.</string>
+    <string name="pdf_size">Velikost PDF</string>
+    <string name="pdf_size_original">Původní</string>
+    <string name="pdf_size_5_mb">5 MB</string>
+    <string name="pdf_size_10_mb">10 MB</string>
+    <string name="pdf_size_20_mb">20 MB</string>
+    <string name="pdf_size_hint">Limit se vyhodnocuje podle skutečně vytvořených čitelných verzí. Pokud jej nelze dodržet, ScanIt ponechá nejmenší čitelné PDF a zobrazí jeho skutečnou velikost.</string>
 
     <string name="language">Jazyk</string>
     <string name="language_system">Podle systému</string>
@@ -104,6 +122,7 @@
     <string name="saving_document">Dokument se ukládá…</string>
     <string name="images_save_failed">Obrázky se nepodařilo uložit do Galerie. Dokument lze stále odeslat.</string>
     <string name="pdf_save_failed">PDF se nepodařilo uložit. Dokument lze stále odeslat.</string>
+    <string name="pdf_size_target_not_met">PDF se nepodařilo zmenšit pod %1$d MB bez příliš malých stránek. Skutečná velikost: %2$.2f MB.</string>
     <string name="document_save_failed">Dokument se nepodařilo uložit. Zkuste to znovu.</string>
     <string name="document_save_partial_failed">Dokument se nepodařilo uložit. Některé soubory mohly zůstat uložené.</string>
     <string name="saf_fallback_warning">Vybraná složka není dostupná. PDF bylo uloženo do Stažených souborů.</string>

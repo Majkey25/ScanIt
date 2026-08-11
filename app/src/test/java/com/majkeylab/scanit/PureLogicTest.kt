@@ -8,6 +8,10 @@ import java.nio.file.Files
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,6 +36,8 @@ class PureLogicTest {
                 pdfTreeUri = null,
                 deletePdfAfterShare = false,
                 deleteImagesAfterShare = false,
+                appearance = ScanAppearanceSettings(),
+                pdfSizeTarget = PdfSizeTarget.Original,
             ),
             AppSettings(),
         )
@@ -101,8 +107,12 @@ class PureLogicTest {
         val store = SettingsStore(preferences, "Scanned document")
         val enabled =
             AppSettings(deletePdfAfterShare = true, deleteImagesAfterShare = true)
+        val owner = store.authoritySnapshot().owner
 
-        store.save(enabled)
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.trySave(enabled, owner),
+        )
 
         assertTrue(store.load().deletePdfAfterShare)
         assertTrue(store.load().deleteImagesAfterShare)
@@ -238,6 +248,509 @@ class PureLogicTest {
         second.savePdfTreeUris(current = "content://docs/tree/current", pending = null)
         first.save(AppSettings(pdfTreeUri = "content://docs/tree/current"))
         assertNull(first.pendingPdfTreeUri())
+    }
+
+    @Test
+    fun appearanceAndPdfSizeSettingsRoundTripWithStableValues() {
+        val (preferences, values) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val expected =
+            ScanAppearanceSettings(
+                colorMode = ScanColorMode.Grayscale,
+                colorIntensity = 15,
+                grayscaleIntensity = 35,
+                blackWhiteIntensity = 75,
+                shadows = 45,
+            )
+        val owner = store.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.trySave(
+                AppSettings(
+                    appearance = expected,
+                    pdfSizeTarget = PdfSizeTarget.Mb10,
+                ),
+                expectedOwner = owner,
+            ),
+        )
+
+        assertEquals(expected, store.load().appearance)
+        assertEquals(PdfSizeTarget.Mb10, store.load().pdfSizeTarget)
+        assertEquals("grayscale", values["appearance_mode"])
+        assertEquals("10_mb", values["pdf_size_target"])
+    }
+
+    @Test
+    fun corruptAppearanceAndPdfSizeSettingsFailClosedToDefaults() {
+        val (preferences, values) = inMemoryPreferences()
+        values["appearance_mode"] = "future"
+        values["appearance_color_intensity"] = -10
+        values["appearance_grayscale_intensity"] = 140
+        values["appearance_black_white_intensity"] = "wrong"
+        values["appearance_shadows"] = 101
+        values["pdf_size_target"] = "1_mb"
+
+        val loaded = SettingsStore(preferences, "Scanned document").load()
+
+        assertEquals(ScanColorMode.BlackWhite, loaded.appearance.colorMode)
+        assertEquals(0, loaded.appearance.colorIntensity)
+        assertEquals(100, loaded.appearance.grayscaleIntensity)
+        assertEquals(100, loaded.appearance.blackWhiteIntensity)
+        assertEquals(100, loaded.appearance.shadows)
+        assertEquals(PdfSizeTarget.Original, loaded.pdfSizeTarget)
+    }
+
+    @Test
+    fun successfulResultApplyDurablyStoresAppearanceAndNewCheckpointTogether() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val owner = store.authoritySnapshot().owner
+        val appearance =
+            ScanAppearanceSettings(
+                colorMode = ScanColorMode.Color,
+                colorIntensity = 42,
+                grayscaleIntensity = 61,
+                blackWhiteIntensity = 100,
+                shadows = 27,
+            )
+
+        val result =
+            store.saveAppliedAppearanceAndActiveResult(
+                appearance,
+                PdfSizeTarget.Mb5,
+                "Scan_applied",
+                owner,
+            )
+
+        assertEquals(AppearanceCommitResult.Applied, result)
+        assertEquals(appearance, store.load().appearance)
+        assertEquals(PdfSizeTarget.Mb5, store.load().pdfSizeTarget)
+        assertEquals("Scan_applied", store.activeResultCacheId())
+        assertEquals(
+            ActiveResultCheckpoint("Scan_applied"),
+            store.activeResultCheckpoint(),
+        )
+    }
+
+    @Test
+    fun failedCommitWithCandidateReadbackKeepsMonotonicAuthority() {
+        val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
+        val store = SettingsStore(preferences, "Scanned document")
+        val owner = store.authoritySnapshot().owner
+        val appearance =
+            ScanAppearanceSettings(
+                colorMode = ScanColorMode.Color,
+                colorIntensity = 35,
+                shadows = 20,
+            )
+
+        val result =
+            store.saveAppliedAppearanceAndActiveResult(
+                appearance,
+                PdfSizeTarget.Mb10,
+                "Scan_applied",
+                expectedOwner = owner,
+            )
+
+        assertEquals(AppearanceCommitResult.Applied, result)
+        assertEquals(appearance, store.load().appearance)
+        assertEquals(PdfSizeTarget.Mb10, store.load().pdfSizeTarget)
+        assertEquals(ActiveResultCheckpoint("Scan_applied"), store.activeResultCheckpoint())
+    }
+
+    @Test
+    fun appearanceCommitRejectsCheckpointWhenAppearanceReadbackDoesNotMatch() {
+        val (preferences, _) =
+            inMemoryPreferences(
+                commitResults = listOf(false),
+                afterCommit = { _, values -> values.remove("appearance_mode") },
+            )
+        val store = SettingsStore(preferences, "Scanned document")
+        val owner = store.authoritySnapshot().owner
+
+        assertThrows(IOException::class.java) {
+            store.saveAppliedAppearanceAndActiveResult(
+                ScanAppearanceSettings(colorMode = ScanColorMode.Color),
+                PdfSizeTarget.Mb5,
+                "Scan_applied",
+                owner,
+            )
+        }
+    }
+
+    @Test
+    fun falseCommitReturnStillSucceedsWhenEveryExactReadbackMatches() {
+        val (preferences, _) = inMemoryPreferences(commitResults = listOf(false, false, false))
+        val store = SettingsStore(preferences, "Scanned document")
+        val initialOwner = store.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_candidate", initialOwner),
+        )
+        val candidateOwner =
+            initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+        val appearance = ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale)
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.restoreAppearanceAuthority(appearance, PdfSizeTarget.Mb5, candidateOwner),
+        )
+        assertEquals(appearance, store.load().appearance)
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.clearActiveResult(candidateOwner),
+        )
+        assertNull(store.activeResultCheckpoint())
+    }
+
+    @Test
+    fun staleActiveResultOwnerCannotOverwriteOrClearANewerCheckpoint() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val originalOwner = store.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_first", originalOwner),
+        )
+        val firstOwner = store.authoritySnapshot().owner
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_newer", firstOwner),
+        )
+
+        assertEquals(
+            AuthorityMutationResult.Stale,
+            store.saveActiveResult("Scan_stale", firstOwner),
+        )
+        assertEquals(AuthorityMutationResult.Stale, store.clearActiveResult(firstOwner))
+        assertEquals("Scan_newer", store.activeResultCacheId())
+    }
+
+    @Test
+    fun newerVmLeaseInvalidatesOlderVmWithTheSameCheckpointValue() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val initialOwner = store.authoritySnapshot().owner
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_shared", initialOwner),
+        )
+        val oldVmOwner = initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_shared"))
+        val newVmOwner = store.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Stale,
+            store.trySave(AppSettings(savePdf = false), oldVmOwner),
+        )
+        assertEquals(AuthorityMutationResult.Stale, store.clearActiveResult(oldVmOwner))
+        assertEquals(
+            AppearanceCommitResult.Stale,
+            store.saveAppliedAppearanceAndActiveResult(
+                ScanAppearanceSettings(colorMode = ScanColorMode.Color),
+                PdfSizeTarget.Mb5,
+                "Scan_stale",
+                oldVmOwner,
+            ),
+        )
+        assertEquals(AuthorityMutationResult.Applied, store.clearActiveResult(newVmOwner))
+    }
+
+    @Test
+    fun staleSettingsAndAppearanceApplyCannotOverwriteNewerAuthority() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val original = store.authoritySnapshot()
+        val staleAppearance =
+            ScanAppearanceSettings(colorMode = ScanColorMode.Color, colorIntensity = 12)
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_newer", original.owner),
+        )
+
+        assertEquals(
+            AuthorityMutationResult.Stale,
+            store.trySave(
+                original.settings.copy(appearance = staleAppearance),
+                original.owner,
+            ),
+        )
+        assertEquals(
+            AppearanceCommitResult.Stale,
+            store.saveAppliedAppearanceAndActiveResult(
+                staleAppearance,
+                PdfSizeTarget.Mb10,
+                "Scan_stale",
+                original.owner,
+            ),
+        )
+        assertEquals(ScanAppearanceSettings(), store.load().appearance)
+        assertEquals("Scan_newer", store.activeResultCacheId())
+    }
+
+    @Test
+    fun authoritySnapshotBlocksCheckpointMutationUntilRestoreWorkCompletes() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val restoreEntered = CountDownLatch(1)
+        val releaseRestore = CountDownLatch(1)
+        val writerStarted = CountDownLatch(1)
+        val writerFinished = CountDownLatch(1)
+        val writerResult = AtomicReference<AuthorityMutationResult>()
+        val restoreOwner = AtomicReference<ActiveResultOwner>()
+        val initialOwner = store.authoritySnapshot().owner
+
+        val restore =
+            thread {
+                store.withAuthoritySnapshot { snapshot ->
+                    restoreOwner.set(snapshot.owner)
+                    restoreEntered.countDown()
+                    releaseRestore.await(5, TimeUnit.SECONDS)
+                }
+            }
+        assertTrue(restoreEntered.await(5, TimeUnit.SECONDS))
+        assertEquals(
+            AuthorityMutationResult.Busy,
+            store.trySave(AppSettings(), initialOwner),
+        )
+        val writer =
+            thread {
+                writerStarted.countDown()
+                writerResult.set(store.saveActiveResult("Scan_newer", restoreOwner.get()))
+                writerFinished.countDown()
+            }
+        assertTrue(writerStarted.await(5, TimeUnit.SECONDS))
+        assertFalse(writerFinished.await(100, TimeUnit.MILLISECONDS))
+
+        releaseRestore.countDown()
+        restore.join(5_000)
+        writer.join(5_000)
+
+        assertFalse(restore.isAlive)
+        assertFalse(writer.isAlive)
+        assertEquals(AuthorityMutationResult.Applied, writerResult.get())
+    }
+
+    @Test
+    fun settingsScreenClosesOnlyAfterAnAppliedSave() {
+        assertTrue(settingsSaveApplied(AuthorityMutationResult.Applied))
+        assertFalse(settingsSaveApplied(AuthorityMutationResult.Busy))
+        assertFalse(settingsSaveApplied(AuthorityMutationResult.Stale))
+    }
+
+    @Test
+    fun activeResultCleanupRunsOnlyAfterCheckpointClear() {
+        val operations = mutableListOf<String>()
+
+        val result = clearActiveResultAndReconcileProvisionals(
+            clearCheckpoint = {
+                operations += "clear"
+                AuthorityMutationResult.Applied
+            },
+            reconcileProvisionals = { operations += "reconcile" },
+        )
+
+        assertEquals(AuthorityMutationResult.Applied, result)
+        assertEquals(listOf("clear", "reconcile"), operations)
+    }
+
+    @Test
+    fun staleCheckpointClearDoesNotReconcileProvisionals() {
+        var reconciled = false
+
+        val result =
+            clearActiveResultAndReconcileProvisionals(
+                clearCheckpoint = { AuthorityMutationResult.Stale },
+                reconcileProvisionals = { reconciled = true },
+            )
+
+        assertEquals(AuthorityMutationResult.Stale, result)
+        assertFalse(reconciled)
+    }
+
+    @Test
+    fun checkpointClearKeepsAuthorityUntilProvisionalReconciliationCompletes() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val initialOwner = store.authoritySnapshot().owner
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_old", initialOwner),
+        )
+        val oldOwner = store.authoritySnapshot().owner
+        val reconciliationEntered = CountDownLatch(1)
+        val releaseReconciliation = CountDownLatch(1)
+        val writerFinished = CountDownLatch(1)
+        val writerResult = AtomicReference<AuthorityMutationResult>()
+
+        val cleanup =
+            thread {
+                clearActiveResultAndReconcileProvisionals(
+                    clearCheckpoint = { store.clearActiveResult(oldOwner) },
+                    reconcileProvisionals = {
+                        reconciliationEntered.countDown()
+                        releaseReconciliation.await(5, TimeUnit.SECONDS)
+                    },
+                )
+            }
+        assertTrue(reconciliationEntered.await(5, TimeUnit.SECONDS))
+        val writer =
+            thread {
+                writerResult.set(
+                    store.saveActiveResult("Scan_newer", oldOwner.withCheckpoint(null)),
+                )
+                writerFinished.countDown()
+            }
+        assertFalse(writerFinished.await(100, TimeUnit.MILLISECONDS))
+
+        releaseReconciliation.countDown()
+        cleanup.join(5_000)
+        writer.join(5_000)
+
+        assertFalse(cleanup.isAlive)
+        assertFalse(writer.isAlive)
+        assertEquals(AuthorityMutationResult.Applied, writerResult.get())
+        assertEquals("Scan_newer", store.activeResultCacheId())
+    }
+
+    @Test
+    fun reconciliationFailureIsReportedAsPostCheckpointCleanup() {
+        val failure = IOException("provider failed")
+
+        val thrown =
+            assertThrows(ActiveResultCleanupException::class.java) {
+                clearActiveResultAndReconcileProvisionals(
+                    clearCheckpoint = { AuthorityMutationResult.Applied },
+                    reconcileProvisionals = { throw failure },
+                )
+            }
+
+        assertSame(failure, thrown.cause)
+    }
+
+    @Test
+    fun checkpointClearFailureDoesNotStartProvisionalCleanup() {
+        var reconciled = false
+
+        assertThrows(IOException::class.java) {
+            clearActiveResultAndReconcileProvisionals(
+                clearCheckpoint = { throw IOException("checkpoint failed") },
+                reconcileProvisionals = { reconciled = true },
+            )
+        }
+
+        assertFalse(reconciled)
+    }
+
+    @Test
+    fun failedRestoreKeepsAnAuthoritativeProvisionalCheckpointForRetry() {
+        assertTrue(keepCheckpointAfterRestoreFailure(authoritativeWasProvisional = true))
+        assertFalse(keepCheckpointAfterRestoreFailure(authoritativeWasProvisional = false))
+    }
+
+    @Test
+    fun onlyProvisionalV3CheckpointRepairsAppearancePreferences() {
+        val newerDefaults =
+            AppSettings(
+                appearance = ScanAppearanceSettings(colorMode = ScanColorMode.Color),
+                pdfSizeTarget = PdfSizeTarget.Mb20,
+            )
+        val cachedDefaults =
+            ScanAppearanceSettings(
+                colorMode = ScanColorMode.Grayscale,
+                grayscaleIntensity = 25,
+            )
+        val authoritative =
+            CachedScan(
+                baseName = "Scan_candidate",
+                pages = listOf(File("page.jpg")),
+                pdf = File("scan.pdf"),
+                appearanceSettings = cachedDefaults,
+                pdfSizeTarget = PdfSizeTarget.Mb5,
+            )
+
+        assertEquals(
+            newerDefaults,
+            checkpointRestoreSettings(newerDefaults, authoritative, provisional = false),
+        )
+        assertEquals(
+            newerDefaults.copy(
+                appearance = cachedDefaults,
+                pdfSizeTarget = PdfSizeTarget.Mb5,
+            ),
+            checkpointRestoreSettings(newerDefaults, authoritative, provisional = true),
+        )
+    }
+
+    @Test
+    fun appearanceRestoreRequiresCurrentCheckpointOwnership() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val initialOwner = store.authoritySnapshot().owner
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_candidate", initialOwner),
+        )
+        val owner = initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+        val appearance =
+            ScanAppearanceSettings(
+                colorMode = ScanColorMode.Grayscale,
+                grayscaleIntensity = 22,
+                shadows = 44,
+            )
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.restoreAppearanceAuthority(appearance, PdfSizeTarget.Mb5, owner),
+        )
+        assertEquals(appearance, store.load().appearance)
+        assertEquals(PdfSizeTarget.Mb5, store.load().pdfSizeTarget)
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_newer", owner),
+        )
+        assertEquals(
+            AuthorityMutationResult.Stale,
+            store.restoreAppearanceAuthority(ScanAppearanceSettings(), PdfSizeTarget.Original, owner),
+        )
+        assertEquals(appearance, store.load().appearance)
+        assertEquals("Scan_newer", store.activeResultCacheId())
+    }
+
+    @Test
+    fun fullSettingsSaveIsBlockedWhileAppearanceCommitRuns() {
+        val applying =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+                appearanceApplyInProgress = true,
+            )
+
+        assertFalse(settingsSaveAllowed(applying))
+        assertTrue(settingsSaveAllowed(applying.copy(appearanceApplyInProgress = false)))
+        assertTrue(settingsSaveAllowed(ScreenState.Ready))
+    }
+
+    @Test
+    fun emailLocalizationDoesNotRewriteAppearanceTransactionKeys() {
+        val (preferences, values) = inMemoryPreferences()
+        values["appearance_mode"] = "black_white"
+        values["appearance_shadows"] = 50
+        values["active_result_checkpoint"] = "1:Scan_current"
+
+        SettingsStore(preferences, "Scanned document").saveEmailSubject("Localized subject")
+
+        assertEquals("Localized subject", values["email_subject"])
+        assertEquals("black_white", values["appearance_mode"])
+        assertEquals(50, values["appearance_shadows"])
+        assertEquals("1:Scan_current", values["active_result_checkpoint"])
     }
 
     @Test
@@ -417,8 +930,8 @@ class PureLogicTest {
     }
 
     @Test
-    fun scannerPageLimitOnlyDisablesMultipageCapture() {
-        assertEquals(null, scannerPageLimit(multipage = true))
+    fun scannerPageLimitBoundsMultipageCapture() {
+        assertEquals(20, scannerPageLimit(multipage = true))
         assertEquals(1, scannerPageLimit(multipage = false))
     }
 
@@ -780,9 +1293,29 @@ class PureLogicTest {
         assertNull(decodeActiveResultCheckpoint("1:C:outside"))
         assertNull(decodeActiveResultCheckpoint("1:Scan\u0000outside"))
         assertNull(decodeActiveResultCheckpoint("1:${"a".repeat(129)}"))
+        assertNull(
+            decodeActiveResultCheckpointPayload(
+                "2:$cacheId:color:101:50:50:50",
+            ),
+        )
+        assertNull(
+            decodeActiveResultCheckpointPayload(
+                "2:$cacheId:future:50:50:50:50",
+            ),
+        )
         assertThrows(IllegalArgumentException::class.java) {
             encodeActiveResultCheckpoint("../outside")
         }
+    }
+
+    @Test
+    fun malformedDurableCheckpointIsRetainedForFailClosedRecovery() {
+        val (preferences, values) = inMemoryPreferences()
+        values["active_result_checkpoint"] = "2:malformed"
+        val store = SettingsStore(preferences, "Scanned document")
+
+        assertThrows(IOException::class.java) { store.activeResultCheckpoint() }
+        assertEquals("2:malformed", values["active_result_checkpoint"])
     }
 
     @Test
@@ -895,8 +1428,42 @@ class PureLogicTest {
             appBackAction(settingsOpen = true, fileDetailsOpen = true, state = result),
         )
         assertEquals(
+            AppBackAction.CollapseAppearance,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = true,
+                state = result,
+                appearanceOpen = true,
+            ),
+        )
+        assertEquals(
             AppBackAction.CollapseFileDetails,
             appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun backNavigationIsConsumedWhileAppearanceIsApplying() {
+        val result =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+                appearanceApplyInProgress = true,
+            )
+
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = true,
+                state = result,
+                appearanceOpen = true,
+            ),
         )
     }
 
@@ -1133,8 +1700,12 @@ class PureLogicTest {
             outputMetadataValid = outputMetadataValid,
         )
 
-    private fun inMemoryPreferences(): Pair<SharedPreferences, MutableMap<String, Any?>> {
+    private fun inMemoryPreferences(
+        commitResults: List<Boolean> = emptyList(),
+        afterCommit: (Int, MutableMap<String, Any?>) -> Unit = { _, _ -> },
+    ): Pair<SharedPreferences, MutableMap<String, Any?>> {
         val values = mutableMapOf<String, Any?>()
+        var commitIndex = 0
         lateinit var editor: SharedPreferences.Editor
         editor =
             Proxy.newProxyInstance(
@@ -1142,10 +1713,15 @@ class PureLogicTest {
                 arrayOf(SharedPreferences.Editor::class.java),
             ) { _, method, args ->
                 when (method.name) {
-                    "putBoolean", "putString" -> editor.also { values[args!![0] as String] = args[1] }
+                    "putBoolean", "putString", "putInt" ->
+                        editor.also { values[args!![0] as String] = args[1] }
                     "remove" -> editor.also { values.remove(args!![0] as String) }
                     "apply" -> null
-                    "commit" -> true
+                    "commit" -> {
+                        val index = commitIndex++
+                        afterCommit(index, values)
+                        commitResults.getOrElse(index) { true }
+                    }
                     else -> throw UnsupportedOperationException(method.name)
                 }
             } as SharedPreferences.Editor
@@ -1162,7 +1738,11 @@ class PureLogicTest {
                     "getString" ->
                         values[key]?.let { it as? String ?: throw ClassCastException() }
                             ?: args!![1] as String?
+                    "getInt" ->
+                        values[key]?.let { it as? Int ?: throw ClassCastException() }
+                            ?: args!![1] as Int
                     "contains" -> values.containsKey(key)
+                    "getAll" -> values.toMap()
                     "edit" -> editor
                     else -> throw UnsupportedOperationException(method.name)
                 }
