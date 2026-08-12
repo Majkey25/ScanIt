@@ -507,6 +507,7 @@ internal sealed interface ScreenState {
         val pagePreviewLoading: Boolean = false,
         val outputSaveInProgress: Boolean = false,
         val appearanceApplyInProgress: Boolean = false,
+        val appearanceReviewRequired: Boolean = false,
         val appearanceMessage: UiMessage? = null,
         val visualMarkEditor: VisualMarkEditorState? = null,
     ) : ScreenState
@@ -524,12 +525,12 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
     get() =
         outputSaveInProgress ||
             appearanceApplyInProgress ||
+            appearanceReviewRequired ||
             visualMarkEditor != null
 
 internal enum class AppBackAction {
     CloseSettings,
     CollapseFileDetails,
-    CollapseAppearance,
     ShowRecent,
     LaunchScanner,
     Consume,
@@ -539,13 +540,13 @@ internal fun appBackAction(
     settingsOpen: Boolean,
     fileDetailsOpen: Boolean,
     state: ScreenState,
-    appearanceOpen: Boolean = false,
 ): AppBackAction =
     when {
         settingsOpen -> AppBackAction.CloseSettings
         state is ScreenState.Result &&
-            (state.outputSaveInProgress || state.appearanceApplyInProgress) -> AppBackAction.Consume
-        appearanceOpen && state is ScreenState.Result -> AppBackAction.CollapseAppearance
+            (state.outputSaveInProgress ||
+                state.appearanceApplyInProgress ||
+                state.appearanceReviewRequired) -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent && state.deletionInProgress -> AppBackAction.Consume

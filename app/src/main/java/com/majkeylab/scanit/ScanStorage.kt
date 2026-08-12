@@ -1996,6 +1996,29 @@ internal class ScanStorage(
         return BitmapFactory.decodeFile(firstPage.path, options)
     }
 
+    fun loadAppearancePreview(
+        sourcePage: File,
+        appearance: ScanAppearance,
+        maxSize: Int,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): Bitmap? {
+        val decoded = loadThumbnail(sourcePage, maxSize) ?: return null
+        val mutable =
+            try {
+                decoded.copy(Bitmap.Config.ARGB_8888, true)
+            } finally {
+                decoded.recycle()
+            }
+        if (mutable == null) return null
+        return try {
+            applyScanAppearance(mutable, appearance, isCancelled)
+            mutable
+        } catch (failure: Throwable) {
+            mutable.recycle()
+            throw failure
+        }
+    }
+
     private fun shareCacheRoot(): File {
         val cacheRoot = context.cacheDir.canonicalFile
         val root = File(cacheRoot, "share").absoluteFile

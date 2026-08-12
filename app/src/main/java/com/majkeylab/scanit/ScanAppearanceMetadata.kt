@@ -38,9 +38,11 @@ internal fun encodeScanAppearanceMetadata(
         }
     val activationPolicy = if (restoreSettingsOnActivation) "restore" else "preserve"
     return (
-        "$SCAN_APPEARANCE_VERSION_V4\n${normalized.colorMode.wireValue}\n" +
-            "${normalized.colorIntensity}\n${normalized.grayscaleIntensity}\n" +
-            "${normalized.blackWhiteIntensity}\n${normalized.shadows}\n" +
+        "$SCAN_APPEARANCE_VERSION_V5\n${normalized.colorMode.wireValue}\n" +
+            "${normalized.naturalIntensity}\n${normalized.colorIntensity}\n" +
+            "${normalized.lightTextIntensity}\n${normalized.grayscaleIntensity}\n" +
+            "${normalized.blackWhiteIntensity}\n${normalized.whiteboardIntensity}\n" +
+            "${normalized.shadows}\n" +
             "${pdfSizeTarget.wireValue}\n$lineageCacheId\n$activationPolicy\n$relation"
     ).toByteArray(StandardCharsets.US_ASCII)
 }
@@ -49,11 +51,53 @@ internal fun decodeScanAppearanceMetadata(bytes: ByteArray): ScanAppearanceMetad
     if (bytes.isEmpty() || bytes.size > MAX_SCAN_APPEARANCE_BYTES || bytes.any { it < 0 }) return null
     val text = String(bytes, StandardCharsets.US_ASCII)
     return when {
+        text.startsWith("$SCAN_APPEARANCE_VERSION_V5\n") -> decodeV5Metadata(text)
         text.startsWith("$SCAN_APPEARANCE_VERSION_V4\n") -> decodeV4Metadata(text)
         text.startsWith("$SCAN_APPEARANCE_VERSION_V3\n") -> decodeV3Metadata(text)
         text.startsWith("$SCAN_APPEARANCE_VERSION_V2\n") -> decodeV2Metadata(text)
         else -> null
     }
+}
+
+private fun decodeV5Metadata(text: String): ScanAppearanceMetadata? {
+    val fields = text.split('\n')
+    val derived = fields.getOrNull(12) == "derived"
+    if (fields.size != (if (derived) 16 else 14) || fields.last().isNotEmpty()) return null
+    if (fields[0] != SCAN_APPEARANCE_VERSION_V5) return null
+    val settings =
+        ScanAppearanceSettings(
+            colorMode =
+                ScanColorMode.entries.firstOrNull { it.wireValue == fields.getOrNull(1) }
+                    ?: return null,
+            naturalIntensity = strictPercent(fields[2]) ?: return null,
+            colorIntensity = strictPercent(fields[3]) ?: return null,
+            lightTextIntensity = strictPercent(fields[4]) ?: return null,
+            grayscaleIntensity = strictPercent(fields[5]) ?: return null,
+            blackWhiteIntensity = strictPercent(fields[6]) ?: return null,
+            whiteboardIntensity = strictPercent(fields[7]) ?: return null,
+            shadows = strictPercent(fields[8]) ?: return null,
+        )
+    val target = decodePdfSizeTarget(fields[9]) ?: return null
+    val lineageCacheId = fields[10]
+    val restoreSettings =
+        when (fields[11]) {
+            "restore" -> true
+            "preserve" -> false
+            else -> return null
+        }
+    val parentCacheId = if (derived) fields[13] else null
+    val parentEntryId = if (derived) fields[14] else null
+    if (!safeAppearanceIdentity(lineageCacheId, parentCacheId, parentEntryId)) return null
+    if (!derived && fields[12] != "initial") return null
+    return ScanAppearanceMetadata(
+        appearance = settings.selected(),
+        appearanceSettings = settings,
+        pdfSizeTarget = target,
+        lineageCacheId = lineageCacheId,
+        parentCacheId = parentCacheId,
+        parentEntryId = parentEntryId,
+        restoreSettingsOnActivation = restoreSettings,
+    )
 }
 
 private fun decodeV4Metadata(text: String): ScanAppearanceMetadata? {
@@ -107,15 +151,20 @@ private fun decodeV3Metadata(text: String): ScanAppearanceMetadata? {
     )
 }
 
-private fun decodeFullAppearanceSettings(fields: List<String>): ScanAppearanceSettings? =
-    ScanAppearanceSettings(
-        colorMode = ScanColorMode.entries.firstOrNull { it.wireValue == fields.getOrNull(1) }
-            ?: return null,
-        colorIntensity = strictPercent(fields.getOrNull(2) ?: return null) ?: return null,
-        grayscaleIntensity = strictPercent(fields.getOrNull(3) ?: return null) ?: return null,
-        blackWhiteIntensity = strictPercent(fields.getOrNull(4) ?: return null) ?: return null,
-        shadows = strictPercent(fields.getOrNull(5) ?: return null) ?: return null,
+private fun decodeFullAppearanceSettings(fields: List<String>): ScanAppearanceSettings? {
+    val mode = ScanColorMode.entries.firstOrNull { it.wireValue == fields.getOrNull(1) } ?: return null
+    val color = strictPercent(fields.getOrNull(2) ?: return null) ?: return null
+    val grayscale = strictPercent(fields.getOrNull(3) ?: return null) ?: return null
+    val blackWhite = strictPercent(fields.getOrNull(4) ?: return null) ?: return null
+    val shadows = strictPercent(fields.getOrNull(5) ?: return null) ?: return null
+    return parseScanAppearanceSettings(
+        colorModeWireValue = mode.wireValue,
+        colorIntensity = color,
+        grayscaleIntensity = grayscale,
+        blackWhiteIntensity = blackWhite,
+        shadows = shadows,
     )
+}
 
 private fun decodeV2Metadata(text: String): ScanAppearanceMetadata? {
     val match = SCAN_APPEARANCE_V2_PATTERN.matchEntire(text) ?: return null
@@ -206,9 +255,12 @@ internal fun writeScanAppearanceMetadata(
 private fun normalizeMetadataAppearance(settings: ScanAppearanceSettings): ScanAppearanceSettings =
     parseScanAppearanceSettings(
         colorModeWireValue = settings.colorMode.wireValue,
+        naturalIntensity = settings.naturalIntensity,
         colorIntensity = settings.colorIntensity,
+        lightTextIntensity = settings.lightTextIntensity,
         grayscaleIntensity = settings.grayscaleIntensity,
         blackWhiteIntensity = settings.blackWhiteIntensity,
+        whiteboardIntensity = settings.whiteboardIntensity,
         shadows = settings.shadows,
     )
 
@@ -242,7 +294,8 @@ private fun isSafeAppearanceCacheId(value: String): Boolean =
 private const val SCAN_APPEARANCE_VERSION_V2 = "scanit-appearance-v2"
 private const val SCAN_APPEARANCE_VERSION_V3 = "scanit-appearance-v3"
 private const val SCAN_APPEARANCE_VERSION_V4 = "scanit-appearance-v4"
-private const val MAX_SCAN_APPEARANCE_BYTES = 640
+private const val SCAN_APPEARANCE_VERSION_V5 = "scanit-appearance-v5"
+private const val MAX_SCAN_APPEARANCE_BYTES = 720
 private const val MAX_APPEARANCE_CACHE_ID_LENGTH = 128
 private val SCAN_APPEARANCE_V2_PATTERN =
     Regex(

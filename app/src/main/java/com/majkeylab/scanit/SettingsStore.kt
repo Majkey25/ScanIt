@@ -18,9 +18,12 @@ private const val KEY_EMAIL_BODY = "email_body"
 private const val KEY_DELETE_PDF_AFTER_SHARE = "delete_pdf_after_share"
 private const val KEY_DELETE_IMAGES_AFTER_SHARE = "delete_images_after_share"
 private const val KEY_APPEARANCE_MODE = "appearance_mode"
+private const val KEY_APPEARANCE_NATURAL_INTENSITY = "appearance_natural_intensity"
 private const val KEY_APPEARANCE_COLOR_INTENSITY = "appearance_color_intensity"
+private const val KEY_APPEARANCE_LIGHT_TEXT_INTENSITY = "appearance_light_text_intensity"
 private const val KEY_APPEARANCE_GRAYSCALE_INTENSITY = "appearance_grayscale_intensity"
 private const val KEY_APPEARANCE_BLACK_WHITE_INTENSITY = "appearance_black_white_intensity"
+private const val KEY_APPEARANCE_WHITEBOARD_INTENSITY = "appearance_whiteboard_intensity"
 private const val KEY_APPEARANCE_SHADOWS = "appearance_shadows"
 private const val KEY_PDF_SIZE_TARGET = "pdf_size_target"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
@@ -29,6 +32,7 @@ private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
 private const val KEY_PENDING_SHARE_CLEANUP = "pending_share_cleanup"
 private const val ACTIVE_RESULT_CHECKPOINT_V1_PREFIX = "1:"
 private const val ACTIVE_RESULT_CHECKPOINT_V2_PREFIX = "2:"
+private const val ACTIVE_RESULT_CHECKPOINT_V3_PREFIX = "3:"
 private const val MAX_ACTIVE_RESULT_CACHE_ID_LENGTH = 128
 private const val MAX_ACTIVE_RESULT_CHECKPOINT_LENGTH = 192
 private const val PENDING_SHARE_CLEANUP_PREFIX = "1:"
@@ -65,6 +69,7 @@ internal enum class AppearanceCommitResult {
 
 internal data class ActiveResultCheckpoint(
     val cacheId: String,
+    val appearanceReviewEntryId: String? = null,
 )
 
 internal data class ActiveResultOwner(
@@ -84,15 +89,32 @@ internal data class ActiveResultAuthoritySnapshot(
 internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
     cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
 
-internal fun encodeActiveResultCheckpoint(cacheId: String): String {
+internal fun encodeActiveResultCheckpoint(
+    cacheId: String,
+    appearanceReviewEntryId: String? = null,
+): String {
     require(isSafeActiveResultCacheId(cacheId)) {
         "Active result cache ID is unsafe"
     }
-    return "$ACTIVE_RESULT_CHECKPOINT_V1_PREFIX$cacheId"
+    require(appearanceReviewEntryId == null || isCanonicalUuid(appearanceReviewEntryId)) {
+        "Appearance review entry ID is unsafe"
+    }
+    return if (appearanceReviewEntryId == null) {
+        "$ACTIVE_RESULT_CHECKPOINT_V1_PREFIX$cacheId"
+    } else {
+        "$ACTIVE_RESULT_CHECKPOINT_V3_PREFIX$cacheId:$appearanceReviewEntryId"
+    }
 }
 
 internal fun decodeActiveResultCheckpointPayload(value: String?): ActiveResultCheckpoint? {
     if (value == null || value.length > MAX_ACTIVE_RESULT_CHECKPOINT_LENGTH) return null
+    if (value.startsWith(ACTIVE_RESULT_CHECKPOINT_V3_PREFIX)) {
+        val fields = value.split(':')
+        if (fields.size != 3 || fields[0] != "3") return null
+        val cacheId = fields[1].takeIf(::isSafeActiveResultCacheId) ?: return null
+        val entryId = fields[2].takeIf(::isCanonicalUuid) ?: return null
+        return ActiveResultCheckpoint(cacheId, entryId)
+    }
     if (value.startsWith(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)) {
         val cacheId = value.removePrefix(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)
         return cacheId.takeIf(::isSafeActiveResultCacheId)?.let {
@@ -221,12 +243,54 @@ internal class SettingsStore(
                                 appearance.colorIntensity,
                             )
                         },
+                    naturalIntensity =
+                        readPreferenceOrDefault(appearance.naturalIntensity) {
+                            if (preferences.contains(KEY_APPEARANCE_NATURAL_INTENSITY)) {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_NATURAL_INTENSITY,
+                                    appearance.naturalIntensity,
+                                )
+                            } else {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_COLOR_INTENSITY,
+                                    appearance.naturalIntensity,
+                                )
+                            }
+                        },
+                    lightTextIntensity =
+                        readPreferenceOrDefault(appearance.lightTextIntensity) {
+                            if (preferences.contains(KEY_APPEARANCE_LIGHT_TEXT_INTENSITY)) {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_LIGHT_TEXT_INTENSITY,
+                                    appearance.lightTextIntensity,
+                                )
+                            } else {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_COLOR_INTENSITY,
+                                    appearance.lightTextIntensity,
+                                )
+                            }
+                        },
                     grayscaleIntensity =
                         readPreferenceOrDefault(appearance.grayscaleIntensity) {
                             preferences.getInt(
                                 KEY_APPEARANCE_GRAYSCALE_INTENSITY,
                                 appearance.grayscaleIntensity,
                             )
+                        },
+                    whiteboardIntensity =
+                        readPreferenceOrDefault(appearance.whiteboardIntensity) {
+                            if (preferences.contains(KEY_APPEARANCE_WHITEBOARD_INTENSITY)) {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_WHITEBOARD_INTENSITY,
+                                    appearance.whiteboardIntensity,
+                                )
+                            } else {
+                                preferences.getInt(
+                                    KEY_APPEARANCE_BLACK_WHITE_INTENSITY,
+                                    appearance.whiteboardIntensity,
+                                )
+                            }
                         },
                     blackWhiteIntensity =
                         readPreferenceOrDefault(appearance.blackWhiteIntensity) {
@@ -399,12 +463,13 @@ internal class SettingsStore(
     internal fun saveActiveResult(
         cacheId: String,
         expectedOwner: ActiveResultOwner,
+        appearanceReviewEntryId: String? = null,
     ): AuthorityMutationResult =
         withActiveResultAuthority {
             if (!ownerMatchesLocked(expectedOwner)) {
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
-            val encoded = encodeActiveResultCheckpoint(cacheId)
+            val encoded = encodeActiveResultCheckpoint(cacheId, appearanceReviewEntryId)
             preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
             val verified =
                 readPreferenceOrDefault<String?>(null) {
@@ -546,9 +611,12 @@ private fun SharedPreferences.Editor.putAppearance(
 ): SharedPreferences.Editor {
     val normalized = normalizeAppearanceSettings(appearance)
     return putString(KEY_APPEARANCE_MODE, normalized.colorMode.wireValue)
+        .putInt(KEY_APPEARANCE_NATURAL_INTENSITY, normalized.naturalIntensity)
         .putInt(KEY_APPEARANCE_COLOR_INTENSITY, normalized.colorIntensity)
+        .putInt(KEY_APPEARANCE_LIGHT_TEXT_INTENSITY, normalized.lightTextIntensity)
         .putInt(KEY_APPEARANCE_GRAYSCALE_INTENSITY, normalized.grayscaleIntensity)
         .putInt(KEY_APPEARANCE_BLACK_WHITE_INTENSITY, normalized.blackWhiteIntensity)
+        .putInt(KEY_APPEARANCE_WHITEBOARD_INTENSITY, normalized.whiteboardIntensity)
         .putInt(KEY_APPEARANCE_SHADOWS, normalized.shadows)
 }
 
@@ -557,8 +625,11 @@ private fun normalizeAppearanceSettings(
 ): ScanAppearanceSettings =
     parseScanAppearanceSettings(
         colorModeWireValue = appearance.colorMode.wireValue,
+        naturalIntensity = appearance.naturalIntensity,
         colorIntensity = appearance.colorIntensity,
+        lightTextIntensity = appearance.lightTextIntensity,
         grayscaleIntensity = appearance.grayscaleIntensity,
         blackWhiteIntensity = appearance.blackWhiteIntensity,
+        whiteboardIntensity = appearance.whiteboardIntensity,
         shadows = appearance.shadows,
     )
