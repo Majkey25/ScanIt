@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `5` |
-| Version name | `1.2.0-beta.1` |
+| Version code | `6` |
+| Version name | `1.2.0-beta.2` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -64,7 +64,7 @@ the Play developer account.
 > - PDF saving to Downloads or a folder you choose
 > - PDF/image sharing with an optional subject and message
 > - optional deletion of saved PDFs or images after sharing
-> - reusable visual marks placed on a selected page
+> - reusable drawn, imported, or scanned signatures and stamps dragged into place on a selected page
 > - Android system printing
 > - monochrome light and dark interface
 > - system, English, and Czech language selection
@@ -105,7 +105,7 @@ the Play developer account.
 > - ukládání PDF do Stažených souborů nebo zvolené složky
 > - sdílení PDF nebo obrázků s volitelným předmětem a zprávou
 > - volitelné smazání uložených PDF nebo obrázků po sdílení
-> - opakovaně použitelné vizuální značky umístěné na vybranou stránku
+> - opakovaně použitelné kreslené, importované nebo skenované podpisy a razítka přetažené na vybranou stránku
 > - systémový tisk Androidu
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický a český jazyk
@@ -279,7 +279,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 5, version `1.2.0-beta.1`.
+- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 6, version `1.2.0-beta.2`.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

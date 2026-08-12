@@ -133,7 +133,7 @@
     <string name="visual_mark_template_failed">Podpis nebo razítko se nepodařilo uložit.</string>
     <string name="visual_mark_apply_failed">Podpis nebo razítko se nepodařilo přidat.</string>
     <string name="visual_mark_scanner_failed">Sken podpisu nebo razítka se nepodařilo otevřít.</string>
-    <string name="add_signature_or_stamp">Přidat podpis nebo razítko</string>
+    <string name="add_signature_or_stamp">Podepsat nebo orazítkovat dokument</string>
     <string name="visual_mark_title">Podpis nebo razítko</string>
     <string name="visual_mark_disclaimer">Tato funkce vloží pouze obrázek podpisu nebo razítka. Nejde o digitální ani kryptografický podpis a nepotvrzuje totožnost ani neporušenost dokumentu.</string>
     <string name="saved_visual_marks">Uložené podpisy a razítka</string>
@@ -157,6 +157,7 @@
     <string name="delete_visual_mark_body">Tímto odstraníte vybraný uložený podpis nebo razítko.</string>
     <string name="delete_visual_mark_confirm">Smazat</string>
     <string name="visual_mark_preview">Náhled podpisu nebo razítka</string>
+    <string name="drag_visual_mark_hint">Přetažením podpis umístěte.</string>
     <string name="saved_visual_mark_number">Uložená značka %1$d</string>
     <string name="visual_mark_percent">%1$d %%</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
