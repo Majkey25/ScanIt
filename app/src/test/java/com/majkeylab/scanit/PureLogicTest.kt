@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import android.content.SharedPreferences
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import java.io.File
 import java.io.IOException
 import java.lang.reflect.Proxy
@@ -22,6 +23,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PureLogicTest {
+    @Test
+    fun mainScannerRestoresFullEditorWhileMarkCaptureStaysBase() {
+        assertEquals(
+            GmsDocumentScannerOptions.SCANNER_MODE_FULL,
+            scannerMode(ScannerPurpose.Document),
+        )
+        assertEquals(
+            GmsDocumentScannerOptions.SCANNER_MODE_BASE,
+            scannerMode(ScannerPurpose.VisualMark),
+        )
+    }
+
     @Test
     fun appSettingsDefaultsAreStable() {
         assertEquals(
@@ -263,9 +276,12 @@ class PureLogicTest {
         val expected =
             ScanAppearanceSettings(
                 colorMode = ScanColorMode.Grayscale,
+                naturalIntensity = 5,
                 colorIntensity = 15,
+                lightTextIntensity = 25,
                 grayscaleIntensity = 35,
                 blackWhiteIntensity = 75,
+                whiteboardIntensity = 85,
                 shadows = 45,
             )
         val owner = store.authoritySnapshot().owner
@@ -284,6 +300,9 @@ class PureLogicTest {
         assertEquals(expected, store.load().appearance)
         assertEquals(PdfSizeTarget.Mb10, store.load().pdfSizeTarget)
         assertEquals("grayscale", values["appearance_mode"])
+        assertEquals(5, values["appearance_natural_intensity"])
+        assertEquals(25, values["appearance_light_text_intensity"])
+        assertEquals(85, values["appearance_whiteboard_intensity"])
         assertEquals("10_mb", values["pdf_size_target"])
     }
 
@@ -309,20 +328,43 @@ class PureLogicTest {
     fun corruptAppearanceAndPdfSizeSettingsFailClosedToDefaults() {
         val (preferences, values) = inMemoryPreferences()
         values["appearance_mode"] = "future"
+        values["appearance_natural_intensity"] = "wrong"
         values["appearance_color_intensity"] = -10
+        values["appearance_light_text_intensity"] = 17
         values["appearance_grayscale_intensity"] = 140
         values["appearance_black_white_intensity"] = "wrong"
+        values["appearance_whiteboard_intensity"] = 101
         values["appearance_shadows"] = 101
         values["pdf_size_target"] = "1_mb"
 
         val loaded = SettingsStore(preferences, "Scanned document").load()
 
         assertEquals(ScanColorMode.BlackWhite, loaded.appearance.colorMode)
+        assertEquals(100, loaded.appearance.naturalIntensity)
         assertEquals(0, loaded.appearance.colorIntensity)
+        assertEquals(17, loaded.appearance.lightTextIntensity)
         assertEquals(100, loaded.appearance.grayscaleIntensity)
         assertEquals(100, loaded.appearance.blackWhiteIntensity)
+        assertEquals(100, loaded.appearance.whiteboardIntensity)
         assertEquals(100, loaded.appearance.shadows)
         assertEquals(PdfSizeTarget.Original, loaded.pdfSizeTarget)
+    }
+
+    @Test
+    fun legacySharedFilterIntensitiesMigrateWithoutChangingTheUsersTuning() {
+        val (preferences, values) = inMemoryPreferences()
+        values["appearance_color_intensity"] = 23
+        values["appearance_grayscale_intensity"] = 45
+        values["appearance_black_white_intensity"] = 67
+
+        val appearance = SettingsStore(preferences, "Scanned document").load().appearance
+
+        assertEquals(23, appearance.naturalIntensity)
+        assertEquals(23, appearance.colorIntensity)
+        assertEquals(23, appearance.lightTextIntensity)
+        assertEquals(45, appearance.grayscaleIntensity)
+        assertEquals(67, appearance.blackWhiteIntensity)
+        assertEquals(67, appearance.whiteboardIntensity)
     }
 
     @Test
@@ -353,6 +395,43 @@ class PureLogicTest {
         assertEquals("Scan_applied", store.activeResultCacheId())
         assertEquals(
             ActiveResultCheckpoint("Scan_applied"),
+            store.activeResultCheckpoint(),
+        )
+    }
+
+    @Test
+    fun pendingAppearanceReviewSurvivesActiveResultCheckpointRoundTrip() {
+        val entryId = "123e4567-e89b-12d3-a456-426614174000"
+        val encoded = encodeActiveResultCheckpoint("Scan_review", entryId)
+
+        assertEquals(
+            ActiveResultCheckpoint("Scan_review", entryId),
+            decodeActiveResultCheckpointPayload(encoded),
+        )
+        assertNull(
+            decodeActiveResultCheckpointPayload(
+                encodeActiveResultCheckpoint("Scan_review"),
+            )?.appearanceReviewEntryId,
+        )
+    }
+
+    @Test
+    fun settingsStorePersistsPendingAppearanceReviewWithResultAuthority() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        val owner = store.authoritySnapshot().owner
+        val entryId = "123e4567-e89b-12d3-a456-426614174000"
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult(
+                cacheId = "Scan_review",
+                expectedOwner = owner,
+                appearanceReviewEntryId = entryId,
+            ),
+        )
+        assertEquals(
+            ActiveResultCheckpoint("Scan_review", entryId),
             store.activeResultCheckpoint(),
         )
     }
@@ -768,6 +847,28 @@ class PureLogicTest {
         assertFalse(settingsSaveAllowed(applying))
         assertTrue(settingsSaveAllowed(applying.copy(appearanceApplyInProgress = false)))
         assertTrue(settingsSaveAllowed(ScreenState.Ready))
+    }
+
+    @Test
+    fun freshAppearanceReviewKeepsResultActionsAndBackBlockedUntilFinished() {
+        val reviewing =
+            ScreenState.Result(
+                scan =
+                    SavedScan(
+                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
+                        galleryPages = emptyList(),
+                        savedPdf = null,
+                    ),
+                thumbnail = null,
+                appearanceReviewRequired = true,
+            )
+
+        assertTrue(reviewing.resultActionsBlocked)
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = false, state = reviewing),
+        )
+        assertFalse(reviewing.copy(appearanceReviewRequired = false).resultActionsBlocked)
     }
 
     @Test
@@ -1460,15 +1561,6 @@ class PureLogicTest {
             appBackAction(settingsOpen = true, fileDetailsOpen = true, state = result),
         )
         assertEquals(
-            AppBackAction.CollapseAppearance,
-            appBackAction(
-                settingsOpen = false,
-                fileDetailsOpen = true,
-                state = result,
-                appearanceOpen = true,
-            ),
-        )
-        assertEquals(
             AppBackAction.CollapseFileDetails,
             appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
         )
@@ -1494,7 +1586,6 @@ class PureLogicTest {
                 settingsOpen = false,
                 fileDetailsOpen = true,
                 state = result,
-                appearanceOpen = true,
             ),
         )
     }

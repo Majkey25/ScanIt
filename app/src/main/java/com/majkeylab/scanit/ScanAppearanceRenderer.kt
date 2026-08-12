@@ -77,7 +77,7 @@ internal object ScanAppearanceRenderer {
         try {
             transformBitmap(bitmap)
             throwIfCancelled(isCancelled)
-            applyAppearance(bitmap, normalizedAppearance, isCancelled)
+            applyScanAppearance(bitmap, normalizedAppearance, isCancelled)
             throwIfCancelled(isCancelled)
 
             staging = Files.createTempFile(parent.toPath(), ".scanit-render-", ".jpg.tmp").toFile()
@@ -155,7 +155,7 @@ private fun decodeMutableBitmap(file: File, sampleSize: Int): Bitmap {
     return bitmap
 }
 
-private fun applyAppearance(
+internal fun applyScanAppearance(
     bitmap: Bitmap,
     appearance: ScanAppearance,
     isCancelled: () -> Boolean,
@@ -181,7 +181,11 @@ private fun applyAppearance(
     }
 
     val threshold =
-        if (appearance.colorMode == ScanColorMode.BlackWhite && appearance.intensity > 0) {
+        if (
+            (appearance.colorMode == ScanColorMode.BlackWhite ||
+                appearance.colorMode == ScanColorMode.Whiteboard) &&
+                appearance.intensity > 0
+        ) {
             val histogram = IntArray(256)
             for (y in 0 until height) {
                 throwIfCancelled(isCancelled)
@@ -203,7 +207,8 @@ private fun applyAppearance(
                     histogram[corrected]++
                 }
             }
-            otsuThresholdFromHistogram(histogram)
+            val measured = otsuThresholdFromHistogram(histogram)
+            if (appearance.colorMode == ScanColorMode.Whiteboard) measured * 3 / 4 else measured
         } else {
             127
         }

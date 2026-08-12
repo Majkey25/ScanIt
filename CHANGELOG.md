@@ -2,6 +2,19 @@
 
 All notable changes are documented here.
 
+## [1.2.0] - 2026-08-12
+
+### Added
+
+- Added a dedicated pre-save Review scan step with live preview cards for Natural, Color, Light text, Grayscale, Black and white, and Whiteboard filters.
+- Added a remembered intensity for every filter plus one shared shadow-strength control before output files are created.
+
+### Changed
+
+- Restored the full Google ML Kit editor for document scans, including page-specific filters, crop, rotation, cleanup, and multi-page editing.
+- Kept Result and sharing focused on completed output actions; appearance editing now happens before saving and sharing.
+- Made an unfinished Review scan survive process death and resume the exact cached scan generation.
+
 ## [1.1.0] - 2026-08-12
 
 ### Fixed
@@ -59,5 +72,6 @@ Historical copies retain the license supplied with them. See
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
+[1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2

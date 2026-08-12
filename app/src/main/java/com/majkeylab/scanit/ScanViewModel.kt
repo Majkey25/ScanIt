@@ -605,8 +605,15 @@ internal class ScanViewModel(
                                     outputMetadataValid = false,
                                 ),
                             thumbnail = prepared.thumbnail,
+                            appearanceReviewRequired = true,
                         )
-                    when (persistResultCheckpoint(generation, prepared.build.cached.baseName)) {
+                    when (
+                        persistResultCheckpoint(
+                            generation = generation,
+                            cacheId = prepared.build.cached.baseName,
+                            appearanceReviewEntryId = prepared.build.cached.entryId,
+                        )
+                    ) {
                         ResultActivation.Applied -> authorityCommitted = true
                         ResultActivation.Rejected -> {
                             val cleanupComplete = deleteUncommittedCandidate(prepared.build.cached)
@@ -635,12 +642,6 @@ internal class ScanViewModel(
                         withContext(Dispatchers.IO) {
                             val activated =
                                 storage.activateCheckpointProvisional(prepared.build.cached)
-                            val warnings =
-                                (baseWarnings +
-                                    saveAutomaticInitialOutputs(
-                                        activated,
-                                        prepared.settings,
-                                    )).toMutableList()
                             val saved =
                                 storage.openSavedScan(activated.baseName)
                                     ?: throw IOException(
@@ -649,9 +650,10 @@ internal class ScanViewModel(
                             ScreenState.Result(
                                 scan =
                                     saved.copy(
-                                        warnings = (warnings + saved.warnings).distinct(),
+                                        warnings = (baseWarnings + saved.warnings).distinct(),
                                     ),
                                 thumbnail = prepared.thumbnail,
+                                appearanceReviewRequired = true,
                             )
                         }
                     retainedResult = result
@@ -716,7 +718,13 @@ internal class ScanViewModel(
 
     fun selectResultPage(selectedPageIndex: Int) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.resultActionsBlocked) return
+        if (
+            current.outputSaveInProgress ||
+                current.appearanceApplyInProgress ||
+                current.visualMarkEditor != null
+        ) {
+            return
+        }
         val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
         if (
             pageIndex == current.selectedPageIndex &&
@@ -769,6 +777,21 @@ internal class ScanViewModel(
                 }
             }
     }
+
+    suspend fun loadAppearancePreview(
+        sourcePage: File,
+        settings: ScanAppearanceSettings,
+        maxSize: Int,
+    ): Bitmap? =
+        withContext(Dispatchers.IO) {
+            val processingContext = currentCoroutineContext()
+            storage.loadAppearancePreview(
+                sourcePage = sourcePage,
+                appearance = settings.selected(),
+                maxSize = maxSize,
+                isCancelled = { !processingContext.isActive },
+            )
+        }
 
     fun openVisualMarkEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return
@@ -1070,7 +1093,10 @@ internal class ScanViewModel(
         val current = mutableState.value as? ScreenState.Result ?: return
         val cached = current.scan.cached
         if (
-            current.resultActionsBlocked ||
+            !current.appearanceReviewRequired ||
+                current.outputSaveInProgress ||
+                current.appearanceApplyInProgress ||
+                current.visualMarkEditor != null ||
                 current.pagePreviewLoading ||
                 appearanceApplyJob?.isActive == true ||
                 cached.sourcePages.size != cached.pages.size ||
@@ -1084,15 +1110,19 @@ internal class ScanViewModel(
         val normalized =
             parseScanAppearanceSettings(
                 colorModeWireValue = requested.colorMode.wireValue,
+                naturalIntensity = requested.naturalIntensity,
                 colorIntensity = requested.colorIntensity,
+                lightTextIntensity = requested.lightTextIntensity,
                 grayscaleIntensity = requested.grayscaleIntensity,
                 blackWhiteIntensity = requested.blackWhiteIntensity,
+                whiteboardIntensity = requested.whiteboardIntensity,
                 shadows = requested.shadows,
             )
         if (
             cached.appearanceSettings == normalized &&
                 cached.pdfSizeTarget == previousSettings.pdfSizeTarget
         ) {
+            finishUnchangedAppearanceReview(current, previousSettings)
             return
         }
         val generation = beginRouteMutation()
@@ -1164,9 +1194,16 @@ internal class ScanViewModel(
                                     appearance = normalized,
                                     pdfSizeTarget = previousSettings.pdfSizeTarget,
                                 )
-                            val saved =
+                            val activated =
                                 withContext(NonCancellable + Dispatchers.IO) {
                                     completeAppearanceCandidate(candidate, buildWarnings)
+                                }
+                            val saved =
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    saveAutomaticReviewOutputs(
+                                        activated,
+                                        previousSettings.copy(appearance = normalized),
+                                    )
                                 }
                             if (routeMutationGate.isCurrent(generation)) {
                                 publishResult(
@@ -1206,10 +1243,16 @@ internal class ScanViewModel(
                         val recovered =
                             try {
                                 withContext(NonCancellable + Dispatchers.IO) {
-                                    created?.let {
-                                        completeAppearanceCandidate(
-                                            it,
-                                            buildWarnings + UiMessage(R.string.state_update_failed),
+                                    created?.let { candidate ->
+                                        val activated =
+                                            completeAppearanceCandidate(
+                                                candidate,
+                                                buildWarnings +
+                                                    UiMessage(R.string.state_update_failed),
+                                            )
+                                        saveAutomaticReviewOutputs(
+                                            activated,
+                                            previousSettings.copy(appearance = normalized),
                                         )
                                     }
                                 }
@@ -1243,6 +1286,71 @@ internal class ScanViewModel(
                                 )
                         }
                     }
+                }
+            }
+    }
+
+    private fun finishUnchangedAppearanceReview(
+        current: ScreenState.Result,
+        settings: AppSettings,
+    ) {
+        val cacheId = current.scan.cached.baseName
+        val entryId = current.scan.cached.entryId ?: return
+        val generation = beginRouteMutation()
+        mutableState.value =
+            current.copy(
+                appearanceApplyInProgress = true,
+                appearanceMessage = null,
+            )
+        appearanceApplyJob =
+            viewModelScope.launch {
+                try {
+                    val saved =
+                        withContext(Dispatchers.IO) {
+                            saveAutomaticReviewOutputs(current.scan, settings)
+                        }
+                    if (
+                        persistResultCheckpoint(generation, cacheId) !=
+                            ResultActivation.Applied
+                    ) {
+                        throw IOException("Appearance review state could not be cleared")
+                    }
+                    routeMutationMutex.withLock {
+                        val latest = mutableState.value as? ScreenState.Result
+                        if (
+                            routeMutationGate.isCurrent(generation) &&
+                                latest?.scan?.cached?.baseName == cacheId &&
+                                latest.scan.cached.entryId == entryId
+                        ) {
+                            publishResult(
+                                latest.copy(
+                                    scan = saved,
+                                    appearanceApplyInProgress = false,
+                                    appearanceReviewRequired = false,
+                                    appearanceMessage = null,
+                                ),
+                            )
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (routeMutationGate.isCurrent(generation)) {
+                        val latest = mutableState.value as? ScreenState.Result
+                        if (
+                            latest?.scan?.cached?.baseName == cacheId &&
+                                latest.scan.cached.entryId == entryId
+                        ) {
+                            mutableState.value =
+                                latest.copy(
+                                    appearanceApplyInProgress = false,
+                                    appearanceMessage =
+                                        UiMessage(R.string.appearance_apply_failed),
+                                )
+                        }
+                    }
+                } finally {
+                    appearanceApplyJob = null
                 }
             }
     }
@@ -1481,7 +1589,11 @@ internal class ScanViewModel(
                 when (destination.route) {
                     RestoredRoute.Result -> {
                         val cacheId = checkNotNull(destination.cacheId)
-                        val result = loadCachedResult(cacheId)
+                        val result =
+                            loadCachedResult(
+                                cacheId,
+                                activeCheckpoint?.appearanceReviewEntryId,
+                            )
                         if (result == null) {
                             if (
                                 keepCheckpointAfterRestoreFailure(
@@ -1546,7 +1658,10 @@ internal class ScanViewModel(
             }
     }
 
-    private suspend fun loadCachedResult(cacheId: String): ScreenState.Result? {
+    private suspend fun loadCachedResult(
+        cacheId: String,
+        appearanceReviewEntryId: String? = null,
+    ): ScreenState.Result? {
         if (!isSafeActiveResultCacheId(cacheId)) return null
         val savedResultCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
         val savedPageIndex = savedStateHandle.get<Int>(RESULT_PAGE_INDEX_KEY)
@@ -1576,6 +1691,9 @@ internal class ScanViewModel(
                     scan = saved,
                     thumbnail = thumbnail,
                     selectedPageIndex = pageIndex,
+                    appearanceReviewRequired =
+                        appearanceReviewEntryId != null &&
+                            saved.cached.entryId == appearanceReviewEntryId,
                 )
             }
         } catch (cancellation: CancellationException) {
@@ -1602,6 +1720,7 @@ internal class ScanViewModel(
     private suspend fun persistResultCheckpoint(
         generation: Long,
         cacheId: String,
+        appearanceReviewEntryId: String? = null,
     ): ResultActivation =
         routeMutationMutex.withLock {
             if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
@@ -1609,24 +1728,37 @@ internal class ScanViewModel(
             try {
                 val saved =
                     withContext(Dispatchers.IO) {
-                        settingsStore.saveActiveResult(cacheId, owner)
+                        settingsStore.saveActiveResult(
+                            cacheId = cacheId,
+                            expectedOwner = owner,
+                            appearanceReviewEntryId = appearanceReviewEntryId,
+                        )
                     }
                 if (saved != AuthorityMutationResult.Applied) {
                     return@withLock ResultActivation.Stale
                 }
-                activeResultOwner = owner.withCheckpoint(ActiveResultCheckpoint(cacheId))
+                activeResultOwner =
+                    owner.withCheckpoint(
+                        ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                    )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: IOException) {
-                return@withLock recoverResultCheckpoint(cacheId, owner)
+                return@withLock recoverResultCheckpoint(
+                    ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                    owner,
+                )
             } catch (_: IllegalArgumentException) {
-                return@withLock recoverResultCheckpoint(cacheId, owner)
+                return@withLock recoverResultCheckpoint(
+                    ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                    owner,
+                )
             }
             ResultActivation.Applied
         }
 
     private suspend fun recoverResultCheckpoint(
-        cacheId: String,
+        expectedCheckpoint: ActiveResultCheckpoint,
         previousOwner: ActiveResultOwner,
     ): ResultActivation =
         try {
@@ -1636,7 +1768,7 @@ internal class ScanViewModel(
                 }
             activeResultOwner = snapshot.owner
             when (snapshot.checkpoint) {
-                ActiveResultCheckpoint(cacheId) -> ResultActivation.Applied
+                expectedCheckpoint -> ResultActivation.Applied
                 previousOwner.checkpoint -> ResultActivation.Rejected
                 else -> ResultActivation.Stale
             }
@@ -2061,6 +2193,19 @@ internal class ScanViewModel(
             }
         }
         return warnings.distinct()
+    }
+
+    private suspend fun saveAutomaticReviewOutputs(
+        scan: SavedScan,
+        settings: AppSettings,
+    ): SavedScan {
+        val outputWarnings = saveAutomaticInitialOutputs(scan.cached, settings)
+        val refreshed =
+            storage.openSavedScan(scan.cached.baseName)
+                ?: throw IOException("Reviewed scan output metadata is unavailable")
+        return refreshed.copy(
+            warnings = (scan.warnings + outputWarnings + refreshed.warnings).distinct(),
+        )
     }
 
     private suspend fun readActiveResultCheckpoint(generation: Long): CheckpointReadResult =

@@ -20,9 +20,45 @@ class ScanAppearanceTest {
 
     @Test
     fun colorModesHaveStableWireValues() {
+        assertEquals("natural", ScanColorMode.Natural.wireValue)
         assertEquals("color", ScanColorMode.Color.wireValue)
+        assertEquals("light_text", ScanColorMode.LightText.wireValue)
         assertEquals("grayscale", ScanColorMode.Grayscale.wireValue)
         assertEquals("black_white", ScanColorMode.BlackWhite.wireValue)
+        assertEquals("whiteboard", ScanColorMode.Whiteboard.wireValue)
+    }
+
+    @Test
+    fun everyDocumentFilterHasAnAdjustableRememberedIntensity() {
+        val settings =
+            ScanAppearanceSettings(
+                naturalIntensity = 11,
+                colorIntensity = 22,
+                lightTextIntensity = 33,
+                grayscaleIntensity = 44,
+                blackWhiteIntensity = 55,
+                whiteboardIntensity = 66,
+            )
+
+        assertEquals(11, settings.intensity(ScanColorMode.Natural))
+        assertEquals(22, settings.intensity(ScanColorMode.Color))
+        assertEquals(33, settings.intensity(ScanColorMode.LightText))
+        assertEquals(44, settings.intensity(ScanColorMode.Grayscale))
+        assertEquals(55, settings.intensity(ScanColorMode.BlackWhite))
+        assertEquals(66, settings.intensity(ScanColorMode.Whiteboard))
+    }
+
+    @Test
+    fun changingOneFilterIntensityDoesNotChangeAnotherFilter() {
+        val original = ScanAppearanceSettings()
+
+        val customized =
+            ScanColorMode.entries.foldIndexed(original) { index, settings, mode ->
+                settings.withIntensity(mode, (index + 1) * 10)
+            }
+
+        assertEquals(listOf(10, 20, 30, 40, 50, 60), ScanColorMode.entries.map(customized::intensity))
+        assertEquals(50, customized.shadows)
     }
 
     @Test
@@ -121,6 +157,23 @@ class ScanAppearanceTest {
             intArrayOf(gray(alpha = 128, value = 90)),
             processScanPixels(source, 1, 1, ScanAppearance(ScanColorMode.Grayscale, 100, 0)),
         )
+    }
+
+    @Test
+    fun naturalLightTextAndWhiteboardProduceDistinctDocumentPreviews() {
+        val source = intArrayOf(gray(32), gray(96), gray(160), gray(224))
+
+        val natural =
+            processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.Natural, 100, 0))
+        val lightText =
+            processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.LightText, 100, 0))
+        val whiteboard =
+            processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.Whiteboard, 100, 0))
+
+        assertTrue(natural.contentEquals(source).not())
+        assertTrue(lightText.zip(source).all { (result, original) -> argbLuma(result) >= argbLuma(original) })
+        assertTrue(whiteboard.all(::isOpaqueBlackOrWhite))
+        assertTrue(whiteboard.contentEquals(processScanPixels(source, 4, 1, ScanAppearance(ScanColorMode.BlackWhite, 100, 0))).not())
     }
 
     @Test

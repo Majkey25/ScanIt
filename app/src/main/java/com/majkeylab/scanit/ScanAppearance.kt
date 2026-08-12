@@ -5,9 +5,12 @@ private const val DEFAULT_SHADOWS = 50
 internal const val LOCAL_SHADOW_GRID_SIZE = 8
 
 internal enum class ScanColorMode(val wireValue: String) {
+    Natural("natural"),
     Color("color"),
+    LightText("light_text"),
     Grayscale("grayscale"),
     BlackWhite("black_white"),
+    Whiteboard("whiteboard"),
 }
 
 internal data class ScanAppearance(
@@ -18,9 +21,12 @@ internal data class ScanAppearance(
 
 internal data class ScanAppearanceSettings(
     val colorMode: ScanColorMode = ScanColorMode.BlackWhite,
+    val naturalIntensity: Int = DEFAULT_FILTER_INTENSITY,
     val colorIntensity: Int = DEFAULT_FILTER_INTENSITY,
+    val lightTextIntensity: Int = DEFAULT_FILTER_INTENSITY,
     val grayscaleIntensity: Int = DEFAULT_FILTER_INTENSITY,
     val blackWhiteIntensity: Int = DEFAULT_FILTER_INTENSITY,
+    val whiteboardIntensity: Int = DEFAULT_FILTER_INTENSITY,
     val shadows: Int = DEFAULT_SHADOWS,
 ) {
     fun selected(): ScanAppearance =
@@ -33,20 +39,35 @@ internal data class ScanAppearanceSettings(
     fun intensity(mode: ScanColorMode): Int =
         clampAppearancePercent(
             when (mode) {
+                ScanColorMode.Natural -> naturalIntensity
                 ScanColorMode.Color -> colorIntensity
+                ScanColorMode.LightText -> lightTextIntensity
                 ScanColorMode.Grayscale -> grayscaleIntensity
                 ScanColorMode.BlackWhite -> blackWhiteIntensity
+                ScanColorMode.Whiteboard -> whiteboardIntensity
             },
         )
 
     fun withApplied(appearance: ScanAppearance): ScanAppearanceSettings =
         copy(
             colorMode = appearance.colorMode,
+            naturalIntensity =
+                if (appearance.colorMode == ScanColorMode.Natural) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    naturalIntensity
+                },
             colorIntensity =
                 if (appearance.colorMode == ScanColorMode.Color) {
                     clampAppearancePercent(appearance.intensity)
                 } else {
                     colorIntensity
+                },
+            lightTextIntensity =
+                if (appearance.colorMode == ScanColorMode.LightText) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    lightTextIntensity
                 },
             grayscaleIntensity =
                 if (appearance.colorMode == ScanColorMode.Grayscale) {
@@ -60,8 +81,26 @@ internal data class ScanAppearanceSettings(
                 } else {
                     blackWhiteIntensity
                 },
+            whiteboardIntensity =
+                if (appearance.colorMode == ScanColorMode.Whiteboard) {
+                    clampAppearancePercent(appearance.intensity)
+                } else {
+                    whiteboardIntensity
+                },
             shadows = clampAppearancePercent(appearance.shadows),
         )
+
+    fun withIntensity(mode: ScanColorMode, value: Int): ScanAppearanceSettings {
+        val normalized = clampAppearancePercent(value)
+        return when (mode) {
+            ScanColorMode.Natural -> copy(naturalIntensity = normalized)
+            ScanColorMode.Color -> copy(colorIntensity = normalized)
+            ScanColorMode.LightText -> copy(lightTextIntensity = normalized)
+            ScanColorMode.Grayscale -> copy(grayscaleIntensity = normalized)
+            ScanColorMode.BlackWhite -> copy(blackWhiteIntensity = normalized)
+            ScanColorMode.Whiteboard -> copy(whiteboardIntensity = normalized)
+        }
+    }
 }
 
 internal fun parseScanAppearanceSettings(
@@ -70,14 +109,25 @@ internal fun parseScanAppearanceSettings(
     grayscaleIntensity: Int?,
     blackWhiteIntensity: Int?,
     shadows: Int?,
+    naturalIntensity: Int? = null,
+    lightTextIntensity: Int? = null,
+    whiteboardIntensity: Int? = null,
 ): ScanAppearanceSettings =
     ScanAppearanceSettings(
         colorMode =
             ScanColorMode.entries.firstOrNull { it.wireValue == colorModeWireValue }
                 ?: ScanColorMode.BlackWhite,
+        naturalIntensity =
+            clampAppearancePercent(naturalIntensity ?: colorIntensity ?: DEFAULT_FILTER_INTENSITY),
         colorIntensity = clampAppearancePercent(colorIntensity ?: DEFAULT_FILTER_INTENSITY),
+        lightTextIntensity =
+            clampAppearancePercent(lightTextIntensity ?: colorIntensity ?: DEFAULT_FILTER_INTENSITY),
         grayscaleIntensity = clampAppearancePercent(grayscaleIntensity ?: DEFAULT_FILTER_INTENSITY),
         blackWhiteIntensity = clampAppearancePercent(blackWhiteIntensity ?: DEFAULT_FILTER_INTENSITY),
+        whiteboardIntensity =
+            clampAppearancePercent(
+                whiteboardIntensity ?: blackWhiteIntensity ?: DEFAULT_FILTER_INTENSITY,
+            ),
         shadows = clampAppearancePercent(shadows ?: DEFAULT_SHADOWS),
     )
 
@@ -144,7 +194,11 @@ internal fun processScanPixels(
     val rawLuma = IntArray(pixels.size) { argbLuma(pixels[it]) }
     val correctedLuma = correctLocalShadows(rawLuma, width, height, appearance.shadows)
     val blackWhiteThreshold =
-        if (appearance.colorMode == ScanColorMode.BlackWhite) otsuThreshold(correctedLuma) else 127
+        when (appearance.colorMode) {
+            ScanColorMode.BlackWhite -> otsuThreshold(correctedLuma)
+            ScanColorMode.Whiteboard -> whiteboardThreshold(otsuThreshold(correctedLuma))
+            else -> 127
+        }
     val normalizedAppearance = appearance.copy(intensity = intensity)
     return IntArray(pixels.size) { index ->
         processAppearancePixel(
@@ -172,14 +226,23 @@ internal fun processAppearancePixel(
     if (intensity == 0) return correctedPixel
     val target =
         when (appearance.colorMode) {
+            ScanColorMode.Natural ->
+                scaleColorToLuma(
+                    pixel = correctedPixel,
+                    sourceLuma = correctedLuma,
+                    targetLuma = naturalContrastLuma(correctedLuma),
+                )
             ScanColorMode.Color ->
                 scaleColorToLuma(
                     pixel = correctedPixel,
                     sourceLuma = correctedLuma,
                     targetLuma = contrastLuma(correctedLuma),
                 )
+            ScanColorMode.LightText -> grayPixel(correctedPixel, lightTextLuma(correctedLuma))
             ScanColorMode.Grayscale -> grayPixel(correctedPixel, correctedLuma)
-            ScanColorMode.BlackWhite ->
+            ScanColorMode.BlackWhite,
+            ScanColorMode.Whiteboard,
+            ->
                 grayPixel(correctedPixel, if (correctedLuma <= blackWhiteThreshold) 0 else 255)
         }
     return blendPixel(correctedPixel, target, intensity)
@@ -315,6 +378,13 @@ internal fun argbLuma(pixel: Int): Int =
 
 private fun contrastLuma(value: Int): Int =
     (128 + (value - 128) * 2).coerceIn(0, 255)
+
+private fun naturalContrastLuma(value: Int): Int =
+    (128 + (value - 128) * 5 / 4).coerceIn(0, 255)
+
+private fun lightTextLuma(value: Int): Int = value + (255 - value) / 2
+
+private fun whiteboardThreshold(value: Int): Int = value * 3 / 4
 
 private fun scaleColorToLuma(pixel: Int, sourceLuma: Int, targetLuma: Int): Int {
     if (sourceLuma == targetLuma) return pixel

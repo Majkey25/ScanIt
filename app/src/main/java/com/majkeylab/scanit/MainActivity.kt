@@ -35,6 +35,17 @@ internal fun scannerPageLimit(multipage: Boolean): Int = if (multipage) MAX_SCAN
 
 internal fun isAcceptedScanPageCount(pageCount: Int): Boolean = pageCount in 1..MAX_SCAN_PAGES
 
+internal enum class ScannerPurpose {
+    Document,
+    VisualMark,
+}
+
+internal fun scannerMode(purpose: ScannerPurpose): Int =
+    when (purpose) {
+        ScannerPurpose.Document -> GmsDocumentScannerOptions.SCANNER_MODE_FULL
+        ScannerPurpose.VisualMark -> GmsDocumentScannerOptions.SCANNER_MODE_BASE
+    }
+
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
     private val savedOutputsChangedReceiver =
@@ -79,6 +90,7 @@ class MainActivity : ComponentActivity() {
                 onShareRecentPdf = ::shareRecentPdf,
                 onDeleteRecent = viewModel::deleteRecentScan,
                 onLoadThumbnail = viewModel::loadThumbnail,
+                onLoadAppearancePreview = viewModel::loadAppearancePreview,
                 onSelectResultPage = viewModel::selectResultPage,
                 onNavigateBack = viewModel::navigateBack,
                 onSharePdf = ::shareCurrentPdf,
@@ -149,7 +161,7 @@ class MainActivity : ComponentActivity() {
                 GmsDocumentScannerOptions.Builder()
                     .setGalleryImportAllowed(settings.allowGallery)
                     .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-                    .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+                    .setScannerMode(scannerMode(ScannerPurpose.Document))
             optionsBuilder.setPageLimit(scannerPageLimit(settings.multipage))
 
             GmsDocumentScanning.getClient(optionsBuilder.build())
@@ -225,7 +237,7 @@ class MainActivity : ComponentActivity() {
                     .setGalleryImportAllowed(false)
                     .setPageLimit(1)
                     .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-                    .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+                    .setScannerMode(scannerMode(ScannerPurpose.VisualMark))
                     .build()
             GmsDocumentScanning.getClient(options)
                 .getStartScanIntent(this)

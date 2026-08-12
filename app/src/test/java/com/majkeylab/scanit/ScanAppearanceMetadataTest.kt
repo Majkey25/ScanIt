@@ -9,13 +9,16 @@ import org.junit.Test
 
 class ScanAppearanceMetadataTest {
     @Test
-    fun v4MetadataRoundTripsFullNormalizedSettingsAndExactParent() {
+    fun v5MetadataRoundTripsEveryFilterSettingAndExactParent() {
         val settings =
             ScanAppearanceSettings(
                 colorMode = ScanColorMode.Grayscale,
+                naturalIntensity = 10,
                 colorIntensity = 140,
+                lightTextIntensity = 25,
                 grayscaleIntensity = 35,
                 blackWhiteIntensity = -5,
+                whiteboardIntensity = 60,
                 shadows = 45,
             )
         val encoded =
@@ -55,6 +58,24 @@ class ScanAppearanceMetadataTest {
     }
 
     @Test
+    fun v4MetadataMigratesSharedFilterIntensities() {
+        val decoded =
+            decodeScanAppearanceMetadata(
+                (
+                    "scanit-appearance-v4\nwhiteboard\n21\n42\n63\n50\n5_mb\nScan_origin\n" +
+                        "restore\ninitial\n"
+                ).toByteArray(Charsets.US_ASCII),
+            )
+
+        assertEquals(21, decoded?.appearanceSettings?.naturalIntensity)
+        assertEquals(21, decoded?.appearanceSettings?.colorIntensity)
+        assertEquals(21, decoded?.appearanceSettings?.lightTextIntensity)
+        assertEquals(42, decoded?.appearanceSettings?.grayscaleIntensity)
+        assertEquals(63, decoded?.appearanceSettings?.blackWhiteIntensity)
+        assertEquals(63, decoded?.appearanceSettings?.whiteboardIntensity)
+    }
+
+    @Test
     fun markedRevisionDoesNotAuthorizeRestoringGlobalAppearanceDefaults() {
         val encoded =
             encodeScanAppearanceMetadata(
@@ -70,7 +91,7 @@ class ScanAppearanceMetadataTest {
     }
 
     @Test
-    fun v4MetadataRoundTripsCustomPdfTarget() {
+    fun v5MetadataRoundTripsCustomPdfTarget() {
         val encoded =
             encodeScanAppearanceMetadata(
                 ScanAppearanceSettings(),

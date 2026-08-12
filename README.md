@@ -13,18 +13,23 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.1.0"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.1 update showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.0"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
 </p>
 
-## v1.1.0 update
+## v1.2.0 update
 
-The current stable release fixes scanner startup in the minified GitHub build
-and brings the complete local workflow into one APK: the Recent scans
+The current stable release restores the full Google scan editor, then adds a
+clear pre-save Review step with six live filter previews, per-filter intensity,
+and independent shadow adjustment. The same APK includes the Recent scans
 dashboard, reusable visual signatures and stamps, measured and custom PDF size
-targets, appearance controls, and six selectable language modes.
+targets, and six selectable language modes.
 
-[Download ScanIt v1.1.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.1.0)
+[Download ScanIt v1.2.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.0)
 or read the [full changelog](CHANGELOG.md).
+
+<p align="center">
+  <img src="docs/images/scanit-v1.1-phones.png" width="100%" alt="Current ScanIt screens showing document capture, the Recent scans dashboard, the visual signature editor, and appearance and PDF settings.">
+</p>
 
 ## Why ScanIt exists
 
@@ -53,7 +58,7 @@ source, release artifacts, and real-device workflows.
 - Automatic capture, edge detection, crop, rotation, filters, shadow removal, and cleanup through the ML Kit scanner flow.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
-- Color, grayscale, and black-and-white appearance controls with per-filter intensity and shadow strength.
+- Six live-preview appearances before saving: Natural, Color, Light text, Grayscale, Black and white, and Whiteboard, each with remembered intensity plus one shared shadow-strength control.
 - Measured PDF size goals of Original, 5 MB, 10 MB, 20 MB, or a custom 1–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
