@@ -12,6 +12,20 @@
   <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.1.0"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.1 update showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+</p>
+
+## v1.1.0 update
+
+The current stable release fixes scanner startup in the minified GitHub build
+and brings the complete local workflow into one APK: the Recent scans
+dashboard, reusable visual signatures and stamps, measured and custom PDF size
+targets, appearance controls, and six selectable language modes.
+
+[Download ScanIt v1.1.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.1.0)
+or read the [full changelog](CHANGELOG.md).
+
 ## Why ScanIt exists
 
 Sending a scanned document should not require understanding folders, file
