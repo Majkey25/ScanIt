@@ -19,8 +19,8 @@ android {
         applicationId = "com.majkeylab.scanit"
         minSdk = 35
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.2.0-beta.2"
+        versionCode = 7
+        versionName = "1.1.0"
     }
 
     signingConfigs {
@@ -53,7 +53,10 @@ android {
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             ndk {
                 debugSymbolLevel = "FULL"
             }

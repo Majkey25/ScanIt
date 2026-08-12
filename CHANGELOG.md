@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## [1.1.0] - 2026-08-12
+
+### Fixed
+
+- Preserved the manifest-discovered ML Kit component registrar constructor in minified public builds so the scanner opens from the stable GitHub APK.
+
+### Changed
+
+- Published the current complete feature set as a stable release and simplified the README to one latest-stable APK download link.
+
 ## [1.2.0-beta.2] - 2026-08-12
 
 ### Changed
@@ -43,5 +53,6 @@ Historical copies retain the license supplied with them. See
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
+[1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2

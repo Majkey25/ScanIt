@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
-  <a href="https://github.com/Majkey25/ScanIt/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt?include_prereleases&amp;sort=semver"></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img alt="Latest stable release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt"></a>
   <img alt="Android 15+" src="https://img.shields.io/badge/Android-15%2B-111111">
   <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
@@ -55,11 +55,8 @@ source, release artifacts, and real-device workflows.
 
 ## Install
 
-The current GitHub prerelease is
-[`v1.2.0-beta.2`](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.0-beta.2).
-The immutable historical
-[`v1.0.0-preview.1`](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1)
-APK keeps the MIT license and signature that accompanied that release.
+Download the
+[latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
 
 Requirements for the current public code:
 
