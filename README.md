@@ -18,9 +18,9 @@ Sending a scanned document should not require understanding folders, file
 managers, or export dialogs. Open ScanIt and the scanner starts. Capture one or
 more pages, check the result, then share the PDF or images through Android.
 
-The interface is monochrome and follows the system language by default. English
-and Czech can also be selected in Settings. Less common choices stay out of the
-main scanning path.
+The interface is monochrome and follows the system language by default. English,
+Czech, German, Spanish, and Simplified Chinese can also be selected from one
+compact language picker in Settings.
 
 ScanIt was built with AI-assisted coding and design. The maintainer reviews the
 source, release artifacts, and real-device workflows.
@@ -40,7 +40,7 @@ source, release artifacts, and real-device workflows.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
 - Color, grayscale, and black-and-white appearance controls with per-filter intensity and shadow strength.
-- Measured PDF size goals of Original, 5 MB, 10 MB, or 20 MB; ScanIt reports the actual size when a readable result cannot meet the selected goal.
+- Measured PDF size goals of Original, 5 MB, 10 MB, 20 MB, or a custom 1–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
 - Manual PDF, image, or combined saving from File details.
@@ -49,7 +49,7 @@ source, release artifacts, and real-device workflows.
 - Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
-- Monochrome light/dark UI and system/English/Czech language selection.
+- Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.
 - No account, ads, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
 - No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
 

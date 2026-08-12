@@ -8,6 +8,11 @@ All notable changes are documented here.
 
 - Preserved the manifest-discovered ML Kit component registrar constructor in minified public builds so the scanner opens from the stable GitHub APK.
 
+### Added
+
+- Added a validated custom PDF size target from 1 MB to 500 MB alongside the measured presets.
+- Added complete German, Spanish, and Simplified Chinese app translations behind one compact language picker.
+
 ### Changed
 
 - Published the current complete feature set as a stable release and simplified the README to one latest-stable APK download link.

@@ -105,12 +105,21 @@
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
+    <string name="pdf_size_custom">Vlastní…</string>
+    <string name="pdf_size_custom_value">%1$d MB</string>
+    <string name="pdf_size_custom_title">Vlastní velikost PDF</string>
+    <string name="pdf_size_custom_field">Cílová velikost (MB)</string>
+    <string name="pdf_size_custom_hint">Zadejte celé číslo od 1 do 500.</string>
+    <string name="save">Uložit</string>
     <string name="pdf_size_hint">Limit se vyhodnocuje podle skutečně vytvořených čitelných verzí. Pokud jej nelze dodržet, ScanIt ponechá nejmenší čitelné PDF a zobrazí jeho skutečnou velikost.</string>
 
-    <string name="language">Jazyk</string>
+    <string name="choose_language">Vybrat jazyk</string>
     <string name="language_system">Podle systému</string>
     <string name="language_english">Angličtina</string>
     <string name="language_czech">Čeština</string>
+    <string name="language_german">Deutsch</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_simplified_chinese">简体中文</string>
     <string name="default_email_subject">Naskenovaný dokument</string>
 
     <string name="scanner_launch_error">Skener se nepodařilo otevřít. Zkuste to znovu.</string>

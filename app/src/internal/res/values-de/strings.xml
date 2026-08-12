@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="internal_gemini_title">Interner Gemini-Test</string>
+    <string name="internal_gemini_warning">Nur zum Debuggen. Das ausgewählte Bild wird an Gemini gesendet. Ergebnis vor der Verwendung prüfen.</string>
+    <string name="internal_gemini_api_key">Gemini-API-Schlüssel</string>
+    <string name="internal_gemini_save_key">Schlüssel speichern</string>
+    <string name="internal_gemini_delete_key">Schlüssel löschen</string>
+    <string name="internal_gemini_key_present">Der verschlüsselte Schlüssel ist gespeichert.</string>
+    <string name="internal_gemini_key_missing">Kein verschlüsselter Schlüssel gespeichert.</string>
+    <string name="internal_gemini_key_invalid">Gültigen API-Schlüssel eingeben.</string>
+    <string name="internal_gemini_key_error">Der verschlüsselte Schlüsselspeicher konnte nicht aktualisiert werden.</string>
+    <string name="internal_gemini_select_image">Ein Bild auswählen</string>
+    <string name="internal_gemini_image_selected">Bild ausgewählt.</string>
+    <string name="internal_gemini_image_error">Das ausgewählte Bild konnte nicht verwendet werden.</string>
+    <string name="internal_gemini_process">Mit Gemini verarbeiten</string>
+    <string name="internal_gemini_process_error">Gemini-Verarbeitung fehlgeschlagen.</string>
+    <string name="internal_gemini_preview">Vorschau der Gemini-Ausgabe</string>
+</resources>

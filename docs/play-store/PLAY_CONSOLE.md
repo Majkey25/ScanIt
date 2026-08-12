@@ -58,7 +58,7 @@ the Play developer account.
 > - single-page and multi-page PDF and JPEG output
 > - page thumbnails for browsing multi-page results
 > - color, grayscale, and black-and-white controls with adjustable intensity and shadows
-> - measured Original, 5 MB, 10 MB, and 20 MB PDF size goals
+> - measured Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB PDF size goals
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
 > - PDF saving to Downloads or a folder you choose
@@ -67,7 +67,7 @@ the Play developer account.
 > - reusable drawn, imported, or scanned signatures and stamps dragged into place on a selected page
 > - Android system printing
 > - monochrome light and dark interface
-> - system, English, and Czech language selection
+> - system, English, Czech, German, Spanish, and Simplified Chinese language selection
 >
 > ScanIt has no ads, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
 >
@@ -99,7 +99,7 @@ the Play developer account.
 > - jednostránkový i vícestránkový výstup do PDF a JPEG
 > - náhledy stránek pro procházení vícestránkových výsledků
 > - barevný, šedotónový a černobílý režim s nastavitelnou intenzitou a stíny
-> - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB a 20 MB
+> - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB, 20 MB nebo vlastní cíl 1–500 MB
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
 > - ukládání PDF do Stažených souborů nebo zvolené složky
@@ -108,7 +108,7 @@ the Play developer account.
 > - opakovaně použitelné kreslené, importované nebo skenované podpisy a razítka přetažené na vybranou stránku
 > - systémový tisk Androidu
 > - černobílé světlé i tmavé rozhraní
-> - systémový, anglický a český jazyk
+> - systémový, anglický, český, německý, španělský a zjednodušený čínský jazyk
 >
 > ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
 >
