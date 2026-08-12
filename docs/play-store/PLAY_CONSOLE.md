@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `6` |
-| Version name | `1.2.0-beta.2` |
+| Version code | `7` |
+| Version name | `1.1.0` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -279,7 +279,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 6, version `1.2.0-beta.2`.
+- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 7, version `1.1.0`.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

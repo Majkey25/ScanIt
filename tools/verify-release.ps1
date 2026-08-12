@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "6"
+$expectedVersionCode = "7"
 $expectedMinSdk = "35"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
@@ -27,15 +27,15 @@ $sdkRootWasExplicit = $PSBoundParameters.ContainsKey("SdkRoot")
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.2.0-beta.2-internal"
+        $expectedVersionName = "1.1.0-internal"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "1.2.0-beta.2"
+        $expectedVersionName = "1.1.0"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "1.2.0-beta.2"
+        $expectedVersionName = "1.1.0"
     }
 }
 
@@ -74,6 +74,17 @@ function Get-AndroidBuildTool {
     $tool = Join-Path $buildTools.FullName $fileName
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
         throw "Required Android tool is missing: $tool"
+    }
+    return $tool
+}
+
+function Get-AndroidSdkTool {
+    param([Parameter(Mandatory)][string]$Name)
+
+    $fileName = if ($isWindowsHost) { "$Name.bat" } else { $Name }
+    $tool = Join-Path $SdkRoot "cmdline-tools/latest/bin/$fileName"
+    if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
+        throw "Required Android SDK tool is missing: $tool"
     }
     return $tool
 }
@@ -274,6 +285,16 @@ if ($artifactType -eq "apk") {
     }
     if ($publicFlavor -and (($resources -join [Environment]::NewLine) -match '(?i)gemini|generativelanguage\.googleapis\.com')) {
         throw "Public release APK contains Gemini resources."
+    }
+    if ($publicFlavor) {
+        $apkanalyzer = Get-AndroidSdkTool -Name "apkanalyzer"
+        $registrarCode = @(& $apkanalyzer dex code --class "com.google.mlkit.common.internal.CommonComponentRegistrar" $artifact 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "apkanalyzer could not inspect the ML Kit component registrar: $($registrarCode -join [Environment]::NewLine)"
+        }
+        if (($registrarCode -join [Environment]::NewLine) -notmatch '(?m)^\.method public constructor <init>\(\)V\r?$') {
+            throw "Public release APK is missing the ML Kit component registrar public no-arg constructor."
+        }
     }
 
     & $zipalign -c -P 16 4 $artifact
