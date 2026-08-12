@@ -62,7 +62,7 @@ private fun decodeV4Metadata(text: String): ScanAppearanceMetadata? {
     if (fields.size != (if (derived) 13 else 11) || fields.last().isNotEmpty()) return null
     if (fields[0] != SCAN_APPEARANCE_VERSION_V4) return null
     val settings = decodeFullAppearanceSettings(fields) ?: return null
-    val target = PdfSizeTarget.entries.firstOrNull { it.wireValue == fields[6] } ?: return null
+    val target = decodePdfSizeTarget(fields[6]) ?: return null
     val lineageCacheId = fields[7]
     val restoreSettings =
         when (fields[8]) {
@@ -91,7 +91,7 @@ private fun decodeV3Metadata(text: String): ScanAppearanceMetadata? {
     if (fields.size != (if (derived) 12 else 10) || fields.last().isNotEmpty()) return null
     if (fields[0] != SCAN_APPEARANCE_VERSION_V3) return null
     val settings = decodeFullAppearanceSettings(fields) ?: return null
-    val target = PdfSizeTarget.entries.firstOrNull { it.wireValue == fields[6] } ?: return null
+    val target = decodePdfSizeTarget(fields[6]) ?: return null
     val lineageCacheId = fields[7]
     val parentCacheId = if (derived) fields[9] else null
     val parentEntryId = if (derived) fields[10] else null
@@ -126,8 +126,7 @@ private fun decodeV2Metadata(text: String): ScanAppearanceMetadata? {
             intensity = strictPercent(match.groupValues[2]) ?: return null,
             shadows = strictPercent(match.groupValues[3]) ?: return null,
         )
-    val target = PdfSizeTarget.entries.firstOrNull { it.wireValue == match.groupValues[4] }
-        ?: return null
+    val target = decodePdfSizeTarget(match.groupValues[4]) ?: return null
     val lineageCacheId = match.groupValues[5]
     if (!isSafeAppearanceCacheId(lineageCacheId)) return null
     return ScanAppearanceMetadata(

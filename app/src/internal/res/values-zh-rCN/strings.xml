@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="internal_gemini_title">内部 Gemini 测试</string>
+    <string name="internal_gemini_warning">仅用于调试。所选图像会发送到 Gemini。使用前请检查结果。</string>
+    <string name="internal_gemini_api_key">Gemini API 密钥</string>
+    <string name="internal_gemini_save_key">保存密钥</string>
+    <string name="internal_gemini_delete_key">删除密钥</string>
+    <string name="internal_gemini_key_present">已保存加密密钥。</string>
+    <string name="internal_gemini_key_missing">未保存加密密钥。</string>
+    <string name="internal_gemini_key_invalid">请输入有效的 API 密钥。</string>
+    <string name="internal_gemini_key_error">无法更新加密密钥存储。</string>
+    <string name="internal_gemini_select_image">选择一张图像</string>
+    <string name="internal_gemini_image_selected">已选择图像。</string>
+    <string name="internal_gemini_image_error">无法使用所选图像。</string>
+    <string name="internal_gemini_process">使用 Gemini 处理</string>
+    <string name="internal_gemini_process_error">Gemini 处理失败。</string>
+    <string name="internal_gemini_preview">Gemini 输出预览</string>
+</resources>

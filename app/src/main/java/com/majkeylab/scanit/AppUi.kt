@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,6 +49,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -72,6 +75,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -88,12 +92,6 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
-
-internal enum class AppLanguage(val languageTag: String?) {
-    System(null),
-    English("en"),
-    Czech("cs"),
-}
 
 private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
@@ -1219,9 +1217,86 @@ private fun SettingsScreen(
     var pdfSizeTargetWire by rememberSaveable {
         mutableStateOf(settings.pdfSizeTarget.wireValue)
     }
+    var languageDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var customPdfSizeDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var customPdfSizeInput by rememberSaveable { mutableStateOf("") }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val uriHandler = LocalUriHandler.current
+
+    if (languageDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { languageDialogOpen = false },
+            title = { Text(stringResource(R.string.choose_language)) },
+            text = {
+                Column {
+                    AppLanguage.entries.forEach { option ->
+                        Row(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .selectable(
+                                        selected = language == option,
+                                        role = Role.RadioButton,
+                                        onClick = {
+                                            languageDialogOpen = false
+                                            onLanguageChange(option)
+                                        },
+                                    ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = language == option, onClick = null)
+                            Text(appLanguageLabel(option), modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { languageDialogOpen = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (customPdfSizeDialogOpen) {
+        val customMegabytes = parseCustomPdfMegabytes(customPdfSizeInput)
+        AlertDialog(
+            onDismissRequest = { customPdfSizeDialogOpen = false },
+            title = { Text(stringResource(R.string.pdf_size_custom_title)) },
+            text = {
+                OutlinedTextField(
+                    value = customPdfSizeInput,
+                    onValueChange = { customPdfSizeInput = it },
+                    label = { Text(stringResource(R.string.pdf_size_custom_field)) },
+                    supportingText = { Text(stringResource(R.string.pdf_size_custom_hint)) },
+                    isError = customPdfSizeInput.isNotEmpty() && customMegabytes == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        customMegabytes?.let { megabytes ->
+                            pdfSizeTargetWire = PdfSizeTarget.Custom(megabytes).wireValue
+                            customPdfSizeDialogOpen = false
+                        }
+                    },
+                    enabled = customMegabytes != null,
+                ) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { customPdfSizeDialogOpen = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     LaunchedEffect(settings.emailSubject, defaultEmailSubjects) {
         emailSubject =
@@ -1270,33 +1345,21 @@ private fun SettingsScreen(
                     .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { SectionTitle(stringResource(R.string.language)) }
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                OutlinedButton(
+                    onClick = { languageDialogOpen = true },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 ) {
-                    AppLanguage.entries.forEach { option ->
-                        FilterChip(
-                            selected = language == option,
-                            onClick = { onLanguageChange(option) },
-                            label = {
-                                Text(
-                                    stringResource(
-                                        when (option) {
-                                            AppLanguage.System -> R.string.language_system
-                                            AppLanguage.English -> R.string.language_english
-                                            AppLanguage.Czech -> R.string.language_czech
-                                        },
-                                    ),
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.choose_language))
+                        Text(
+                            appLanguageLabel(language),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
             }
-            item { HorizontalDivider() }
             item { SectionTitle(stringResource(R.string.default_appearance)) }
             item {
                 val selectedMode =
@@ -1327,11 +1390,37 @@ private fun SettingsScreen(
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(PdfSizeTarget.entries) { target ->
+                    items(PdfSizeTarget.presets) { target ->
                         FilterChip(
                             selected = target.wireValue == pdfSizeTargetWire,
                             onClick = { pdfSizeTargetWire = target.wireValue },
                             label = { Text(pdfSizeTargetLabel(target)) },
+                        )
+                    }
+                    item {
+                        val selectedTarget = decodePdfSizeTarget(pdfSizeTargetWire)
+                        FilterChip(
+                            selected = selectedTarget is PdfSizeTarget.Custom,
+                            onClick = {
+                                customPdfSizeInput =
+                                    (selectedTarget as? PdfSizeTarget.Custom)
+                                        ?.megabytes
+                                        ?.toString()
+                                        .orEmpty()
+                                customPdfSizeDialogOpen = true
+                            },
+                            label = {
+                                Text(
+                                    if (selectedTarget is PdfSizeTarget.Custom) {
+                                        stringResource(
+                                            R.string.pdf_size_custom_value,
+                                            selectedTarget.megabytes,
+                                        )
+                                    } else {
+                                        stringResource(R.string.pdf_size_custom)
+                                    },
+                                )
+                            },
                         )
                     }
                 }
@@ -1596,12 +1685,25 @@ private fun scanColorModeLabel(mode: ScanColorMode): String =
 
 @Composable
 private fun pdfSizeTargetLabel(target: PdfSizeTarget): String =
+    when (target) {
+        PdfSizeTarget.Original -> stringResource(R.string.pdf_size_original)
+        PdfSizeTarget.Mb5 -> stringResource(R.string.pdf_size_5_mb)
+        PdfSizeTarget.Mb10 -> stringResource(R.string.pdf_size_10_mb)
+        PdfSizeTarget.Mb20 -> stringResource(R.string.pdf_size_20_mb)
+        is PdfSizeTarget.Custom ->
+            stringResource(R.string.pdf_size_custom_value, target.megabytes)
+    }
+
+@Composable
+private fun appLanguageLabel(language: AppLanguage): String =
     stringResource(
-        when (target) {
-            PdfSizeTarget.Original -> R.string.pdf_size_original
-            PdfSizeTarget.Mb5 -> R.string.pdf_size_5_mb
-            PdfSizeTarget.Mb10 -> R.string.pdf_size_10_mb
-            PdfSizeTarget.Mb20 -> R.string.pdf_size_20_mb
+        when (language) {
+            AppLanguage.System -> R.string.language_system
+            AppLanguage.English -> R.string.language_english
+            AppLanguage.Czech -> R.string.language_czech
+            AppLanguage.German -> R.string.language_german
+            AppLanguage.Spanish -> R.string.language_spanish
+            AppLanguage.SimplifiedChinese -> R.string.language_simplified_chinese
         },
     )
 

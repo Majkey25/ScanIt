@@ -15,6 +15,44 @@ class PdfSizePolicyTest {
     }
 
     @Test
+    fun customPdfLimitUsesDecimalMegabytesAndRoundTrips() {
+        val target = PdfSizeTarget.Custom(37)
+
+        assertEquals(37_000_000L, target.maxBytes)
+        assertEquals("custom_37_mb", target.wireValue)
+        assertEquals(target, decodePdfSizeTarget(target.wireValue))
+        assertEquals(target, parsePdfSizeTarget(target.wireValue))
+    }
+
+    @Test
+    fun customPdfLimitRejectsMalformedAndOutOfRangeValues() {
+        listOf(
+            null,
+            "",
+            "custom_0_mb",
+            "custom_01_mb",
+            "custom_501_mb",
+            "custom_7_mib",
+            "custom_-7_mb",
+        ).forEach { value ->
+            assertEquals(null, decodePdfSizeTarget(value))
+            assertEquals(PdfSizeTarget.Original, parsePdfSizeTarget(value))
+        }
+
+        assertThrows(IllegalArgumentException::class.java) { PdfSizeTarget.Custom(0) }
+        assertThrows(IllegalArgumentException::class.java) { PdfSizeTarget.Custom(501) }
+    }
+
+    @Test
+    fun customPdfInputAcceptsOnlyWholeMegabytesWithinBounds() {
+        assertEquals(37, parseCustomPdfMegabytes("37"))
+        assertEquals(500, parseCustomPdfMegabytes("500"))
+        listOf("", "0", "01", "1.5", "501", "-1", "7 MB").forEach { value ->
+            assertEquals(null, parseCustomPdfMegabytes(value))
+        }
+    }
+
+    @Test
     fun eachFilterKeepsItsOwnIntensityAndSuccessfulModeBecomesCurrent() {
         val settings =
             ScanAppearanceSettings(

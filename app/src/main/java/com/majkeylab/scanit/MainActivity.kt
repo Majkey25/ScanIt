@@ -279,11 +279,7 @@ class MainActivity : ComponentActivity() {
 
     private fun currentAppLanguage(): AppLanguage {
         val localeManager = getSystemService(LocaleManager::class.java) ?: return AppLanguage.System
-        return when (localeManager.applicationLocales.get(0)?.language) {
-            AppLanguage.English.languageTag -> AppLanguage.English
-            AppLanguage.Czech.languageTag -> AppLanguage.Czech
-            else -> AppLanguage.System
-        }
+        return appLanguageForTag(localeManager.applicationLocales.get(0)?.toLanguageTag())
     }
 
     private fun setAppLanguage(language: AppLanguage) {

@@ -2,19 +2,63 @@ package com.majkeylab.scanit
 
 private const val MEGABYTE = 1_000_000L
 private const val MIN_LEGIBLE_PDF_EDGE = 1_280
+internal const val MIN_CUSTOM_PDF_MEGABYTES = 1
+internal const val MAX_CUSTOM_PDF_MEGABYTES = 500
+private val CUSTOM_PDF_TARGET_PATTERN = Regex("custom_([1-9][0-9]{0,2})_mb")
+private val CUSTOM_PDF_INPUT_PATTERN = Regex("[1-9][0-9]{0,2}")
 
-internal enum class PdfSizeTarget(
+internal sealed class PdfSizeTarget(
     val wireValue: String,
     val maxBytes: Long?,
 ) {
-    Original("original", null),
-    Mb5("5_mb", 5L * MEGABYTE),
-    Mb10("10_mb", 10L * MEGABYTE),
-    Mb20("20_mb", 20L * MEGABYTE),
+    data object Original : PdfSizeTarget("original", null)
+
+    data object Mb5 : PdfSizeTarget("5_mb", 5L * MEGABYTE)
+
+    data object Mb10 : PdfSizeTarget("10_mb", 10L * MEGABYTE)
+
+    data object Mb20 : PdfSizeTarget("20_mb", 20L * MEGABYTE)
+
+    data class Custom(val megabytes: Int) :
+        PdfSizeTarget(
+            wireValue = "custom_${megabytes}_mb",
+            maxBytes = megabytes.toLong() * MEGABYTE,
+        ) {
+        init {
+            require(megabytes in MIN_CUSTOM_PDF_MEGABYTES..MAX_CUSTOM_PDF_MEGABYTES) {
+                "Custom PDF target must be between 1 and 500 MB"
+            }
+        }
+    }
+
+    companion object {
+        val presets: List<PdfSizeTarget> = listOf(Original, Mb5, Mb10, Mb20)
+    }
 }
 
+internal fun decodePdfSizeTarget(wireValue: String?): PdfSizeTarget? =
+    when (wireValue) {
+        PdfSizeTarget.Original.wireValue -> PdfSizeTarget.Original
+        PdfSizeTarget.Mb5.wireValue -> PdfSizeTarget.Mb5
+        PdfSizeTarget.Mb10.wireValue -> PdfSizeTarget.Mb10
+        PdfSizeTarget.Mb20.wireValue -> PdfSizeTarget.Mb20
+        else ->
+            CUSTOM_PDF_TARGET_PATTERN.matchEntire(wireValue.orEmpty())
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
+                ?.takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
+                ?.let(PdfSizeTarget::Custom)
+    }
+
 internal fun parsePdfSizeTarget(wireValue: String?): PdfSizeTarget =
-    PdfSizeTarget.entries.firstOrNull { it.wireValue == wireValue } ?: PdfSizeTarget.Original
+    decodePdfSizeTarget(wireValue) ?: PdfSizeTarget.Original
+
+internal fun parseCustomPdfMegabytes(value: String): Int? =
+    CUSTOM_PDF_INPUT_PATTERN.matchEntire(value)
+        ?.value
+        ?.toIntOrNull()
+        ?.takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
 
 internal enum class PdfEncoding {
     Jpeg,

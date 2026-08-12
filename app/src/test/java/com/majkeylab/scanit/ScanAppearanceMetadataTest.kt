@@ -70,6 +70,21 @@ class ScanAppearanceMetadataTest {
     }
 
     @Test
+    fun v4MetadataRoundTripsCustomPdfTarget() {
+        val encoded =
+            encodeScanAppearanceMetadata(
+                ScanAppearanceSettings(),
+                PdfSizeTarget.Custom(37),
+                "Scan_origin",
+            )
+
+        assertEquals(
+            PdfSizeTarget.Custom(37),
+            decodeScanAppearanceMetadata(encoded)?.pdfSizeTarget,
+        )
+    }
+
+    @Test
     fun v3MetadataRemainsReadableAndRestoresAppearanceDefaults() {
         val decoded =
             decodeScanAppearanceMetadata(
