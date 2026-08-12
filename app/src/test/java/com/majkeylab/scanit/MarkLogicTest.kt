@@ -35,6 +35,68 @@ class MarkLogicTest {
     }
 
     @Test
+    fun markDragMovesByPreviewPixelsInNormalizedPageCoordinates() {
+        val moved =
+            dragMarkPlacement(
+                pageWidth = 1_000f,
+                pageHeight = 2_000f,
+                markWidth = 400,
+                markHeight = 200,
+                placement = MarkPlacement(),
+                deltaX = 100f,
+                deltaY = -200f,
+            )
+
+        assertEquals(0.6f, moved.centerX, 0.0001f)
+        assertEquals(0.65f, moved.centerY, 0.0001f)
+        assertEquals(0.35f, moved.widthFraction, 0f)
+    }
+
+    @Test
+    fun markDragClampsActualRectangleToEdgesWithoutDeadZone() {
+        val topLeft =
+            dragMarkPlacement(
+                pageWidth = 1_000f,
+                pageHeight = 2_000f,
+                markWidth = 200,
+                markHeight = 100,
+                placement = MarkPlacement(centerX = 0f, centerY = 0f, widthFraction = 0.4f),
+                deltaX = -100f,
+                deltaY = -100f,
+            )
+        val bottomRight =
+            dragMarkPlacement(
+                pageWidth = 1_000f,
+                pageHeight = 2_000f,
+                markWidth = 200,
+                markHeight = 100,
+                placement = topLeft,
+                deltaX = 10_000f,
+                deltaY = 10_000f,
+            )
+
+        assertEquals(0.2f, topLeft.centerX, 0.0001f)
+        assertEquals(0.05f, topLeft.centerY, 0.0001f)
+        assertRect(MarkRect(0f, 0f, 400f, 200f), resolveMarkRect(1_000f, 2_000f, 200, 100, topLeft))
+        assertEquals(0.8f, bottomRight.centerX, 0.0001f)
+        assertEquals(0.95f, bottomRight.centerY, 0.0001f)
+        assertRect(
+            MarkRect(600f, 1_800f, 1_000f, 2_000f),
+            resolveMarkRect(1_000f, 2_000f, 200, 100, bottomRight),
+        )
+    }
+
+    @Test
+    fun markDragRejectsNonFiniteDeltaAndInvalidGeometry() {
+        assertThrows(IllegalArgumentException::class.java) {
+            dragMarkPlacement(1_000f, 2_000f, 200, 100, MarkPlacement(), Float.NaN, 0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            dragMarkPlacement(0f, 2_000f, 200, 100, MarkPlacement(), 0f, 0f)
+        }
+    }
+
+    @Test
     fun tallMarkScalesDownWithoutChangingAspect() {
         val rect =
             resolveMarkRect(

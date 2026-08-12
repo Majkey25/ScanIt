@@ -12,7 +12,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +60,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -70,6 +75,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
@@ -133,7 +139,23 @@ internal fun VisualMarkEditorScreen(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { VisualMarkPreview(result.thumbnail, selectedBitmap, editor.placement) }
+            item {
+                VisualMarkPreview(
+                    page = result.thumbnail,
+                    mark = selectedBitmap,
+                    placement = editor.placement,
+                    enabled = selectedBitmap != null && !editor.busy,
+                    onPlacementChange = onPlacementChange,
+                )
+                if (selectedBitmap != null) {
+                    Text(
+                        stringResource(R.string.drag_visual_mark_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
             item {
                 VisualMarkCreationActions(
                     enabled = !editor.busy && editor.templateIds.size < MAX_MARK_TEMPLATES,
@@ -396,13 +418,80 @@ private fun VisualMarkPreview(
     page: Bitmap?,
     mark: Bitmap?,
     placement: MarkPlacement,
+    enabled: Boolean,
+    onPlacementChange: (MarkPlacement) -> Unit,
 ) {
     val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG) }
     val description = stringResource(R.string.visual_mark_preview)
+    val currentPlacement by rememberUpdatedState(placement)
+    val currentOnPlacementChange by rememberUpdatedState(onPlacementChange)
     Canvas(
         modifier =
             Modifier.fillMaxWidth().height(300.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .pointerInput(page, mark, enabled) {
+                    val pageBitmap = page ?: return@pointerInput
+                    val markBitmap = mark ?: return@pointerInput
+                    if (!enabled) return@pointerInput
+                    val scale =
+                        min(
+                            size.width.toFloat() / pageBitmap.width,
+                            size.height.toFloat() / pageBitmap.height,
+                        )
+                    val pageWidth = pageBitmap.width * scale
+                    val pageHeight = pageBitmap.height * scale
+                    val left = (size.width - pageWidth) / 2f
+                    val top = (size.height - pageHeight) / 2f
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val initialPlacement = currentPlacement
+                        val rect =
+                            resolveMarkRect(
+                                pageWidth,
+                                pageHeight,
+                                markBitmap.width,
+                                markBitmap.height,
+                                initialPlacement,
+                            )
+                        if (
+                            down.position.x !in (left + rect.left)..(left + rect.right) ||
+                            down.position.y !in (top + rect.top)..(top + rect.bottom)
+                        ) {
+                            return@awaitEachGesture
+                        }
+                        var dragPlacement = initialPlacement
+                        val dragStart =
+                            awaitTouchSlopOrCancellation(down.id) { change, overSlop ->
+                                change.consume()
+                                dragPlacement =
+                                    dragMarkPlacement(
+                                        pageWidth,
+                                        pageHeight,
+                                        markBitmap.width,
+                                        markBitmap.height,
+                                        dragPlacement,
+                                        overSlop.x,
+                                        overSlop.y,
+                                    )
+                                currentOnPlacementChange(dragPlacement)
+                            } ?: return@awaitEachGesture
+                        drag(dragStart.id) { change ->
+                            val dragAmount = change.positionChange()
+                            change.consume()
+                            dragPlacement =
+                                dragMarkPlacement(
+                                    pageWidth = pageWidth,
+                                    pageHeight = pageHeight,
+                                    markWidth = markBitmap.width,
+                                    markHeight = markBitmap.height,
+                                    placement = dragPlacement,
+                                    deltaX = dragAmount.x,
+                                    deltaY = dragAmount.y,
+                                )
+                            currentOnPlacementChange(dragPlacement)
+                        }
+                    }
+                }
                 .semantics { contentDescription = description },
     ) {
         val pageBitmap = page ?: return@Canvas

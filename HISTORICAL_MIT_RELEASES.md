@@ -1,7 +1,7 @@
 # Historical MIT releases
 
 ScanIt changed to source-visible proprietary terms for new material at the
-license-cutoff commit planned for release as `v1.2.0-beta.1`.
+license-cutoff commit planned for release as `v1.2.0-beta.2`.
 
 The change is prospective. It does not revoke rights granted for any copy that
 was already distributed under the MIT License. Those copies may continue to be

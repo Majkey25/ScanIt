@@ -144,6 +144,26 @@ internal fun resolveMarkRect(
     )
 }
 
+internal fun dragMarkPlacement(
+    pageWidth: Float,
+    pageHeight: Float,
+    markWidth: Int,
+    markHeight: Int,
+    placement: MarkPlacement,
+    deltaX: Float,
+    deltaY: Float,
+): MarkPlacement {
+    require(deltaX.isFinite() && deltaY.isFinite()) { "Mark drag must be finite" }
+    val rect = resolveMarkRect(pageWidth, pageHeight, markWidth, markHeight, placement)
+    val centerX =
+        ((rect.left + rect.right) / 2f + deltaX)
+            .coerceIn(rect.width / 2f, pageWidth - rect.width / 2f)
+    val centerY =
+        ((rect.top + rect.bottom) / 2f + deltaY)
+            .coerceIn(rect.height / 2f, pageHeight - rect.height / 2f)
+    return placement.copy(centerX = centerX / pageWidth, centerY = centerY / pageHeight)
+}
+
 internal fun scaleNormalizedMarkStrokes(
     strokes: List<MarkStroke>,
     width: Int,

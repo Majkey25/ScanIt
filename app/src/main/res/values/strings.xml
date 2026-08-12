@@ -131,7 +131,7 @@
     <string name="visual_mark_template_failed">The signature or stamp could not be saved.</string>
     <string name="visual_mark_apply_failed">The signature or stamp could not be added.</string>
     <string name="visual_mark_scanner_failed">The signature or stamp scan could not be opened.</string>
-    <string name="add_signature_or_stamp">Add signature or stamp</string>
+    <string name="add_signature_or_stamp">Sign or stamp document</string>
     <string name="visual_mark_title">Signature or stamp</string>
     <string name="visual_mark_disclaimer">This adds only a visual signature or stamp. It is not a digital or cryptographic signature and does not verify identity or document integrity.</string>
     <string name="saved_visual_marks">Saved signatures and stamps</string>
@@ -155,6 +155,7 @@
     <string name="delete_visual_mark_body">This removes the selected saved signature or stamp.</string>
     <string name="delete_visual_mark_confirm">Delete</string>
     <string name="visual_mark_preview">Signature or stamp preview</string>
+    <string name="drag_visual_mark_hint">Drag the signature to place it.</string>
     <string name="saved_visual_mark_number">Saved mark %1$d</string>
     <string name="visual_mark_percent">%1$d%%</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>

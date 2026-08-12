@@ -47,7 +47,7 @@ source, release artifacts, and real-device workflows.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
 - Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
-- Reusable drawn, imported, or scanned visual marks placed on a selected page. These are image annotations, not digital or cryptographic signatures.
+- Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI and system/English/Czech language selection.
 - No account, ads, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
@@ -55,11 +55,11 @@ source, release artifacts, and real-device workflows.
 
 ## Install
 
-The current GitHub stable download is the immutable historical
+The current GitHub prerelease is
+[`v1.2.0-beta.2`](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.0-beta.2).
+The immutable historical
 [`v1.0.0-preview.1`](https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1)
-APK. It keeps the MIT license and signature that accompanied that release. The
-new public `1.2.0-beta.1` Google Play and GitHub variants are being prepared and
-are not represented by that older APK.
+APK keeps the MIT license and signature that accompanied that release.
 
 Requirements for the current public code:
 

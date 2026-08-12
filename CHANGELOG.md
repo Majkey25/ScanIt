@@ -2,18 +2,18 @@
 
 All notable changes are documented here.
 
-## [Unreleased]
+## [1.2.0-beta.2] - 2026-08-12
 
 ### Changed
 
-- Prepared the source-visible proprietary license for the first new release at `v1.2.0-beta.1` while preserving every historical MIT grant.
+- Prepared the source-visible proprietary license for the first new release at `v1.2.0-beta.2` while preserving every historical MIT grant.
 - Removed cloud processing and app-owned network access from the public Google Play and GitHub variants.
 - Added a Recent scans dashboard for bounded, temporary working copies.
 - Added lazy multi-page result browsing with bounded thumbnails.
 - Added remembered color, grayscale, and black-and-white intensity controls with shadow adjustment.
 - Added measured Original, 5 MB, 10 MB, and 20 MB PDF size goals with an honest target-miss warning.
 - Added manual PDF/image saving, exact saved-output deletion, and optional deletion after a sharing app is chosen.
-- Added reusable visual marks for a selected page, with an explicit non-digital-signature disclaimer.
+- Added reusable drawn, imported, or scanned signatures and stamps for a selected page, with direct drag placement and an explicit non-digital-signature disclaimer.
 - Added a static privacy, terms, support, and product site for GitHub Pages.
 - Updated Google Play listing and App Content/Data Safety worksheets for the public no-cloud build.
 
@@ -44,3 +44,4 @@ Historical copies retain the license supplied with them. See
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
+[1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
