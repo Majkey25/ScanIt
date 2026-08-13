@@ -14,9 +14,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +76,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
@@ -121,6 +121,10 @@ internal fun VisualMarkEditorScreen(
     val source = editor.source
     if (source.pageIndex !in result.scan.cached.pages.indices) return
     var showDeleteConfirmation by
+        rememberSaveable(source.cacheId, source.entryId, source.pageIndex) {
+            mutableStateOf(false)
+        }
+    var manualPositionExpanded by
         rememberSaveable(source.cacheId, source.entryId, source.pageIndex) {
             mutableStateOf(false)
         }
@@ -191,24 +195,50 @@ internal fun VisualMarkEditorScreen(
                 }
             }
             item {
-                VisualMarkSlider(
-                    stringResource(R.string.horizontal_position),
-                    editor.placement.centerX,
-                    selectedBitmap != null && !editor.busy,
-                    0f..1f,
-                ) { onPlacementChange(editor.placement.copy(centerX = it)) }
-                VisualMarkSlider(
-                    stringResource(R.string.vertical_position),
-                    editor.placement.centerY,
-                    selectedBitmap != null && !editor.busy,
-                    0f..1f,
-                ) { onPlacementChange(editor.placement.copy(centerY = it)) }
-                VisualMarkSlider(
-                    stringResource(R.string.visual_mark_size),
-                    editor.placement.widthFraction,
-                    selectedBitmap != null && !editor.busy,
-                    MIN_MARK_WIDTH_FRACTION..MAX_MARK_WIDTH_FRACTION,
-                ) { onPlacementChange(editor.placement.copy(widthFraction = it)) }
+                OutlinedButton(
+                    onClick = { manualPositionExpanded = !manualPositionExpanded },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.manual_position))
+                        Icon(
+                            painterResource(R.drawable.ic_expand_more),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                if (manualPositionExpanded) {
+                    VisualMarkSlider(
+                        stringResource(R.string.horizontal_position),
+                        editor.placement.centerX,
+                        selectedBitmap != null && !editor.busy,
+                        0f..1f,
+                    ) { onPlacementChange(editor.placement.copy(centerX = it)) }
+                    VisualMarkSlider(
+                        stringResource(R.string.vertical_position),
+                        editor.placement.centerY,
+                        selectedBitmap != null && !editor.busy,
+                        0f..1f,
+                    ) { onPlacementChange(editor.placement.copy(centerY = it)) }
+                    VisualMarkSlider(
+                        stringResource(R.string.visual_mark_size),
+                        editor.placement.widthFraction,
+                        selectedBitmap != null && !editor.busy,
+                        MIN_MARK_WIDTH_FRACTION..MAX_MARK_WIDTH_FRACTION,
+                    ) { onPlacementChange(editor.placement.copy(widthFraction = it)) }
+                    VisualMarkSlider(
+                        stringResource(R.string.visual_mark_rotation),
+                        editor.placement.rotationDegrees,
+                        selectedBitmap != null && !editor.busy,
+                        -180f..180f,
+                        asDegrees = true,
+                    ) { onPlacementChange(editor.placement.copy(rotationDegrees = it)) }
+                }
             }
             editor.message?.takeIf { editor.drawingStrokes == null }?.let { message ->
                 item {
@@ -427,7 +457,7 @@ private fun VisualMarkPreview(
     val currentOnPlacementChange by rememberUpdatedState(onPlacementChange)
     Canvas(
         modifier =
-            Modifier.fillMaxWidth().height(300.dp)
+            Modifier.fillMaxWidth().height(420.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .pointerInput(page, mark, enabled) {
                     val pageBitmap = page ?: return@pointerInput
@@ -440,56 +470,31 @@ private fun VisualMarkPreview(
                         )
                     val pageWidth = pageBitmap.width * scale
                     val pageHeight = pageBitmap.height * scale
-                    val left = (size.width - pageWidth) / 2f
-                    val top = (size.height - pageHeight) / 2f
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val initialPlacement = currentPlacement
-                        val rect =
-                            resolveMarkRect(
-                                pageWidth,
-                                pageHeight,
-                                markBitmap.width,
-                                markBitmap.height,
-                                initialPlacement,
-                            )
-                        if (
-                            down.position.x !in (left + rect.left)..(left + rect.right) ||
-                            down.position.y !in (top + rect.top)..(top + rect.bottom)
-                        ) {
-                            return@awaitEachGesture
-                        }
-                        var dragPlacement = initialPlacement
-                        val dragStart =
-                            awaitTouchSlopOrCancellation(down.id) { change, overSlop ->
-                                change.consume()
-                                dragPlacement =
-                                    dragMarkPlacement(
-                                        pageWidth,
-                                        pageHeight,
-                                        markBitmap.width,
-                                        markBitmap.height,
-                                        dragPlacement,
-                                        overSlop.x,
-                                        overSlop.y,
+                        awaitFirstDown(requireUnconsumed = false)
+                        var gesturePlacement = currentPlacement
+                        do {
+                            val event = awaitPointerEvent()
+                            val pan = event.calculatePan()
+                            val zoom = event.calculateZoom()
+                            val rotation = event.calculateRotation()
+                            if (pan != Offset.Zero || zoom != 1f || rotation != 0f) {
+                                gesturePlacement =
+                                    transformMarkPlacement(
+                                        pageWidth = pageWidth,
+                                        pageHeight = pageHeight,
+                                        markWidth = markBitmap.width,
+                                        markHeight = markBitmap.height,
+                                        placement = gesturePlacement,
+                                        panX = pan.x,
+                                        panY = pan.y,
+                                        zoom = zoom,
+                                        rotationDegrees = rotation,
                                     )
-                                currentOnPlacementChange(dragPlacement)
-                            } ?: return@awaitEachGesture
-                        drag(dragStart.id) { change ->
-                            val dragAmount = change.positionChange()
-                            change.consume()
-                            dragPlacement =
-                                dragMarkPlacement(
-                                    pageWidth = pageWidth,
-                                    pageHeight = pageHeight,
-                                    markWidth = markBitmap.width,
-                                    markHeight = markBitmap.height,
-                                    placement = dragPlacement,
-                                    deltaX = dragAmount.x,
-                                    deltaY = dragAmount.y,
-                                )
-                            currentOnPlacementChange(dragPlacement)
-                        }
+                                event.changes.forEach { it.consume() }
+                                currentOnPlacementChange(gesturePlacement)
+                            }
+                        } while (event.changes.any { it.pressed })
                     }
                 }
                 .semantics { contentDescription = description },
@@ -508,12 +513,23 @@ private fun VisualMarkPreview(
         )
         mark?.let {
             val rect = resolveMarkRect(pageWidth, pageHeight, it.width, it.height, placement)
-            drawContext.canvas.nativeCanvas.drawBitmap(
-                it,
-                null,
-                RectF(left + rect.left, top + rect.top, left + rect.right, top + rect.bottom),
-                paint,
-            )
+            val canvas = drawContext.canvas.nativeCanvas
+            val saveCount = canvas.save()
+            try {
+                canvas.rotate(
+                    placement.rotationDegrees,
+                    left + (rect.left + rect.right) / 2f,
+                    top + (rect.top + rect.bottom) / 2f,
+                )
+                canvas.drawBitmap(
+                    it,
+                    null,
+                    RectF(left + rect.left, top + rect.top, left + rect.right, top + rect.bottom),
+                    paint,
+                )
+            } finally {
+                canvas.restoreToCount(saveCount)
+            }
         }
     }
 }
@@ -524,10 +540,16 @@ private fun VisualMarkSlider(
     value: Float,
     enabled: Boolean,
     valueRange: ClosedFloatingPointRange<Float>,
+    asDegrees: Boolean = false,
     onValueChange: (Float) -> Unit,
 ) {
-    val percent = stringResource(R.string.visual_mark_percent, (value * 100).roundToInt())
-    Text(stringResource(R.string.visual_mark_slider_value, label, percent))
+    val displayedValue =
+        if (asDegrees) {
+            stringResource(R.string.visual_mark_degrees, value.roundToInt())
+        } else {
+            stringResource(R.string.visual_mark_percent, (value * 100).roundToInt())
+        }
+    Text(stringResource(R.string.visual_mark_slider_value, label, displayedValue))
     Slider(
         value = value,
         onValueChange = onValueChange,
@@ -535,7 +557,7 @@ private fun VisualMarkSlider(
         valueRange = valueRange,
         modifier = Modifier.fillMaxWidth().semantics {
             contentDescription = label
-            stateDescription = percent
+            stateDescription = displayedValue
         },
     )
 }

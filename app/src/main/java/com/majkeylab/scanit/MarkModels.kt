@@ -1,5 +1,10 @@
 package com.majkeylab.scanit
 
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+
 internal const val MAX_MARK_TEMPLATES = 12
 internal const val MAX_MARK_INPUT_BYTES = 20_000_000L
 internal const val MARK_DECODE_MAX_SIDE = 2_048
@@ -37,6 +42,7 @@ internal data class MarkPlacement(
     val centerX: Float = 0.5f,
     val centerY: Float = 0.75f,
     val widthFraction: Float = 0.35f,
+    val rotationDegrees: Float = 0f,
 ) {
     init {
         require(centerX.isFinite() && centerX in 0f..1f) { "Mark horizontal position is invalid" }
@@ -46,6 +52,9 @@ internal data class MarkPlacement(
                 widthFraction in MIN_MARK_WIDTH_FRACTION..MAX_MARK_WIDTH_FRACTION,
         ) {
             "Mark width is invalid"
+        }
+        require(rotationDegrees.isFinite() && rotationDegrees in -180f..180f) {
+            "Mark rotation is invalid"
         }
     }
 }
@@ -130,12 +139,19 @@ internal fun resolveMarkRect(
         height = pageHeightDouble
         width = height / aspect
     }
-    val left =
-        (pageWidthDouble * placement.centerX - width / 2.0)
-            .coerceIn(0.0, pageWidthDouble - width)
-    val top =
-        (pageHeightDouble * placement.centerY - height / 2.0)
-            .coerceIn(0.0, pageHeightDouble - height)
+    var rotated = rotatedMarkSize(width, height, placement.rotationDegrees)
+    val scaleDown = min(1.0, min(pageWidthDouble / rotated.first, pageHeightDouble / rotated.second))
+    width *= scaleDown
+    height *= scaleDown
+    rotated = rotatedMarkSize(width, height, placement.rotationDegrees)
+    val centerX =
+        (pageWidthDouble * placement.centerX)
+            .coerceIn(rotated.first / 2.0, pageWidthDouble - rotated.first / 2.0)
+    val centerY =
+        (pageHeightDouble * placement.centerY)
+            .coerceIn(rotated.second / 2.0, pageHeightDouble - rotated.second / 2.0)
+    val left = centerX - width / 2.0
+    val top = centerY - height / 2.0
     return MarkRect(
         left = left.toFloat(),
         top = top.toFloat(),
@@ -155,13 +171,65 @@ internal fun dragMarkPlacement(
 ): MarkPlacement {
     require(deltaX.isFinite() && deltaY.isFinite()) { "Mark drag must be finite" }
     val rect = resolveMarkRect(pageWidth, pageHeight, markWidth, markHeight, placement)
+    val rotated =
+        rotatedMarkSize(rect.width.toDouble(), rect.height.toDouble(), placement.rotationDegrees)
     val centerX =
         ((rect.left + rect.right) / 2f + deltaX)
-            .coerceIn(rect.width / 2f, pageWidth - rect.width / 2f)
+            .coerceIn((rotated.first / 2.0).toFloat(), pageWidth - (rotated.first / 2.0).toFloat())
     val centerY =
         ((rect.top + rect.bottom) / 2f + deltaY)
-            .coerceIn(rect.height / 2f, pageHeight - rect.height / 2f)
+            .coerceIn((rotated.second / 2.0).toFloat(), pageHeight - (rotated.second / 2.0).toFloat())
     return placement.copy(centerX = centerX / pageWidth, centerY = centerY / pageHeight)
+}
+
+internal fun transformMarkPlacement(
+    pageWidth: Float,
+    pageHeight: Float,
+    markWidth: Int,
+    markHeight: Int,
+    placement: MarkPlacement,
+    panX: Float,
+    panY: Float,
+    zoom: Float,
+    rotationDegrees: Float,
+): MarkPlacement {
+    require(panX.isFinite() && panY.isFinite()) { "Mark pan must be finite" }
+    require(zoom.isFinite() && zoom > 0f) { "Mark zoom must be positive and finite" }
+    require(rotationDegrees.isFinite()) { "Mark rotation delta must be finite" }
+    val resized =
+        placement.copy(
+            widthFraction =
+                (placement.widthFraction * zoom)
+                    .coerceIn(MIN_MARK_WIDTH_FRACTION, MAX_MARK_WIDTH_FRACTION),
+            rotationDegrees = normalizeMarkRotation(placement.rotationDegrees + rotationDegrees),
+        )
+    return dragMarkPlacement(
+        pageWidth = pageWidth,
+        pageHeight = pageHeight,
+        markWidth = markWidth,
+        markHeight = markHeight,
+        placement = resized,
+        deltaX = panX,
+        deltaY = panY,
+    )
+}
+
+private fun rotatedMarkSize(
+    width: Double,
+    height: Double,
+    rotationDegrees: Float,
+): Pair<Double, Double> {
+    val radians = Math.toRadians(rotationDegrees.toDouble())
+    val cosine = abs(cos(radians))
+    val sine = abs(sin(radians))
+    return width * cosine + height * sine to width * sine + height * cosine
+}
+
+private fun normalizeMarkRotation(value: Float): Float {
+    var normalized = value % 360f
+    if (normalized > 180f) normalized -= 360f
+    if (normalized < -180f) normalized += 360f
+    return if (normalized == -0f) 0f else normalized
 }
 
 internal fun scaleNormalizedMarkStrokes(

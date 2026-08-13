@@ -97,6 +97,83 @@ class MarkLogicTest {
     }
 
     @Test
+    fun markTransformCombinesPanZoomAndNormalizedRotation() {
+        val transformed =
+            transformMarkPlacement(
+                pageWidth = 1_000f,
+                pageHeight = 2_000f,
+                markWidth = 400,
+                markHeight = 200,
+                placement = MarkPlacement(centerX = 0.5f, centerY = 0.5f, rotationDegrees = 170f),
+                panX = 100f,
+                panY = -200f,
+                zoom = 2f,
+                rotationDegrees = 30f,
+            )
+
+        assertEquals(0.6f, transformed.centerX, 0.0001f)
+        assertEquals(0.4f, transformed.centerY, 0.0001f)
+        assertEquals(0.7f, transformed.widthFraction, 0.0001f)
+        assertEquals(-160f, transformed.rotationDegrees, 0.0001f)
+    }
+
+    @Test
+    fun markTransformClampsZoomAndRotatedBounds() {
+        val minimum =
+            transformMarkPlacement(
+                1_000f,
+                2_000f,
+                400,
+                200,
+                MarkPlacement(widthFraction = MIN_MARK_WIDTH_FRACTION),
+                0f,
+                0f,
+                0.1f,
+                0f,
+            )
+        val maximum =
+            transformMarkPlacement(
+                1_000f,
+                2_000f,
+                400,
+                200,
+                MarkPlacement(centerX = 0f, centerY = 0f, widthFraction = MAX_MARK_WIDTH_FRACTION),
+                0f,
+                0f,
+                2f,
+                90f,
+            )
+
+        assertEquals(MIN_MARK_WIDTH_FRACTION, minimum.widthFraction, 0f)
+        assertEquals(MAX_MARK_WIDTH_FRACTION, maximum.widthFraction, 0f)
+        assertEquals(0.2f, maximum.centerX, 0.0001f)
+        assertEquals(0.2f, maximum.centerY, 0.0001f)
+    }
+
+    @Test
+    fun markTransformRejectsMalformedGestureValues() {
+        assertThrows(IllegalArgumentException::class.java) {
+            transformMarkPlacement(1_000f, 2_000f, 400, 200, MarkPlacement(), 0f, 0f, 0f, 0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            transformMarkPlacement(
+                1_000f,
+                2_000f,
+                400,
+                200,
+                MarkPlacement(),
+                Float.NaN,
+                0f,
+                1f,
+                0f,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            MarkPlacement(rotationDegrees = Float.NaN)
+        }
+    }
+
+    @Test
     fun tallMarkScalesDownWithoutChangingAspect() {
         val rect =
             resolveMarkRect(

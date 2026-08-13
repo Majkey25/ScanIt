@@ -160,6 +160,8 @@
     <string name="horizontal_position">Horizontale Position</string>
     <string name="vertical_position">Vertikale Position</string>
     <string name="visual_mark_size">Größe</string>
+    <string name="visual_mark_rotation">Drehung</string>
+    <string name="manual_position">Manuelle Position</string>
     <string name="apply_visual_mark">Auf Seite %1$d anwenden</string>
     <string name="visual_mark_working">Verarbeitung…</string>
     <string name="draw_visual_mark_title">Unterschrift oder Stempel zeichnen</string>
@@ -172,8 +174,9 @@
     <string name="delete_visual_mark_body">Die ausgewählte gespeicherte Unterschrift oder der Stempel wird entfernt.</string>
     <string name="delete_visual_mark_confirm">Löschen</string>
     <string name="visual_mark_preview">Vorschau der Unterschrift oder des Stempels</string>
-    <string name="drag_visual_mark_hint">Unterschrift ziehen, um sie zu platzieren.</string>
+    <string name="drag_visual_mark_hint">Zum Verschieben ziehen. Zum Skalieren und Drehen zwei Finger verwenden.</string>
     <string name="saved_visual_mark_number">Gespeicherte Markierung %1$d</string>
     <string name="visual_mark_percent">%1$d%%</string>
+    <string name="visual_mark_degrees">%1$d°</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
 </resources>

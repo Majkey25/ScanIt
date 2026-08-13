@@ -161,6 +161,8 @@
     <string name="horizontal_position">Posición horizontal</string>
     <string name="vertical_position">Posición vertical</string>
     <string name="visual_mark_size">Tamaño</string>
+    <string name="visual_mark_rotation">Rotación</string>
+    <string name="manual_position">Posición manual</string>
     <string name="apply_visual_mark">Aplicar a la página %1$d</string>
     <string name="visual_mark_working">Procesando…</string>
     <string name="draw_visual_mark_title">Dibujar firma o sello</string>
@@ -173,8 +175,9 @@
     <string name="delete_visual_mark_body">Esto elimina la firma o el sello guardado seleccionado.</string>
     <string name="delete_visual_mark_confirm">Eliminar</string>
     <string name="visual_mark_preview">Vista previa de la firma o el sello</string>
-    <string name="drag_visual_mark_hint">Arrastra la firma para colocarla.</string>
+    <string name="drag_visual_mark_hint">Arrastra para mover. Pellizca para cambiar el tamaño y girar.</string>
     <string name="saved_visual_mark_number">Marca guardada %1$d</string>
     <string name="visual_mark_percent">%1$d%%</string>
+    <string name="visual_mark_degrees">%1$d°</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
 </resources>

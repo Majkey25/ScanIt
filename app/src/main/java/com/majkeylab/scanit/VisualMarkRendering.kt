@@ -63,13 +63,24 @@ internal fun renderMarkedSourceJpeg(
                     markWidth = mark.width,
                     markHeight = mark.height,
                     placement = placement,
-                )
-            Canvas(page).drawBitmap(
-                mark,
-                null,
-                RectF(rect.left, rect.top, rect.right, rect.bottom),
-                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
             )
+            val canvas = Canvas(page)
+            val saveCount = canvas.save()
+            try {
+                canvas.rotate(
+                    placement.rotationDegrees,
+                    (rect.left + rect.right) / 2f,
+                    (rect.top + rect.bottom) / 2f,
+                )
+                canvas.drawBitmap(
+                    mark,
+                    null,
+                    RectF(rect.left, rect.top, rect.right, rect.bottom),
+                    Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+                )
+            } finally {
+                canvas.restoreToCount(saveCount)
+            }
         },
         isCancelled = isCancelled,
     )
