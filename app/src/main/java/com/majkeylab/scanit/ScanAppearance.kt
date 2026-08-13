@@ -103,6 +103,18 @@ internal data class ScanAppearanceSettings(
     }
 }
 
+internal fun googleScannerAppearanceSettings(): ScanAppearanceSettings =
+    ScanAppearanceSettings(
+        colorMode = ScanColorMode.Natural,
+        naturalIntensity = 0,
+        colorIntensity = 0,
+        lightTextIntensity = 0,
+        grayscaleIntensity = 0,
+        blackWhiteIntensity = 0,
+        whiteboardIntensity = 0,
+        shadows = 0,
+    )
+
 internal fun parseScanAppearanceSettings(
     colorModeWireValue: String?,
     colorIntensity: Int?,

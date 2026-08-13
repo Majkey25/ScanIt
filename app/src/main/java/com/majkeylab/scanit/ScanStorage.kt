@@ -1329,12 +1329,7 @@ internal class ScanStorage(
                 val renderedPages =
                     sourcePages.mapIndexed { index, source ->
                         File(workDirectory, scanPageFileName(baseName, index + 1)).also { destination ->
-                            ScanAppearanceRenderer.renderJpeg(
-                                source,
-                                destination,
-                                appearance,
-                                isCancelled = isCancelled,
-                            )
+                            copyDerivedSourcePage(source, destination)
                         }
                     }
                 val pdfBuild =

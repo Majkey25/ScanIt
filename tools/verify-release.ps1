@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "8"
+$expectedVersionCode = "9"
 $expectedMinSdk = "35"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
@@ -27,15 +27,15 @@ $sdkRootWasExplicit = $PSBoundParameters.ContainsKey("SdkRoot")
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.2.0-internal"
+        $expectedVersionName = "1.2.1-internal"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "1.2.0"
+        $expectedVersionName = "1.2.1"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "1.2.0"
+        $expectedVersionName = "1.2.1"
     }
 }
 

@@ -87,6 +87,14 @@ class PdfSizePolicyTest {
     }
 
     @Test
+    fun googleScannerOutputBypassesScanItEffects() {
+        assertEquals(
+            ScanAppearance(ScanColorMode.Natural, intensity = 0, shadows = 0),
+            googleScannerAppearanceSettings().selected(),
+        )
+    }
+
+    @Test
     fun resolutionProfilesNeverDropAnyPageBelowLegibleEdge() {
         assertEquals(listOf(1, 2), pdfSampleMultipliers(listOf(3_508, 3_508)))
         assertEquals(listOf(1, 2, 4), pdfSampleMultipliers(listOf(6_000, 5_200)))
