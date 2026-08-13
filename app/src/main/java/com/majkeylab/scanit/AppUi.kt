@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +40,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -95,6 +97,7 @@ private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
 private const val THIRD_PARTY_NOTICES_URL =
     "https://majkey25.github.io/ScanIt/third-party-notices.txt"
+internal const val SUPPORT_URL = "https://www.buymeacoffee.com/majkey"
 
 private val LightColorScheme =
     lightColorScheme(
@@ -1078,7 +1081,9 @@ private fun SettingsScreen(
     var customPdfSizeInput by rememberSaveable { mutableStateOf("") }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val supportNotice = stringResource(R.string.support_scanit_notice)
 
     if (languageDialogOpen) {
         AlertDialog(
@@ -1445,6 +1450,27 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.third_party_notices))
+                }
+                Button(
+                    onClick = {
+                        Toast.makeText(context, supportNotice, Toast.LENGTH_SHORT).show()
+                        uriHandler.openUri(SUPPORT_URL)
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    border = BorderStroke(1.dp, Color(0xFF111111)),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFDD00),
+                            contentColor = Color(0xFF111111),
+                        ),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_coffee),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.support_scanit))
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }

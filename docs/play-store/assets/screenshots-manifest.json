@@ -1,0 +1,162 @@
+[
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/01-capture.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 1235827,
+    "sha256": "E77B7811FB87973F69A67751B89E3E85BEB067BD0603830B7BFF7C0F87716FBD",
+    "altText": "ScanIt detects the edges of an original music practice sheet."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/02-review.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 978443,
+    "sha256": "292DD1EA74813C82859C927D482CE81CD233447F200C949C737DD9D5B275C2D3",
+    "altText": "Review, crop, enhance, and filter a scanned page before saving."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/03-result.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 120136,
+    "sha256": "0742BDA5DE01B79FEBD6EE614A5C2AAE1786E8D5EB552CF4482D3C640D98D21F",
+    "altText": "ScanIt result screen with PDF sharing, image sharing, printing, and a new scan action."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/04-recent.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 112313,
+    "sha256": "B166C2D6F9FAD6FC969311D2E54609D60709C5C6A407FC218C11E2C1FDABBBE1",
+    "altText": "Recent scans dashboard with a preview, page count, file size, and document actions."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/05-visual-mark.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 192991,
+    "sha256": "499C91B26BC9DA62207E44A992E855AF950FFF8F1A824DAEC8B5F3070E95C90D",
+    "altText": "Visual mark editor with a reusable SAMPLE signature and placement controls."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/06-pdf-size.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 290724,
+    "sha256": "704F2226A443009E828760205990F15EECAD30FE9E509C197A9CC602BC4258A5",
+    "altText": "Settings for original, 5 MB, 10 MB, 20 MB, and custom PDF size targets."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/07-saving.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 233131,
+    "sha256": "7E79FB5C443162FF907EC2C68745A5A871D33DC48C984A0CBAC6A5C519A01365",
+    "altText": "Settings for local saving and optional deletion of saved files after sharing."
+  },
+  {
+    "locale": "en-US",
+    "file": "docs/play-store/assets/en-US/phone/08-languages.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 193676,
+    "sha256": "6590135916F054DDDFEDADD742F87CD49FD15409E3F70994FC8F73E4BCC7851C",
+    "altText": "Language chooser with system default, English, Czech, German, Spanish, and Simplified Chinese."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/01-capture.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 1237671,
+    "sha256": "F6BCF4DA90609883EBE04BFF90063EB4ED040DD872C1469EFC079E16FAB459AE",
+    "altText": "ScanIt rozpoznává okraje původního notového cvičení."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/02-review.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 443451,
+    "sha256": "5F7033922BBB742BFE8A74B422C9129DBE25716C57D564FFF61CF34E449CC0C0",
+    "altText": "Kontrola, ořez, vylepšení a filtry naskenované strany před uložením."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/03-result.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 132721,
+    "sha256": "122B10BF4065E9115E96F7A3D272C5DBD111EF2946F8EED3D3123F537E9FD9C0",
+    "altText": "Výsledek skenu s odesláním PDF, obrázků, tiskem a novým skenem."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/04-recent.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 119325,
+    "sha256": "2D67935C0469EE70DAC4AFC87155BFFAEEFD5B4BACC997CA64F9F692BB49D627",
+    "altText": "Přehled nedávných skenů s náhledem, počtem stran, velikostí a akcemi."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/05-visual-mark.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 204580,
+    "sha256": "B5FD5F94EB7FA8D7C0C38275821ADD1BD3556E7CB2721301B34A083EC8747599",
+    "altText": "Editor vizuální značky se vzorovým podpisem SAMPLE a ovládáním umístění."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/06-pdf-size.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 309751,
+    "sha256": "2E85BE28DDC35CEEE9642407FD468190130F199BF8CABF99690E7A22DE6A681E",
+    "altText": "Nastavení původní, 5 MB, 10 MB, 20 MB a vlastní cílové velikosti PDF."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/07-saving.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 239668,
+    "sha256": "F01CF023842FA5442CA840962EEFA8F386936FC5A4B741FCF86D25A6D1C0B84C",
+    "altText": "Nastavení místního ukládání a volitelného smazání uložených souborů po sdílení."
+  },
+  {
+    "locale": "cs-CZ",
+    "file": "docs/play-store/assets/cs-CZ/phone/08-languages.png",
+    "width": 1080,
+    "height": 1920,
+    "mode": "RGB",
+    "bytes": 191320,
+    "sha256": "021E645229A9C86C47BB588D4B92BC7DE34DDF95AC97730EE98185E88AB877C2",
+    "altText": "Výběr jazyka podle systému, angličtiny, češtiny, němčiny, španělštiny a zjednodušené čínštiny."
+  }
+]

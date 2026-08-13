@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.2.2] - 2026-08-13
+
+### Added
+
+- Added a localized Buy Me a Coffee support button at the bottom of Settings. It opens the published ScanIt support page and does not unlock app features.
+- Verified that ScanIt preferences survive an in-place app update. Uninstalling, clearing app data, or installing a different package flavor still creates a separate settings store.
+
 ## [1.2.1] - 2026-08-13
 
 ### Fixed
@@ -81,6 +88,7 @@ Historical copies retain the license supplied with them. See
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
+[1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
