@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a policy-safe optional Buy Me a Coffee button to public ScanIt Settings and publish verified `v1.2.1` artifacts.
+**Goal:** Add a policy-safe optional Buy Me a Coffee button to public ScanIt Settings and publish verified `v1.2.2` artifacts.
 
 **Architecture:** Keep the external support link in the existing Settings footer. Add localized resources and no new runtime dependency, permission, state, or abstraction.
 
