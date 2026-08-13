@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a policy-safe optional Buy Me a Coffee button to public ScanIt Settings and publish verified `v1.2.1` artifacts.
+**Goal:** Add a policy-safe optional Buy Me a Coffee button to public ScanIt Settings and publish verified `v1.2.2` artifacts.
 
 **Architecture:** Keep the external support link in the existing Settings footer. Add localized resources and no new runtime dependency, permission, state, or abstraction.
 
@@ -38,5 +38,4 @@
 - [ ] Run `./tools/verify-release.ps1 github ./app/build/outputs/apk/github/release/app-github-release.apk` and verify the GitHub AAB too.
 - [ ] Install only the internal APK on the emulator, open Settings, activate Support ScanIt, and verify the browser receives the expected Buy Me a Coffee HTTPS URL.
 - [ ] Run `git diff --check` and inspect the complete diff.
-- [ ] Commit with `feat: add optional ScanIt support link`, push the feature branch, open a PR into protected `main`, wait for required checks, merge, then create the signed `v1.2.1` GitHub release only from merged `main` artifacts.
-
+- [ ] Commit with `feat: add optional ScanIt support link`, push the feature branch, open a PR into protected `main`, wait for required checks, merge, then create the signed `v1.2.2` GitHub release only from merged `main` artifacts.
