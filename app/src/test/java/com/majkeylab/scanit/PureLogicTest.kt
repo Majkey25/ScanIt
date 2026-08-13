@@ -24,6 +24,11 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun supportUsesThePublishedBuyMeACoffeePage() {
+        assertEquals("https://www.buymeacoffee.com/majkey", SUPPORT_URL)
+    }
+
+    @Test
     fun mainScannerRestoresFullEditorWhileMarkCaptureStaysBase() {
         assertEquals(
             GmsDocumentScannerOptions.SCANNER_MODE_FULL,
@@ -304,6 +309,39 @@ class PureLogicTest {
         assertEquals(25, values["appearance_light_text_intensity"])
         assertEquals(85, values["appearance_whiteboard_intensity"])
         assertEquals("10_mb", values["pdf_size_target"])
+    }
+
+    @Test
+    fun settingsSurviveStoreRecreationUsedByAppUpdates() {
+        val (preferences, _) = inMemoryPreferences()
+        val treeUri = "content://docs/tree/scans"
+        val expected =
+            AppSettings(
+                savePdf = false,
+                saveImages = false,
+                albumName = "My scans",
+                multipage = false,
+                allowGallery = false,
+                emailSubject = "Saved subject",
+                emailBody = "Saved message",
+                pdfTreeUri = treeUri,
+                deletePdfAfterShare = true,
+                deleteImagesAfterShare = true,
+                appearance =
+                    ScanAppearanceSettings(
+                        colorMode = ScanColorMode.Grayscale,
+                        grayscaleIntensity = 63,
+                        shadows = 28,
+                    ),
+                pdfSizeTarget = PdfSizeTarget.Custom(17),
+            )
+        val beforeUpdate = SettingsStore(preferences, "Scanned document")
+        beforeUpdate.savePdfTreeUris(current = treeUri, pending = null)
+        beforeUpdate.save(expected)
+
+        val afterUpdate = SettingsStore(preferences, "Scanned document")
+
+        assertEquals(expected, afterUpdate.load())
     }
 
     @Test

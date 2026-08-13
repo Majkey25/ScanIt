@@ -4,6 +4,10 @@ All notable changes are documented here.
 
 ## [1.2.1] - 2026-08-13
 
+### Added
+
+- Added a localized Buy Me a Coffee support button at the bottom of Settings. It opens the published ScanIt support page and does not unlock app features.
+
 ### Fixed
 
 - Removed the redundant ScanIt appearance-review screen and its unstable intensity and shadow sliders.
