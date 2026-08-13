@@ -38,5 +38,4 @@
 - [ ] Run `./tools/verify-release.ps1 github ./app/build/outputs/apk/github/release/app-github-release.apk` and verify the GitHub AAB too.
 - [ ] Install only the internal APK on the emulator, open Settings, activate Support ScanIt, and verify the browser receives the expected Buy Me a Coffee HTTPS URL.
 - [ ] Run `git diff --check` and inspect the complete diff.
-- [ ] Commit with `feat: add optional ScanIt support link`, push the feature branch, open a PR into protected `main`, wait for required checks, merge, then create the signed `v1.2.1` GitHub release only from merged `main` artifacts.
-
+- [ ] Commit with `feat: add optional ScanIt support link`, push the feature branch, open a PR into protected `main`, wait for required checks, merge, then create the signed `v1.2.2` GitHub release only from merged `main` artifacts.

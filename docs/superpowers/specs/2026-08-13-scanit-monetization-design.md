@@ -35,4 +35,3 @@ Buy Me a Coffee is a pure optional tip and never unlocks Premium. Premium, ad re
 
 - Public: unit tests, lint, signed Play/GitHub artifact verification, emulator Settings link, and public-manifest check for no Internet/ad/Billing/Gemini material.
 - Beta: pure entitlement tests covering purchased, pending, canceled, restored, duplicate, and acknowledgement states; lint/build; emulator ad/consent/Premium UI; and later Play license-tester purchase, restore, refund/revocation, and pending-payment checks.
-
