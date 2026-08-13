@@ -1085,6 +1085,32 @@ private fun SettingsScreen(
     val uriHandler = LocalUriHandler.current
     val supportNotice = stringResource(R.string.support_scanit_notice)
 
+    fun persistSettings() {
+        settingsError =
+            try {
+                val saved =
+                    onSave(
+                        AppSettings(
+                            savePdf = savePdf,
+                            saveImages = saveImages,
+                            albumName = albumName,
+                            multipage = multipage,
+                            allowGallery = allowGallery,
+                            emailSubject = emailSubject,
+                            emailBody = emailBody,
+                            pdfTreeUri = pdfTreeUri,
+                            deletePdfAfterShare = deletePdfAfterShare,
+                            deleteImagesAfterShare = deleteImagesAfterShare,
+                            appearance = settings.appearance,
+                            pdfSizeTarget = parsePdfSizeTarget(pdfSizeTargetWire),
+                        ),
+                    )
+                settingsSaveFailed.takeUnless { saved }
+            } catch (_: RuntimeException) {
+                settingsSaveFailed
+            }
+    }
+
     if (languageDialogOpen) {
         AlertDialog(
             onDismissRequest = { languageDialogOpen = false },
@@ -1143,6 +1169,7 @@ private fun SettingsScreen(
                     onClick = {
                         customMegabytes?.let { megabytes ->
                             pdfSizeTargetWire = PdfSizeTarget.Custom(megabytes).wireValue
+                            persistSettings()
                             customPdfSizeDialogOpen = false
                         }
                     },
@@ -1229,7 +1256,10 @@ private fun SettingsScreen(
                     items(PdfSizeTarget.presets) { target ->
                         FilterChip(
                             selected = target.wireValue == pdfSizeTargetWire,
-                            onClick = { pdfSizeTargetWire = target.wireValue },
+                            onClick = {
+                                pdfSizeTargetWire = target.wireValue
+                                persistSettings()
+                            },
                             label = { Text(pdfSizeTargetLabel(target)) },
                         )
                     }
@@ -1274,14 +1304,20 @@ private fun SettingsScreen(
                 SettingsSwitch(
                     label = stringResource(R.string.save_pdf),
                     checked = savePdf,
-                    onCheckedChange = { savePdf = it },
+                    onCheckedChange = {
+                        savePdf = it
+                        persistSettings()
+                    },
                 )
             }
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.save_images),
                     checked = saveImages,
-                    onCheckedChange = { saveImages = it },
+                    onCheckedChange = {
+                        saveImages = it
+                        persistSettings()
+                    },
                 )
             }
             item {
@@ -1294,7 +1330,10 @@ private fun SettingsScreen(
             item {
                 OutlinedTextField(
                     value = albumName,
-                    onValueChange = { albumName = it },
+                    onValueChange = {
+                        albumName = it
+                        persistSettings()
+                    },
                     label = { Text(stringResource(R.string.album_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1351,14 +1390,20 @@ private fun SettingsScreen(
                 SettingsSwitch(
                     label = stringResource(R.string.multiple_pages),
                     checked = multipage,
-                    onCheckedChange = { multipage = it },
+                    onCheckedChange = {
+                        multipage = it
+                        persistSettings()
+                    },
                 )
             }
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.allow_gallery),
                     checked = allowGallery,
-                    onCheckedChange = { allowGallery = it },
+                    onCheckedChange = {
+                        allowGallery = it
+                        persistSettings()
+                    },
                 )
             }
             item { SectionTitle(stringResource(R.string.sharing)) }
@@ -1366,14 +1411,20 @@ private fun SettingsScreen(
                 SettingsSwitch(
                     label = stringResource(R.string.delete_pdf_after_share),
                     checked = deletePdfAfterShare,
-                    onCheckedChange = { deletePdfAfterShare = it },
+                    onCheckedChange = {
+                        deletePdfAfterShare = it
+                        persistSettings()
+                    },
                 )
             }
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.delete_images_after_share),
                     checked = deleteImagesAfterShare,
-                    onCheckedChange = { deleteImagesAfterShare = it },
+                    onCheckedChange = {
+                        deleteImagesAfterShare = it
+                        persistSettings()
+                    },
                 )
             }
             item {
@@ -1386,7 +1437,10 @@ private fun SettingsScreen(
             item {
                 OutlinedTextField(
                     value = emailSubject,
-                    onValueChange = { emailSubject = it },
+                    onValueChange = {
+                        emailSubject = it
+                        persistSettings()
+                    },
                     label = { Text(stringResource(R.string.email_subject)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1395,7 +1449,10 @@ private fun SettingsScreen(
             item {
                 OutlinedTextField(
                     value = emailBody,
-                    onValueChange = { emailBody = it },
+                    onValueChange = {
+                        emailBody = it
+                        persistSettings()
+                    },
                     label = { Text(stringResource(R.string.email_body)) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
@@ -1403,42 +1460,6 @@ private fun SettingsScreen(
             }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                Button(
-                    onClick = {
-                        try {
-                            val saved =
-                                onSave(
-                                    AppSettings(
-                                        savePdf = savePdf,
-                                        saveImages = saveImages,
-                                        albumName = albumName,
-                                        multipage = multipage,
-                                        allowGallery = allowGallery,
-                                        emailSubject = emailSubject,
-                                        emailBody = emailBody,
-                                        pdfTreeUri = pdfTreeUri,
-                                        deletePdfAfterShare = deletePdfAfterShare,
-                                        deleteImagesAfterShare = deleteImagesAfterShare,
-                                        appearance = settings.appearance,
-                                        pdfSizeTarget = parsePdfSizeTarget(pdfSizeTargetWire),
-                                    ),
-                                )
-                            if (saved) {
-                                onClose()
-                            } else {
-                                settingsError = settingsSaveFailed
-                            }
-                        } catch (_: RuntimeException) {
-                            settingsError = settingsSaveFailed
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Text(stringResource(R.string.save_settings))
-                }
-                TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.cancel))
-                }
                 TextButton(
                     onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
                     modifier = Modifier.fillMaxWidth(),
