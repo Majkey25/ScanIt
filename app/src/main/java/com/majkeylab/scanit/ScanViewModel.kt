@@ -571,7 +571,7 @@ internal class ScanViewModel(
                             val cacheBuild =
                                 storage.cacheScan(
                                     pageUris = pages,
-                                    appearanceSettings = settings.appearance,
+                                    appearanceSettings = googleScannerAppearanceSettings(),
                                     pdfSizeTarget = settings.pdfSizeTarget,
                                     isCancelled = { !processingContext.isActive },
                                 )
@@ -605,13 +605,11 @@ internal class ScanViewModel(
                                     outputMetadataValid = false,
                                 ),
                             thumbnail = prepared.thumbnail,
-                            appearanceReviewRequired = true,
                         )
                     when (
                         persistResultCheckpoint(
                             generation = generation,
                             cacheId = prepared.build.cached.baseName,
-                            appearanceReviewEntryId = prepared.build.cached.entryId,
                         )
                     ) {
                         ResultActivation.Applied -> authorityCommitted = true
@@ -642,18 +640,22 @@ internal class ScanViewModel(
                         withContext(Dispatchers.IO) {
                             val activated =
                                 storage.activateCheckpointProvisional(prepared.build.cached)
-                            val saved =
+                            val opened =
                                 storage.openSavedScan(activated.baseName)
                                     ?: throw IOException(
                                         "Cached scan output metadata is unavailable",
                                     )
-                            ScreenState.Result(
-                                scan =
-                                    saved.copy(
-                                        warnings = (baseWarnings + saved.warnings).distinct(),
+                            val saved =
+                                saveAutomaticReviewOutputs(
+                                    opened.copy(
+                                        warnings =
+                                            (baseWarnings + opened.warnings).distinct(),
                                     ),
+                                    prepared.settings,
+                                )
+                            ScreenState.Result(
+                                scan = saved,
                                 thumbnail = prepared.thumbnail,
-                                appearanceReviewRequired = true,
                             )
                         }
                     retainedResult = result

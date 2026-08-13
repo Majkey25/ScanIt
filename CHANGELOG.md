@@ -2,6 +2,14 @@
 
 All notable changes are documented here.
 
+## [1.2.1] - 2026-08-13
+
+### Fixed
+
+- Removed the redundant ScanIt appearance-review screen and its unstable intensity and shadow sliders.
+- Kept the full Google ML Kit review editor, including page management, crop and rotate, and Google filters such as Grayscale, Black and white, and Shadows.
+- Preserved the Google-edited JPEG output directly before showing the normal ScanIt Result and sharing actions.
+
 ## [1.2.0] - 2026-08-12
 
 ### Added
@@ -73,5 +81,6 @@ Historical copies retain the license supplied with them. See
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
+[1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2

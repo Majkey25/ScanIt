@@ -525,7 +525,6 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
     get() =
         outputSaveInProgress ||
             appearanceApplyInProgress ||
-            appearanceReviewRequired ||
             visualMarkEditor != null
 
 internal enum class AppBackAction {
@@ -545,8 +544,7 @@ internal fun appBackAction(
         settingsOpen -> AppBackAction.CloseSettings
         state is ScreenState.Result &&
             (state.outputSaveInProgress ||
-                state.appearanceApplyInProgress ||
-                state.appearanceReviewRequired) -> AppBackAction.Consume
+                state.appearanceApplyInProgress) -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent && state.deletionInProgress -> AppBackAction.Consume

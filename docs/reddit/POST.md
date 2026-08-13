@@ -5,11 +5,11 @@ stable; Google Play remains in closed testing.
 
 ## Title
 
-Update: ScanIt v1.1 is out — dashboard, visual signatures, and custom PDF sizes
+Update: ScanIt v1.2.1 is out — dashboard, visual signatures, and custom PDF sizes
 
 ## Body
 
-**Update — August 12, 2026:** ScanIt v1.1.0 is now available on GitHub.
+**Update — August 13, 2026:** ScanIt v1.2.1 is now available on GitHub.
 
 Thanks to the person who asked for a dashboard in the comments: ScanIt now has
 a Recent scans dashboard with previews, page counts, file sizes, open/share
@@ -18,9 +18,11 @@ actions, and exact deletion of saved outputs that ScanIt can verify it created.
 You can also draw, import, or scan a reusable visual signature or stamp, place
 it directly on a selected page, and adjust its position and size. PDF size
 goals now include Original, 5 MB, 10 MB, 20 MB, or a custom 1–500 MB target.
-The scanner has color, grayscale, B&W intensity, and shadow controls, plus a
-compact language picker for System, English, Czech, German, Spanish, and
-Simplified Chinese.
+The full Google review editor remains available for page previews, crop and
+rotate, and Original, Auto, Color, Grayscale, B&W, and Shadows filters. After
+that, ScanIt continues directly to Result and sharing without another intensity
+screen. Settings also has a compact language picker for System, English, Czech,
+German, Spanish, and Simplified Chinese.
 
 The signature/stamp is a visual image annotation. It is not a certificate-backed
 digital or cryptographic signature and does not verify identity or document
@@ -39,7 +41,7 @@ old Reddit title cannot be edited, so this note corrects its outdated
 "open-source" wording.
 
 GitHub release:
-https://github.com/Majkey25/ScanIt/releases/tag/v1.1.0
+https://github.com/Majkey25/ScanIt/releases/tag/v1.2.1
 
 Google Play closed test:
 https://play.google.com/apps/testing/com.majkeylab.scanit
@@ -50,7 +52,7 @@ Please do not send private documents in bug reports.
 
 ## Dashboard-request reply
 
-`u/Overall-Fox-3289 — you asked for a dashboard in the original thread. It is now in ScanIt v1.1.0: Recent scans has previews, page counts, file sizes, open/share actions, and safe saved-output deletion. Thanks for the useful suggestion.`
+`u/Overall-Fox-3289 — you asked for a dashboard in the original thread. It is now in ScanIt v1.2.1: Recent scans has previews, page counts, file sizes, open/share actions, and safe saved-output deletion. Thanks for the useful suggestion.`
 
 ## Gallery order
 

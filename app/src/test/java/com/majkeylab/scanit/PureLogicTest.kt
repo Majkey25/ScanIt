@@ -850,7 +850,7 @@ class PureLogicTest {
     }
 
     @Test
-    fun freshAppearanceReviewKeepsResultActionsAndBackBlockedUntilFinished() {
+    fun legacyAppearanceReviewFlagDoesNotBlockDirectResultActions() {
         val reviewing =
             ScreenState.Result(
                 scan =
@@ -863,12 +863,11 @@ class PureLogicTest {
                 appearanceReviewRequired = true,
             )
 
-        assertTrue(reviewing.resultActionsBlocked)
+        assertFalse(reviewing.resultActionsBlocked)
         assertEquals(
-            AppBackAction.Consume,
+            AppBackAction.ShowRecent,
             appBackAction(settingsOpen = false, fileDetailsOpen = false, state = reviewing),
         )
-        assertFalse(reviewing.copy(appearanceReviewRequired = false).resultActionsBlocked)
     }
 
     @Test

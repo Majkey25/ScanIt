@@ -51,7 +51,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -90,7 +89,6 @@ import java.io.File
 import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 
 private const val PRIVACY_POLICY_URL =
@@ -148,14 +146,12 @@ internal fun ScanItApp(
     onShareRecentPdf: (String) -> Unit,
     onDeleteRecent: (OutputDeleteRequest) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
-    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
     onSelectResultPage: (Int) -> Unit,
     onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
     onSaveNow: (SaveNowTarget) -> Unit = {},
-    onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
     onCloseVisualMarkEditor: () -> Unit = {},
     onSelectVisualMarkTemplate: (String) -> Unit = {},
@@ -249,40 +245,29 @@ internal fun ScanItApp(
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
-                    if (state.appearanceReviewRequired) {
-                        AppearanceReviewScreen(
-                            result = state,
-                            defaultAppearance = settings.appearance,
-                            onSelectPage = onSelectResultPage,
-                            onLoadThumbnail = onLoadThumbnail,
-                            onLoadAppearancePreview = onLoadAppearancePreview,
-                            onFinish = onApplyAppearance,
-                        )
-                    } else {
-                        ResultScreen(
-                            result = state,
-                            onNewScan = onScan,
-                            onRecent = onRecent,
-                            onSettings = {
-                                fileDetailsExpanded = false
-                                showSettings = true
-                            },
-                            onSharePdf = onSharePdf,
-                            onShareImages = onShareImages,
-                            onPrint = onPrint,
-                            fileDetailsExpanded = fileDetailsExpanded,
-                            onFileDetailsChange = { expanded ->
-                                fileDetailsExpanded = expanded
-                            },
-                            onSaveNow = onSaveNow,
-                            onSelectPage = onSelectResultPage,
-                            onLoadThumbnail = onLoadThumbnail,
-                            onAddVisualMark = {
-                                fileDetailsExpanded = false
-                                onOpenVisualMarkEditor()
-                            },
-                        )
-                    }
+                    ResultScreen(
+                        result = state,
+                        onNewScan = onScan,
+                        onRecent = onRecent,
+                        onSettings = {
+                            fileDetailsExpanded = false
+                            showSettings = true
+                        },
+                        onSharePdf = onSharePdf,
+                        onShareImages = onShareImages,
+                        onPrint = onPrint,
+                        fileDetailsExpanded = fileDetailsExpanded,
+                        onFileDetailsChange = { expanded ->
+                            fileDetailsExpanded = expanded
+                        },
+                        onSaveNow = onSaveNow,
+                        onSelectPage = onSelectResultPage,
+                        onLoadThumbnail = onLoadThumbnail,
+                        onAddVisualMark = {
+                            fileDetailsExpanded = false
+                            onOpenVisualMarkEditor()
+                        },
+                    )
             }
         }
     }
@@ -323,279 +308,6 @@ private fun FailureScreen(
             }
         }
     }
-}
-
-@Composable
-private fun AppearanceReviewScreen(
-    result: ScreenState.Result,
-    defaultAppearance: ScanAppearanceSettings,
-    onSelectPage: (Int) -> Unit,
-    onLoadThumbnail: suspend (File) -> Bitmap?,
-    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-    onFinish: (ScanAppearanceSettings) -> Unit,
-) {
-    val cached = result.scan.cached
-    val pageCount = cached.pages.size
-    val pageIndex = resolvedPageIndex(result.selectedPageIndex, pageCount)
-    val initialAppearance =
-        cached.appearanceSettings
-            ?: cached.appearance?.let(defaultAppearance::withApplied)
-            ?: defaultAppearance
-    var modeWire by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.colorMode.wireValue)
-    }
-    var naturalIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.naturalIntensity)
-    }
-    var colorIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.colorIntensity)
-    }
-    var lightTextIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.lightTextIntensity)
-    }
-    var grayscaleIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.grayscaleIntensity)
-    }
-    var blackWhiteIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.blackWhiteIntensity)
-    }
-    var whiteboardIntensity by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.whiteboardIntensity)
-    }
-    var shadows by rememberSaveable(cached.entryId) {
-        mutableStateOf(initialAppearance.shadows)
-    }
-    val draft =
-        parseScanAppearanceSettings(
-            colorModeWireValue = modeWire,
-            naturalIntensity = naturalIntensity,
-            colorIntensity = colorIntensity,
-            lightTextIntensity = lightTextIntensity,
-            grayscaleIntensity = grayscaleIntensity,
-            blackWhiteIntensity = blackWhiteIntensity,
-            whiteboardIntensity = whiteboardIntensity,
-            shadows = shadows,
-        )
-    val sourcePage = cached.sourcePages.getOrNull(pageIndex)
-    val preview =
-        ownedAppearancePreview(
-            sourcePage = sourcePage,
-            settings = draft,
-            maxSize = 640,
-            onLoad = onLoadAppearancePreview,
-        )
-    val enabled = !result.appearanceApplyInProgress
-    val pagePosition = stringResource(R.string.page_position, pageIndex + 1, pageCount)
-    BackHandler(enabled = enabled) { onFinish(initialAppearance) }
-
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            CompactTopBar(
-                title = stringResource(R.string.review_scan),
-                onBack = { onFinish(initialAppearance) },
-                backEnabled = enabled,
-                actionsEnabled = enabled,
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (preview == null) {
-                        CircularProgressIndicator()
-                    } else {
-                        Image(
-                            bitmap = preview.asImageBitmap(),
-                            contentDescription = pagePosition,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-                }
-            }
-            item { Text(pagePosition, style = MaterialTheme.typography.titleMedium) }
-            if (pageCount > 1) {
-                item {
-                    ResultPageStrip(
-                        pages = cached.pages,
-                        selectedPageIndex = pageIndex,
-                        enabled = enabled,
-                        onSelectPage = onSelectPage,
-                        onLoadThumbnail = onLoadThumbnail,
-                    )
-                }
-            }
-            item { Text(stringResource(R.string.filters), style = MaterialTheme.typography.titleMedium) }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ScanColorMode.entries) { mode ->
-                        AppearanceFilterTile(
-                            mode = mode,
-                            selected = draft.colorMode == mode,
-                            sourcePage = sourcePage,
-                            settings = draft.copy(colorMode = mode),
-                            enabled = enabled,
-                            onLoad = onLoadAppearancePreview,
-                            onClick = { modeWire = mode.wireValue },
-                        )
-                    }
-                }
-            }
-            item {
-                AppearanceControls(
-                    colorMode = draft.colorMode,
-                    filterIntensity = draft.intensity(draft.colorMode),
-                    shadows = draft.shadows,
-                    onColorModeChange = { modeWire = it.wireValue },
-                    onFilterIntensityChange = { value ->
-                        when (draft.colorMode) {
-                            ScanColorMode.Natural -> naturalIntensity = value
-                            ScanColorMode.Color -> colorIntensity = value
-                            ScanColorMode.LightText -> lightTextIntensity = value
-                            ScanColorMode.Grayscale -> grayscaleIntensity = value
-                            ScanColorMode.BlackWhite -> blackWhiteIntensity = value
-                            ScanColorMode.Whiteboard -> whiteboardIntensity = value
-                        }
-                    },
-                    onShadowsChange = { shadows = it },
-                    enabled = enabled,
-                    showModePicker = false,
-                )
-            }
-            item {
-                Text(
-                    stringResource(R.string.fine_tuning_all_pages),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            result.appearanceMessage?.let { message ->
-                item {
-                    Text(
-                        message.resolve(),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-            }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { onFinish(initialAppearance) },
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    ) {
-                        Text(stringResource(R.string.skip))
-                    }
-                    Button(
-                        onClick = { onFinish(draft) },
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    ) {
-                        Text(
-                            stringResource(
-                                if (result.appearanceApplyInProgress) {
-                                    R.string.applying_appearance
-                                } else {
-                                    R.string.done
-                                },
-                            ),
-                        )
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(8.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun AppearanceFilterTile(
-    mode: ScanColorMode,
-    selected: Boolean,
-    sourcePage: File?,
-    settings: ScanAppearanceSettings,
-    enabled: Boolean,
-    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-    onClick: () -> Unit,
-) {
-    val preview =
-        ownedAppearancePreview(
-            sourcePage = sourcePage,
-            settings = settings,
-            maxSize = 128,
-            onLoad = onLoad,
-        )
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        color =
-            if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        modifier = Modifier.width(108.dp).semantics { this.selected = selected },
-    ) {
-        Column(
-            modifier = Modifier.padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxWidth().height(112.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (preview == null) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                } else {
-                    Image(
-                        bitmap = preview.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-            }
-            Text(scanColorModeLabel(mode), style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
-
-@Composable
-private fun ownedAppearancePreview(
-    sourcePage: File?,
-    settings: ScanAppearanceSettings,
-    maxSize: Int,
-    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-): Bitmap? {
-    val preview by produceState<Bitmap?>(null, sourcePage, settings, maxSize) {
-        val bitmap =
-            if (sourcePage == null) {
-                null
-            } else {
-                try {
-                    onLoad(sourcePage, settings, maxSize)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Exception) {
-                    null
-                }
-            }
-        value = bitmap
-        awaitDispose { bitmap?.recycle() }
-    }
-    return preview
 }
 
 @Composable
@@ -1358,28 +1070,6 @@ private fun SettingsScreen(
         mutableStateOf(settings.deleteImagesAfterShare)
     }
     var pdfTreeUri by rememberSaveable { mutableStateOf(settings.pdfTreeUri) }
-    var appearanceMode by rememberSaveable {
-        mutableStateOf(settings.appearance.colorMode.wireValue)
-    }
-    var naturalIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.naturalIntensity)
-    }
-    var colorIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.colorIntensity)
-    }
-    var lightTextIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.lightTextIntensity)
-    }
-    var grayscaleIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.grayscaleIntensity)
-    }
-    var blackWhiteIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.blackWhiteIntensity)
-    }
-    var whiteboardIntensity by rememberSaveable {
-        mutableStateOf(settings.appearance.whiteboardIntensity)
-    }
-    var shadows by rememberSaveable { mutableStateOf(settings.appearance.shadows) }
     var pdfSizeTargetWire by rememberSaveable {
         mutableStateOf(settings.pdfSizeTarget.wireValue)
     }
@@ -1525,44 +1215,6 @@ private fun SettingsScreen(
                         )
                     }
                 }
-            }
-            item { SectionTitle(stringResource(R.string.default_appearance)) }
-            item {
-                val selectedMode =
-                    ScanColorMode.entries.firstOrNull { it.wireValue == appearanceMode }
-                        ?: ScanColorMode.BlackWhite
-                AppearanceControls(
-                    colorMode = selectedMode,
-                    filterIntensity =
-                        when (selectedMode) {
-                            ScanColorMode.Natural -> naturalIntensity
-                            ScanColorMode.Color -> colorIntensity
-                            ScanColorMode.LightText -> lightTextIntensity
-                            ScanColorMode.Grayscale -> grayscaleIntensity
-                            ScanColorMode.BlackWhite -> blackWhiteIntensity
-                            ScanColorMode.Whiteboard -> whiteboardIntensity
-                        },
-                    shadows = shadows,
-                    onColorModeChange = { appearanceMode = it.wireValue },
-                    onFilterIntensityChange = { value ->
-                        when (selectedMode) {
-                            ScanColorMode.Natural -> naturalIntensity = value
-                            ScanColorMode.Color -> colorIntensity = value
-                            ScanColorMode.LightText -> lightTextIntensity = value
-                            ScanColorMode.Grayscale -> grayscaleIntensity = value
-                            ScanColorMode.BlackWhite -> blackWhiteIntensity = value
-                            ScanColorMode.Whiteboard -> whiteboardIntensity = value
-                        }
-                    },
-                    onShadowsChange = { shadows = it },
-                )
-            }
-            item {
-                Text(
-                    stringResource(R.string.appearance_settings_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             item { SectionTitle(stringResource(R.string.pdf_size)) }
             item {
@@ -1762,17 +1414,7 @@ private fun SettingsScreen(
                                         pdfTreeUri = pdfTreeUri,
                                         deletePdfAfterShare = deletePdfAfterShare,
                                         deleteImagesAfterShare = deleteImagesAfterShare,
-                                        appearance =
-                                            parseScanAppearanceSettings(
-                                                colorModeWireValue = appearanceMode,
-                                                naturalIntensity = naturalIntensity,
-                                                colorIntensity = colorIntensity,
-                                                lightTextIntensity = lightTextIntensity,
-                                                grayscaleIntensity = grayscaleIntensity,
-                                                blackWhiteIntensity = blackWhiteIntensity,
-                                                whiteboardIntensity = whiteboardIntensity,
-                                                shadows = shadows,
-                                            ),
+                                        appearance = settings.appearance,
                                         pdfSizeTarget = parsePdfSizeTarget(pdfSizeTargetWire),
                                     ),
                                 )
@@ -1809,67 +1451,6 @@ private fun SettingsScreen(
         }
     }
 }
-
-@Composable
-private fun AppearanceControls(
-    colorMode: ScanColorMode,
-    filterIntensity: Int,
-    shadows: Int,
-    onColorModeChange: (ScanColorMode) -> Unit,
-    onFilterIntensityChange: (Int) -> Unit,
-    onShadowsChange: (Int) -> Unit,
-    enabled: Boolean = true,
-    showModePicker: Boolean = true,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (showModePicker) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(ScanColorMode.entries) { mode ->
-                    FilterChip(
-                        selected = mode == colorMode,
-                        onClick = { onColorModeChange(mode) },
-                        enabled = enabled,
-                        label = { Text(scanColorModeLabel(mode)) },
-                    )
-                }
-            }
-        }
-        val filterIntensityText =
-            stringResource(R.string.filter_intensity_percent, filterIntensity)
-        Text(filterIntensityText)
-        Slider(
-            value = clampAppearancePercent(filterIntensity).toFloat(),
-            onValueChange = { onFilterIntensityChange(it.roundToInt()) },
-            valueRange = 0f..100f,
-            enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = filterIntensityText },
-        )
-        val shadowsText = stringResource(R.string.shadows_percent, shadows)
-        Text(shadowsText)
-        Slider(
-            value = clampAppearancePercent(shadows).toFloat(),
-            onValueChange = { onShadowsChange(it.roundToInt()) },
-            valueRange = 0f..100f,
-            enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = shadowsText },
-        )
-    }
-}
-
-@Composable
-private fun scanColorModeLabel(mode: ScanColorMode): String =
-    stringResource(
-        when (mode) {
-            ScanColorMode.Natural -> R.string.filter_natural
-            ScanColorMode.Color -> R.string.filter_color
-            ScanColorMode.LightText -> R.string.filter_light_text
-            ScanColorMode.Grayscale -> R.string.filter_grayscale
-            ScanColorMode.BlackWhite -> R.string.filter_black_white
-            ScanColorMode.Whiteboard -> R.string.filter_whiteboard
-        },
-    )
 
 @Composable
 private fun pdfSizeTargetLabel(target: PdfSizeTarget): String =

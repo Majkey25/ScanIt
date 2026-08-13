@@ -57,7 +57,7 @@ the Play developer account.
 > - crop, perspective correction, rotation, filters, shadow removal, and cleanup
 > - single-page and multi-page PDF and JPEG output
 > - page thumbnails for browsing multi-page results
-> - color, grayscale, and black-and-white controls with adjustable intensity and shadows
+> - Google review filters including Auto, Color, Grayscale, Black and white, and Shadows
 > - measured Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB PDF size goals
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
@@ -263,7 +263,7 @@ English alt text:
 3. `ScanIt result with PDF sharing, image sharing, printing, and a new-scan action.`
 4. `Recent scans with a document preview, page count, file size, and actions.`
 5. `Visual mark editor placing a SAMPLE mark on a scanned page.`
-6. `Settings for language, scan appearance, filter intensity, shadows, and PDF size.`
+6. `Settings for language, local saving, sharing, and PDF size.`
 
 Czech alt text:
 
@@ -272,7 +272,7 @@ Czech alt text:
 3. `Výsledek ve ScanIt se sdílením PDF a obrázků, tiskem a novým skenem.`
 4. `Nedávné skeny s náhledem dokumentu, počtem stran, velikostí a akcemi.`
 5. `Editor vizuální značky umisťuje značku SAMPLE na naskenovanou stranu.`
-6. `Nastavení jazyka, vzhledu skenu, intenzity filtru, stínů a velikosti PDF.`
+6. `Nastavení jazyka, místního ukládání, sdílení a velikosti PDF.`
 
 Do not show a Play badge, price/free claim, ranking, award, download call to
 action, donation, unfinished feature, or device mockup in the feature graphic.
