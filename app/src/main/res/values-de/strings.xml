@@ -86,7 +86,7 @@
     <string name="cancel">Abbrechen</string>
     <string name="privacy_policy">Datenschutzerklärung</string>
     <string name="third_party_notices">Hinweise zu Drittanbietern</string>
-    <string name="support_scanit">Diese App unterstützen: Buy Me a Coffee</string>
+    <string name="support_scanit">Diese App unterstützen → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Danke für deine Unterstützung von ScanIt. Buy Me a Coffee wird geöffnet.</string>
     <string name="settings_save_failed">Einstellungen konnten nicht gespeichert werden.</string>
     <string name="appearance">Erscheinungsbild</string>

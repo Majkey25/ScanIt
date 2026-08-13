@@ -85,7 +85,7 @@
     <string name="cancel">取消</string>
     <string name="privacy_policy">隐私政策</string>
     <string name="third_party_notices">第三方声明</string>
-    <string name="support_scanit">支持此应用：Buy Me a Coffee</string>
+    <string name="support_scanit">支持此应用 → Buy Me a Coffee</string>
     <string name="support_scanit_notice">感谢支持 ScanIt。即将打开 Buy Me a Coffee。</string>
     <string name="settings_save_failed">无法保存设置。</string>
     <string name="appearance">外观</string>
