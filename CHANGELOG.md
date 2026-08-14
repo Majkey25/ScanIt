@@ -2,6 +2,18 @@
 
 All notable changes are documented here.
 
+## [1.2.3] - 2026-08-14
+
+### Added
+
+- Added direct drag, pinch-to-resize, and two-finger rotation for visual signatures and stamps on a larger document preview.
+- Added a collapsed Manual position panel for precise position, size, and rotation adjustments.
+
+### Fixed
+
+- Settings now persist automatically after every change; Back, scanning, relaunching, and in-place updates no longer discard changes.
+- Fresh installs now delete saved PDFs after a sharing app is selected by default while keeping saved images.
+
 ## [1.2.2] - 2026-08-13
 
 ### Added
@@ -89,6 +101,7 @@ Historical copies retain the license supplied with them. See
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
+[1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2

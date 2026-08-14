@@ -159,6 +159,8 @@
     <string name="horizontal_position">水平位置</string>
     <string name="vertical_position">垂直位置</string>
     <string name="visual_mark_size">大小</string>
+    <string name="visual_mark_rotation">旋转</string>
+    <string name="manual_position">手动定位</string>
     <string name="apply_visual_mark">应用到第 %1$d 页</string>
     <string name="visual_mark_working">正在处理…</string>
     <string name="draw_visual_mark_title">绘制签名或印章</string>
@@ -171,8 +173,9 @@
     <string name="delete_visual_mark_body">这会删除所选的已保存签名或印章。</string>
     <string name="delete_visual_mark_confirm">删除</string>
     <string name="visual_mark_preview">签名或印章预览</string>
-    <string name="drag_visual_mark_hint">拖动签名以放置。</string>
+    <string name="drag_visual_mark_hint">拖动以移动。双指捏合可调整大小并旋转。</string>
     <string name="saved_visual_mark_number">已保存标记 %1$d</string>
     <string name="visual_mark_percent">%1$d%%</string>
+    <string name="visual_mark_degrees">%1$d°</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
 </resources>

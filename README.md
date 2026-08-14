@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.2"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.3"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
 </p>
 
-## v1.2.2 update
+## v1.2.3 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -24,10 +24,13 @@ ScanIt Result and sharing actions. The redundant ScanIt intensity/shadow screen
 has been removed. The APK also includes the Recent scans dashboard, reusable
 visual signatures and stamps, measured and custom PDF size targets, and six
 selectable language modes. Settings now include a localized Buy Me a Coffee
-button; support remains optional and does not unlock features. ScanIt settings
-are retained during an in-place update.
+button; support remains optional and does not unlock features. Settings now save
+after each change, survive navigation and updates, and default to deleting saved
+PDFs after sharing while retaining saved images. Visual signatures and stamps
+can be moved directly on a larger preview, resized and rotated with gestures, or
+fine-tuned from the collapsed Manual position panel.
 
-[Download ScanIt v1.2.2](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.2)
+[Download ScanIt v1.2.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.3)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

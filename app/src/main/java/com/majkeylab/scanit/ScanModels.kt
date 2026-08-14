@@ -21,7 +21,7 @@ internal data class AppSettings(
     val emailSubject: String = "Scanned document",
     val emailBody: String = "",
     val pdfTreeUri: String? = null,
-    val deletePdfAfterShare: Boolean = false,
+    val deletePdfAfterShare: Boolean = true,
     val deleteImagesAfterShare: Boolean = false,
     val appearance: ScanAppearanceSettings = ScanAppearanceSettings(),
     val pdfSizeTarget: PdfSizeTarget = PdfSizeTarget.Original,

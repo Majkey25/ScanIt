@@ -162,6 +162,8 @@
     <string name="horizontal_position">Horizontal position</string>
     <string name="vertical_position">Vertical position</string>
     <string name="visual_mark_size">Size</string>
+    <string name="visual_mark_rotation">Rotation</string>
+    <string name="manual_position">Manual position</string>
     <string name="apply_visual_mark">Apply to page %1$d</string>
     <string name="visual_mark_working">Working…</string>
     <string name="draw_visual_mark_title">Draw signature or stamp</string>
@@ -174,8 +176,9 @@
     <string name="delete_visual_mark_body">This removes the selected saved signature or stamp.</string>
     <string name="delete_visual_mark_confirm">Delete</string>
     <string name="visual_mark_preview">Signature or stamp preview</string>
-    <string name="drag_visual_mark_hint">Drag the signature to place it.</string>
+    <string name="drag_visual_mark_hint">Drag to move. Pinch to resize and rotate.</string>
     <string name="saved_visual_mark_number">Saved mark %1$d</string>
     <string name="visual_mark_percent">%1$d%%</string>
+    <string name="visual_mark_degrees">%1$d°</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
 </resources>

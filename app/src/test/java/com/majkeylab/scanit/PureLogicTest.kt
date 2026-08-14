@@ -52,7 +52,7 @@ class PureLogicTest {
                 emailSubject = "Scanned document",
                 emailBody = "",
                 pdfTreeUri = null,
-                deletePdfAfterShare = false,
+                deletePdfAfterShare = true,
                 deleteImagesAfterShare = false,
                 appearance = ScanAppearanceSettings(),
                 pdfSizeTarget = PdfSizeTarget.Original,
@@ -144,8 +144,27 @@ class PureLogicTest {
         values["delete_pdf_after_share"] = "wrong"
         values["delete_images_after_share"] = 1
 
-        assertFalse(store.load().deletePdfAfterShare)
+        assertTrue(store.load().deletePdfAfterShare)
         assertFalse(store.load().deleteImagesAfterShare)
+    }
+
+    @Test
+    fun explicitDeleteAfterShareChoicesSurviveStoreRecreation() {
+        val (preferences, _) = inMemoryPreferences()
+        val first = SettingsStore(preferences, "Scanned document")
+        val owner = first.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            first.trySave(
+                AppSettings(deletePdfAfterShare = false, deleteImagesAfterShare = true),
+                owner,
+            ),
+        )
+
+        val restored = SettingsStore(preferences, "Scanned document").load()
+        assertFalse(restored.deletePdfAfterShare)
+        assertTrue(restored.deleteImagesAfterShare)
     }
 
     @Test

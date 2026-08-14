@@ -164,6 +164,8 @@
     <string name="horizontal_position">Vodorovná poloha</string>
     <string name="vertical_position">Svislá poloha</string>
     <string name="visual_mark_size">Velikost</string>
+    <string name="visual_mark_rotation">Otočení</string>
+    <string name="manual_position">Ruční umístění</string>
     <string name="apply_visual_mark">Použít na stránku %1$d</string>
     <string name="visual_mark_working">Pracuji…</string>
     <string name="draw_visual_mark_title">Nakreslit podpis nebo razítko</string>
@@ -176,8 +178,9 @@
     <string name="delete_visual_mark_body">Tímto odstraníte vybraný uložený podpis nebo razítko.</string>
     <string name="delete_visual_mark_confirm">Smazat</string>
     <string name="visual_mark_preview">Náhled podpisu nebo razítka</string>
-    <string name="drag_visual_mark_hint">Přetažením podpis umístěte.</string>
+    <string name="drag_visual_mark_hint">Přetažením podpis posuňte. Sevřením prstů změňte velikost a otočte ho.</string>
     <string name="saved_visual_mark_number">Uložená značka %1$d</string>
     <string name="visual_mark_percent">%1$d %%</string>
+    <string name="visual_mark_degrees">%1$d°</string>
     <string name="visual_mark_slider_value">%1$s · %2$s</string>
 </resources>
