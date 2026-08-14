@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="internal_gemini_title">Interner Gemini-Test</string>
-    <string name="internal_gemini_warning">Nur zum Debuggen. Das ausgewählte Bild wird an Gemini gesendet. Ergebnis vor der Verwendung prüfen.</string>
+    <string name="internal_gemini_title">Experimentelle KI-Bereinigung</string>
+    <string name="internal_gemini_warning">Das ausgewählte Bild wird an Gemini gesendet. Ergebnis vor Verwendung oder Druck prüfen.</string>
     <string name="internal_gemini_api_key">Gemini-API-Schlüssel</string>
     <string name="internal_gemini_save_key">Schlüssel speichern</string>
     <string name="internal_gemini_delete_key">Schlüssel löschen</string>

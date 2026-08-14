@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="internal_gemini_title">内部 Gemini 测试</string>
-    <string name="internal_gemini_warning">仅用于调试。所选图像会发送到 Gemini。使用前请检查结果。</string>
+    <string name="internal_gemini_title">实验性 AI 清理</string>
+    <string name="internal_gemini_warning">所选图像会发送到 Gemini。使用或打印前请检查结果。</string>
     <string name="internal_gemini_api_key">Gemini API 密钥</string>
     <string name="internal_gemini_save_key">保存密钥</string>
     <string name="internal_gemini_delete_key">删除密钥</string>

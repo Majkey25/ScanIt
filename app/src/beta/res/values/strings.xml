@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_about">About ScanIt Beta</string>
+    <string name="beta_about_title">ScanIt Beta</string>
+    <string name="beta_about_body">Version %1$s\nExperimental build with Google ads and Premium.</string>
+    <string name="beta_privacy_options">Privacy options</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">One purchase removes ads and unlocks experimental AI cleanup. Restores through your Google Play account.</string>
+    <string name="beta_premium_active">Premium is active. Ads are hidden and experimental AI cleanup is unlocked.</string>
+    <string name="beta_premium_buy">Get Premium</string>
+    <string name="beta_premium_buy_price">Get Premium for %1$s</string>
+    <string name="beta_premium_pending">Payment is pending. Premium unlocks after Google Play confirms it.</string>
+    <string name="beta_premium_unavailable">Premium is not available for this build or Google Play account.</string>
+    <string name="beta_premium_error">Google Play Billing is temporarily unavailable. Your last verified entitlement stays active offline.</string>
+    <string name="beta_ai_cleanup">Experimental AI cleanup</string>
+    <string name="beta_ai_experimental">Selected pages are sent to Gemini. Review every result before using or printing it.</string>
+</resources>

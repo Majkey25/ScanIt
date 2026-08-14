@@ -49,7 +49,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+        }
         release {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-6991329209066655~2916806906"
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -77,10 +81,26 @@ android {
             applicationIdSuffix = ".internal"
             versionNameSuffix = "-internal"
         }
+        create("beta") {
+            dimension = "distribution"
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+        }
     }
 
     buildFeatures {
         compose = true
+    }
+
+    sourceSets {
+        getByName("internal") {
+            kotlin.directories.add("src/ai/java")
+            res.directories.add("src/ai/res")
+        }
+        getByName("beta") {
+            kotlin.directories.add("src/ai/java")
+            res.directories.add("src/ai/res")
+        }
     }
 
     bundle {
@@ -101,6 +121,8 @@ androidComponents {
             "playRelease",
             "githubRelease",
             "internalDebug",
+            "betaDebug",
+            "betaRelease",
         )
     }
 }
@@ -112,6 +134,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+    "betaImplementation"("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.3.0")
+    "betaImplementation"("com.google.android.ump:user-messaging-platform:4.0.0")
+    "betaImplementation"("com.android.billingclient:billing-ktx:9.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
 }

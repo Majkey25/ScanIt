@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_about">Acerca de ScanIt Beta</string>
+    <string name="beta_about_title">ScanIt Beta</string>
+    <string name="beta_about_body">Versión %1$s\nVersión experimental con anuncios de Google y Premium.</string>
+    <string name="beta_privacy_options">Opciones de privacidad</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">Una compra elimina los anuncios y desbloquea la limpieza experimental con IA. Se restaura con tu cuenta de Google Play.</string>
+    <string name="beta_premium_active">Premium está activo. Los anuncios están ocultos y la limpieza experimental con IA está desbloqueada.</string>
+    <string name="beta_premium_buy">Obtener Premium</string>
+    <string name="beta_premium_buy_price">Obtener Premium por %1$s</string>
+    <string name="beta_premium_pending">El pago está pendiente. Premium se desbloquea cuando Google Play lo confirme.</string>
+    <string name="beta_premium_unavailable">Premium no está disponible para esta versión o cuenta de Google Play.</string>
+    <string name="beta_premium_error">Google Play Billing no está disponible temporalmente. El último acceso verificado sigue activo sin conexión.</string>
+    <string name="beta_ai_cleanup">Limpieza experimental con IA</string>
+    <string name="beta_ai_experimental">Las páginas seleccionadas se envían a Gemini. Revisa cada resultado antes de usarlo o imprimirlo.</string>
+</resources>

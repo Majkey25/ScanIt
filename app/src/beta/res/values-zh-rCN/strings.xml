@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_about">关于 ScanIt Beta</string>
+    <string name="beta_about_title">ScanIt Beta</string>
+    <string name="beta_about_body">版本 %1$s\n包含 Google 广告和 Premium 的实验版本。</string>
+    <string name="beta_privacy_options">隐私选项</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">一次购买即可移除广告并解锁实验性 AI 清理。可通过 Google Play 帐号恢复。</string>
+    <string name="beta_premium_active">Premium 已启用。广告已隐藏，实验性 AI 清理已解锁。</string>
+    <string name="beta_premium_buy">获取 Premium</string>
+    <string name="beta_premium_buy_price">以 %1$s 获取 Premium</string>
+    <string name="beta_premium_pending">付款正在处理。Google Play 确认后将解锁 Premium。</string>
+    <string name="beta_premium_unavailable">此版本或 Google Play 帐号无法使用 Premium。</string>
+    <string name="beta_premium_error">Google Play 结算暂时不可用。上次验证的权限可继续离线使用。</string>
+    <string name="beta_ai_cleanup">实验性 AI 清理</string>
+    <string name="beta_ai_experimental">所选页面会发送到 Gemini。使用或打印前请检查每个结果。</string>
+</resources>

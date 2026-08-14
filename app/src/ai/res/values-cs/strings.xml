@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="internal_gemini_title">Interní test Gemini</string>
-    <string name="internal_gemini_warning">Pouze pro ladění. Vybraný obrázek se odešle do Gemini. Před použitím výsledek zkontrolujte.</string>
+    <string name="internal_gemini_title">Experimentální AI čištění</string>
+    <string name="internal_gemini_warning">Vybraný obrázek se odešle do Gemini. Před použitím nebo tiskem výsledek zkontrolujte.</string>
     <string name="internal_gemini_api_key">Gemini API klíč</string>
     <string name="internal_gemini_save_key">Uložit klíč</string>
     <string name="internal_gemini_delete_key">Smazat klíč</string>

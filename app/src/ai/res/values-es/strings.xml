@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="internal_gemini_title">Prueba interna de Gemini</string>
-    <string name="internal_gemini_warning">Solo para depuración. La imagen seleccionada se envía a Gemini. Revisa el resultado antes de usarlo.</string>
+    <string name="internal_gemini_title">Limpieza experimental con IA</string>
+    <string name="internal_gemini_warning">La imagen seleccionada se envía a Gemini. Revisa el resultado antes de usarlo o imprimirlo.</string>
     <string name="internal_gemini_api_key">Clave de API de Gemini</string>
     <string name="internal_gemini_save_key">Guardar clave</string>
     <string name="internal_gemini_delete_key">Eliminar clave</string>

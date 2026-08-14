@@ -478,6 +478,7 @@ private fun ResultScreen(
                     )
                 }
             }
+            item { DistributionBannerAd() }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
@@ -763,6 +764,7 @@ private fun RecentScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            item { DistributionBannerAd() }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
@@ -1493,6 +1495,7 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(10.dp))
                     Text(stringResource(R.string.support_scanit))
                 }
+                DistributionSettingsFooter()
             }
             item { Spacer(Modifier.height(4.dp)) }
         }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_about">O aplikaci ScanIt Beta</string>
+    <string name="beta_about_title">ScanIt Beta</string>
+    <string name="beta_about_body">Verze %1$s\nExperimentální sestavení s reklamami Google a Premium.</string>
+    <string name="beta_privacy_options">Možnosti soukromí</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">Jednorázový nákup odstraní reklamy a odemkne experimentální AI čištění. Obnoví se přes váš účet Google Play.</string>
+    <string name="beta_premium_active">Premium je aktivní. Reklamy jsou skryté a experimentální AI čištění je odemčené.</string>
+    <string name="beta_premium_buy">Získat Premium</string>
+    <string name="beta_premium_buy_price">Získat Premium za %1$s</string>
+    <string name="beta_premium_pending">Platba čeká na potvrzení. Premium se odemkne po potvrzení službou Google Play.</string>
+    <string name="beta_premium_unavailable">Premium není pro toto sestavení nebo účet Google Play dostupné.</string>
+    <string name="beta_premium_error">Platby Google Play jsou dočasně nedostupné. Poslední ověřené oprávnění zůstane aktivní offline.</string>
+    <string name="beta_ai_cleanup">Experimentální AI čištění</string>
+    <string name="beta_ai_experimental">Vybrané strany se odešlou do Gemini. Před použitím nebo tiskem vždy zkontrolujte výsledek.</string>
+</resources>

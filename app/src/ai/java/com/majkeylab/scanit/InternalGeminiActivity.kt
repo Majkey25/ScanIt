@@ -47,6 +47,10 @@ class InternalGeminiActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!distributionAllowsGemini(this)) {
+            finish()
+            return
+        }
         setContent {
             val state by viewModel.state.collectAsState()
             MaterialTheme {

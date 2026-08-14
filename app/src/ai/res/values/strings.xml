@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="internal_gemini_title">Internal Gemini harness</string>
-    <string name="internal_gemini_warning">Debug only. The selected image is sent to Gemini. Review the result before use.</string>
+    <string name="internal_gemini_title">Experimental AI cleanup</string>
+    <string name="internal_gemini_warning">The selected image is sent to Gemini. Review the result before use or printing.</string>
     <string name="internal_gemini_api_key">Gemini API key</string>
     <string name="internal_gemini_save_key">Save key</string>
     <string name="internal_gemini_delete_key">Delete key</string>
