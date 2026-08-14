@@ -8,15 +8,15 @@
 <p align="center">
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img alt="Latest stable release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt"></a>
-  <img alt="Android 15+" src="https://img.shields.io/badge/Android-15%2B-111111">
+  <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-111111">
   <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.3"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.4"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
 </p>
 
-## v1.2.3 update
+## v1.2.4 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -29,8 +29,10 @@ after each change, survive navigation and updates, and default to deleting saved
 PDFs after sharing while retaining saved images. Visual signatures and stamps
 can be moved directly on a larger preview, resized and rotated with gestures, or
 fine-tuned from the collapsed Manual position panel.
+ScanIt now supports Android 13 and newer while keeping the same Google scanner,
+sharing, saving, and verified cleanup behavior.
 
-[Download ScanIt v1.2.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.3)
+[Download ScanIt v1.2.4](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.4)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -85,7 +87,7 @@ Download the
 
 Requirements for the current public code:
 
-- Android 15 or newer (`minSdk 35`, `targetSdk 36`).
+- Android 13 or newer (`minSdk 33`, `targetSdk 36`).
 - At least 1.7 GB total device RAM, required by ML Kit Document Scanner.
 - Google Play services for the scanner module.
 - A connection when Google Play services needs to download or update the scanner module.

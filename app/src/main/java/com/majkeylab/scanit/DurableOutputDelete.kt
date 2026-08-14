@@ -9,7 +9,6 @@ import android.net.Uri
 import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.service.chooser.ChooserResult
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
@@ -352,10 +351,13 @@ internal fun mayDeleteRecentCache(
 ): Boolean = allRequestedRemoved && metadataCommitted
 
 internal fun chooserResultAllowsCleanup(
-    resultType: Int,
+    resultType: Int?,
     selectedComponentPresent: Boolean,
 ): Boolean =
-    resultType == ChooserResult.CHOOSER_RESULT_SELECTED_COMPONENT && selectedComponentPresent
+    selectedComponentPresent &&
+        (resultType == null || resultType == CHOOSER_RESULT_SELECTED_COMPONENT)
+
+private const val CHOOSER_RESULT_SELECTED_COMPONENT = 0
 
 internal fun pdfTreeGrantsToRelease(
     persisted: Set<String>,
