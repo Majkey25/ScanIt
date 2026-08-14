@@ -487,6 +487,22 @@ class DurableOutputDeleteTest {
     }
 
     @Test
+    fun legacyChooserCleanupRequiresChosenComponent() {
+        assertTrue(
+            chooserResultAllowsCleanup(
+                resultType = null,
+                selectedComponentPresent = true,
+            ),
+        )
+        assertFalse(
+            chooserResultAllowsCleanup(
+                resultType = null,
+                selectedComponentPresent = false,
+            ),
+        )
+    }
+
+    @Test
     fun shareCleanupRequestRequiresExactGenerationAndAvailableSavedKind() {
         assertEquals(
             ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf),

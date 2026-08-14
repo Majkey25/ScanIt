@@ -1,8 +1,10 @@
 package com.majkeylab.scanit
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.service.chooser.ChooserResult
 import android.widget.Toast
 import java.io.IOException
@@ -20,17 +22,7 @@ internal const val ACTION_SAVED_OUTPUTS_CHANGED =
 
 class ShareResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val chooserResult =
-            intent.getParcelableExtra(Intent.EXTRA_CHOOSER_RESULT, ChooserResult::class.java)
-                ?: return
-        if (
-            !chooserResultAllowsCleanup(
-                chooserResult.type,
-                chooserResult.selectedComponent != null,
-            )
-        ) {
-            return
-        }
+        if (!intent.allowsShareCleanup()) return
         val request =
             decodeShareCleanupRequest(
                 intent.getStringExtra(EXTRA_SHARE_CACHE_ID),
@@ -59,6 +51,18 @@ class ShareResultReceiver : BroadcastReceiver() {
         }
     }
 }
+
+private fun Intent.allowsShareCleanup(): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        val result = getParcelableExtra(Intent.EXTRA_CHOOSER_RESULT, ChooserResult::class.java)
+        chooserResultAllowsCleanup(result?.type, result?.selectedComponent != null)
+    } else {
+        chooserResultAllowsCleanup(
+            resultType = null,
+            selectedComponentPresent =
+                getParcelableExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName::class.java) != null,
+        )
+    }
 
 internal fun retryPendingShareCleanup(context: Context): OutputDeleteOperationResult? {
     val store = SettingsStore(context)

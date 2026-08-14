@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.2.4] - 2026-08-14
+
+### Changed
+
+- Expanded support to Android 13 and newer (`minSdk 33`).
+- Kept delete-after-sharing callbacks safe on Android 13 and 14 by using the legacy selected-component result while retaining the richer Android 15+ chooser result.
+
 ## [1.2.3] - 2026-08-14
 
 ### Added
@@ -102,6 +109,7 @@ Historical copies retain the license supplied with them. See
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
+[1.2.4]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.2.4
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
