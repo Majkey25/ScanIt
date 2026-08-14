@@ -86,6 +86,9 @@
     <string name="email_body">Výchozí text zprávy</string>
     <string name="save_settings">Uložit nastavení</string>
     <string name="cancel">Zrušit</string>
+    <string name="app_info">Informace o aplikaci</string>
+    <string name="expand_app_info">Rozbalit informace o aplikaci</string>
+    <string name="collapse_app_info">Sbalit informace o aplikaci</string>
     <string name="privacy_policy">Zásady ochrany osobních údajů</string>
     <string name="third_party_notices">Oznámení třetích stran</string>
     <string name="support_scanit">Podpořit tuto aplikaci → Buy Me a Coffee</string>

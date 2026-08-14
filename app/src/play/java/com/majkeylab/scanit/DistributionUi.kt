@@ -3,7 +3,13 @@ package com.majkeylab.scanit
 import androidx.compose.runtime.Composable
 
 @Composable
-internal fun DistributionBannerAd() = Unit
+internal fun DistributionBannerAd(style: DistributionBannerStyle) = Unit
 
 @Composable
 internal fun DistributionSettingsFooter() = Unit
+
+@Composable
+internal fun DistributionPrivacyOptionsLink() = Unit
+
+@Composable
+internal fun DistributionAboutLink() = Unit

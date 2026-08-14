@@ -85,6 +85,9 @@
     <string name="email_body">Texto predeterminado del mensaje</string>
     <string name="save_settings">Guardar ajustes</string>
     <string name="cancel">Cancelar</string>
+    <string name="app_info">Información de la aplicación</string>
+    <string name="expand_app_info">Mostrar información de la aplicación</string>
+    <string name="collapse_app_info">Ocultar información de la aplicación</string>
     <string name="privacy_policy">Política de privacidad</string>
     <string name="third_party_notices">Avisos de terceros</string>
     <string name="support_scanit">Apoya esta aplicación → Buy Me a Coffee</string>

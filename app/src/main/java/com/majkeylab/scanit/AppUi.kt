@@ -99,6 +99,11 @@ private const val THIRD_PARTY_NOTICES_URL =
     "https://majkey25.github.io/ScanIt/third-party-notices.txt"
 internal const val SUPPORT_URL = "https://www.buymeacoffee.com/majkey"
 
+internal enum class DistributionBannerStyle {
+    Anchored,
+    Inline,
+}
+
 private val LightColorScheme =
     lightColorScheme(
         primary = Color.Black,
@@ -347,6 +352,9 @@ private fun ResultScreen(
                 actionsEnabled = actionsEnabled,
             )
         },
+        bottomBar = {
+            DistributionBannerAd(DistributionBannerStyle.Anchored)
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
@@ -478,8 +486,6 @@ private fun ResultScreen(
                     )
                 }
             }
-            item { DistributionBannerAd() }
-            item { Spacer(Modifier.height(4.dp)) }
         }
     }
     if (showSaveDialog) {
@@ -764,7 +770,7 @@ private fun RecentScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item { DistributionBannerAd() }
+            item { DistributionBannerAd(DistributionBannerStyle.Inline) }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }
@@ -1081,6 +1087,7 @@ private fun SettingsScreen(
     var languageDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeInput by rememberSaveable { mutableStateOf("") }
+    var appInfoExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val context = LocalContext.current
@@ -1462,18 +1469,6 @@ private fun SettingsScreen(
             }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                TextButton(
-                    onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.privacy_policy))
-                }
-                TextButton(
-                    onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.third_party_notices))
-                }
                 Button(
                     onClick = {
                         Toast.makeText(context, supportNotice, Toast.LENGTH_SHORT).show()
@@ -1495,7 +1490,43 @@ private fun SettingsScreen(
                     Spacer(Modifier.width(10.dp))
                     Text(stringResource(R.string.support_scanit))
                 }
+                Spacer(Modifier.height(12.dp))
                 DistributionSettingsFooter()
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick = { appInfoExpanded = !appInfoExpanded },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.app_info), modifier = Modifier.weight(1f))
+                    Icon(
+                        painter = painterResource(R.drawable.ic_expand_more),
+                        contentDescription =
+                            stringResource(
+                                if (appInfoExpanded) {
+                                    R.string.collapse_app_info
+                                } else {
+                                    R.string.expand_app_info
+                                },
+                            ),
+                        modifier = Modifier.size(24.dp).rotate(if (appInfoExpanded) 180f else 0f),
+                    )
+                }
+                if (appInfoExpanded) {
+                    DistributionAboutLink()
+                    TextButton(
+                        onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.privacy_policy))
+                    }
+                    DistributionPrivacyOptionsLink()
+                    TextButton(
+                        onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.third_party_notices))
+                    }
+                }
             }
             item { Spacer(Modifier.height(4.dp)) }
         }

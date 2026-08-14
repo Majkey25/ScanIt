@@ -84,6 +84,9 @@
     <string name="email_body">Standardnachricht</string>
     <string name="save_settings">Einstellungen speichern</string>
     <string name="cancel">Abbrechen</string>
+    <string name="app_info">App-Informationen</string>
+    <string name="expand_app_info">App-Informationen einblenden</string>
+    <string name="collapse_app_info">App-Informationen ausblenden</string>
     <string name="privacy_policy">Datenschutzerklärung</string>
     <string name="third_party_notices">Hinweise zu Drittanbietern</string>
     <string name="support_scanit">Diese App unterstützen → Buy Me a Coffee</string>

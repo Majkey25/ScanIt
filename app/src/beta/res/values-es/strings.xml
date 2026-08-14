@@ -4,6 +4,7 @@
     <string name="beta_about_title">ScanIt Beta</string>
     <string name="beta_about_body">Versión %1$s\nVersión experimental con anuncios de Google y Premium.</string>
     <string name="beta_privacy_options">Opciones de privacidad</string>
+    <string name="beta_advertisement">Anuncio</string>
     <string name="beta_premium_title">ScanIt Premium</string>
     <string name="beta_premium_body">Una compra elimina los anuncios y desbloquea la limpieza experimental con IA. Se restaura con tu cuenta de Google Play.</string>
     <string name="beta_premium_active">Premium está activo. Los anuncios están ocultos y la limpieza experimental con IA está desbloqueada.</string>

@@ -4,6 +4,7 @@
     <string name="beta_about_title">ScanIt Beta</string>
     <string name="beta_about_body">Verze %1$s\nExperimentální sestavení s reklamami Google a Premium.</string>
     <string name="beta_privacy_options">Možnosti soukromí</string>
+    <string name="beta_advertisement">Reklama</string>
     <string name="beta_premium_title">ScanIt Premium</string>
     <string name="beta_premium_body">Jednorázový nákup odstraní reklamy a odemkne experimentální AI čištění. Obnoví se přes váš účet Google Play.</string>
     <string name="beta_premium_active">Premium je aktivní. Reklamy jsou skryté a experimentální AI čištění je odemčené.</string>

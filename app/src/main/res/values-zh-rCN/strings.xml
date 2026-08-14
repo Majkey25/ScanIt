@@ -83,6 +83,9 @@
     <string name="email_body">默认消息文本</string>
     <string name="save_settings">保存设置</string>
     <string name="cancel">取消</string>
+    <string name="app_info">应用信息</string>
+    <string name="expand_app_info">展开应用信息</string>
+    <string name="collapse_app_info">收起应用信息</string>
     <string name="privacy_policy">隐私政策</string>
     <string name="third_party_notices">第三方声明</string>
     <string name="support_scanit">支持此应用 → Buy Me a Coffee</string>

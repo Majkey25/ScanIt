@@ -2,6 +2,18 @@
 
 All notable changes are documented here.
 
+## [1.3.0-beta.1] - 2026-08-14
+
+### Added
+
+- Added an experimental beta distribution with consent-aware Google ads on Result and Recent scans.
+- Added a one-time Google Play Premium purchase that removes ads and unlocks experimental AI cleanup.
+- Added adaptive ad layouts, a dedicated Premium card, and a compact expandable App info section.
+
+### Fixed
+
+- Preserved the ML Kit and WorkManager runtime constructors required by the minified beta release.
+
 ## [1.2.3] - 2026-08-14
 
 ### Added
@@ -105,3 +117,4 @@ Historical copies retain the license supplied with them. See
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
+[1.3.0-beta.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.3.0-beta.1

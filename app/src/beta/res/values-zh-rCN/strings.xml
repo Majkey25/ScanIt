@@ -4,6 +4,7 @@
     <string name="beta_about_title">ScanIt Beta</string>
     <string name="beta_about_body">版本 %1$s\n包含 Google 广告和 Premium 的实验版本。</string>
     <string name="beta_privacy_options">隐私选项</string>
+    <string name="beta_advertisement">广告</string>
     <string name="beta_premium_title">ScanIt Premium</string>
     <string name="beta_premium_body">一次购买即可移除广告并解锁实验性 AI 清理。可通过 Google Play 帐号恢复。</string>
     <string name="beta_premium_active">Premium 已启用。广告已隐藏，实验性 AI 清理已解锁。</string>

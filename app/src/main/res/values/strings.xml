@@ -84,6 +84,9 @@
     <string name="email_body">Default message text</string>
     <string name="save_settings">Save settings</string>
     <string name="cancel">Cancel</string>
+    <string name="app_info">App info</string>
+    <string name="expand_app_info">Expand app info</string>
+    <string name="collapse_app_info">Collapse app info</string>
     <string name="privacy_policy">Privacy policy</string>
     <string name="third_party_notices">Third-party notices</string>
     <string name="support_scanit">Support this app → Buy Me a Coffee</string>
