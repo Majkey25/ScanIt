@@ -162,23 +162,6 @@ private fun ImageOutputRef.toSavedMediaOutput(): SavedMediaOutput =
         pending = pending,
     )
 
-internal fun expectedLegacyImageFingerprint(
-    reference: ImageOutputRef,
-    cachedPageFingerprint: OutputFingerprint,
-): OutputFingerprint = reference.outputFingerprint() ?: cachedPageFingerprint
-
-internal fun legacyImageProviderIdentityMatches(
-    reference: ImageOutputRef,
-    observedUri: String,
-    observedDisplayName: String,
-    observedMimeType: String,
-    observedOwnerPackageName: String,
-): Boolean =
-    observedUri == reference.uri &&
-        observedDisplayName == reference.displayName &&
-        observedMimeType == reference.mimeType &&
-        observedOwnerPackageName == reference.ownerPackageName
-
 internal fun mediaPublishResultIsAcceptable(
     updateCount: Int,
     observedPending: Boolean,
@@ -1738,7 +1721,13 @@ internal class ScanStorage(
                 val provisional = reconcileProvisionalOutputCreate(cached, outputs)
                 warnings += provisional.warnings
                 if (provisional.blocking) {
-                    return@withLock savedScan(cached, outputs, warnings, mutationBlocked = true)
+                    return@withLock savedScan(
+                        cached,
+                        outputs,
+                        warnings,
+                        mutationBlocked = true,
+                        unknownOutputCreateAcknowledgement = provisional.acknowledgement,
+                    )
                 }
                 try {
                     val reconciled = replacementFor(cached).reconcile()
@@ -1754,6 +1743,45 @@ internal class ScanStorage(
                 cached,
                 outputs,
                 warnings,
+            )
+        }
+
+    fun acknowledgeUnknownOutputCreate(
+        cached: CachedScan,
+        acknowledgement: UnknownOutputCreateAcknowledgement,
+    ): UnknownOutputAcknowledgementResult =
+        storageTransactionLock.withLock {
+            if (
+                acknowledgement.cacheId != cached.baseName ||
+                    acknowledgement.entryId != cached.entryId
+            ) return@withLock UnknownOutputAcknowledgementResult.Stale
+            val metadata =
+                try {
+                    requireCurrentOutputMetadata(cached)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    val currentEntryId =
+                        try {
+                            recentScanCache.open(cached.baseName)?.entryId
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Exception) {
+                            return@withLock UnknownOutputAcknowledgementResult.Failed
+                        }
+                    return@withLock if (currentEntryId != acknowledgement.entryId) {
+                        UnknownOutputAcknowledgementResult.Stale
+                    } else {
+                        UnknownOutputAcknowledgementResult.Failed
+                    }
+                }
+            if (acknowledgement.entryId != metadata.entryId) {
+                return@withLock UnknownOutputAcknowledgementResult.Stale
+            }
+            acknowledgeUnknownProvisionalOutput(
+                directory = File(shareCacheRoot(), cached.baseName),
+                acknowledgement = acknowledgement,
+                pageCount = cached.pages.size,
             )
         }
 
@@ -2248,7 +2276,13 @@ internal class ScanStorage(
             val provisional = reconcileProvisionalOutputCreate(cached, metadata)
             if (provisional.blocking) {
                 return@withLock OutputReplacementResult(
-                    savedScan(cached, metadata, provisional.warnings, mutationBlocked = true),
+                    savedScan(
+                        cached,
+                        metadata,
+                        provisional.warnings,
+                        mutationBlocked = true,
+                        unknownOutputCreateAcknowledgement = provisional.acknowledgement,
+                    ),
                     provisional.warnings,
                 )
             }
@@ -2525,6 +2559,7 @@ internal class ScanStorage(
         metadata: OutputMetadata?,
         warnings: List<UiMessage>,
         mutationBlocked: Boolean = false,
+        unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
     ): SavedScan {
         val activePdf = metadata?.pdf?.takeUnless(PdfOutputRef::pending)
         val activeImages = metadata?.images?.filterNot(ImageOutputRef::pending).orEmpty()
@@ -2557,6 +2592,7 @@ internal class ScanStorage(
             savedImagesDeleteVerified =
                 !mutationBlocked && activeImages.isNotEmpty() &&
                     exact?.images == activeImages,
+            unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
         )
     }
 
@@ -2586,6 +2622,12 @@ internal class ScanStorage(
             -> ProvisionalOutputCreateReconciliation(
                 true,
                 listOf(UiMessage(R.string.output_create_cleanup_required)),
+                acknowledgement =
+                    readUnknownOutputCreateAcknowledgement(
+                        directory,
+                        cached.baseName,
+                        metadata.entryId,
+                    ),
             )
             is ProvisionalOutputCreateReadResult.Valid ->
                 reconcileProvisionalOutputCreate(
@@ -2670,51 +2712,30 @@ internal class ScanStorage(
         }
         val upgraded =
             metadata.images.map { image ->
-                val fingerprint =
-                    image.outputFingerprint()
-                        ?: expectedLegacyImageFingerprint(
-                            image,
-                            fingerprintFile(cached.pages[image.page - 1]),
-                        )
-                val mimeType = image.mimeType
-                    ?.takeIf { it == JPEG_MIME_TYPE || it == "image/png" }
-                    ?: throw IOException("Saved image MIME type is unavailable")
                 if (image.treeUri != null) {
                     throw IOException("Legacy SAF image identity is unsupported")
                 }
+                val fingerprint = fingerprintFile(cached.pages[image.page - 1])
                 val observed =
                     readSavedMediaOutput(
                         image.uri.toUri(),
                         MediaOutputCollection.Images,
-                        mimeType,
+                        JPEG_MIME_TYPE,
                         fingerprint,
                     )
-                if (!legacyImageProviderIdentityMatches(
-                        image,
-                        observed.uri.toString(),
-                        observed.displayName,
-                        observed.mimeType,
-                        observed.ownerPackageName,
-                    )
-                ) {
-                    throw IOException("Saved image provider identity changed")
-                }
+                if (observed.pending) throw IOException("Saved image is still pending")
                 val dimensions = readImageDimensions(observed.uri)
-                image.copy(
-                    displayName = observed.displayName,
-                    mimeType = observed.mimeType,
-                    ownerPackageName = observed.ownerPackageName,
-                    byteLength = observed.byteLength,
-                    sha256 = observed.sha256,
+                upgradeLegacyImageReference(
+                    reference = image,
+                    observedUri = observed.uri.toString(),
+                    observedDisplayName = observed.displayName,
+                    observedMimeType = observed.mimeType,
+                    observedOwnerPackageName = observed.ownerPackageName,
+                    expectedOwnerPackageName = context.packageName,
+                    fingerprint = fingerprint,
                     width = dimensions.first,
                     height = dimensions.second,
-                    format =
-                        if (mimeType == JPEG_MIME_TYPE) {
-                            ImageExportFormat.Jpeg
-                        } else {
-                            ImageExportFormat.Png
-                        },
-                )
+                ) ?: throw IOException("Saved image provider identity changed")
             }
         val stored =
             rewriteCachedOutputMetadata(cached) { current ->
@@ -3008,12 +3029,15 @@ internal class ScanStorage(
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
         var created = false
         try {
-            beforeCreate()
             val document =
-                DocumentsContract.createDocument(resolver, parent, mimeType, displayName)
-                    ?: throw IOException("SAF output could not be created")
-            created = true
-            onCreated(document)
+                createProviderOutputWithMarker(
+                    beforeCreate = beforeCreate,
+                    create = {
+                        DocumentsContract.createDocument(resolver, parent, mimeType, displayName)
+                            ?.also { created = true }
+                    },
+                    onCreated = onCreated,
+                )
             if (!isCreatedSafChild(tree, document)) {
                 throw IOException("Created SAF output is outside its selected tree")
             }
@@ -3201,11 +3225,12 @@ internal class ScanStorage(
             ?.takeIf(::isProviderDisplayName)
             ?: throw IOException("MediaStore output name is unavailable")
         val sourceFingerprint = fingerprintFile(source)
-        beforeCreate()
         val destination =
-            resolver.insert(collection, values)
-                ?: throw IOException("MediaStore row could not be created")
-        onCreated(destination)
+            createProviderOutputWithMarker(
+                beforeCreate = beforeCreate,
+                create = { resolver.insert(collection, values) },
+                onCreated = onCreated,
+            )
         var verifiedOutput: SavedMediaOutput? = null
         return pendingMediaWrite(
             rollback = { failure ->

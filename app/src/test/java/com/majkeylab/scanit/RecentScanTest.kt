@@ -50,6 +50,140 @@ class RecentScanTest {
         }
 
     @Test
+    fun nullOrThrowingProviderCreateRetainsExactAcknowledgableMarker() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+
+            assertThrows(IOException::class.java) {
+                createProviderOutputWithMarker<String>(
+                    beforeCreate = { writeProvisionalOutputCreate(root, marker, pageCount = 2) },
+                    create = { null },
+                    onCreated = {},
+                )
+            }
+            assertEquals(
+                UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId),
+                readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID),
+            )
+            clearProvisionalOutputCreate(root, marker, pageCount = 2)
+
+            assertThrows(IOException::class.java) {
+                createProviderOutputWithMarker<String>(
+                    beforeCreate = { writeProvisionalOutputCreate(root, marker, pageCount = 2) },
+                    create = { throw IOException("provider failed before return") },
+                    onCreated = {},
+                )
+            }
+            assertEquals(
+                UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId),
+                readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID),
+            )
+        }
+
+    @Test
+    fun unknownOutputAcknowledgementIsExactIdempotentAndNeverDeletesProviderData() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+            val exact = UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId)
+            writeProvisionalOutputCreate(root, marker, pageCount = 2)
+
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Stale,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact.copy(entryId = "123e4567-e89b-12d3-a456-426614174088"),
+                    pageCount = 2,
+                ),
+            )
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Stale,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact.copy(operationId = "123e4567-e89b-12d3-a456-426614174077"),
+                    pageCount = 2,
+                ),
+            )
+            assertTrue(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).isFile)
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Applied,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Absent,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertFalse(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).exists())
+        }
+
+    @Test
+    fun invalidUnknownMarkerWithExactEnvelopeCanBeAcknowledgedButClearFailureStaysBlocking() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+            val exact = UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId)
+            writeProvisionalOutputCreate(root, marker, pageCount = 2)
+            val file = File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            file.writeText(
+                file.readText().replace(
+                    "\"page\":1",
+                    "\"page\":\"invalid\"",
+                ),
+            )
+
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            assertEquals(exact, readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID))
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Failed,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact,
+                    pageCount = 2,
+                    deleteMarker = { throw IOException("disk") },
+                ),
+            )
+            assertTrue(file.isFile)
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Applied,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertFalse(file.exists())
+        }
+
+    @Test
+    fun reconciliationClearFailureRetainsBlockingWarningInsteadOfClosingCoreScan() {
+        val marker = provisionalCreate("content://media/external/images/media/9")
+        val result =
+            reconcileProvisionalOutputCreate(
+                marker = marker,
+                metadata = metadata(),
+                delete = { OutputDeleteStatus.Absent },
+                clear = { throw IOException("disk") },
+            )
+
+        assertTrue(result.blocking)
+        assertEquals(R.string.output_create_cleanup_required, result.warnings.single().resourceId)
+    }
+
+    @Test
+    fun invalidUnknownOutputMarkerDoesNotHideTheCoreCachedScan() =
+        withShareRoot { root ->
+            val directory = createEntry(root, CACHE_ID)
+            initializeOutputMetadata(directory, CACHE_ID, 1, 1L, ENTRY_ID)
+            val marker = provisionalCreate()
+            writeProvisionalOutputCreate(directory, marker, pageCount = 1)
+            val file = File(directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            file.writeText(file.readText().replace("\"returnedUri\":null", "\"returnedUri\":7"))
+
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(directory, CACHE_ID, ENTRY_ID, pageCount = 1),
+            )
+            assertEquals(CACHE_ID, requireNotNull(RecentScanCache(root).open(CACHE_ID)).baseName)
+        }
+
+    @Test
     fun exactOrStagedProvisionalCreateRecoveryClearsOnlyAfterResolution() {
         val exact = provisionalCreate(returnedUri = "content://media/external/images/media/9")
         var deletes = 0
@@ -251,6 +385,27 @@ class RecentScanTest {
                     PreparedImageShare(root, directory, listOf(outside), "image/jpeg"),
                 )
             }
+        }
+
+    @Test
+    fun preparedImageShareValidationRejectsNonCanonicalPayloadDirectoryName() =
+        withShareRoot { root ->
+            val directory = File(root, "${PREPARED_IMAGE_SHARE_PREFIX}not-a-uuid")
+            assertTrue(directory.mkdir())
+            File(directory, ".lease").writeText("1")
+            val page = File(directory, "page-01.jpg").apply { writeBytes(byteArrayOf(1)) }
+
+            assertThrows(IOException::class.java) {
+                validatePreparedImageShare(
+                    PreparedImageShare(root, directory, listOf(page), "image/jpeg"),
+                )
+            }
+            assertFalse(
+                cleanupPreparedImageShare(
+                    PreparedImageShare(root, directory, listOf(page), "image/jpeg"),
+                ),
+            )
+            assertTrue(directory.isDirectory)
         }
 
     @Test

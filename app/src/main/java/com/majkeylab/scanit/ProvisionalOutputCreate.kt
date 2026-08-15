@@ -52,7 +52,32 @@ internal sealed interface ProvisionalOutputCreateReadResult {
 internal data class ProvisionalOutputCreateReconciliation(
     val blocking: Boolean,
     val warnings: List<UiMessage> = emptyList(),
+    val acknowledgement: UnknownOutputCreateAcknowledgement? = null,
 )
+
+internal data class UnknownOutputCreateAcknowledgement(
+    val cacheId: String,
+    val entryId: String,
+    val operationId: String,
+)
+
+internal enum class UnknownOutputAcknowledgementResult {
+    Applied,
+    Absent,
+    Stale,
+    Failed,
+}
+
+internal fun <T : Any> createProviderOutputWithMarker(
+    beforeCreate: () -> Unit,
+    create: () -> T?,
+    onCreated: (T) -> Unit,
+): T {
+    beforeCreate()
+    val created = create() ?: throw IOException("Provider output could not be created")
+    onCreated(created)
+    return created
+}
 
 internal fun writeProvisionalOutputCreate(
     directory: File,
@@ -117,6 +142,50 @@ internal fun readProvisionalOutputCreate(
     }
 }
 
+internal fun readUnknownOutputCreateAcknowledgement(
+    directory: File,
+    expectedCacheId: String,
+    expectedEntryId: String,
+): UnknownOutputCreateAcknowledgement? =
+    readMarkerBytes(directory)?.let { bytes ->
+        val acknowledgement = decodeUnknownOutputCreateAcknowledgement(bytes) ?: return@let null
+        if (acknowledgement.cacheId != expectedCacheId || acknowledgement.entryId != expectedEntryId) {
+            return@let null
+        }
+        acknowledgement
+    }
+
+internal fun acknowledgeUnknownProvisionalOutput(
+    directory: File,
+    acknowledgement: UnknownOutputCreateAcknowledgement,
+    pageCount: Int,
+    deleteMarker: (File) -> Unit = { Files.delete(it.toPath()) },
+): UnknownOutputAcknowledgementResult {
+    if (!isSafeCacheId(acknowledgement.cacheId) ||
+        !isCanonicalUuid(acknowledgement.entryId) ||
+        !isCanonicalUuid(acknowledgement.operationId) ||
+        pageCount !in 1..MAX_SCAN_PAGES
+    ) return UnknownOutputAcknowledgementResult.Stale
+    val target = File(directory.absoluteFile, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).absoluteFile
+    if (!target.exists()) return UnknownOutputAcknowledgementResult.Absent
+    val bytes = readMarkerBytes(directory) ?: return UnknownOutputAcknowledgementResult.Failed
+    if (decodeUnknownOutputCreateAcknowledgement(bytes) != acknowledgement) {
+        return UnknownOutputAcknowledgementResult.Stale
+    }
+    return try {
+        deleteMarker(target)
+        if (target.exists()) {
+            UnknownOutputAcknowledgementResult.Failed
+        } else {
+            UnknownOutputAcknowledgementResult.Applied
+        }
+    } catch (_: IOException) {
+        UnknownOutputAcknowledgementResult.Failed
+    } catch (_: SecurityException) {
+        UnknownOutputAcknowledgementResult.Failed
+    }
+}
+
 internal fun reconcileProvisionalOutputCreate(
     marker: ProvisionalOutputCreate,
     metadata: OutputMetadata,
@@ -128,23 +197,38 @@ internal fun reconcileProvisionalOutputCreate(
         return ProvisionalOutputCreateReconciliation(true, listOf(warning))
     }
     val returnedUri = marker.returnedUri
-        ?: return ProvisionalOutputCreateReconciliation(true, listOf(warning))
+        ?: return ProvisionalOutputCreateReconciliation(
+            true,
+            listOf(warning),
+            UnknownOutputCreateAcknowledgement(marker.cacheId, marker.entryId, marker.operationId),
+        )
     if (metadata.hasStagedProvisionalOutput(marker, returnedUri)) {
-        clear()
-        return ProvisionalOutputCreateReconciliation(false)
+        return clearResolvedProvisionalOutput(warning, clear)
     }
     return when (delete(marker)) {
         OutputDeleteStatus.Deleted,
         OutputDeleteStatus.Absent,
         -> {
-            clear()
-            ProvisionalOutputCreateReconciliation(false)
+            clearResolvedProvisionalOutput(warning, clear)
         }
         OutputDeleteStatus.IdentityMismatch,
         OutputDeleteStatus.Failed,
         -> ProvisionalOutputCreateReconciliation(true, listOf(warning))
     }
 }
+
+private fun clearResolvedProvisionalOutput(
+    warning: UiMessage,
+    clear: () -> Unit,
+): ProvisionalOutputCreateReconciliation =
+    try {
+        clear()
+        ProvisionalOutputCreateReconciliation(false)
+    } catch (cancellation: java.util.concurrent.CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        ProvisionalOutputCreateReconciliation(true, listOf(warning))
+    }
 
 private fun OutputMetadata.hasStagedProvisionalOutput(
     marker: ProvisionalOutputCreate,
@@ -269,6 +353,41 @@ private fun decodeProvisionalOutputCreate(
         null
     }
 }
+
+private fun readMarkerBytes(directory: File): ByteArray? =
+    try {
+        val absoluteDirectory = directory.absoluteFile
+        val target = File(absoluteDirectory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).absoluteFile
+        if (!isSafeMarkerDirectory(absoluteDirectory) || target.parentFile != absoluteDirectory ||
+            !Files.isRegularFile(target.toPath(), LinkOption.NOFOLLOW_LINKS) ||
+            target.length() !in 1..MAX_PROVISIONAL_OUTPUT_CREATE_BYTES.toLong()
+        ) return null
+        target.readBytes()
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+
+private fun decodeUnknownOutputCreateAcknowledgement(
+    bytes: ByteArray,
+): UnknownOutputCreateAcknowledgement? =
+    try {
+        val value = JSONObject(String(bytes, StandardCharsets.UTF_8))
+        UnknownOutputCreateAcknowledgement(
+            cacheId = value.requiredString("cacheId") ?: return null,
+            entryId = value.requiredString("entryId") ?: return null,
+            operationId = value.requiredString("operationId") ?: return null,
+        ).takeIf {
+            value.opt("version") is Int &&
+                value.getInt("version") == PROVISIONAL_OUTPUT_CREATE_VERSION &&
+                value.has("returnedUri") && value.isNull("returnedUri") &&
+                isSafeCacheId(it.cacheId) && isCanonicalUuid(it.entryId) &&
+                isCanonicalUuid(it.operationId)
+        }
+    } catch (_: Exception) {
+        null
+    }
 
 private fun isValidProvisionalOutputCreate(marker: ProvisionalOutputCreate, pageCount: Int): Boolean {
     if (pageCount !in 1..MAX_SCAN_PAGES || !isCanonicalUuid(marker.operationId) ||

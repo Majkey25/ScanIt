@@ -219,38 +219,6 @@ class DurableOutputDeleteTest {
     }
 
     @Test
-    fun legacyImageUpgradeUsesCachedPageFingerprintButStillRequiresExactProviderIdentity() {
-        val cachedFingerprint = OutputFingerprint(4L, "a".repeat(64))
-        val legacy =
-            exactImage(1, "content://media/external/images/media/1").copy(
-                byteLength = null,
-                sha256 = null,
-                width = null,
-                height = null,
-                format = null,
-            )
-        assertEquals(cachedFingerprint, expectedLegacyImageFingerprint(legacy, cachedFingerprint))
-        assertTrue(
-            legacyImageProviderIdentityMatches(
-                legacy,
-                legacy.uri,
-                requireNotNull(legacy.displayName),
-                requireNotNull(legacy.mimeType),
-                requireNotNull(legacy.ownerPackageName),
-            ),
-        )
-        assertFalse(
-            legacyImageProviderIdentityMatches(
-                legacy,
-                legacy.uri,
-                "another.jpg",
-                requireNotNull(legacy.mimeType),
-                requireNotNull(legacy.ownerPackageName),
-            ),
-        )
-    }
-
-    @Test
     fun publishReconciliationAcceptsOnlyOneUpdateOrAnExactZeroRowRetry() {
         assertTrue(mediaPublishResultIsAcceptable(1, observedPending = false, sameIdentity = true))
         assertTrue(mediaPublishResultIsAcceptable(0, observedPending = false, sameIdentity = true))

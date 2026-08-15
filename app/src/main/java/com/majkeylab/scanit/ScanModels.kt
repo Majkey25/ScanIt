@@ -350,6 +350,7 @@ internal data class SavedScan(
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,
     val savedImagesDeleteVerified: Boolean = false,
+    val unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
 ) {
     val galleryPages: List<Uri>
         get() = savedImages.map(SavedImageOutput::uri)
@@ -364,6 +365,7 @@ internal data class SavedScan(
             outputMetadataValid: Boolean = false,
             savedPdfDeleteVerified: Boolean = false,
             savedImagesDeleteVerified: Boolean = false,
+            unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
         ): SavedScan =
             SavedScan(
                 cached = cached,
@@ -389,6 +391,7 @@ internal data class SavedScan(
                 outputMetadataValid = outputMetadataValid,
                 savedPdfDeleteVerified = savedPdfDeleteVerified,
                 savedImagesDeleteVerified = savedImagesDeleteVerified,
+                unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
             )
     }
 }

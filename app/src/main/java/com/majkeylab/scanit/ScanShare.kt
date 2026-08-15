@@ -117,12 +117,17 @@ internal fun imageShareIntent(
     }
 }
 
-internal fun validatePreparedImageShare(prepared: PreparedImageShare) {
+internal fun validatePreparedImageShare(prepared: PreparedImageShare) =
+    synchronized(preparedImageShareLock) {
+        validatePreparedImageShareLocked(prepared)
+    }
+
+private fun validatePreparedImageShareLocked(prepared: PreparedImageShare) {
     val root = prepared.shareRoot.absoluteFile
     val directory = prepared.directory.absoluteFile
     if (prepared.files.isEmpty() || prepared.files.size > MAX_SCAN_PAGES ||
         root.canonicalFile != root || directory.canonicalFile != directory ||
-        directory.parentFile != root || !directory.name.startsWith(PREPARED_IMAGE_SHARE_PREFIX) ||
+        directory.parentFile != root || !isPreparedImageShareDirectoryName(directory.name) ||
         prepared.files.any {
             val file = it.absoluteFile
             file.canonicalFile != file || file.parentFile != directory || !file.isFile || file.length() <= 0L
@@ -234,6 +239,12 @@ private fun SavedImageOutput.toPreparedImageSource(): PreparedImageSource =
     PreparedImageSource(page, uri.toString(), mimeType, byteLength, sha256)
 
 internal fun cleanupPreparedImageShare(prepared: PreparedImageShare): Boolean {
+    synchronized(preparedImageShareLock) {
+        return cleanupPreparedImageShareLocked(prepared)
+    }
+}
+
+private fun cleanupPreparedImageShareLocked(prepared: PreparedImageShare): Boolean {
     val root = prepared.shareRoot.absoluteFile
     val directory = prepared.directory.absoluteFile
     if (

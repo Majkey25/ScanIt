@@ -578,6 +578,48 @@ internal fun isContentUri(value: String): Boolean {
 internal fun isProviderDisplayName(value: String?): Boolean =
     value != null && value.length in 1..255 && value.none(Char::isISOControl)
 
+internal fun upgradeLegacyImageReference(
+    reference: ImageOutputRef,
+    observedUri: String,
+    observedDisplayName: String,
+    observedMimeType: String,
+    observedOwnerPackageName: String,
+    expectedOwnerPackageName: String,
+    fingerprint: OutputFingerprint,
+    width: Int,
+    height: Int,
+): ImageOutputRef? {
+    if (
+        reference.uri != observedUri ||
+            reference.treeUri != null ||
+            reference.pending ||
+            !isProviderDisplayName(observedDisplayName) ||
+            !observedDisplayName.lowercase(Locale.ROOT).endsWith(".jpg") ||
+            observedMimeType != JPEG_MIME_TYPE ||
+            observedOwnerPackageName != expectedOwnerPackageName ||
+            !isValidOwnerPackageName(expectedOwnerPackageName) ||
+            reference.displayName?.let { it != observedDisplayName } == true ||
+            reference.mimeType?.let { it != observedMimeType } == true ||
+            reference.ownerPackageName?.let { it != observedOwnerPackageName } == true ||
+            reference.byteLength?.let { it != fingerprint.byteLength } == true ||
+            reference.sha256?.let { it != fingerprint.sha256 } == true ||
+            width <= 0 ||
+            height <= 0 ||
+            width.toLong() * height > MAX_IMAGE_EXPORT_PIXELS
+    ) return null
+    return reference.copy(
+        displayName = observedDisplayName,
+        mimeType = observedMimeType,
+        ownerPackageName = observedOwnerPackageName,
+        byteLength = fingerprint.byteLength,
+        sha256 = fingerprint.sha256,
+        pending = false,
+        width = width,
+        height = height,
+        format = ImageExportFormat.Jpeg,
+    )
+}
+
 private fun isValidMediaIdentity(
     displayName: String?,
     mimeType: String?,

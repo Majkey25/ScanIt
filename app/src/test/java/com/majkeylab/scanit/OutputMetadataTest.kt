@@ -180,6 +180,60 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun decodedAllNullV1AndV2ImagesUpgradeFromExactObservedJpegIdentity() {
+        val fingerprint = OutputFingerprint(4L, "a".repeat(64))
+        listOf(1, 2).forEach { version ->
+            val decoded =
+                requireNotNull(
+                    decode(
+                        validJson(
+                            version = version,
+                            images =
+                                """[{"page":1,"uri":"content://media/external/images/media/43"}]""",
+                        ),
+                        pageCount = 1,
+                    ),
+                ).images.single()
+            val upgraded = requireNotNull(
+                upgradeLegacyImageReference(
+                    reference = decoded,
+                    observedUri = decoded.uri,
+                    observedDisplayName = "Scan_2026-08-09_12-12-00_01.jpg",
+                    observedMimeType = "image/jpeg",
+                    observedOwnerPackageName = "com.majkeylab.scanit.internal",
+                    expectedOwnerPackageName = "com.majkeylab.scanit.internal",
+                    fingerprint = fingerprint,
+                    width = 1200,
+                    height = 800,
+                ),
+            )
+
+            assertNull(decoded.displayName)
+            assertNull(decoded.mimeType)
+            assertNull(decoded.ownerPackageName)
+            assertEquals("Scan_2026-08-09_12-12-00_01.jpg", upgraded.displayName)
+            assertEquals("image/jpeg", upgraded.mimeType)
+            assertEquals("com.majkeylab.scanit.internal", upgraded.ownerPackageName)
+            assertEquals(fingerprint.byteLength, upgraded.byteLength)
+            assertEquals(fingerprint.sha256, upgraded.sha256)
+            assertEquals(ImageExportFormat.Jpeg, upgraded.format)
+            assertNull(
+                upgradeLegacyImageReference(
+                    reference = decoded.copy(displayName = "recorded.jpg"),
+                    observedUri = decoded.uri,
+                    observedDisplayName = "different.jpg",
+                    observedMimeType = "image/jpeg",
+                    observedOwnerPackageName = "com.majkeylab.scanit.internal",
+                    expectedOwnerPackageName = "com.majkeylab.scanit.internal",
+                    fingerprint = fingerprint,
+                    width = 1200,
+                    height = 800,
+                ),
+            )
+        }
+    }
+
+    @Test
     fun pendingMediaWithoutExactIdentityIsRejected() {
         val incomplete =
             OutputMetadata(
@@ -838,11 +892,12 @@ class OutputMetadataTest {
         )
 
     private fun validJson(
+        version: Int = 1,
         cacheId: String = this.cacheId,
         entryId: String = this.entryId,
         images: String = "[]",
     ): String =
-        """{"version":1,"entryId":"$entryId","cacheId":"$cacheId","createdAtEpochMs":1,"images":$images}"""
+        """{"version":$version,"entryId":"$entryId","cacheId":"$cacheId","createdAtEpochMs":1,"images":$images}"""
 
     private fun withDirectory(block: (File) -> Unit) {
         val directory = Files.createTempDirectory("output-metadata").toFile()
