@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
@@ -149,6 +150,15 @@ internal fun safChildStructureIsValid(
         returnedDocumentId != rootDocumentId &&
         returnedDocumentId.isNotEmpty() &&
         returnedUriIsCanonical
+
+internal inline fun guardedSafChildCheck(check: () -> Boolean): Boolean =
+    try {
+        check()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        false
+    }
 
 internal fun mediaDeleteSelectionArgs(expected: ExpectedMediaItem): Array<String> =
     arrayOf(
@@ -496,6 +506,156 @@ internal class ExactOutputDeleter(private val context: Context) {
         )
     }
 
+    fun deleteProvisional(marker: ProvisionalOutputCreate): OutputDeleteStatus {
+        val uriValue = marker.returnedUri ?: return OutputDeleteStatus.Failed
+        return when (marker.provider) {
+            ProvisionalOutputProvider.MediaStore ->
+                deleteProvisionalMedia(marker, uriValue)
+            ProvisionalOutputProvider.Saf ->
+                deleteProvisionalSaf(marker, uriValue)
+        }
+    }
+
+    private fun deleteProvisionalMedia(
+        marker: ProvisionalOutputCreate,
+        uriValue: String,
+    ): OutputDeleteStatus {
+        val expectedCollection =
+            when (marker.kind) {
+                ProvisionalOutputKind.Pdf -> MediaOutputCollection.Downloads
+                ProvisionalOutputKind.Image -> MediaOutputCollection.Images
+            }
+        val address = parseMediaItemAddress(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
+        if (address.collection != expectedCollection) return OutputDeleteStatus.IdentityMismatch
+        val uri = uriValue.toUri()
+        val canonical =
+            when (expectedCollection) {
+                MediaOutputCollection.Images ->
+                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
+                MediaOutputCollection.Downloads ->
+                    MediaStore.Downloads.getContentUri(address.volume, address.id)
+            }
+        if (uri != canonical) return OutputDeleteStatus.IdentityMismatch
+        val expected =
+            ExpectedMediaItem(address.id, marker.displayName, marker.mimeType, context.packageName)
+        return providerDeleteResult {
+            when (queryPendingMediaItem(uri, expected)) {
+                ExactItemQuery.Absent -> OutputDeleteStatus.Absent
+                ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+                ExactItemQuery.Failed -> OutputDeleteStatus.Failed
+                ExactItemQuery.Exact -> {
+                    val deleted = resolver.delete(
+                        uri,
+                        MEDIA_PUBLISH_SELECTION,
+                        mediaDeleteSelectionArgs(expected),
+                    )
+                    if (deleted > 1) return@providerDeleteResult OutputDeleteStatus.Failed
+                    when (queryPendingMediaItem(uri, expected)) {
+                        ExactItemQuery.Absent ->
+                            if (deleted == 1) OutputDeleteStatus.Deleted else OutputDeleteStatus.Absent
+                        ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+                        ExactItemQuery.Exact,
+                        ExactItemQuery.Failed,
+                        -> OutputDeleteStatus.Failed
+                    }
+                }
+            }
+        }
+    }
+
+    private fun queryPendingMediaItem(uri: Uri, expected: ExpectedMediaItem): ExactItemQuery {
+        val cursor = resolver.query(uri, MEDIA_PROVISIONAL_PROJECTION, null, null, null)
+            ?: return ExactItemQuery.Failed
+        return cursor.use {
+            if (!it.moveToFirst()) return@use ExactItemQuery.Absent
+            val row =
+                MediaItemRow(
+                    id = it.requiredLong(MediaStore.MediaColumns._ID),
+                    displayName = it.requiredString(MediaStore.MediaColumns.DISPLAY_NAME),
+                    mimeType = it.requiredString(MediaStore.MediaColumns.MIME_TYPE),
+                    ownerPackageName = it.optionalString(MediaStore.MediaColumns.OWNER_PACKAGE_NAME),
+                )
+            val pending = it.requiredLong(MediaStore.MediaColumns.IS_PENDING)
+            if (it.moveToNext() || pending != 1L || !isExactMediaItem(row, expected)) {
+                ExactItemQuery.IdentityMismatch
+            } else {
+                ExactItemQuery.Exact
+            }
+        }
+    }
+
+    private fun deleteProvisionalSaf(
+        marker: ProvisionalOutputCreate,
+        uriValue: String,
+    ): OutputDeleteStatus {
+        val tree = marker.treeUri?.let(::exactContentUri)
+            ?: return OutputDeleteStatus.IdentityMismatch
+        val document = exactContentUri(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
+        if (tree.authority != document.authority) return OutputDeleteStatus.IdentityMismatch
+        return providerDeleteResult {
+            if (!DocumentsContract.isTreeUri(tree) ||
+                !DocumentsContract.isDocumentUri(context, document) ||
+                resolver.persistedUriPermissions.none {
+                    it.uri == tree && it.isReadPermission && it.isWritePermission
+                }
+            ) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+            val rootId = DocumentsContract.getTreeDocumentId(tree)
+            val documentId = DocumentsContract.getDocumentId(document)
+            val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+            if (!safChildStructureIsValid(
+                    sameAuthority = true,
+                    rootDocumentId = rootId,
+                    returnedTreeDocumentId = DocumentsContract.getTreeDocumentId(document),
+                    returnedDocumentId = documentId,
+                    returnedUriIsCanonical =
+                        DocumentsContract.buildDocumentUriUsingTree(tree, documentId) == document,
+                ) ||
+                context.checkUriPermission(
+                    document,
+                    Process.myPid(),
+                    Process.myUid(),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+            when (querySafDocument(document, documentId, marker.displayName, marker.mimeType)) {
+                ExactItemQuery.Absent ->
+                    confirmSafDocumentAbsent(
+                        root,
+                        rootId,
+                        document,
+                        documentId,
+                        marker.displayName,
+                        marker.mimeType,
+                    )
+                ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
+                ExactItemQuery.Failed -> OutputDeleteStatus.Failed
+                ExactItemQuery.Exact -> {
+                    if (!DocumentsContract.isChildDocument(resolver, root, document)) {
+                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
+                    }
+                    val deleted =
+                        try {
+                            DocumentsContract.deleteDocument(resolver, document)
+                        } catch (_: FileNotFoundException) {
+                            false
+                        }
+                    when (confirmSafDocumentAbsent(
+                        root,
+                        rootId,
+                        document,
+                        documentId,
+                        marker.displayName,
+                        marker.mimeType,
+                    )) {
+                        OutputDeleteStatus.Absent ->
+                            if (deleted) OutputDeleteStatus.Deleted else OutputDeleteStatus.Absent
+                        else -> OutputDeleteStatus.Failed
+                    }
+                }
+            }
+        }
+    }
+
     private fun expectedMediaIdentity(
         displayName: String?,
         mimeType: String?,
@@ -753,6 +913,7 @@ private val MEDIA_PROJECTION =
         MediaStore.MediaColumns.MIME_TYPE,
         MediaStore.MediaColumns.OWNER_PACKAGE_NAME,
     )
+private val MEDIA_PROVISIONAL_PROJECTION = MEDIA_PROJECTION + MediaStore.MediaColumns.IS_PENDING
 private val SAF_PROJECTION =
     arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,

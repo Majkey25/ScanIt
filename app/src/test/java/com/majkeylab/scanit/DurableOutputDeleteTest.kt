@@ -50,13 +50,20 @@ class DurableOutputDeleteTest {
                     events += "create"
                     staged
                 },
+                onStaged = {
+                    assertEquals(staged, metadata.stagedPdf)
+                    events += "marker-clear"
+                },
                 publish = {
                     events += "publish"
                     published
                 },
             )
 
-        assertEquals(listOf("create", "staged", "publish", "active", "delete:${old.uri}"), events)
+        assertEquals(
+            listOf("create", "staged", "marker-clear", "publish", "active", "delete:${old.uri}"),
+            events,
+        )
         assertEquals(published, first.metadata.pdf)
         assertEquals(old, first.metadata.retiredPdf)
         assertEquals(R.string.shared_output_delete_failed, first.warnings.single().resourceId)
@@ -196,6 +203,76 @@ class DurableOutputDeleteTest {
         assertEquals(listOf(cleanupCancellation), thrown.suppressed.toList())
         assertEquals(old, metadata.pdf)
         assertEquals(created, metadata.stagedPdf)
+    }
+
+    @Test
+    fun safChildCancellationIsNeverConvertedToAnIdentityMismatch() {
+        val cancellation = CancellationException("cancelled")
+
+        assertSame(
+            cancellation,
+            assertThrows(CancellationException::class.java) {
+                guardedSafChildCheck { throw cancellation }
+            },
+        )
+        assertFalse(guardedSafChildCheck { throw IOException("provider") })
+    }
+
+    @Test
+    fun legacyImageUpgradeUsesCachedPageFingerprintButStillRequiresExactProviderIdentity() {
+        val cachedFingerprint = OutputFingerprint(4L, "a".repeat(64))
+        val legacy =
+            exactImage(1, "content://media/external/images/media/1").copy(
+                byteLength = null,
+                sha256 = null,
+                width = null,
+                height = null,
+                format = null,
+            )
+        assertEquals(cachedFingerprint, expectedLegacyImageFingerprint(legacy, cachedFingerprint))
+        assertTrue(
+            legacyImageProviderIdentityMatches(
+                legacy,
+                legacy.uri,
+                requireNotNull(legacy.displayName),
+                requireNotNull(legacy.mimeType),
+                requireNotNull(legacy.ownerPackageName),
+            ),
+        )
+        assertFalse(
+            legacyImageProviderIdentityMatches(
+                legacy,
+                legacy.uri,
+                "another.jpg",
+                requireNotNull(legacy.mimeType),
+                requireNotNull(legacy.ownerPackageName),
+            ),
+        )
+    }
+
+    @Test
+    fun publishReconciliationAcceptsOnlyOneUpdateOrAnExactZeroRowRetry() {
+        assertTrue(mediaPublishResultIsAcceptable(1, observedPending = false, sameIdentity = true))
+        assertTrue(mediaPublishResultIsAcceptable(0, observedPending = false, sameIdentity = true))
+        assertFalse(mediaPublishResultIsAcceptable(2, observedPending = false, sameIdentity = true))
+        assertFalse(mediaPublishResultIsAcceptable(0, observedPending = true, sameIdentity = true))
+        assertFalse(mediaPublishResultIsAcceptable(1, observedPending = true, sameIdentity = true))
+        assertFalse(mediaPublishResultIsAcceptable(1, observedPending = false, sameIdentity = false))
+    }
+
+    @Test
+    fun successfulReplacementTurnsScratchCleanupFailureIntoAWarning() {
+        val result =
+            OutputReplacementResult(
+                scan = savedScan(),
+                warnings = emptyList(),
+            )
+
+        val updated = replacementWithScratchCleanupWarning(result, cleanupFailed = true)
+
+        assertEquals(R.string.output_scratch_cleanup_failed, updated.warnings.single().resourceId)
+        assertEquals(updated.warnings, updated.scan.warnings)
+        assertSame(result, replacementWithScratchCleanupWarning(result, cleanupFailed = false))
     }
 
     @Test
@@ -1059,6 +1136,19 @@ class DurableOutputDeleteTest {
             entryId = entryId,
             hasSavedPdf = hasPdf,
             savedImageCount = savedImageCount,
+        )
+
+    private fun savedScan() =
+        SavedScan(
+            cached =
+                CachedScan(
+                    baseName = CACHE_ID,
+                    pages = listOf(java.io.File("page.jpg")),
+                    pdf = java.io.File("scan.pdf"),
+                    entryId = ENTRY_ID,
+                ),
+            savedImages = emptyList(),
+            savedPdf = null,
         )
 
     private companion object {

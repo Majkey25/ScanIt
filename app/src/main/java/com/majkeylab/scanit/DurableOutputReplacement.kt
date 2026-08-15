@@ -63,6 +63,7 @@ internal class DurableOutputReplacement(
 ) {
     fun replacePdf(
         create: () -> PdfOutputRef,
+        onStaged: (PdfOutputRef) -> Unit = {},
         publish: (PdfOutputRef) -> PdfOutputRef,
     ): OutputReplacementJournalResult {
         var current = reconcile().metadata
@@ -77,6 +78,7 @@ internal class DurableOutputReplacement(
             created = create()
             current = commit(current, current.copy(stagedPdf = created, version = OUTPUT_METADATA_VERSION))
             staged = true
+            onStaged(created)
             val published = publish(created)
             current =
                 commit(
@@ -101,6 +103,7 @@ internal class DurableOutputReplacement(
     fun replaceImages(
         pageCount: Int,
         create: (Int) -> ImageOutputRef,
+        onStaged: (ImageOutputRef) -> Unit = {},
         publish: (ImageOutputRef) -> ImageOutputRef,
     ): OutputReplacementJournalResult {
         require(pageCount in 1..MAX_SCAN_PAGES) { "Image page count is invalid" }
@@ -124,6 +127,7 @@ internal class DurableOutputReplacement(
                             version = OUTPUT_METADATA_VERSION,
                         ),
                     )
+                onStaged(output)
             }
             val published = created.map(publish)
             current =

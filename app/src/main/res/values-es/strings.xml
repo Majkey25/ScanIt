@@ -65,6 +65,8 @@
     <string name="recent_delete_metadata_failed">Puede que se hayan eliminado archivos, pero ScanIt no pudo actualizar su registro. Reinténtalo.</string>
     <string name="recent_delete_cache_failed">Se eliminaron los archivos seleccionados, pero no se pudo quitar el elemento de Recientes. Reinténtalo.</string>
     <string name="shared_output_delete_failed">No se pudo eliminar un archivo guardado. Reinténtalo desde Escaneos recientes.</string>
+    <string name="output_create_cleanup_required">Hay que limpiar un archivo guardado incompleto antes de volver a cambiar esta salida.</string>
+    <string name="output_scratch_cleanup_failed">La exportación se completó, pero no se pudieron eliminar los archivos temporales.</string>
     <string name="more_actions">Más acciones</string>
     <string name="open_scan">Abrir</string>
     <string name="delete_scan">Eliminar…</string>

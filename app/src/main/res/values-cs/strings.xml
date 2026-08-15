@@ -66,6 +66,8 @@
     <string name="recent_delete_metadata_failed">Soubory mohly být smazány, ale ScanIt nemohl aktualizovat jejich záznam. Zkuste to znovu.</string>
     <string name="recent_delete_cache_failed">Vybrané soubory byly smazány, ale položku v Nedávných se nepodařilo odebrat. Zkuste to znovu.</string>
     <string name="shared_output_delete_failed">Uložený soubor se nepodařilo smazat. Zkuste to znovu v nedávných skenech.</string>
+    <string name="output_create_cleanup_required">Před další změnou tohoto výstupu je nutné vyčistit nedokončený uložený soubor.</string>
+    <string name="output_scratch_cleanup_failed">Export proběhl úspěšně, ale dočasné soubory se nepodařilo odstranit.</string>
     <string name="more_actions">Další akce</string>
     <string name="open_scan">Otevřít</string>
     <string name="delete_scan">Smazat…</string>

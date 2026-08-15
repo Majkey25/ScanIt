@@ -64,6 +64,8 @@
     <string name="recent_delete_metadata_failed">Files may have been deleted, but ScanIt could not update their record. Try again.</string>
     <string name="recent_delete_cache_failed">Selected files were deleted, but the Recent item could not be removed. Try again.</string>
     <string name="shared_output_delete_failed">A saved file could not be deleted. Retry from Recent scans.</string>
+    <string name="output_create_cleanup_required">An unfinished saved file needs cleanup before this output can be changed again.</string>
+    <string name="output_scratch_cleanup_failed">The export succeeded, but temporary files could not be cleaned up.</string>
     <string name="more_actions">More actions</string>
     <string name="open_scan">Open</string>
     <string name="delete_scan">Delete…</string>
