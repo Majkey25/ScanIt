@@ -2,6 +2,19 @@
 
 All notable changes are documented here.
 
+## [1.2.5] - 2026-08-15
+
+### Added
+
+- Added per-document PDF size changes from File details with Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB targets without changing the saved default.
+- Added on-device document Actions for extracting selectable text from all pages and detecting QR codes or barcodes on the current page.
+
+### Changed
+
+- Reorganized Result around a larger document preview, compact visual-mark and Actions controls, clear sharing actions, and structured PDF and image details.
+- File details now show measured sizes, temporary or saved state, and human-readable locations for both PDF and image output.
+- Replaced the ambiguous Settings symbol with a conventional gear icon.
+
 ## [1.2.4] - 2026-08-14
 
 ### Changed
@@ -110,6 +123,7 @@ Historical copies retain the license supplied with them. See
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
 [1.2.4]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.2.4
+[1.2.5]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.2.5
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2

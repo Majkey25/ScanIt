@@ -97,6 +97,79 @@ class VisualMarkApplyTest {
     }
 
     @Test
+    fun documentActionProcessingBlocksEveryResultAction() {
+        val result =
+            ScreenState.Result(
+                scan = savedScan("Scan_A"),
+                thumbnail = null,
+                documentActionState = DocumentActionState.Processing(DocumentAction.ExtractText),
+            )
+
+        assertTrue(result.resultActionsBlocked)
+        assertFalse(
+            result.copy(
+                documentActionState =
+                    DocumentActionState.Completed(
+                        DocumentActionOutput.Text("Detected text", truncated = false),
+                    ),
+            ).resultActionsBlocked,
+        )
+    }
+
+    @Test
+    fun documentActionRequestRequiresExactResultGeneration() {
+        val request =
+            DocumentActionRequest(
+                cacheId = "Scan_A",
+                entryId = "4de93580-a259-4d3d-a9e0-225a6b150462",
+                pageIndex = 0,
+                action = DocumentAction.DetectCodes,
+                generation = 7L,
+            )
+
+        assertTrue(
+            request.matches(
+                cacheId = "Scan_A",
+                entryId = "4de93580-a259-4d3d-a9e0-225a6b150462",
+                generation = 7L,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                cacheId = "Scan_A",
+                entryId = "new-generation",
+                generation = 7L,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                cacheId = "Scan_A",
+                entryId = "4de93580-a259-4d3d-a9e0-225a6b150462",
+                generation = 8L,
+            ),
+        )
+    }
+
+    @Test
+    fun extractedTextKeepsPageOrderAndSkipsBlankPages() {
+        assertEquals(
+            DocumentActionOutput.Text(
+                value = "Page 1\nFirst page\n\nPage 3\nThird page",
+                truncated = false,
+            ),
+            buildDocumentText(listOf(" First page ", "  ", "Third page")),
+        )
+    }
+
+    @Test
+    fun extractedTextIsBoundedAndReportsTruncation() {
+        assertEquals(
+            DocumentActionOutput.Text(value = "Page 1\n12", truncated = true),
+            buildDocumentText(listOf("123456"), maxCharacters = 9),
+        )
+    }
+
+    @Test
     fun derivedSourceWriterChangesOnlyTheSelectedPageAndPreservesOrder() {
         val sourceDirectory = temporaryFolder.newFolder("source")
         val sourcePages =

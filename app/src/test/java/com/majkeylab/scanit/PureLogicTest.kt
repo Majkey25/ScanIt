@@ -382,6 +382,27 @@ class PureLogicTest {
     }
 
     @Test
+    fun perDocumentPdfRevisionCheckpointKeepsTheSettingsDefault() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.trySave(
+                AppSettings(pdfSizeTarget = PdfSizeTarget.Mb20),
+                expectedOwner = store.authoritySnapshot().owner,
+            ),
+        )
+        val owner = store.authoritySnapshot().owner
+
+        assertEquals(
+            AuthorityMutationResult.Applied,
+            store.saveActiveResult("Scan_target_5", owner),
+        )
+
+        assertEquals(PdfSizeTarget.Mb20, store.load().pdfSizeTarget)
+    }
+
+    @Test
     fun corruptAppearanceAndPdfSizeSettingsFailClosedToDefaults() {
         val (preferences, values) = inMemoryPreferences()
         values["appearance_mode"] = "future"

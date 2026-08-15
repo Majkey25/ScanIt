@@ -1,6 +1,8 @@
 package com.majkeylab.scanit
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -12,11 +14,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -155,6 +161,9 @@ internal fun ScanItApp(
     onShareImages: (() -> Unit)? = null,
     onPrint: (() -> Unit)? = null,
     onSaveNow: (SaveNowTarget) -> Unit = {},
+    onChangePdfSize: (PdfSizeTarget) -> Unit = {},
+    onRunDocumentAction: (DocumentAction) -> Unit = {},
+    onDismissDocumentAction: () -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
     onCloseVisualMarkEditor: () -> Unit = {},
     onSelectVisualMarkTemplate: (String) -> Unit = {},
@@ -180,8 +189,10 @@ internal fun ScanItApp(
         )
     BackHandler {
         val visualMarkEditor = (state as? ScreenState.Result)?.visualMarkEditor
+        val documentActionState = (state as? ScreenState.Result)?.documentActionState
         when {
             visualMarkEditor != null -> onCloseVisualMarkEditor()
+            documentActionState != null -> onDismissDocumentAction()
             backAction == AppBackAction.CloseSettings -> showSettings = false
             backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
             backAction == AppBackAction.ShowRecent -> onNavigateBack()
@@ -264,6 +275,9 @@ internal fun ScanItApp(
                             fileDetailsExpanded = expanded
                         },
                         onSaveNow = onSaveNow,
+                        onChangePdfSize = onChangePdfSize,
+                        onRunDocumentAction = onRunDocumentAction,
+                        onDismissDocumentAction = onDismissDocumentAction,
                         onSelectPage = onSelectResultPage,
                         onLoadThumbnail = onLoadThumbnail,
                         onAddVisualMark = {
@@ -325,6 +339,9 @@ private fun ResultScreen(
     fileDetailsExpanded: Boolean,
     onFileDetailsChange: (Boolean) -> Unit,
     onSaveNow: (SaveNowTarget) -> Unit,
+    onChangePdfSize: (PdfSizeTarget) -> Unit,
+    onRunDocumentAction: (DocumentAction) -> Unit,
+    onDismissDocumentAction: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
     onAddVisualMark: () -> Unit,
@@ -336,7 +353,10 @@ private fun ResultScreen(
         stringResource(R.string.page_position, selectedPageIndex + 1, pageCount)
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showPdfSizeDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showDocumentActions by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     val actionsEnabled = !result.resultActionsBlocked
+    val stackSecondaryActions = LocalConfiguration.current.fontScale >= 1.3f
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -381,10 +401,64 @@ private fun ResultScreen(
                 }
             }
             item {
-                Text(
-                    pagePosition,
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                if (stackSecondaryActions) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(pagePosition, style = MaterialTheme.typography.titleMedium)
+                        OutlinedButton(
+                            onClick = onAddVisualMark,
+                            enabled = actionsEnabled && result.canAddVisualMark,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) {
+                            ActionButtonContent(
+                                iconRes = R.drawable.ic_signature,
+                                textRes = R.string.add_signature_or_stamp,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { showDocumentActions = true },
+                            enabled = actionsEnabled,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) {
+                            ActionButtonContent(
+                                iconRes = R.drawable.ic_actions,
+                                textRes = R.string.actions,
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            pagePosition,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            onClick = onAddVisualMark,
+                            enabled = actionsEnabled && result.canAddVisualMark,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            ActionButtonContent(
+                                iconRes = R.drawable.ic_signature,
+                                textRes = R.string.sign_or_stamp,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { showDocumentActions = true },
+                            enabled = actionsEnabled,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                        ) {
+                            ActionButtonContent(
+                                iconRes = R.drawable.ic_actions,
+                                textRes = R.string.actions,
+                            )
+                        }
+                    }
+                }
             }
             if (pageCount > 1) {
                 item {
@@ -398,83 +472,52 @@ private fun ResultScreen(
                 }
             }
             item {
-                OutlinedButton(
-                    onClick = onAddVisualMark,
-                    enabled =
-                        actionsEnabled &&
-                            !result.pagePreviewLoading &&
-                            result.thumbnail != null &&
-                            scan.cached.entryId != null &&
-                            scan.cached.sourcePages.size == scan.cached.pages.size &&
-                            scan.cached.appearanceSettings != null &&
-                            scan.outputMetadataValid,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.add_signature_or_stamp))
-                }
-            }
-            item {
                 Button(
                     onClick = { onSharePdf?.invoke() },
                     enabled = onSharePdf != null && actionsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
-                    Text(stringResource(R.string.send_pdf))
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { onShareImages?.invoke() },
-                    enabled = onShareImages != null && actionsEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.send_images))
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { onPrint?.invoke() },
-                    enabled = onPrint != null && actionsEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.print_document))
-                }
-            }
-            item {
-                Button(
-                    onClick = onNewScan,
-                    enabled = actionsEnabled,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Text(stringResource(R.string.new_scan))
-                }
-            }
-            item {
-                TextButton(
-                    onClick = { onFileDetailsChange(!fileDetailsExpanded) },
-                    enabled = actionsEnabled,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.file_details), modifier = Modifier.weight(1f))
-                    Icon(
-                        painter = painterResource(R.drawable.ic_expand_more),
-                        contentDescription =
-                            stringResource(
-                                if (fileDetailsExpanded) {
-                                    R.string.collapse_file_details
-                                } else {
-                                    R.string.expand_file_details
-                                },
-                            ),
-                        modifier = Modifier.size(24.dp).rotate(if (fileDetailsExpanded) 180f else 0f),
+                    ActionButtonContent(
+                        iconRes = R.drawable.ic_share,
+                        textRes = R.string.send_pdf,
                     )
                 }
+            }
+            item {
+                SecondaryResultActions(
+                    stacked = stackSecondaryActions,
+                    enabled = actionsEnabled,
+                    onShareImages = onShareImages,
+                    onPrint = onPrint,
+                )
+            }
+            item {
+                FileDetailsHeader(
+                    scan = scan,
+                    expanded = fileDetailsExpanded,
+                    enabled = actionsEnabled,
+                    onClick = { onFileDetailsChange(!fileDetailsExpanded) },
+                )
                 if (fileDetailsExpanded) {
                     FileDetails(
                         scan = scan,
                         saveTargets = saveTargets,
                         saveInProgress = result.outputSaveInProgress,
+                        sizeChangeInProgress = result.appearanceApplyInProgress,
                         onSaveNow = { showSaveDialog = true },
+                        onChangePdfSize = { showPdfSizeDialog = true },
+                    )
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onNewScan,
+                    enabled = actionsEnabled,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    ActionButtonContent(
+                        iconRes = R.drawable.ic_camera,
+                        textRes = R.string.new_scan,
                     )
                 }
             }
@@ -491,6 +534,180 @@ private fun ResultScreen(
             },
         )
     }
+    if (showPdfSizeDialog) {
+        PdfSizeTargetDialog(
+            current = scan.cached.pdfSizeTarget,
+            onDismiss = { showPdfSizeDialog = false },
+            onSelect = { target ->
+                showPdfSizeDialog = false
+                onChangePdfSize(target)
+            },
+        )
+    }
+    if (showDocumentActions) {
+        DocumentActionPickerDialog(
+            onDismiss = { showDocumentActions = false },
+            onSelect = { action ->
+                showDocumentActions = false
+                onRunDocumentAction(action)
+            },
+        )
+    }
+    result.documentActionState?.let { actionState ->
+        DocumentActionStateDialog(
+            state = actionState,
+            onDismiss = onDismissDocumentAction,
+        )
+    }
+}
+
+@Composable
+private fun DocumentActionPickerDialog(
+    onDismiss: () -> Unit,
+    onSelect: (DocumentAction) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.document_actions)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    stringResource(R.string.document_actions_on_device),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(
+                    onClick = { onSelect(DocumentAction.ExtractText) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    ActionButtonContent(
+                        iconRes = R.drawable.ic_text,
+                        textRes = R.string.extract_text,
+                    )
+                }
+                Text(
+                    stringResource(R.string.all_pages),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = { onSelect(DocumentAction.DetectCodes) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                ) {
+                    ActionButtonContent(
+                        iconRes = R.drawable.ic_qr_code,
+                        textRes = R.string.detect_codes,
+                    )
+                }
+                Text(
+                    stringResource(R.string.current_page),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        },
+    )
+}
+
+@Composable
+private fun DocumentActionStateDialog(
+    state: DocumentActionState,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val truncatedMessage = stringResource(R.string.document_action_truncated)
+    val clipboardLabel = stringResource(R.string.document_action_clip_label)
+    val title =
+        when (state) {
+            is DocumentActionState.Processing ->
+                when (state.action) {
+                    DocumentAction.ExtractText -> stringResource(R.string.extracting_text)
+                    DocumentAction.DetectCodes -> stringResource(R.string.detecting_codes)
+                }
+            is DocumentActionState.Completed ->
+                when (state.output) {
+                    is DocumentActionOutput.Text -> stringResource(R.string.extracted_text)
+                    is DocumentActionOutput.Codes -> stringResource(R.string.detected_codes)
+                }
+            is DocumentActionState.Failed -> stringResource(R.string.document_actions)
+        }
+    val copyText =
+        when (state) {
+            is DocumentActionState.Completed ->
+                when (val output = state.output) {
+                    is DocumentActionOutput.Text -> output.value.takeIf { it.isNotEmpty() }
+                    is DocumentActionOutput.Codes -> output.values.joinToString("\n\n").takeIf { it.isNotEmpty() }
+                }
+            else -> null
+        }
+    val completedText =
+        when (state) {
+            is DocumentActionState.Completed ->
+                copyText ?: when (state.output) {
+                    is DocumentActionOutput.Text -> stringResource(R.string.no_text_found)
+                    is DocumentActionOutput.Codes -> stringResource(R.string.no_codes_found)
+                }
+            else -> null
+        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            when (state) {
+                is DocumentActionState.Processing ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                is DocumentActionState.Completed ->
+                    SelectionContainer {
+                        Text(
+                            text =
+                                buildString {
+                                    append(checkNotNull(completedText))
+                                    if (
+                                        state.output is DocumentActionOutput.Text &&
+                                            state.output.truncated
+                                    ) {
+                                        append("\n\n")
+                                        append(truncatedMessage)
+                                    }
+                                },
+                            modifier =
+                                Modifier.heightIn(max = 420.dp)
+                                    .verticalScroll(rememberScrollState()),
+                        )
+                    }
+                is DocumentActionState.Failed -> Text(state.message.resolve())
+            }
+        },
+        confirmButton = {
+            if (state is DocumentActionState.Completed && copyText != null) {
+                TextButton(
+                    onClick = {
+                        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                            ClipData.newPlainText(
+                                clipboardLabel,
+                                copyText,
+                            ),
+                        )
+                        Toast.makeText(
+                            context,
+                            R.string.copied_to_clipboard,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    },
+                ) {
+                    Text(stringResource(R.string.copy))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        },
+    )
 }
 
 @Composable
@@ -586,15 +803,163 @@ private fun ResultPageThumbnail(
 }
 
 @Composable
+private fun ActionButtonContent(
+    iconRes: Int,
+    textRes: Int,
+) {
+    Icon(
+        painter = painterResource(iconRes),
+        contentDescription = null,
+        modifier = Modifier.size(20.dp),
+    )
+    Spacer(Modifier.width(8.dp))
+    Text(stringResource(textRes))
+}
+
+@Composable
+private fun SecondaryResultActions(
+    stacked: Boolean,
+    enabled: Boolean,
+    onShareImages: (() -> Unit)?,
+    onPrint: (() -> Unit)?,
+) {
+    if (stacked) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onShareImages?.invoke() },
+                enabled = onShareImages != null && enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                ActionButtonContent(R.drawable.ic_image, R.string.send_images)
+            }
+            OutlinedButton(
+                onClick = { onPrint?.invoke() },
+                enabled = onPrint != null && enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                ActionButtonContent(R.drawable.ic_print, R.string.print_document)
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = { onShareImages?.invoke() },
+                enabled = onShareImages != null && enabled,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+            ) {
+                ActionButtonContent(R.drawable.ic_image, R.string.send_images)
+            }
+            OutlinedButton(
+                onClick = { onPrint?.invoke() },
+                enabled = onPrint != null && enabled,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+            ) {
+                ActionButtonContent(R.drawable.ic_print, R.string.print_document)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileDetailsHeader(
+    scan: SavedScan,
+    expanded: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    val summary =
+        stringResource(
+            R.string.file_details_summary,
+            Formatter.formatShortFileSize(context, scan.cached.pdf.length()),
+            stringResource(
+                if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
+            ),
+        )
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_file_details),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.file_details), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                painter = painterResource(R.drawable.ic_expand_more),
+                contentDescription =
+                    stringResource(
+                        if (expanded) {
+                            R.string.collapse_file_details
+                        } else {
+                            R.string.expand_file_details
+                        },
+                    ),
+                modifier = Modifier.size(24.dp).rotate(if (expanded) 180f else 0f),
+            )
+        }
+    }
+}
+
+@Composable
 private fun FileDetails(
     scan: SavedScan,
     saveTargets: List<SaveNowTarget>,
     saveInProgress: Boolean,
+    sizeChangeInProgress: Boolean,
     onSaveNow: () -> Unit,
+    onChangePdfSize: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val pdfLocation =
+        when {
+            scan.savedPdf == null -> stringResource(R.string.file_not_saved)
+            scan.savedPdf.authority == MediaStore.AUTHORITY -> stringResource(R.string.downloads)
+            else -> stringResource(R.string.selected_folder)
+        }
+    val pdfStatus =
+        stringResource(
+            if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
+        )
+    val imagesLocation =
+        if (scan.galleryPages.isEmpty()) {
+            stringResource(R.string.file_not_saved)
+        } else {
+            stringResource(R.string.gallery)
+        }
+    val imageStatus =
+        when {
+            scan.galleryPages.isEmpty() -> stringResource(R.string.file_temporary)
+            scan.galleryPages.size == scan.cached.pages.size -> stringResource(R.string.file_saved)
+            else ->
+                stringResource(
+                    R.string.saved_pages,
+                    scan.galleryPages.size,
+                    scan.cached.pages.size,
+                )
+        }
     Column(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (scan.warnings.isNotEmpty()) {
             Column(
@@ -612,24 +977,66 @@ private fun FileDetails(
                 }
             }
         }
-        val savedPdf = scan.savedPdf
-        Text(
-            when {
-                savedPdf == null -> stringResource(R.string.pdf_temporary)
-                savedPdf.authority == MediaStore.AUTHORITY ->
-                    stringResource(R.string.pdf_saved_downloads, scan.cached.pdf.name)
-                else -> stringResource(R.string.pdf_saved_selected_folder, scan.cached.pdf.name)
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            if (scan.galleryPages.isEmpty()) {
-                stringResource(R.string.images_temporary)
-            } else {
-                stringResource(R.string.images_saved_gallery, scan.cached.pages.first().name)
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
+        FileDetailSection(
+            iconRes = R.drawable.ic_pdf,
+            title = stringResource(R.string.pdf_document),
+        ) {
+            FileDetailRow(
+                label = stringResource(R.string.actual_size),
+                value = Formatter.formatShortFileSize(context, scan.cached.pdf.length()),
+            )
+            FileDetailRow(
+                label = stringResource(R.string.target_size),
+                value = pdfSizeTargetLabel(scan.cached.pdfSizeTarget),
+            )
+            FileDetailRow(
+                label = stringResource(R.string.status),
+                value = pdfStatus,
+            )
+            FileDetailRow(
+                label = stringResource(R.string.location),
+                value = pdfLocation,
+            )
+            TextButton(
+                onClick = onChangePdfSize,
+                enabled =
+                    canChoosePdfSize(scan) &&
+                        !saveInProgress &&
+                        !sizeChangeInProgress,
+                modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp),
+            ) {
+                Text(
+                    stringResource(
+                        if (sizeChangeInProgress) {
+                            R.string.changing_pdf_size
+                        } else {
+                            R.string.change_pdf_size
+                        },
+                    ),
+                )
+            }
+        }
+        FileDetailSection(
+            iconRes = R.drawable.ic_image,
+            title = stringResource(R.string.images),
+        ) {
+            FileDetailRow(
+                label = stringResource(R.string.actual_size),
+                value =
+                    Formatter.formatShortFileSize(
+                        context,
+                        totalFileBytes(scan.cached.pages),
+                    ),
+            )
+            FileDetailRow(
+                label = stringResource(R.string.status),
+                value = imageStatus,
+            )
+            FileDetailRow(
+                label = stringResource(R.string.location),
+                value = imagesLocation,
+            )
+        }
         if (scan.savedPdf == null || scan.galleryPages.size != scan.cached.pages.size) {
             Text(
                 stringResource(R.string.automatic_saving_hint),
@@ -650,6 +1057,171 @@ private fun FileDetails(
             }
         }
     }
+}
+
+@Composable
+private fun FileDetailSection(
+    iconRes: Int,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(title, style = MaterialTheme.typography.titleSmall)
+            }
+            HorizontalDivider()
+            content()
+        }
+    }
+}
+
+@Composable
+private fun FileDetailRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1.2f),
+        )
+    }
+}
+
+@Composable
+private fun PdfSizeTargetDialog(
+    current: PdfSizeTarget,
+    onDismiss: () -> Unit,
+    onSelect: (PdfSizeTarget) -> Unit,
+) {
+    var selectedWire by rememberSaveable(current.wireValue) {
+        mutableStateOf(current.wireValue)
+    }
+    var customMode by rememberSaveable(current.wireValue) {
+        mutableStateOf(current is PdfSizeTarget.Custom)
+    }
+    var customInput by rememberSaveable(current.wireValue) {
+        mutableStateOf((current as? PdfSizeTarget.Custom)?.megabytes?.toString().orEmpty())
+    }
+    val customMegabytes = parseCustomPdfMegabytes(customInput)
+    val selected =
+        if (customMode) {
+            customMegabytes?.let(PdfSizeTarget::Custom)
+        } else {
+            decodePdfSizeTarget(selectedWire)
+        }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.pdf_size)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    stringResource(R.string.current_pdf_size, pdfSizeTargetLabel(current)),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        PdfSizeTarget.presets.take(3).forEach { target ->
+                            FilterChip(
+                                selected = !customMode && target.wireValue == selectedWire,
+                                onClick = {
+                                    customMode = false
+                                    selectedWire = target.wireValue
+                                },
+                                label = { Text(pdfSizeTargetLabel(target)) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val target = PdfSizeTarget.presets.last()
+                        FilterChip(
+                            selected = !customMode && target.wireValue == selectedWire,
+                            onClick = {
+                                customMode = false
+                                selectedWire = target.wireValue
+                            },
+                            label = { Text(pdfSizeTargetLabel(target)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                        FilterChip(
+                            selected = customMode,
+                            onClick = { customMode = true },
+                            label = {
+                                Text(
+                                    if (customMode && customMegabytes != null) {
+                                        stringResource(
+                                            R.string.pdf_size_custom_value,
+                                            customMegabytes,
+                                        )
+                                    } else {
+                                        stringResource(R.string.pdf_size_custom)
+                                    },
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                if (customMode) {
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it },
+                        label = { Text(stringResource(R.string.pdf_size_custom_field)) },
+                        supportingText = { Text(stringResource(R.string.pdf_size_custom_hint)) },
+                        isError = customInput.isNotEmpty() && customMegabytes == null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    stringResource(R.string.pdf_size_current_document_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { selected?.let(onSelect) },
+                enabled = selected != null && selected != current,
+            ) {
+                Text(stringResource(R.string.apply_appearance))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable
