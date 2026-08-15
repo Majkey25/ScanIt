@@ -279,6 +279,25 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun v3ImageWithoutSizePresetRoundTripsAsUnknownWithoutDimensionInference() {
+        listOf(3840 to 2160, 2400 to 1600).forEach { (width, height) ->
+            val json =
+                validJson(
+                    version = OUTPUT_METADATA_VERSION,
+                    images =
+                        """[{"page":1,"uri":"content://media/external/images/media/43","displayName":"scan.jpg","mimeType":"image/jpeg","ownerPackageName":"com.majkeylab.scanit.internal","byteLength":10,"sha256":"${"11".repeat(32)}","width":$width,"height":$height,"format":"jpeg"}]""",
+                )
+            val decoded = requireNotNull(decode(json, pageCount = 1))
+
+            assertNull(decoded.images.single().sizePreset)
+            assertEquals(
+                decoded,
+                decodeOutputMetadata(encodeOutputMetadata(decoded, 1), cacheId, 1),
+            )
+        }
+    }
+
+    @Test
     fun pendingMediaWithoutExactIdentityIsRejected() {
         val incomplete =
             OutputMetadata(

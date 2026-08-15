@@ -650,6 +650,7 @@ internal data class FileDetailAvailability(
     val pageCount: Int,
     val savedImageCount: Int,
     val canChangeImages: Boolean,
+    val canRelocateImages: Boolean,
 )
 
 internal fun fileDetailControls(scan: SavedScan): Set<FileDetailControl> =
@@ -662,6 +663,7 @@ internal fun fileDetailControls(scan: SavedScan): Set<FileDetailControl> =
             pageCount = scan.cached.pages.size,
             savedImageCount = scan.savedImages.size,
             canChangeImages = imageExportOptionsForChange(scan) != null,
+            canRelocateImages = canRelocateImageOutputs(scan),
         ),
     )
 
@@ -676,6 +678,8 @@ internal fun fileDetailControls(availability: FileDetailAvailability): Set<FileD
         if (availability.canChangeImages) {
             add(FileDetailControl.ImageSize)
             add(FileDetailControl.ImageFormat)
+        }
+        if (availability.canRelocateImages) {
             add(FileDetailControl.ImageLocation)
         }
     }
@@ -753,7 +757,7 @@ internal fun imageExportOptionsForChange(scan: SavedScan): ImageExportOptions? {
     return activeImageExportOptions(
         formats = scan.savedImages.map(SavedImageOutput::format),
         treeUris = scan.savedImages.map { it.treeUri?.toString() },
-        sizePresets = scan.savedImages.map { it.sizePreset ?: ImageSizePreset.Original },
+        sizePresets = scan.savedImages.map(SavedImageOutput::sizePreset),
         customMaxDimensions = scan.savedImages.map(SavedImageOutput::customMaxDimension),
     )
 }
@@ -761,7 +765,7 @@ internal fun imageExportOptionsForChange(scan: SavedScan): ImageExportOptions? {
 internal fun activeImageExportOptions(
     formats: List<ImageExportFormat?>,
     treeUris: List<String?>,
-    sizePresets: List<ImageSizePreset>,
+    sizePresets: List<ImageSizePreset?>,
     customMaxDimensions: List<Int?>,
 ): ImageExportOptions? {
     if (
@@ -776,7 +780,8 @@ internal fun activeImageExportOptions(
     if (distinctFormats.size != 1 || formats.any { it == null }) return null
     val distinctTreeUris = treeUris.distinct()
     if (distinctTreeUris.size != 1) return null
-    val distinctPresets = sizePresets.distinct()
+    if (sizePresets.any { it == null }) return null
+    val distinctPresets = sizePresets.filterNotNull().distinct()
     if (distinctPresets.size != 1) return null
     val distinctCustomDimensions = customMaxDimensions.distinct()
     if (distinctCustomDimensions.size != 1) return null
@@ -794,6 +799,12 @@ internal fun activeImageExportOptions(
         treeUri = distinctTreeUris.single(),
     )
 }
+
+private fun canRelocateImageOutputs(scan: SavedScan): Boolean =
+    scan.outputMetadataValid &&
+        scan.cached.entryId != null &&
+        scan.cached.pages.isNotEmpty() &&
+        (scan.savedImages.isEmpty() || scan.savedImages.size == scan.cached.pages.size)
 
 internal enum class SaveNowTarget {
     Pdf,

@@ -29,7 +29,7 @@ internal fun imageReplacementIsUnchanged(
     width: Int,
     height: Int,
     format: ImageExportFormat,
-    sizePreset: ImageSizePreset = ImageSizePreset.Original,
+    sizePreset: ImageSizePreset? = null,
     customMaxDimension: Int? = null,
     fingerprint: OutputFingerprint,
 ): Boolean =
@@ -39,7 +39,7 @@ internal fun imageReplacementIsUnchanged(
         current.width == width &&
         current.height == height &&
         current.format == format &&
-        (current.sizePreset ?: ImageSizePreset.Original) == sizePreset &&
+        current.sizePreset == sizePreset &&
         current.customMaxDimension == customMaxDimension &&
         current.outputFingerprint() == fingerprint
 

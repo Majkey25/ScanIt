@@ -44,6 +44,12 @@ class PureLogicTest {
         assertEquals(allControls, fileDetailControls(fileDetailAvailability(savedImages = 2)))
         assertEquals(pdfControls, fileDetailControls(fileDetailAvailability(imagesChangeable = false)))
         assertEquals(
+            pdfControls + FileDetailControl.ImageLocation,
+            fileDetailControls(
+                fileDetailAvailability(imagesChangeable = false, imagesRelocatable = true),
+            ),
+        )
+        assertEquals(
             emptySet<FileDetailControl>(),
             fileDetailControls(fileDetailAvailability(valid = false)),
         )
@@ -118,6 +124,14 @@ class PureLogicTest {
                 formats = listOf(ImageExportFormat.Jpeg),
                 treeUris = listOf(null),
                 sizePresets = listOf(ImageSizePreset.High),
+                customMaxDimensions = listOf(null),
+            ),
+        )
+        assertNull(
+            activeImageExportOptions(
+                formats = listOf(ImageExportFormat.Jpeg),
+                treeUris = listOf(null),
+                sizePresets = listOf(null),
                 customMaxDimensions = listOf(null),
             ),
         )
@@ -2251,6 +2265,7 @@ class PureLogicTest {
         savedImages: Int = 0,
         valid: Boolean = true,
         imagesChangeable: Boolean = true,
+        imagesRelocatable: Boolean = imagesChangeable,
     ): FileDetailAvailability =
         FileDetailAvailability(
             outputMetadataValid = valid,
@@ -2260,6 +2275,7 @@ class PureLogicTest {
             pageCount = 2,
             savedImageCount = savedImages,
             canChangeImages = imagesChangeable,
+            canRelocateImages = imagesRelocatable,
         )
 
     private fun inMemoryPreferences(

@@ -18,7 +18,7 @@ import org.junit.Test
 
 class DurableOutputDeleteTest {
     @Test
-    fun imageLocationReplacementCopiesExactBytesAndPreservesPdfState() {
+    fun imageLocationReplacementCopiesExactBytesAndPreservesUnknownPresetAndPdfState() {
         val directory = Files.createTempDirectory("scanit-image-relocation-").toFile()
         try {
             val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3, 0xFF.toByte(), 0xD9.toByte())
@@ -30,7 +30,7 @@ class DurableOutputDeleteTest {
                 exactImage(1, "content://media/external/images/media/1").copy(
                     byteLength = fingerprint.byteLength,
                     sha256 = fingerprint.sha256,
-                    sizePreset = ImageSizePreset.Original,
+                    sizePreset = null,
                 )
             val relocated =
                 old.copy(
@@ -73,7 +73,7 @@ class DurableOutputDeleteTest {
             assertArrayEquals(bytes, copied.readBytes())
             assertEquals(pdf, result.metadata.pdf)
             assertEquals(listOf(relocated), result.metadata.images)
-            assertEquals(ImageSizePreset.Original, result.metadata.images.single().sizePreset)
+            assertNull(result.metadata.images.single().sizePreset)
             assertEquals(listOf("stage", "active", "delete:${old.uri}", "stage"), events)
         } finally {
             directory.deleteRecursively()

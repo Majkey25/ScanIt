@@ -146,15 +146,15 @@ private fun SavedMediaOutput.toPdfOutputRef(): PdfOutputRef =
 private fun SavedMediaOutput.toImageOutputRef(
     page: Int,
     rendered: RenderedImageExport,
-    options: ImageExportOptions,
+    intent: PersistedImageExportIntent,
 ): ImageOutputRef =
     toImageOutputRef(
         page,
         rendered.width,
         rendered.height,
-        options.format,
-        options.sizePreset,
-        options.customMaxDimension,
+        intent.format,
+        intent.sizePreset,
+        intent.customMaxDimension,
     )
 
 private fun SavedMediaOutput.toImageOutputRef(
@@ -162,7 +162,7 @@ private fun SavedMediaOutput.toImageOutputRef(
     width: Int,
     height: Int,
     format: ImageExportFormat,
-    sizePreset: ImageSizePreset,
+    sizePreset: ImageSizePreset?,
     customMaxDimension: Int?,
 ): ImageOutputRef =
     ImageOutputRef(
@@ -257,7 +257,7 @@ private data class VerifiedSafOutput(
     fun toImageOutputRef(
         page: Int,
         rendered: RenderedImageExport,
-        options: ImageExportOptions,
+        intent: PersistedImageExportIntent,
     ): ImageOutputRef =
         ImageOutputRef(
             page = page,
@@ -269,15 +269,22 @@ private data class VerifiedSafOutput(
             sha256 = fingerprint.sha256,
             width = rendered.width,
             height = rendered.height,
-            format = options.format,
-            sizePreset = options.sizePreset,
-            customMaxDimension = options.customMaxDimension,
+            format = intent.format,
+            sizePreset = intent.sizePreset,
+            customMaxDimension = intent.customMaxDimension,
         )
 }
 
+private data class PersistedImageExportIntent(
+    val format: ImageExportFormat,
+    val sizePreset: ImageSizePreset?,
+    val customMaxDimension: Int?,
+    val treeUri: String?,
+)
+
 private data class StagedImageOutput(
     val rendered: RenderedImageExport,
-    val options: ImageExportOptions,
+    val intent: PersistedImageExportIntent,
 )
 
 private class SafOutputCreationFailure(
@@ -1025,6 +1032,7 @@ private fun readCacheEntry(
     cacheId: String,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
+    reconcileLocalPdf: Boolean = true,
 ): ParsedCacheEntry? {
     if (
         !isSafeCacheId(cacheId) ||
@@ -1040,6 +1048,7 @@ private fun readCacheEntry(
     val sourcePagesByNumber = mutableMapOf<Int, File>()
     var pdf: File? = null
     var provisional = false
+    var hasLocalPdfReplacement = false
     children.forEach { child ->
         val file = child.absoluteFile
         if (
@@ -1054,6 +1063,11 @@ private fun readCacheEntry(
             PROVISIONAL_OUTPUT_CREATE_FILE_NAME,
             PROVISIONAL_OUTPUT_CREATE_TEMP_FILE_NAME,
             -> Unit
+            LOCAL_PDF_REPLACEMENT_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_TEMP_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_OLD_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_NEW_FILE_NAME,
+            -> hasLocalPdfReplacement = true
             SCAN_APPEARANCE_FILE_NAME -> Unit
             PROVISIONAL_CACHE_MARKER -> {
                 if (file.length() != 0L) return null
@@ -1105,6 +1119,14 @@ private fun readCacheEntry(
         return null
     }
     val exactPdf = pdf
+    if (hasLocalPdfReplacement && reconcileLocalPdf) {
+        reconcileLocalPdfReplacement(
+            directory = directory,
+            cacheId = cacheId,
+            pageCount = orderedPages.size,
+            cachedPdf = exactPdf,
+        )
+    }
     val appearanceMetadata = readScanAppearanceMetadata(directory, cacheId)
     if (orderedSourcePages.isNotEmpty() && appearanceMetadata == null) return null
     val outputMetadataReadResult =
@@ -1827,7 +1849,7 @@ internal class ScanStorage(
         }
 
     fun openCachedScan(cacheId: String): CachedScan? =
-        recentScanCache.open(cacheId)
+        storageTransactionLock.withLock { recentScanCache.open(cacheId) }
 
     fun openSavedScan(cacheId: String): SavedScan? =
         storageTransactionLock.withLock {
@@ -2197,6 +2219,7 @@ internal class ScanStorage(
         treeUri: String?,
         current: OutputReplacementJournalResult,
         pdfSizeTarget: PdfSizeTarget? = null,
+        reconcileLocalPdf: Boolean = true,
     ): OutputReplacementResult {
         requireReadableFile(sourcePdf)
         val fingerprint = fingerprintFile(sourcePdf)
@@ -2217,7 +2240,7 @@ internal class ScanStorage(
                 if (activated == current.metadata) {
                     current.metadata
                 } else {
-                    rewriteCachedOutputMetadata(cached) { observed ->
+                    rewriteCachedOutputMetadata(cached, reconcileLocalPdf) { observed ->
                         exactReplacementMetadataUpdate(observed, current.metadata, activated)
                     }
                 }
@@ -2238,7 +2261,7 @@ internal class ScanStorage(
                 treeUri = treeUri,
             )
         val result =
-            replacementFor(cached).replacePdf(
+            replacementFor(cached, reconcileLocalPdf).replacePdf(
                 create = {
                     if (treeUri == null) {
                         savePdfToDownloads(
@@ -2296,12 +2319,10 @@ internal class ScanStorage(
         storageTransactionLock.withLock { requireCurrentOutputMetadata(cached) }
         val workDirectory = createOutputStagingDirectory()
         val candidate = File(workDirectory, "replacement.pdf")
-        val backup = File(workDirectory, "previous.pdf")
         var operationFailure: Throwable? = null
         var cleanupFailed = false
         var replacementResult: OutputReplacementResult? = null
-        var localReplaced = false
-        var activeCommitted = false
+        var localJournal: LocalPdfReplacementJournal? = null
         try {
             val build =
                 buildScanPdfFromPages(
@@ -2316,14 +2337,24 @@ internal class ScanStorage(
                 requireResolvedProvisionalOutputCreate(cached)
                 var current = replacementFor(cached).reconcile()
                 current = upgradeImagesForV3(cached, current)
-                copyPdfForRollback(cached.pdf, backup)
-                Files.move(
-                    candidate.toPath(),
-                    cached.pdf.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
+                localJournal =
+                    prepareLocalPdfReplacement(
+                        directory = File(shareCacheRoot(), cached.baseName),
+                        cacheId = cached.baseName,
+                        entryId = current.metadata.entryId,
+                        pageCount = cached.pages.size,
+                        cachedPdf = cached.pdf,
+                        candidatePdf = candidate,
+                        oldTarget = cached.pdfSizeTarget,
+                        newTarget = target,
+                        isCancelled = isCancelled,
+                    )
+                localJournal = publishLocalPdfReplacement(
+                    directory = File(shareCacheRoot(), cached.baseName),
+                    expected = checkNotNull(localJournal),
+                    cachedPdf = cached.pdf,
+                    isCancelled = isCancelled,
                 )
-                localReplaced = true
                 val result =
                     if (current.metadata.pdf == null) {
                         val updated =
@@ -2332,7 +2363,7 @@ internal class ScanStorage(
                                 version = OUTPUT_METADATA_VERSION,
                             )
                         val stored =
-                            rewriteCachedOutputMetadata(cached) { observed ->
+                            rewriteCachedOutputMetadata(cached, reconcileLocalPdf = false) { observed ->
                                 exactReplacementMetadataUpdate(observed, current.metadata, updated)
                             }
                         OutputReplacementResult(
@@ -2346,9 +2377,21 @@ internal class ScanStorage(
                             treeUri = current.metadata.pdf.treeUri,
                             current = current,
                             pdfSizeTarget = target,
+                            reconcileLocalPdf = false,
                         )
                     }
-                activeCommitted = true
+                localJournal =
+                    markLocalPdfReplacementOutputsCommitted(
+                        directory = File(shareCacheRoot(), cached.baseName),
+                        expected = checkNotNull(localJournal),
+                        pageCount = cached.pages.size,
+                    )
+                reconcileLocalPdfReplacement(
+                    directory = File(shareCacheRoot(), cached.baseName),
+                    cacheId = cached.baseName,
+                    pageCount = cached.pages.size,
+                    cachedPdf = cached.pdf,
+                )
                 val warnings =
                     (result.warnings + listOfNotNull(pdfSizeTargetWarning(target, build.bytes)))
                         .distinct()
@@ -2363,22 +2406,16 @@ internal class ScanStorage(
             }
         } catch (failure: Throwable) {
             operationFailure = failure
-            if (localReplaced && !activeCommitted) {
-                activeCommitted =
-                    try {
-                        storageTransactionLock.withLock {
-                            val metadata = requireCurrentOutputMetadata(cached.copy(pdfSizeTarget = target))
-                            metadata.pdfSizeTarget == target &&
-                                (metadata.pdf == null ||
-                                    metadata.pdf.outputFingerprint() == fingerprintFile(cached.pdf))
-                        }
-                    } catch (_: Exception) {
-                        false
-                    }
-            }
-            if (localReplaced && !activeCommitted) {
+            if (localJournal != null) {
                 try {
-                    restorePdfAfterFailedReplacement(backup, cached.pdf)
+                    storageTransactionLock.withLock {
+                        reconcileLocalPdfReplacement(
+                            directory = File(shareCacheRoot(), cached.baseName),
+                            cacheId = cached.baseName,
+                            pageCount = cached.pages.size,
+                            cachedPdf = cached.pdf,
+                        )
+                    }
                 } catch (rollbackFailure: Throwable) {
                     if (rollbackFailure !== failure) failure.addSuppressed(rollbackFailure)
                 }
@@ -2403,25 +2440,6 @@ internal class ScanStorage(
         return replacementWithScratchCleanupWarning(
             checkNotNull(replacementResult),
             cleanupFailed,
-        )
-    }
-
-    private fun copyPdfForRollback(source: File, backup: File) {
-        requireReadableFile(source)
-        if (backup.exists()) throw IOException("PDF rollback file already exists")
-        Files.copy(source.toPath(), backup.toPath())
-        if (fingerprintFile(backup) != fingerprintFile(source)) {
-            throw IOException("PDF rollback copy differs from the active PDF")
-        }
-    }
-
-    private fun restorePdfAfterFailedReplacement(backup: File, destination: File) {
-        requireReadableFile(backup)
-        Files.move(
-            backup.toPath(),
-            destination.toPath(),
-            StandardCopyOption.ATOMIC_MOVE,
-            StandardCopyOption.REPLACE_EXISTING,
         )
     }
 
@@ -2459,7 +2477,12 @@ internal class ScanStorage(
                                     resolveImageExport(options),
                                     isCancelled,
                                 ),
-                                options,
+                                PersistedImageExportIntent(
+                                    format = options.format,
+                                    sizePreset = options.sizePreset,
+                                    customMaxDimension = options.customMaxDimension,
+                                    treeUri = treeUri,
+                                ),
                             )
                         }
                     } else {
@@ -2482,14 +2505,6 @@ internal class ScanStorage(
                             copyExactOutput(input, destination, fingerprint, isCancelled)
                             val format = output.format
                                 ?: throw IOException("Saved image format is unavailable")
-                            val options =
-                                ImageExportOptions(
-                                    format = format,
-                                    sizePreset = output.sizePreset ?: ImageSizePreset.Original,
-                                    customMaxDimension = output.customMaxDimension,
-                                    treeUri = treeUri,
-                                )
-                            resolveImageExport(options)
                             StagedImageOutput(
                                 RenderedImageExport(
                                     file = destination,
@@ -2499,7 +2514,12 @@ internal class ScanStorage(
                                     height = requireNotNull(output.height),
                                     exactSourceCopy = true,
                                 ),
-                                options,
+                                PersistedImageExportIntent(
+                                    format = format,
+                                    sizePreset = output.sizePreset,
+                                    customMaxDimension = output.customMaxDimension,
+                                    treeUri = treeUri,
+                                ),
                             )
                         }
                     }
@@ -2562,7 +2582,15 @@ internal class ScanStorage(
                         options = resolved,
                         isCancelled = isCancelled,
                     )
-                    StagedImageOutput(output, options.copy(treeUri = resolved.treeUri))
+                    StagedImageOutput(
+                        output,
+                        PersistedImageExportIntent(
+                            format = options.format,
+                            sizePreset = options.sizePreset,
+                            customMaxDimension = options.customMaxDimension,
+                            treeUri = resolved.treeUri,
+                        ),
+                    )
                 }
             replacementResult = storageTransactionLock.withLock {
                 requireResolvedProvisionalOutputCreate(cached)
@@ -2601,23 +2629,23 @@ internal class ScanStorage(
         staged: List<StagedImageOutput>,
     ): OutputReplacementResult {
         require(staged.isNotEmpty()) { "Image replacement is empty" }
-        val treeUris = staged.map { it.options.treeUri }.distinct()
+        val treeUris = staged.map { it.intent.treeUri }.distinct()
         if (treeUris.size != 1) throw IOException("Image destinations do not match")
         val treeUri = treeUris.single()
         if (
             current.metadata.images.size == staged.size &&
                 current.metadata.images.zip(staged).all { (saved, replacement) ->
                     val output = replacement.rendered
-                    val options = replacement.options
+                    val intent = replacement.intent
                     imageReplacementIsUnchanged(
                         current = saved,
                         treeUri = treeUri,
                         mimeType = output.mimeType,
                         width = output.width,
                         height = output.height,
-                        format = options.format,
-                        sizePreset = options.sizePreset,
-                        customMaxDimension = options.customMaxDimension,
+                        format = intent.format,
+                        sizePreset = intent.sizePreset,
+                        customMaxDimension = intent.customMaxDimension,
                         fingerprint = fingerprintFile(output.file),
                     ) && verifyExistingImage(saved)
                 }
@@ -2663,7 +2691,7 @@ internal class ScanStorage(
                             onCreated = {
                                 marker = updateProvisionalOutputCreate(cached, marker, it)
                             },
-                        ).toImageOutputRef(page, output, source.options)
+                        ).toImageOutputRef(page, output, source.intent)
                     } else {
                         createSafOutput(
                             source = output.file,
@@ -2676,7 +2704,7 @@ internal class ScanStorage(
                             onCreated = {
                                 marker = updateProvisionalOutputCreate(cached, marker, it)
                             },
-                        ).toImageOutputRef(page, output, source.options)
+                        ).toImageOutputRef(page, output, source.intent)
                     }.also { markers[it.uri] = marker }
                 },
                 onStaged = { output ->
@@ -2696,7 +2724,7 @@ internal class ScanStorage(
                             width = requireNotNull(output.width),
                             height = requireNotNull(output.height),
                             format = requireNotNull(output.format),
-                            sizePreset = output.sizePreset ?: ImageSizePreset.Original,
+                            sizePreset = output.sizePreset,
                             customMaxDimension = output.customMaxDimension,
                         )
                     }
@@ -2967,9 +2995,10 @@ internal class ScanStorage(
 
     private fun rewriteCachedOutputMetadata(
         cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
         update: (OutputMetadata) -> OutputMetadata,
     ): OutputMetadata {
-        val current = requireCurrentOutputMetadata(cached)
+        val current = requireCurrentOutputMetadata(cached, reconcileLocalPdf)
         return rewriteOutputMetadata(
             directory = File(shareCacheRoot(), cached.baseName),
             expectedCacheId = cached.baseName,
@@ -2979,11 +3008,14 @@ internal class ScanStorage(
         )
     }
 
-    private fun replacementFor(cached: CachedScan): DurableOutputReplacement =
+    private fun replacementFor(
+        cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
+    ): DurableOutputReplacement =
         DurableOutputReplacement(
-            readMetadata = { requireCurrentOutputMetadata(cached) },
+            readMetadata = { requireCurrentOutputMetadata(cached, reconcileLocalPdf) },
             writeMetadata = { expected, updated ->
-                rewriteCachedOutputMetadata(cached) { current ->
+                rewriteCachedOutputMetadata(cached, reconcileLocalPdf) { current ->
                     exactReplacementMetadataUpdate(current, expected, updated)
                 }
             },
@@ -3370,10 +3402,24 @@ internal class ScanStorage(
         return publishPendingFile(observed, collection).takeUnless(SavedMediaOutput::pending)
     }
 
-    private fun requireCurrentOutputMetadata(cached: CachedScan): OutputMetadata {
+    private fun requireCurrentOutputMetadata(
+        cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
+    ): OutputMetadata {
         val entryId = cached.entryId ?: throw IOException("Cached scan output metadata is unavailable")
         val root = shareCacheRoot()
-        val current = openCachedScanInRoot(root, cached.baseName)
+        val current =
+            if (reconcileLocalPdf) {
+                openCachedScanInRoot(root, cached.baseName)
+            } else {
+                val directory = File(root, cached.baseName).absoluteFile
+                readCacheEntry(
+                    root,
+                    directory,
+                    cached.baseName,
+                    reconcileLocalPdf = false,
+                )?.cached
+            }
             ?: throw IOException("Cached scan is unavailable")
         if (
             current.entryId != entryId ||
