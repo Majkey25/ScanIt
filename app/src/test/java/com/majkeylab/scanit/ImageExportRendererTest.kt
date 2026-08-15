@@ -85,8 +85,94 @@ class ImageExportRendererTest {
     @Test
     fun decodeSampleBoundsOversizedInputsBeforeBitmapAllocation() {
         assertEquals(1, imageExportDecodeSampleSize(4000, 3000, maxDimension = null))
-        assertEquals(4, imageExportDecodeSampleSize(12000, 8000, maxDimension = 3840))
+        assertEquals(2, imageExportDecodeSampleSize(12000, 8000, maxDimension = 3840))
         assertEquals(8, imageExportDecodeSampleSize(16000, 12000, maxDimension = 1600))
+    }
+
+    @Test
+    fun exifOrientationsMapEveryMirrorAndRotation() {
+        assertEquals(
+            listOf(
+                listOf(ImageExportCorner(1, 0), ImageExportCorner(0, 0), ImageExportCorner(1, 1)),
+                listOf(ImageExportCorner(1, 1), ImageExportCorner(0, 1), ImageExportCorner(1, 0)),
+                listOf(ImageExportCorner(0, 1), ImageExportCorner(1, 1), ImageExportCorner(0, 0)),
+                listOf(ImageExportCorner(0, 0), ImageExportCorner(0, 1), ImageExportCorner(1, 0)),
+                listOf(ImageExportCorner(1, 0), ImageExportCorner(1, 1), ImageExportCorner(0, 0)),
+                listOf(ImageExportCorner(1, 1), ImageExportCorner(1, 0), ImageExportCorner(0, 1)),
+                listOf(ImageExportCorner(0, 1), ImageExportCorner(0, 0), ImageExportCorner(1, 1)),
+            ),
+            (2..8).map { imageExifOrientation(it).destinationCorners },
+        )
+        assertEquals(
+            listOf(
+                ImageExportDimensions(4000, 3000),
+                ImageExportDimensions(4000, 3000),
+                ImageExportDimensions(4000, 3000),
+                ImageExportDimensions(3000, 4000),
+                ImageExportDimensions(3000, 4000),
+                ImageExportDimensions(3000, 4000),
+                ImageExportDimensions(3000, 4000),
+            ),
+            (2..8).map { orientation ->
+                orientedImageExportDimensions(4000, 3000, imageExifOrientation(orientation))
+            },
+        )
+    }
+
+    @Test
+    fun targetDimensionsComeFromOrientedSourceBoundsNotSampledBitmap() {
+        val plan =
+            imageExportRenderPlan(
+                width = 12000,
+                height = 8000,
+                orientation = ImageExifOrientation.Normal,
+                maxDimension = 3840,
+            )
+
+        assertEquals(ImageExportDimensions(3840, 2560), plan.target)
+        assertEquals(2, plan.sampleSize)
+        assertEquals(ImageExportDimensions(6000, 4000), plan.sampled)
+        assertTrue(plan.tiled)
+        assertEquals(43_515_904L, plan.peakBitmapBytes)
+    }
+
+    @Test
+    fun orientationTransformSampleAccountsForDecodedAndTargetBitmapOverlap() {
+        val plan =
+            imageExportRenderPlan(
+                width = 6000,
+                height = 4000,
+                orientation = ImageExifOrientation.Rotate90,
+                maxDimension = null,
+            )
+
+        assertEquals(ImageExportDimensions(2828, 4242), plan.target)
+        assertEquals(1, plan.sampleSize)
+        assertEquals(ImageExportDimensions(6000, 4000), plan.sampled)
+        assertTrue(plan.tiled)
+        assertEquals(52_179_808L, plan.peakBitmapBytes)
+    }
+
+    @Test
+    fun oddSourceDimensionsNeverSelectASampleBelowTheTarget() {
+        val plan =
+            imageExportRenderPlan(
+                width = 11999,
+                height = 1000,
+                orientation = ImageExifOrientation.Normal,
+                maxDimension = 6000,
+            )
+
+        assertEquals(ImageExportDimensions(6000, 500), plan.target)
+        assertEquals(1, plan.sampleSize)
+        assertEquals(ImageExportDimensions(11999, 1000), plan.sampled)
+        assertTrue(plan.tiled)
+        assertEquals(16_194_304L, plan.peakBitmapBytes)
+    }
+
+    @Test
+    fun stagedOutputVerificationUsesASampledDecode() {
+        assertEquals(4, imageExportVerificationSampleSize(3840, 2560))
     }
 
     @Test
