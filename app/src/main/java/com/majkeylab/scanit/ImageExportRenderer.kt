@@ -360,15 +360,19 @@ internal fun imageExportRenderPlan(
 internal fun imageExportVerificationSampleSize(width: Int, height: Int): Int {
     require(width > 0 && height > 0) { "Image dimensions must be positive" }
     var sampleSize = 1
-    while (
-        sampledImageExportUpperBound(width, sampleSize).toLong() *
-            sampledImageExportUpperBound(height, sampleSize) >
-            MAX_IMAGE_EXPORT_VERIFICATION_PIXELS
-    ) {
+    while (true) {
+        val sampledWidth = sampledImageExportUpperBound(width, sampleSize)
+        val sampledHeight = sampledImageExportUpperBound(height, sampleSize)
+        if (
+            sampledWidth <= MAX_IMAGE_EXPORT_DIMENSION &&
+            sampledHeight <= MAX_IMAGE_EXPORT_DIMENSION &&
+            sampledWidth.toLong() * sampledHeight <= MAX_IMAGE_EXPORT_VERIFICATION_PIXELS
+        ) {
+            return sampleSize
+        }
         check(sampleSize <= Int.MAX_VALUE / 2) { "Image dimensions cannot be sampled safely" }
         sampleSize *= 2
     }
-    return sampleSize
 }
 
 internal fun requireReadableImageExportSource(source: File): File {
@@ -566,23 +570,59 @@ private fun renderOrientedImageExport(
     }
 }
 
+internal fun <Decoder : Any, Output : Any> withImageExportRegionResources(
+    createDecoder: () -> Decoder,
+    createOutput: () -> Output,
+    releaseDecoder: (Decoder) -> Unit,
+    releaseOutput: (Output) -> Unit,
+    render: (Decoder, Output) -> Unit,
+): Output {
+    val decoder = createDecoder()
+    var output: Output? = null
+    var decoderReleaseAttempted = false
+    var transferred = false
+    try {
+        output = createOutput()
+        render(decoder, output)
+        decoderReleaseAttempted = true
+        releaseDecoder(decoder)
+        transferred = true
+        return output
+    } finally {
+        if (!transferred) {
+            try {
+                output?.let(releaseOutput)
+            } finally {
+                if (!decoderReleaseAttempted) releaseDecoder(decoder)
+            }
+        }
+    }
+}
+
 private fun renderTiledImageExport(
     source: File,
     bounds: ImageBounds,
     plan: ImageExportRenderPlan,
     orientation: ImageExifOrientation,
     isCancelled: () -> Boolean,
-): Bitmap {
-    val output = createBitmap(plan.target.width, plan.target.height, Bitmap.Config.ARGB_8888)
-    if (
-        output.allocationByteCount.toLong() + MAX_IMAGE_EXPORT_TILE_BITMAP_BYTES >
-            MAX_IMAGE_EXPORT_PEAK_BITMAP_BYTES
-    ) {
-        output.recycle()
-        throw IOException("Image export bitmap peak exceeds the memory bound")
-    }
-    val decoder = BitmapRegionDecoder.newInstance(source.path)
-    try {
+): Bitmap =
+    withImageExportRegionResources(
+        createDecoder = {
+            val decoder: BitmapRegionDecoder? = BitmapRegionDecoder.newInstance(source.path)
+            decoder ?: throw IOException("Source image region decoder could not be created")
+        },
+        createOutput = {
+            createBitmap(plan.target.width, plan.target.height, Bitmap.Config.ARGB_8888)
+        },
+        releaseDecoder = { it.recycle() },
+        releaseOutput = { it.recycle() },
+    ) { decoder, output ->
+        if (
+            output.allocationByteCount.toLong() + MAX_IMAGE_EXPORT_TILE_BITMAP_BYTES >
+                MAX_IMAGE_EXPORT_PEAK_BITMAP_BYTES
+        ) {
+            throw IOException("Image export bitmap peak exceeds the memory bound")
+        }
         if (decoder.width != bounds.width || decoder.height != bounds.height) {
             throw IOException("Image region decoder dimensions are incorrect")
         }
@@ -632,14 +672,7 @@ private fun renderTiledImageExport(
             }
             top = bottom
         }
-        return output
-    } catch (throwable: Throwable) {
-        output.recycle()
-        throw throwable
-    } finally {
-        decoder.recycle()
     }
-}
 
 private data class ImageExportPointF(val x: Float, val y: Float)
 

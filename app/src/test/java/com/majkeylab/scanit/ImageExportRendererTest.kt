@@ -171,8 +171,59 @@ class ImageExportRendererTest {
     }
 
     @Test
-    fun stagedOutputVerificationUsesASampledDecode() {
+    fun stagedOutputVerificationBoundsPixelsAndEdges() {
         assertEquals(4, imageExportVerificationSampleSize(3840, 2560))
+        assertEquals(4, imageExportVerificationSampleSize(20000, 100))
+    }
+
+    @Test
+    fun regionDecoderFailureCannotAllocateOutput() {
+        var outputCreated = false
+
+        assertThrows(IOException::class.java) {
+            withImageExportRegionResources<String, String>(
+                createDecoder = { throw IOException("decoder failed") },
+                createOutput = {
+                    outputCreated = true
+                    "output"
+                },
+                releaseDecoder = {},
+                releaseOutput = {},
+                render = { _, _ -> },
+            )
+        }
+
+        assertFalse(outputCreated)
+    }
+
+    @Test
+    fun regionResourcesCleanUpEveryAcquiredResourceOnFailure() {
+        var decoderReleases = 0
+        var outputReleases = 0
+
+        assertThrows(IOException::class.java) {
+            withImageExportRegionResources<String, String>(
+                createDecoder = { "decoder" },
+                createOutput = { throw IOException("output failed") },
+                releaseDecoder = { decoderReleases++ },
+                releaseOutput = { outputReleases++ },
+                render = { _, _ -> },
+            )
+        }
+        assertEquals(1, decoderReleases)
+        assertEquals(0, outputReleases)
+
+        assertThrows(CancellationException::class.java) {
+            withImageExportRegionResources<String, String>(
+                createDecoder = { "decoder" },
+                createOutput = { "output" },
+                releaseDecoder = { decoderReleases++ },
+                releaseOutput = { outputReleases++ },
+                render = { _, _ -> throw CancellationException("cancelled") },
+            )
+        }
+        assertEquals(2, decoderReleases)
+        assertEquals(1, outputReleases)
     }
 
     @Test
