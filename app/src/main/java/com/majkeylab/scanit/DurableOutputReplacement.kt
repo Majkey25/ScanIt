@@ -59,6 +59,57 @@ internal fun exactReplacementMetadataUpdate(
     return updated
 }
 
+internal fun mergePublishedPdfIdentity(
+    staged: PdfOutputRef,
+    published: PdfOutputRef,
+): PdfOutputRef {
+    if (
+        staged.uri != published.uri ||
+            staged.treeUri != published.treeUri ||
+            published.pending ||
+            published.displayName == null ||
+            published.mimeType == null ||
+            published.ownerPackageName == null ||
+            published.outputFingerprint() == null
+    ) {
+        throw IOException("Published PDF identity is incomplete")
+    }
+    return staged.copy(
+        displayName = published.displayName,
+        mimeType = published.mimeType,
+        ownerPackageName = published.ownerPackageName,
+        byteLength = published.byteLength,
+        sha256 = published.sha256,
+        pending = false,
+    )
+}
+
+internal fun mergePublishedImageIdentity(
+    staged: ImageOutputRef,
+    published: ImageOutputRef,
+): ImageOutputRef {
+    if (
+        staged.page != published.page ||
+            staged.uri != published.uri ||
+            staged.treeUri != published.treeUri ||
+            published.pending ||
+            published.displayName == null ||
+            published.mimeType == null ||
+            published.ownerPackageName == null ||
+            published.outputFingerprint() == null
+    ) {
+        throw IOException("Published image identity is incomplete")
+    }
+    return staged.copy(
+        displayName = published.displayName,
+        mimeType = published.mimeType,
+        ownerPackageName = published.ownerPackageName,
+        byteLength = published.byteLength,
+        sha256 = published.sha256,
+        pending = false,
+    )
+}
+
 internal class DurableOutputReplacement(
     private val readMetadata: () -> OutputMetadata,
     private val writeMetadata: (OutputMetadata, OutputMetadata) -> OutputMetadata,
@@ -84,10 +135,11 @@ internal class DurableOutputReplacement(
             current = commit(current, current.copy(stagedPdf = created, version = OUTPUT_METADATA_VERSION))
             staged = true
             onStaged(created)
-            val published = publish(created)
+            created = publish(created)
+            current = commitPublishedPdf(current, created)
             val active =
                 current.copy(
-                    pdf = published,
+                    pdf = created,
                     stagedPdf = null,
                     retiredPdf = old,
                     pdfSizeTarget = activePdfSizeTarget ?: current.pdfSizeTarget,
@@ -133,10 +185,12 @@ internal class DurableOutputReplacement(
                     )
                 onStaged(output)
             }
-            val published =
-                created.indices.map { index ->
-                    publish(created[index]).also { created[index] = it }
-                }
+            created.indices.forEach { index ->
+                val published = publish(created[index])
+                created[index] = published
+                current = commitPublishedImage(current, published)
+            }
+            val published = created.toList()
             current =
                 commit(
                     current,
@@ -151,7 +205,7 @@ internal class DurableOutputReplacement(
             return cleanup(current)
         } catch (failure: Throwable) {
             if (!activeCommitted) {
-                rollbackImages(current, created, failure)
+                rollbackImages(created, failure)
             }
             throw failure
         }
@@ -200,39 +254,42 @@ internal class DurableOutputReplacement(
         val status = deleteDuringRollback(failure) { deletePdf(created) }
         if (staged && status.isRemoved()) {
             clearStagedPdf(created, failure)
+        } else if (staged) {
+            preserveStagedPdfIdentity(created, failure)
         } else if (!staged && !status.isRemoved()) {
             preserveUnjournaledPdf(current, created, failure)
         }
     }
 
     private fun rollbackImages(
-        current: OutputMetadata,
         created: List<ImageOutputRef>,
         failure: Throwable,
     ) {
-        val stagedUris = current.stagedImages.mapTo(mutableSetOf(), ImageOutputRef::uri)
         val removed = mutableSetOf<String>()
         created.forEach { image ->
             if (deleteDuringRollback(failure) { deleteImage(image) }.isRemoved()) {
                 removed += image.uri
             }
         }
-        if (removed.isNotEmpty() && current.stagedImages.any { it.uri in removed }) {
-            suppressCleanupFailure(failure) {
-                commit(
-                    current,
-                    current.copy(stagedImages = current.stagedImages.filterNot { it.uri in removed }),
-                )
-            }
-        }
-        val unjournaled = created.filter { it.uri !in stagedUris && it.uri !in removed }
-        if (unjournaled.isNotEmpty()) {
-            suppressCleanupFailure(failure) {
-                val latest = readMetadata()
+        suppressCleanupFailure(failure) {
+            val latest = readMetadata()
+            val actualByUri = created.associateBy(ImageOutputRef::uri)
+            if (actualByUri.size != created.size) throw IOException("Created image URI is duplicated")
+            val updated =
+                latest.stagedImages.mapNotNull { staged ->
+                    when {
+                        staged.uri in removed -> null
+                        staged.uri in actualByUri -> actualByUri.getValue(staged.uri)
+                        else -> staged
+                    }
+                }.toMutableList()
+            val recordedUris = updated.mapTo(mutableSetOf(), ImageOutputRef::uri)
+            updated += created.filter { it.uri !in removed && it.uri !in recordedUris }
+            if (updated != latest.stagedImages) {
                 commit(
                     latest,
                     latest.copy(
-                        stagedImages = latest.stagedImages + unjournaled,
+                        stagedImages = updated,
                         version = OUTPUT_METADATA_VERSION,
                     ),
                 )
@@ -246,7 +303,24 @@ internal class DurableOutputReplacement(
     ) {
         suppressCleanupFailure(failure) {
             val latest = readMetadata()
-            if (latest.stagedPdf == created) commit(latest, latest.copy(stagedPdf = null))
+            if (latest.stagedPdf?.uri == created.uri) {
+                commit(latest, latest.copy(stagedPdf = null))
+            }
+        }
+    }
+
+    private fun preserveStagedPdfIdentity(
+        created: PdfOutputRef,
+        failure: Throwable,
+    ) {
+        suppressCleanupFailure(failure) {
+            val latest = readMetadata()
+            if (latest.stagedPdf?.uri == created.uri && latest.stagedPdf != created) {
+                commit(
+                    latest,
+                    latest.copy(stagedPdf = created, version = OUTPUT_METADATA_VERSION),
+                )
+            }
         }
     }
 
@@ -296,6 +370,41 @@ internal class DurableOutputReplacement(
         val stored = writeMetadata(expected, updated)
         if (stored != updated) throw IOException("Output replacement metadata was not committed")
         return stored
+    }
+
+    private fun commitPublishedPdf(
+        current: OutputMetadata,
+        published: PdfOutputRef,
+    ): OutputMetadata {
+        val staged = current.stagedPdf
+            ?: throw IOException("Staged PDF metadata is unavailable")
+        if (staged.uri != published.uri) throw IOException("Published PDF URI changed")
+        if (staged == published) return current
+        val verified = mergePublishedPdfIdentity(staged, published)
+        return commit(
+            current,
+            current.copy(stagedPdf = verified, version = OUTPUT_METADATA_VERSION),
+        )
+    }
+
+    private fun commitPublishedImage(
+        current: OutputMetadata,
+        published: ImageOutputRef,
+    ): OutputMetadata {
+        val staged = current.stagedImages.filter { it.uri == published.uri }
+        if (staged.size != 1) throw IOException("Staged image metadata is unavailable")
+        val verified =
+            if (staged.single() == published) published
+            else mergePublishedImageIdentity(staged.single(), published)
+        val updated =
+            current.stagedImages.map { staged ->
+                if (staged.uri == published.uri) verified else staged
+            }
+        if (updated == current.stagedImages) return current
+        return commit(
+            current,
+            current.copy(stagedImages = updated, version = OUTPUT_METADATA_VERSION),
+        )
     }
 
     private fun deleteSafely(delete: () -> OutputDeleteStatus): OutputDeleteStatus =

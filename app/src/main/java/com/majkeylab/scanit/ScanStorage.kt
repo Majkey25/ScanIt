@@ -225,6 +225,25 @@ internal fun publishedMediaIdentityIsAcceptable(
         sameByteLength &&
         sameSha256
 
+internal fun pendingMediaReconciliationIdentityIsAcceptable(
+    observedPending: Boolean,
+    sameUri: Boolean,
+    sameDisplayName: Boolean,
+    safeDisplayName: Boolean,
+    sameMimeType: Boolean,
+    sameOwner: Boolean,
+    sameByteLength: Boolean,
+    sameSha256: Boolean,
+): Boolean =
+    publishedMediaIdentityIsAcceptable(
+        sameUri = sameUri,
+        safeDisplayName = if (observedPending) sameDisplayName else safeDisplayName,
+        sameMimeType = sameMimeType,
+        sameOwner = sameOwner,
+        sameByteLength = sameByteLength,
+        sameSha256 = sameSha256,
+    )
+
 internal fun replacementWithScratchCleanupWarning(
     result: OutputReplacementResult,
     cleanupFailed: Boolean,
@@ -2839,8 +2858,25 @@ internal class ScanStorage(
                         publishPendingFile(it, MediaOutputCollection.Images)
                     }
                 rewriteCachedOutputMetadata(cached) { metadata ->
+                    if (metadata.images.size != published.size) {
+                        throw IOException("Published image metadata count changed")
+                    }
                     metadata.copy(
-                        images = metadata.images.map { it.copy(pending = false) },
+                        images =
+                            metadata.images.zip(published).map { (staged, observed) ->
+                                mergePublishedImageIdentity(
+                                    staged,
+                                    staged.copy(
+                                        uri = observed.uri.toString(),
+                                        displayName = observed.displayName,
+                                        mimeType = observed.mimeType,
+                                        ownerPackageName = observed.ownerPackageName,
+                                        byteLength = observed.byteLength,
+                                        sha256 = observed.sha256,
+                                        pending = observed.pending,
+                                    ),
+                                )
+                            },
                     )
                 }
                 published.map(SavedMediaOutput::uri)
@@ -2934,12 +2970,16 @@ internal class ScanStorage(
                 if (media == null) {
                     output
                 } else {
-                    val published =
+                    val publishedMedia =
                         publishPendingFile(media, MediaOutputCollection.Downloads)
-                            .toPdfOutput(output.warning)
+                    val published = publishedMedia.toPdfOutput(output.warning)
                     createdOutput = published
                     rewriteCachedOutputMetadata(cached) { metadata ->
-                        metadata.copy(pdf = metadata.pdf?.copy(pending = false))
+                        val staged = metadata.pdf
+                            ?: throw IOException("Pending PDF metadata is unavailable")
+                        metadata.copy(
+                            pdf = mergePublishedPdfIdentity(staged, publishedMedia.toPdfOutputRef()),
+                        )
                     }
                     published
                 }
@@ -3409,8 +3449,16 @@ internal class ScanStorage(
                 expected,
             )
         if (
-            observed.displayName != displayName ||
-                observed.ownerPackageName != ownerPackageName
+            !pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = observed.pending,
+                sameUri = observed.uri.toString() == uri,
+                sameDisplayName = observed.displayName == displayName,
+                safeDisplayName = isProviderDisplayName(observed.displayName),
+                sameMimeType = observed.mimeType == mimeType,
+                sameOwner = observed.ownerPackageName == ownerPackageName,
+                sameByteLength = observed.byteLength == expected.byteLength,
+                sameSha256 = observed.sha256 == expected.sha256,
+            )
         ) {
             return null
         }

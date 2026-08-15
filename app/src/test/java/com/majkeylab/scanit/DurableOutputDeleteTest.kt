@@ -205,7 +205,15 @@ class DurableOutputDeleteTest {
             )
 
         assertEquals(
-            listOf("create", "staged", "marker-clear", "publish", "active", "delete:${old.uri}"),
+            listOf(
+                "create",
+                "staged",
+                "marker-clear",
+                "publish",
+                "staged",
+                "active",
+                "delete:${old.uri}",
+            ),
             events,
         )
         assertEquals(published, first.metadata.pdf)
@@ -311,7 +319,7 @@ class DurableOutputDeleteTest {
 
             assertEquals(old, metadata.pdf)
             assertNull(metadata.stagedPdf)
-            assertEquals(listOf(created), deleted)
+            assertEquals(listOf(created.copy(pending = false)), deleted)
         }
     }
 
@@ -346,7 +354,7 @@ class DurableOutputDeleteTest {
         assertSame(cancellation, thrown)
         assertEquals(listOf(cleanupCancellation), thrown.suppressed.toList())
         assertEquals(old, metadata.pdf)
-        assertEquals(created, metadata.stagedPdf)
+        assertEquals(created.copy(pending = false), metadata.stagedPdf)
     }
 
     @Test
@@ -406,6 +414,46 @@ class DurableOutputDeleteTest {
     }
 
     @Test
+    fun pendingRecoveryAcceptsCollisionRenameOnlyAfterExactPublication() {
+        assertTrue(
+            pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = false,
+                sameUri = true,
+                sameDisplayName = false,
+                safeDisplayName = true,
+                sameMimeType = true,
+                sameOwner = true,
+                sameByteLength = true,
+                sameSha256 = true,
+            ),
+        )
+        assertFalse(
+            pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = true,
+                sameUri = true,
+                sameDisplayName = false,
+                safeDisplayName = true,
+                sameMimeType = true,
+                sameOwner = true,
+                sameByteLength = true,
+                sameSha256 = true,
+            ),
+        )
+        assertFalse(
+            pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = false,
+                sameUri = true,
+                sameDisplayName = false,
+                safeDisplayName = true,
+                sameMimeType = true,
+                sameOwner = true,
+                sameByteLength = true,
+                sameSha256 = false,
+            ),
+        )
+    }
+
+    @Test
     fun failedMultiPagePublishRollsBackUsingPublishedProviderIdentity() {
         val firstPending =
             exactImage(1, "content://media/external/images/media/2", pending = true)
@@ -440,6 +488,113 @@ class DurableOutputDeleteTest {
 
         assertEquals(listOf(firstPublished, secondPending), deleted)
         assertTrue(metadata.stagedImages.isEmpty())
+    }
+
+    @Test
+    fun pdfProviderRenameIsJournaledBeforeActiveCommitFailureAndExactRollback() {
+        val old = exactPdf("content://media/external/downloads/1")
+        val pending = exactPdf("content://media/external/downloads/2", pending = true)
+        val published = pending.copy(displayName = "scan (1).pdf", pending = false)
+        var metadata = metadata().copy(pdf = old)
+        var writes = 0
+        val deleted = mutableListOf<PdfOutputRef>()
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    writes++
+                    if (writes == 3) throw IOException("active metadata commit")
+                    metadata = updated
+                    updated
+                },
+                deletePdf = {
+                    deleted += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replacePdf(create = { pending }, publish = { published })
+        }
+
+        assertEquals(listOf(published), deleted)
+        assertNull(metadata.stagedPdf)
+        assertEquals(old, metadata.pdf)
+    }
+
+    @Test
+    fun normalSaveMetadataUsesFullPublishedProviderIdentity() {
+        val pendingPdf = exactPdf("content://media/external/downloads/2", pending = true)
+        val publishedPdf = pendingPdf.copy(displayName = "scan (1).pdf", pending = false)
+        val pendingImage = exactImage(1, "content://media/external/images/media/2", pending = true)
+        val publishedImage = pendingImage.copy(displayName = "page (1).jpg", pending = false)
+
+        assertEquals(publishedPdf, mergePublishedPdfIdentity(pendingPdf, publishedPdf))
+        assertEquals(publishedImage, mergePublishedImageIdentity(pendingImage, publishedImage))
+        assertThrows(IOException::class.java) {
+            mergePublishedPdfIdentity(pendingPdf, publishedPdf.copy(uri = "content://media/external/downloads/3"))
+        }
+        assertThrows(IOException::class.java) {
+            mergePublishedImageIdentity(pendingImage, publishedImage.copy(page = 2))
+        }
+    }
+
+    @Test
+    fun renamedMultiPageJournalSurvivesRollbackDeleteFailureAndRestartReconciliation() {
+        val firstPending = exactImage(1, "content://media/external/images/media/2", pending = true)
+        val secondPending = exactImage(2, "content://media/external/images/media/3", pending = true)
+        val firstPublished = firstPending.copy(displayName = "page (1).jpg", pending = false)
+        val secondPublished = secondPending.copy(displayName = "page (2).jpg", pending = false)
+        var metadata = metadata().copy(images = emptyList())
+        var writes = 0
+        val failedDeletes = mutableListOf<ImageOutputRef>()
+        val interrupted =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    writes++
+                    if (writes == 5) throw IOException("process stopped before active metadata commit")
+                    metadata = updated
+                    updated
+                },
+                deleteImage = {
+                    failedDeletes += it
+                    OutputDeleteStatus.Failed
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            interrupted.replaceImages(
+                pageCount = 2,
+                create = { page -> if (page == 1) firstPending else secondPending },
+                publish = { image -> if (image.page == 1) firstPublished else secondPublished },
+            )
+        }
+
+        assertEquals(listOf(firstPublished, secondPublished), failedDeletes)
+        assertEquals(listOf(firstPublished, secondPublished), metadata.stagedImages)
+        val recoveredDeletes = mutableListOf<ImageOutputRef>()
+        val restarted =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deleteImage = {
+                    recoveredDeletes += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        val recovered = restarted.reconcile()
+
+        assertEquals(listOf(firstPublished, secondPublished), recoveredDeletes)
+        assertTrue(recovered.metadata.stagedImages.isEmpty())
+        assertTrue(recovered.warnings.isEmpty())
     }
 
     @Test
