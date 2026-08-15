@@ -25,6 +25,92 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun fileDetailControlsCoverSaveAndLegacyStates() {
+        val allControls =
+            setOf(
+                FileDetailControl.PdfSize,
+                FileDetailControl.PdfLocation,
+                FileDetailControl.ImageSize,
+                FileDetailControl.ImageFormat,
+                FileDetailControl.ImageLocation,
+            )
+        val pdfControls =
+            setOf(
+                FileDetailControl.PdfSize,
+                FileDetailControl.PdfLocation,
+            )
+
+        assertEquals(allControls, fileDetailControls(fileDetailAvailability()))
+        assertEquals(allControls, fileDetailControls(fileDetailAvailability(savedImages = 2)))
+        assertEquals(pdfControls, fileDetailControls(fileDetailAvailability(imagesChangeable = false)))
+        assertEquals(
+            emptySet<FileDetailControl>(),
+            fileDetailControls(fileDetailAvailability(valid = false)),
+        )
+    }
+
+    @Test
+    fun resultCustomValuesAndFullscreenPageStayBounded() {
+        assertNull(parseCustomImageDimension("319"))
+        assertEquals(320, parseCustomImageDimension("320"))
+        assertEquals(6000, parseCustomImageDimension("6000"))
+        assertNull(parseCustomImageDimension("6001"))
+        assertNull(parseCustomImageDimension(" 320"))
+
+        assertEquals(0, fullscreenPageIndex(-1, 3))
+        assertEquals(2, fullscreenPageIndex(9, 3))
+        assertEquals(0, fullscreenPageIndex(4, 0))
+    }
+
+    @Test
+    fun imageDetailsUseOnlyCompleteSavedOrCachedDimensions() {
+        val cached = listOf(2000 to 3000, 2000 to 3000)
+
+        assertEquals(cached, exactImageDimensions(2, emptyList(), cached))
+        assertEquals(
+            listOf(1600 to 2400, 1600 to 2400),
+            exactImageDimensions(
+                2,
+                listOf(1600 to 2400, 1600 to 2400),
+                cached,
+            ),
+        )
+        assertNull(exactImageDimensions(2, listOf(1600 to 2400, null), cached))
+        assertNull(exactImageDimensions(2, emptyList(), listOf(2000 to 3000)))
+        assertNull(exactImageDimensions(2, emptyList(), listOf(0 to 3000, 2000 to 3000)))
+    }
+
+    @Test
+    fun recentRowContentOpensWhileOverflowRemainsIsolated() {
+        assertEquals(RecentRowAction.Open, recentRowAction(RecentRowTarget.Content))
+        assertEquals(RecentRowAction.ShowMenu, recentRowAction(RecentRowTarget.Overflow))
+    }
+
+    @Test
+    fun appearanceEditAndUnknownOutputWarningFailClosed() {
+        val editable = uiSavedScan()
+        assertTrue(canEditAppearance(editable))
+        assertFalse(canEditAppearance(editable.copy(outputMetadataValid = false)))
+        assertFalse(canEditAppearance(editable.copy(cached = editable.cached.copy(entryId = null))))
+
+        val acknowledgement =
+            UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, OTHER_ENTRY_ID)
+        val warning = editable.copy(unknownOutputCreateAcknowledgement = acknowledgement)
+        assertSame(acknowledgement, confirmedUnknownOutputAcknowledgement(warning, confirmed = true))
+        assertNull(confirmedUnknownOutputAcknowledgement(warning, confirmed = false))
+        assertNull(confirmedUnknownOutputAcknowledgement(editable, confirmed = true))
+    }
+
+    @Test
+    fun unsavedImagesStartWithOriginalExportOptions() {
+        assertEquals(
+            ImageExportOptions(ImageExportFormat.Original, ImageSizePreset.Original),
+            imageExportOptionsForChange(uiSavedScan()),
+        )
+        assertNull(imageExportOptionsForChange(uiSavedScan().copy(outputMetadataValid = false)))
+    }
+
+    @Test
     fun outputChangeGateRejectsDoubleTapAndReusedCacheGeneration() {
         val gate = OutputChangeGate()
         val request =
@@ -2132,6 +2218,41 @@ class PureLogicTest {
             galleryPages = emptyList(),
             savedPdf = null,
             outputMetadataValid = outputMetadataValid,
+        )
+
+    private fun uiSavedScan(): SavedScan {
+        val pages = listOf(File("page-1.jpg"), File("page-2.jpg"))
+        val cached =
+            CachedScan(
+                baseName = CACHE_ID,
+                pages = pages,
+                pdf = File("scan.pdf"),
+                entryId = ENTRY_ID,
+                sourcePages = pages,
+                appearance = ScanAppearance(),
+                appearanceSettings = ScanAppearanceSettings(),
+            )
+        return SavedScan(
+            cached = cached,
+            savedImages = emptyList(),
+            savedPdf = null,
+            outputMetadataValid = true,
+        )
+    }
+
+    private fun fileDetailAvailability(
+        savedImages: Int = 0,
+        valid: Boolean = true,
+        imagesChangeable: Boolean = true,
+    ): FileDetailAvailability =
+        FileDetailAvailability(
+            outputMetadataValid = valid,
+            hasEntryId = true,
+            canChoosePdfSize = true,
+            pdfAvailable = true,
+            pageCount = 2,
+            savedImageCount = savedImages,
+            canChangeImages = imagesChangeable,
         )
 
     private fun inMemoryPreferences(

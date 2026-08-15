@@ -575,7 +575,7 @@ internal class ScanViewModel(
         customMaxDimension: Int? = null,
     ) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        val options = currentImageExportOptions(current.scan) ?: return
+        val options = imageExportOptionsForChange(current.scan) ?: return
         val kind =
             try {
                 OutputChangeKind.ImageSize(preset, customMaxDimension)
@@ -591,7 +591,7 @@ internal class ScanViewModel(
 
     fun changeCurrentImageFormat(format: ImageExportFormat) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        val options = currentImageExportOptions(current.scan) ?: return
+        val options = imageExportOptionsForChange(current.scan) ?: return
         runImageOutputChange(
             current,
             OutputChangeKind.ImageFormat(format),
@@ -733,32 +733,6 @@ internal class ScanViewModel(
                 isCancelled = { !operationContext.isActive },
             )
         }
-    }
-
-    private fun currentImageExportOptions(scan: SavedScan): ImageExportOptions? {
-        if (!scan.outputMetadataValid || scan.savedImages.isEmpty()) return null
-        val formats = scan.savedImages.mapNotNull(SavedImageOutput::format).distinct()
-        if (formats.size != 1 || scan.savedImages.any { it.format == null }) {
-            return null
-        }
-        val treeUris = scan.savedImages.map { it.treeUri?.toString() }.distinct()
-        if (treeUris.size != 1) return null
-        val maxDimension =
-            scan.savedImages.maxOfOrNull { output ->
-                maxOf(output.width ?: return null, output.height ?: return null)
-            } ?: return null
-        val (preset, custom) =
-            if (maxDimension in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION) {
-                ImageSizePreset.Custom to maxDimension
-            } else {
-                ImageSizePreset.Original to null
-            }
-        return ImageExportOptions(
-            format = formats.single(),
-            sizePreset = preset,
-            customMaxDimension = custom,
-            treeUri = treeUris.single(),
-        )
     }
 
     private fun startOutputReplacement(
@@ -1395,6 +1369,50 @@ internal class ScanViewModel(
                 isCancelled = { !processingContext.isActive },
             )
         }
+
+    suspend fun loadResultPreview(
+        page: File,
+        maxSize: Int,
+    ): Bitmap? =
+        withContext(Dispatchers.IO) {
+            val bitmap = storage.loadThumbnail(page, maxSize.coerceIn(320, 2048))
+            try {
+                currentCoroutineContext().ensureActive()
+                bitmap
+            } catch (cancellation: CancellationException) {
+                bitmap?.recycle()
+                throw cancellation
+            }
+        }
+
+    suspend fun loadResultImageDimensions(pages: List<File>): List<Pair<Int, Int>> =
+        withContext(Dispatchers.IO) {
+            pages.map { page ->
+                currentCoroutineContext().ensureActive()
+                val dimensions = readJpegDimensions(page)
+                dimensions.width to dimensions.height
+            }
+        }
+
+    fun openAppearanceEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.resultActionsBlocked || !canEditAppearance(current.scan)) return
+        mutableState.value =
+            current.copy(
+                appearanceReviewRequired = true,
+                appearanceMessage = null,
+            )
+    }
+
+    fun closeAppearanceEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (!current.appearanceReviewRequired || current.appearanceApplyInProgress) return
+        mutableState.value =
+            current.copy(
+                appearanceReviewRequired = false,
+                appearanceMessage = null,
+            )
+    }
 
     fun openVisualMarkEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return

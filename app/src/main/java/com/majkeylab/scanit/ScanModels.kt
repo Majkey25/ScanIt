@@ -659,6 +659,149 @@ internal fun canChoosePdfSize(scan: SavedScan): Boolean {
         cached.appearanceSettings != null
 }
 
+internal enum class FileDetailControl {
+    PdfSize,
+    PdfLocation,
+    ImageSize,
+    ImageFormat,
+    ImageLocation,
+}
+
+internal data class FileDetailAvailability(
+    val outputMetadataValid: Boolean,
+    val hasEntryId: Boolean,
+    val canChoosePdfSize: Boolean,
+    val pdfAvailable: Boolean,
+    val pageCount: Int,
+    val savedImageCount: Int,
+    val canChangeImages: Boolean,
+)
+
+internal fun fileDetailControls(scan: SavedScan): Set<FileDetailControl> =
+    fileDetailControls(
+        FileDetailAvailability(
+            outputMetadataValid = scan.outputMetadataValid,
+            hasEntryId = scan.cached.entryId != null,
+            canChoosePdfSize = canChoosePdfSize(scan),
+            pdfAvailable = scan.cached.pdf.isFile || scan.cached.pages.isNotEmpty(),
+            pageCount = scan.cached.pages.size,
+            savedImageCount = scan.savedImages.size,
+            canChangeImages = imageExportOptionsForChange(scan) != null,
+        ),
+    )
+
+internal fun fileDetailControls(availability: FileDetailAvailability): Set<FileDetailControl> {
+    if (!availability.outputMetadataValid || !availability.hasEntryId) return emptySet()
+    if (availability.pageCount <= 0 || availability.savedImageCount !in 0..availability.pageCount) {
+        return emptySet()
+    }
+    return buildSet {
+        if (availability.canChoosePdfSize) add(FileDetailControl.PdfSize)
+        if (availability.pdfAvailable) add(FileDetailControl.PdfLocation)
+        if (availability.canChangeImages) {
+            add(FileDetailControl.ImageSize)
+            add(FileDetailControl.ImageFormat)
+            add(FileDetailControl.ImageLocation)
+        }
+    }
+}
+
+internal fun parseCustomImageDimension(value: String): Int? =
+    value.toIntOrNull()?.takeIf { it in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION }
+
+internal fun fullscreenPageIndex(selected: Int, pageCount: Int): Int =
+    if (pageCount <= 0) 0 else selected.coerceIn(0, pageCount - 1)
+
+internal fun exactImageDimensions(
+    pageCount: Int,
+    savedDimensions: List<Pair<Int, Int>?>,
+    cachedDimensions: List<Pair<Int, Int>>?,
+): List<Pair<Int, Int>>? {
+    if (pageCount <= 0) return null
+    val dimensions =
+        if (savedDimensions.isEmpty()) {
+            cachedDimensions
+        } else {
+            if (savedDimensions.size != pageCount || savedDimensions.any { it == null }) return null
+            savedDimensions.filterNotNull()
+        }
+    return dimensions?.takeIf { values ->
+        values.size == pageCount &&
+            values.all { (width, height) ->
+                width > 0 &&
+                    height > 0 &&
+                    width.toLong() * height <= MAX_IMAGE_EXPORT_PIXELS
+            }
+    }
+}
+
+internal enum class RecentRowTarget {
+    Content,
+    Overflow,
+}
+
+internal enum class RecentRowAction {
+    Open,
+    ShowMenu,
+}
+
+internal fun recentRowAction(target: RecentRowTarget): RecentRowAction =
+    when (target) {
+        RecentRowTarget.Content -> RecentRowAction.Open
+        RecentRowTarget.Overflow -> RecentRowAction.ShowMenu
+    }
+
+internal fun canEditAppearance(scan: SavedScan): Boolean {
+    val cached = scan.cached
+    return scan.outputMetadataValid &&
+        cached.entryId != null &&
+        cached.pages.isNotEmpty() &&
+        cached.sourcePages.size == cached.pages.size &&
+        cached.appearance != null &&
+        cached.appearanceSettings != null
+}
+
+internal fun confirmedUnknownOutputAcknowledgement(
+    scan: SavedScan,
+    confirmed: Boolean,
+): UnknownOutputCreateAcknowledgement? =
+    scan.unknownOutputCreateAcknowledgement.takeIf { confirmed }
+
+internal fun imageExportOptionsForChange(scan: SavedScan): ImageExportOptions? {
+    if (!scan.outputMetadataValid || scan.cached.entryId == null || scan.cached.pages.isEmpty()) {
+        return null
+    }
+    if (scan.savedImages.isEmpty()) {
+        return ImageExportOptions(ImageExportFormat.Original, ImageSizePreset.Original)
+    }
+    if (scan.savedImages.size != scan.cached.pages.size) return null
+    val formats = scan.savedImages.mapNotNull(SavedImageOutput::format).distinct()
+    if (formats.size != 1 || scan.savedImages.any { it.format == null }) return null
+    val treeUris = scan.savedImages.map { it.treeUri?.toString() }.distinct()
+    if (treeUris.size != 1) return null
+    val maxDimension =
+        scan.savedImages.maxOfOrNull { output ->
+            maxOf(output.width ?: return null, output.height ?: return null)
+        } ?: return null
+    val preset =
+        ImageSizePreset.entries.firstOrNull {
+            it != ImageSizePreset.Custom && it.maxDimension == maxDimension
+        }
+    val (sizePreset, customMaxDimension) =
+        when {
+            preset != null -> preset to null
+            maxDimension in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION ->
+                ImageSizePreset.Custom to maxDimension
+            else -> ImageSizePreset.Original to null
+        }
+    return ImageExportOptions(
+        format = formats.single(),
+        sizePreset = sizePreset,
+        customMaxDimension = customMaxDimension,
+        treeUri = treeUris.single(),
+    )
+}
+
 internal enum class SaveNowTarget {
     Pdf,
     Images,

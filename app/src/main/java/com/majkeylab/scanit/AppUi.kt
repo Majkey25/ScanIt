@@ -14,6 +14,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -68,13 +71,17 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -82,6 +89,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -92,7 +100,10 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import java.io.IOException
 import java.text.DateFormat
@@ -155,6 +166,10 @@ internal fun ScanItApp(
     onShareRecentPdf: (String) -> Unit,
     onDeleteRecent: (OutputDeleteRequest) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
+    onLoadResultPreview: suspend (File, Int) -> Bitmap? = { _, _ -> null },
+    onLoadResultImageDimensions: suspend (List<File>) -> List<Pair<Int, Int>>? = { null },
+    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap? =
+        { _, _, _ -> null },
     onSelectResultPage: (Int) -> Unit,
     onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
@@ -162,6 +177,14 @@ internal fun ScanItApp(
     onPrint: (() -> Unit)? = null,
     onSaveNow: (SaveNowTarget) -> Unit = {},
     onChangePdfSize: (PdfSizeTarget) -> Unit = {},
+    onChangePdfLocation: () -> Unit = {},
+    onChangeImageSize: (ImageSizePreset, Int?) -> Unit = { _, _ -> },
+    onChangeImageFormat: (ImageExportFormat) -> Unit = {},
+    onChangeImageLocation: (ImageExportOptions) -> Unit = {},
+    onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit = {},
+    onOpenAppearanceEditor: () -> Unit = {},
+    onCloseAppearanceEditor: () -> Unit = {},
+    onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
     onRunDocumentAction: (DocumentAction) -> Unit = {},
     onDismissDocumentAction: () -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
@@ -192,6 +215,8 @@ internal fun ScanItApp(
         val documentActionState = (state as? ScreenState.Result)?.documentActionState
         when {
             visualMarkEditor != null -> onCloseVisualMarkEditor()
+            state is ScreenState.Result && state.appearanceReviewRequired ->
+                onCloseAppearanceEditor()
             documentActionState != null -> onDismissDocumentAction()
             backAction == AppBackAction.CloseSettings -> showSettings = false
             backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
@@ -204,7 +229,17 @@ internal fun ScanItApp(
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
-        if (state is ScreenState.Result && state.visualMarkEditor != null) {
+        if (state is ScreenState.Result && state.appearanceReviewRequired) {
+            AppearanceEditScreen(
+                result = state,
+                defaultAppearance = settings.appearance,
+                onClose = onCloseAppearanceEditor,
+                onApply = onApplyAppearance,
+                onSelectPage = onSelectResultPage,
+                onLoadThumbnail = onLoadThumbnail,
+                onLoadAppearancePreview = onLoadAppearancePreview,
+            )
+        } else if (state is ScreenState.Result && state.visualMarkEditor != null) {
             VisualMarkEditorScreen(
                 result = state,
                 editor = state.visualMarkEditor,
@@ -276,10 +311,18 @@ internal fun ScanItApp(
                         },
                         onSaveNow = onSaveNow,
                         onChangePdfSize = onChangePdfSize,
+                        onChangePdfLocation = onChangePdfLocation,
+                        onChangeImageSize = onChangeImageSize,
+                        onChangeImageFormat = onChangeImageFormat,
+                        onChangeImageLocation = onChangeImageLocation,
+                        onAcknowledgeUnknownOutput = onAcknowledgeUnknownOutput,
+                        onEdit = onOpenAppearanceEditor,
                         onRunDocumentAction = onRunDocumentAction,
                         onDismissDocumentAction = onDismissDocumentAction,
                         onSelectPage = onSelectResultPage,
                         onLoadThumbnail = onLoadThumbnail,
+                        onLoadResultPreview = onLoadResultPreview,
+                        onLoadResultImageDimensions = onLoadResultImageDimensions,
                         onAddVisualMark = {
                             fileDetailsExpanded = false
                             onOpenVisualMarkEditor()
@@ -328,6 +371,224 @@ private fun FailureScreen(
 }
 
 @Composable
+private fun AppearanceEditScreen(
+    result: ScreenState.Result,
+    defaultAppearance: ScanAppearanceSettings,
+    onClose: () -> Unit,
+    onApply: (ScanAppearanceSettings) -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
+) {
+    val cached = result.scan.cached
+    val pageIndex = resolvedPageIndex(result.selectedPageIndex, cached.pages.size)
+    val initial =
+        cached.appearanceSettings
+            ?: cached.appearance?.let(defaultAppearance::withApplied)
+            ?: defaultAppearance
+    var modeWire by rememberSaveable(cached.entryId) { mutableStateOf(initial.colorMode.wireValue) }
+    val mode = ScanColorMode.entries.firstOrNull { it.wireValue == modeWire } ?: initial.colorMode
+    val draft = initial.copy(colorMode = mode)
+    val sourcePage = cached.sourcePages.getOrNull(pageIndex)
+    val preview =
+        ownedAppearancePreview(
+            sourcePage = sourcePage,
+            settings = draft,
+            maxSize = 1024,
+            onLoad = onLoadAppearancePreview,
+        )
+    val enabled = !result.appearanceApplyInProgress
+    val pagePosition = stringResource(R.string.page_position, pageIndex + 1, cached.pages.size)
+    Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            CompactTopBar(
+                title = stringResource(R.string.edit_scan),
+                onBack = onClose,
+                backEnabled = enabled,
+                actionsEnabled = enabled,
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (preview.loading) {
+                        CircularProgressIndicator()
+                    } else if (preview.bitmap == null) {
+                        Text(stringResource(R.string.preview_unavailable))
+                    } else {
+                        Image(
+                            bitmap = preview.bitmap.asImageBitmap(),
+                            contentDescription = pagePosition,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+            }
+            item { Text(pagePosition, style = MaterialTheme.typography.titleMedium) }
+            if (cached.pages.size > 1) {
+                item {
+                    ResultPageStrip(
+                        pages = cached.pages,
+                        selectedPageIndex = pageIndex,
+                        enabled = enabled,
+                        onSelectPage = onSelectPage,
+                        onLoadThumbnail = onLoadThumbnail,
+                    )
+                }
+            }
+            item {
+                Text(stringResource(R.string.filters), style = MaterialTheme.typography.titleMedium)
+            }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(ScanColorMode.entries) { candidate ->
+                        AppearanceFilterTile(
+                            mode = candidate,
+                            selected = candidate == mode,
+                            sourcePage = sourcePage,
+                            settings = initial.copy(colorMode = candidate),
+                            enabled = enabled,
+                            onLoad = onLoadAppearancePreview,
+                            onClick = { modeWire = candidate.wireValue },
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.edit_filters_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            result.appearanceMessage?.let { message ->
+                item {
+                    Text(
+                        message.resolve(),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = onClose,
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(
+                        onClick = { onApply(draft) },
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (result.appearanceApplyInProgress) {
+                                    R.string.applying_appearance
+                                } else {
+                                    R.string.apply_appearance
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(4.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceFilterTile(
+    mode: ScanColorMode,
+    selected: Boolean,
+    sourcePage: File?,
+    settings: ScanAppearanceSettings,
+    enabled: Boolean,
+    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
+    onClick: () -> Unit,
+) {
+    val preview = ownedAppearancePreview(sourcePage, settings, 160, onLoad)
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        selected = selected,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(if (selected) 2.dp else 1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.width(112.dp).heightIn(min = 144.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(104.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (preview.loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else if (preview.bitmap == null) {
+                    Text(
+                        stringResource(R.string.preview_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                } else {
+                    Image(
+                        bitmap = preview.bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            Text(scanColorModeLabel(mode), style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun ownedAppearancePreview(
+    sourcePage: File?,
+    settings: ScanAppearanceSettings,
+    maxSize: Int,
+    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
+): BitmapPreviewState {
+    val preview by produceState(BitmapPreviewState(), sourcePage, settings, maxSize) {
+        val bitmap =
+            if (sourcePage == null) {
+                null
+            } else {
+                try {
+                    onLoad(sourcePage, settings, maxSize)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        value = BitmapPreviewState(bitmap = bitmap, loading = false)
+        awaitDispose { bitmap?.recycle() }
+    }
+    return preview
+}
+
+@Composable
 private fun ResultScreen(
     result: ScreenState.Result,
     onNewScan: () -> Unit,
@@ -340,10 +601,18 @@ private fun ResultScreen(
     onFileDetailsChange: (Boolean) -> Unit,
     onSaveNow: (SaveNowTarget) -> Unit,
     onChangePdfSize: (PdfSizeTarget) -> Unit,
+    onChangePdfLocation: () -> Unit,
+    onChangeImageSize: (ImageSizePreset, Int?) -> Unit,
+    onChangeImageFormat: (ImageExportFormat) -> Unit,
+    onChangeImageLocation: (ImageExportOptions) -> Unit,
+    onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit,
+    onEdit: () -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
     onDismissDocumentAction: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
+    onLoadResultPreview: suspend (File, Int) -> Bitmap?,
+    onLoadResultImageDimensions: suspend (List<File>) -> List<Pair<Int, Int>>?,
     onAddVisualMark: () -> Unit,
 ) {
     val scan = result.scan
@@ -354,7 +623,26 @@ private fun ResultScreen(
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showPdfSizeDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showImageSizeDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showImageFormatDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showUnknownOutputDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showFullscreen by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showDocumentActions by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    val cachedImageDimensions by
+        produceState<List<Pair<Int, Int>>?>(
+            initialValue = null,
+            key1 = scan.cached.entryId,
+            key2 = scan.cached.pages,
+        ) {
+            value =
+                try {
+                    onLoadResultImageDimensions(scan.cached.pages)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+        }
     val actionsEnabled = !result.resultActionsBlocked
     val stackSecondaryActions = LocalConfiguration.current.fontScale >= 1.3f
     Scaffold(
@@ -391,12 +679,20 @@ private fun ResultScreen(
                         }
                     }
                     else -> {
-                        Image(
-                            bitmap = result.thumbnail.asImageBitmap(),
-                            contentDescription = pagePosition,
+                        Surface(
+                            onClick = { showFullscreen = true },
+                            enabled = actionsEnabled,
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
-                            contentScale = ContentScale.Fit,
-                        )
+                        ) {
+                            Image(
+                                bitmap = result.thumbnail.asImageBitmap(),
+                                contentDescription =
+                                    stringResource(R.string.open_fullscreen_preview, pagePosition),
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
                     }
                 }
             }
@@ -404,6 +700,16 @@ private fun ResultScreen(
                 if (stackSecondaryActions) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(pagePosition, style = MaterialTheme.typography.titleMedium)
+                        OutlinedButton(
+                            onClick = onEdit,
+                            enabled = actionsEnabled && canEditAppearance(scan),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) {
+                            ActionButtonContent(
+                                iconRes = R.drawable.ic_edit,
+                                textRes = R.string.edit_scan,
+                            )
+                        }
                         OutlinedButton(
                             onClick = onAddVisualMark,
                             enabled = actionsEnabled && result.canAddVisualMark,
@@ -429,30 +735,44 @@ private fun ResultScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
                             pagePosition,
                             style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(0.75f),
                         )
-                        OutlinedButton(
+                        TextButton(
+                            onClick = onEdit,
+                            enabled = actionsEnabled && canEditAppearance(scan),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
+                        ) {
+                            CompactActionContent(
+                                iconRes = R.drawable.ic_edit,
+                                textRes = R.string.edit_scan,
+                            )
+                        }
+                        TextButton(
                             onClick = onAddVisualMark,
                             enabled = actionsEnabled && result.canAddVisualMark,
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            modifier = Modifier.weight(1.2f).heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
-                            ActionButtonContent(
+                            CompactActionContent(
                                 iconRes = R.drawable.ic_signature,
                                 textRes = R.string.sign_or_stamp,
                             )
                         }
-                        OutlinedButton(
+                        TextButton(
                             onClick = { showDocumentActions = true },
                             enabled = actionsEnabled,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp),
                         ) {
-                            ActionButtonContent(
+                            CompactActionContent(
                                 iconRes = R.drawable.ic_actions,
                                 textRes = R.string.actions,
                             )
@@ -499,13 +819,22 @@ private fun ResultScreen(
                     onClick = { onFileDetailsChange(!fileDetailsExpanded) },
                 )
                 if (fileDetailsExpanded) {
+                    Spacer(Modifier.height(12.dp))
                     FileDetails(
                         scan = scan,
+                        cachedImageDimensions = cachedImageDimensions,
                         saveTargets = saveTargets,
                         saveInProgress = result.outputSaveInProgress,
-                        sizeChangeInProgress = result.appearanceApplyInProgress,
+                        outputChangeInProgress = result.outputChangeInProgress,
                         onSaveNow = { showSaveDialog = true },
                         onChangePdfSize = { showPdfSizeDialog = true },
+                        onChangePdfLocation = onChangePdfLocation,
+                        onChangeImageSize = { showImageSizeDialog = true },
+                        onChangeImageFormat = { showImageFormatDialog = true },
+                        onChangeImageLocation = {
+                            imageExportOptionsForChange(scan)?.let(onChangeImageLocation)
+                        },
+                        onAcknowledgeUnknownOutput = { showUnknownOutputDialog = true },
                     )
                 }
             }
@@ -544,6 +873,46 @@ private fun ResultScreen(
             },
         )
     }
+    if (showImageSizeDialog) {
+        ImageSizeDialog(
+            current = imageExportOptionsForChange(scan),
+            onDismiss = { showImageSizeDialog = false },
+            onSelect = { preset, custom ->
+                showImageSizeDialog = false
+                onChangeImageSize(preset, custom)
+            },
+        )
+    }
+    if (showImageFormatDialog) {
+        ImageFormatDialog(
+            current = imageExportOptionsForChange(scan)?.format,
+            onDismiss = { showImageFormatDialog = false },
+            onSelect = { format ->
+                showImageFormatDialog = false
+                onChangeImageFormat(format)
+            },
+        )
+    }
+    if (showUnknownOutputDialog) {
+        UnknownOutputAcknowledgementDialog(
+            onDismiss = { showUnknownOutputDialog = false },
+            onConfirm = {
+                showUnknownOutputDialog = false
+                confirmedUnknownOutputAcknowledgement(scan, confirmed = true)
+                    ?.let(onAcknowledgeUnknownOutput)
+            },
+        )
+    }
+    if (showFullscreen) {
+        FullscreenPreviewDialog(
+            pages = scan.cached.pages,
+            initialPageIndex = selectedPageIndex,
+            onDismiss = { showFullscreen = false },
+            onSelectPage = onSelectPage,
+            onLoadThumbnail = onLoadThumbnail,
+            onLoadPreview = onLoadResultPreview,
+        )
+    }
     if (showDocumentActions) {
         DocumentActionPickerDialog(
             onDismiss = { showDocumentActions = false },
@@ -559,6 +928,153 @@ private fun ResultScreen(
             onDismiss = onDismissDocumentAction,
         )
     }
+}
+
+@Composable
+private fun FullscreenPreviewDialog(
+    pages: List<File>,
+    initialPageIndex: Int,
+    onDismiss: () -> Unit,
+    onSelectPage: (Int) -> Unit,
+    onLoadThumbnail: suspend (File) -> Bitmap?,
+    onLoadPreview: suspend (File, Int) -> Bitmap?,
+) {
+    var pageIndex by rememberSaveable(pages, initialPageIndex) {
+        mutableIntStateOf(fullscreenPageIndex(initialPageIndex, pages.size))
+    }
+    val page = pages.getOrNull(pageIndex)
+    val preview = ownedResultPreview(page, 2048, onLoadPreview)
+    var scale by remember(page) { mutableFloatStateOf(1f) }
+    var offset by remember(page) { mutableStateOf(Offset.Zero) }
+    val transformableState =
+        rememberTransformableState { _, zoomChange, panChange, _ ->
+            val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+            scale = nextScale
+            offset = if (nextScale == 1f) Offset.Zero else offset + panChange
+        }
+    val pagePosition =
+        stringResource(
+            R.string.page_position,
+            pageIndex + 1,
+            pages.size.coerceAtLeast(1),
+        )
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties =
+            DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnClickOutside = false,
+            ),
+    ) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        pagePosition,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = stringResource(R.string.close_fullscreen_preview),
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (preview.loading) {
+                        CircularProgressIndicator()
+                    } else if (preview.bitmap == null) {
+                        Text(stringResource(R.string.preview_unavailable))
+                    } else {
+                        Image(
+                            bitmap = preview.bitmap.asImageBitmap(),
+                            contentDescription = pagePosition,
+                            modifier =
+                                Modifier.fillMaxSize()
+                                    .pointerInput(page) {
+                                        detectTapGestures(
+                                            onDoubleTap = {
+                                                scale = 1f
+                                                offset = Offset.Zero
+                                            },
+                                        )
+                                    }.transformable(transformableState)
+                                    .graphicsLayer(
+                                        scaleX = scale,
+                                        scaleY = scale,
+                                        translationX = offset.x,
+                                        translationY = offset.y,
+                                    ),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+                if (pages.size > 1) {
+                    ResultPageStrip(
+                        pages = pages,
+                        selectedPageIndex = pageIndex,
+                        enabled = true,
+                        onSelectPage = { selected ->
+                            pageIndex = fullscreenPageIndex(selected, pages.size)
+                            onSelectPage(pageIndex)
+                        },
+                        onLoadThumbnail = onLoadThumbnail,
+                    )
+                }
+                Text(
+                    stringResource(R.string.fullscreen_preview_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+private data class BitmapPreviewState(
+    val bitmap: Bitmap? = null,
+    val loading: Boolean = true,
+)
+
+@Composable
+private fun ownedResultPreview(
+    page: File?,
+    maxSize: Int,
+    onLoad: suspend (File, Int) -> Bitmap?,
+): BitmapPreviewState {
+    val preview by produceState(BitmapPreviewState(), page, maxSize) {
+        val bitmap =
+            if (page == null) {
+                null
+            } else {
+                try {
+                    onLoad(page, maxSize)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        value = BitmapPreviewState(bitmap = bitmap, loading = false)
+        awaitDispose { bitmap?.recycle() }
+    }
+    return preview
 }
 
 @Composable
@@ -817,6 +1333,24 @@ private fun ActionButtonContent(
 }
 
 @Composable
+private fun CompactActionContent(
+    iconRes: Int,
+    textRes: Int,
+) {
+    Icon(
+        painter = painterResource(iconRes),
+        contentDescription = null,
+        modifier = Modifier.size(18.dp),
+    )
+    Spacer(Modifier.width(4.dp))
+    Text(
+        text = stringResource(textRes),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun SecondaryResultActions(
     stacked: Boolean,
     enabled: Boolean,
@@ -923,13 +1457,20 @@ private fun FileDetailsHeader(
 @Composable
 private fun FileDetails(
     scan: SavedScan,
+    cachedImageDimensions: List<Pair<Int, Int>>?,
     saveTargets: List<SaveNowTarget>,
     saveInProgress: Boolean,
-    sizeChangeInProgress: Boolean,
+    outputChangeInProgress: Boolean,
     onSaveNow: () -> Unit,
     onChangePdfSize: () -> Unit,
+    onChangePdfLocation: () -> Unit,
+    onChangeImageSize: () -> Unit,
+    onChangeImageFormat: () -> Unit,
+    onChangeImageLocation: () -> Unit,
+    onAcknowledgeUnknownOutput: () -> Unit,
 ) {
     val context = LocalContext.current
+    val controls = fileDetailControls(scan)
     val pdfLocation =
         when {
             scan.savedPdf == null -> stringResource(R.string.file_not_saved)
@@ -940,12 +1481,7 @@ private fun FileDetails(
         stringResource(
             if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
         )
-    val imagesLocation =
-        if (scan.galleryPages.isEmpty()) {
-            stringResource(R.string.file_not_saved)
-        } else {
-            stringResource(R.string.gallery)
-        }
+    val imagesLocation = imageLocationLabel(scan)
     val imageStatus =
         when {
             scan.galleryPages.isEmpty() -> stringResource(R.string.file_temporary)
@@ -961,6 +1497,36 @@ private fun FileDetails(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        if (scan.unknownOutputCreateAcknowledgement != null) {
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.unknown_output_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        stringResource(R.string.unknown_output_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    TextButton(
+                        onClick = onAcknowledgeUnknownOutput,
+                        enabled = !outputChangeInProgress,
+                        modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.review_output_warning))
+                    }
+                }
+            }
+        }
         if (scan.warnings.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth().semantics {
@@ -982,6 +1548,10 @@ private fun FileDetails(
             title = stringResource(R.string.pdf_document),
         ) {
             FileDetailRow(
+                label = stringResource(R.string.format),
+                value = stringResource(R.string.pdf_format),
+            )
+            FileDetailRow(
                 label = stringResource(R.string.actual_size),
                 value = Formatter.formatShortFileSize(context, scan.cached.pdf.length()),
             )
@@ -997,23 +1567,30 @@ private fun FileDetails(
                 label = stringResource(R.string.location),
                 value = pdfLocation,
             )
-            TextButton(
-                onClick = onChangePdfSize,
-                enabled =
-                    canChoosePdfSize(scan) &&
-                        !saveInProgress &&
-                        !sizeChangeInProgress,
-                modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp),
+            Row(
+                modifier = Modifier.align(Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    stringResource(
-                        if (sizeChangeInProgress) {
-                            R.string.changing_pdf_size
-                        } else {
-                            R.string.change_pdf_size
-                        },
-                    ),
-                )
+                TextButton(
+                    onClick = onChangePdfSize,
+                    enabled =
+                        FileDetailControl.PdfSize in controls &&
+                            !saveInProgress &&
+                            !outputChangeInProgress,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.change_size))
+                }
+                TextButton(
+                    onClick = onChangePdfLocation,
+                    enabled =
+                        FileDetailControl.PdfLocation in controls &&
+                            !saveInProgress &&
+                            !outputChangeInProgress,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.change_location))
+                }
             }
         }
         FileDetailSection(
@@ -1021,11 +1598,19 @@ private fun FileDetails(
             title = stringResource(R.string.images),
         ) {
             FileDetailRow(
+                label = stringResource(R.string.format),
+                value = imageFormatLabel(scan),
+            )
+            FileDetailRow(
+                label = stringResource(R.string.resolution),
+                value = imageResolutionLabel(scan, cachedImageDimensions),
+            )
+            FileDetailRow(
                 label = stringResource(R.string.actual_size),
                 value =
                     Formatter.formatShortFileSize(
                         context,
-                        totalFileBytes(scan.cached.pages),
+                        savedImageBytes(scan),
                     ),
             )
             FileDetailRow(
@@ -1036,6 +1621,43 @@ private fun FileDetails(
                 label = stringResource(R.string.location),
                 value = imagesLocation,
             )
+            Column(
+                modifier = Modifier.align(Alignment.End),
+                horizontalAlignment = Alignment.End,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = onChangeImageSize,
+                        enabled =
+                            FileDetailControl.ImageSize in controls &&
+                                !saveInProgress &&
+                                !outputChangeInProgress,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.change_size))
+                    }
+                    TextButton(
+                        onClick = onChangeImageFormat,
+                        enabled =
+                            FileDetailControl.ImageFormat in controls &&
+                                !saveInProgress &&
+                                !outputChangeInProgress,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.change_format))
+                    }
+                }
+                TextButton(
+                    onClick = onChangeImageLocation,
+                    enabled =
+                        FileDetailControl.ImageLocation in controls &&
+                            !saveInProgress &&
+                            !outputChangeInProgress,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.change_location))
+                }
+            }
         }
         if (scan.savedPdf == null || scan.galleryPages.size != scan.cached.pages.size) {
             Text(
@@ -1113,6 +1735,89 @@ private fun FileDetailRow(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1.2f),
         )
+    }
+}
+
+@Composable
+private fun imageLocationLabel(scan: SavedScan): String {
+    if (scan.savedImages.isEmpty()) return stringResource(R.string.file_not_saved)
+    val trees = scan.savedImages.map(SavedImageOutput::treeUri).distinct()
+    return when {
+        trees == listOf(null) -> stringResource(R.string.gallery)
+        trees.size == 1 -> stringResource(R.string.selected_folder)
+        else -> stringResource(R.string.multiple_locations)
+    }
+}
+
+@Composable
+private fun imageFormatLabel(scan: SavedScan): String {
+    val mimeTypes = scan.savedImages.mapNotNull(SavedImageOutput::mimeType).distinct()
+    if (
+        mimeTypes.isNotEmpty() &&
+            scan.savedImages.all { it.mimeType != null }
+    ) {
+        return when {
+            mimeTypes.size > 1 -> stringResource(R.string.mixed_formats)
+            mimeTypes.single().equals("image/jpeg", ignoreCase = true) ->
+                stringResource(R.string.image_format_jpeg)
+            mimeTypes.single().equals("image/png", ignoreCase = true) ->
+                stringResource(R.string.image_format_png)
+            else -> stringResource(R.string.not_available)
+        }
+    }
+    val formats = scan.savedImages.mapNotNull(SavedImageOutput::format).distinct()
+    val format = formats.singleOrNull()
+    return when {
+        formats.size > 1 -> stringResource(R.string.mixed_formats)
+        format == ImageExportFormat.Jpeg -> stringResource(R.string.image_format_jpeg)
+        format == ImageExportFormat.Png -> stringResource(R.string.image_format_png)
+        scan.savedImages.isNotEmpty() &&
+            scan.savedImages.any { it.format == null } -> stringResource(R.string.not_available)
+        scan.cached.pages.all { it.extension.equals("png", ignoreCase = true) } ->
+            stringResource(R.string.image_format_png)
+        scan.cached.pages.all {
+            it.extension.equals("jpg", ignoreCase = true) ||
+                it.extension.equals("jpeg", ignoreCase = true)
+        } -> stringResource(R.string.image_format_jpeg)
+        scan.cached.pages.isNotEmpty() -> stringResource(R.string.mixed_formats)
+        else -> stringResource(R.string.not_available)
+    }
+}
+
+@Composable
+private fun imageResolutionLabel(
+    scan: SavedScan,
+    cachedImageDimensions: List<Pair<Int, Int>>?,
+): String {
+    val savedDimensions =
+        scan.savedImages.map { output ->
+            val width = output.width ?: return@map null
+            val height = output.height ?: return@map null
+            width to height
+        }
+    val dimensions =
+        exactImageDimensions(
+            pageCount = scan.cached.pages.size,
+            savedDimensions = savedDimensions,
+            cachedDimensions = cachedImageDimensions,
+        )?.distinct() ?: return stringResource(R.string.not_available)
+    return when {
+        dimensions.size == 1 -> {
+            val (width, height) = dimensions.single()
+            stringResource(R.string.image_resolution_value, width, height)
+        }
+        else -> stringResource(R.string.multiple_resolutions)
+    }
+}
+
+private fun savedImageBytes(scan: SavedScan): Long {
+    val lengths = scan.savedImages.mapNotNull(SavedImageOutput::byteLength)
+    return if (lengths.size == scan.savedImages.size && lengths.isNotEmpty()) {
+        lengths.fold(0L) { total, bytes ->
+            if (Long.MAX_VALUE - total < bytes) Long.MAX_VALUE else total + bytes
+        }
+    } else {
+        totalFileBytes(scan.cached.pages)
     }
 }
 
@@ -1216,6 +1921,146 @@ private fun PdfSizeTargetDialog(
                 enabled = selected != null && selected != current,
             ) {
                 Text(stringResource(R.string.apply_appearance))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ImageSizeDialog(
+    current: ImageExportOptions?,
+    onDismiss: () -> Unit,
+    onSelect: (ImageSizePreset, Int?) -> Unit,
+) {
+    var presetName by rememberSaveable(current) {
+        mutableStateOf((current?.sizePreset ?: ImageSizePreset.Original).name)
+    }
+    var customInput by rememberSaveable(current) {
+        mutableStateOf(current?.customMaxDimension?.toString().orEmpty())
+    }
+    val preset = ImageSizePreset.entries.firstOrNull { it.name == presetName }
+        ?: ImageSizePreset.Original
+    val custom = parseCustomImageDimension(customInput)
+    val selectionValid = preset != ImageSizePreset.Custom || custom != null
+    val selectedCustom = custom.takeIf { preset == ImageSizePreset.Custom }
+    val changed =
+        current == null ||
+            preset != current.sizePreset ||
+            selectedCustom != current.customMaxDimension
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.image_size)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ImageSizePreset.entries.forEach { candidate ->
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .selectable(
+                                    selected = preset == candidate,
+                                    onClick = { presetName = candidate.name },
+                                    role = Role.RadioButton,
+                                ).heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = preset == candidate,
+                            onClick = null,
+                        )
+                        Text(imageSizePresetLabel(candidate))
+                    }
+                }
+                if (preset == ImageSizePreset.Custom) {
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it },
+                        label = { Text(stringResource(R.string.image_size_custom_field)) },
+                        supportingText = { Text(stringResource(R.string.image_size_custom_hint)) },
+                        isError = customInput.isNotEmpty() && custom == null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSelect(preset, selectedCustom) },
+                enabled = selectionValid && changed,
+            ) {
+                Text(stringResource(R.string.apply_appearance))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ImageFormatDialog(
+    current: ImageExportFormat?,
+    onDismiss: () -> Unit,
+    onSelect: (ImageExportFormat) -> Unit,
+) {
+    var selectedWire by rememberSaveable(current) {
+        mutableStateOf((current ?: ImageExportFormat.Original).wireValue)
+    }
+    val selected =
+        ImageExportFormat.entries.firstOrNull { it.wireValue == selectedWire }
+            ?: ImageExportFormat.Original
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.image_format)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ImageExportFormat.entries.forEach { format ->
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .selectable(
+                                    selected = selected == format,
+                                    onClick = { selectedWire = format.wireValue },
+                                    role = Role.RadioButton,
+                                ).heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = selected == format, onClick = null)
+                        Text(imageExportFormatLabel(format))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSelect(selected) },
+                enabled = current == null || selected != current,
+            ) {
+                Text(stringResource(R.string.apply_appearance))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun UnknownOutputAcknowledgementDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.unknown_output_confirm_title)) },
+        text = { Text(stringResource(R.string.unknown_output_confirm_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.unknown_output_confirm))
             }
         },
         dismissButton = {
@@ -1365,61 +2210,74 @@ private fun RecentScanRow(
             DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
                 .format(Date.from(scan.createdAt))
         }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RecentThumbnail(scan.firstPage, onLoadThumbnail)
-        Column(modifier = Modifier.weight(1f)) {
-            Text(scan.displayName, style = MaterialTheme.typography.titleMedium)
-            Text(formattedDate, style = MaterialTheme.typography.bodySmall)
-            Text(
-                "${pluralStringResource(R.plurals.page_count, scan.pageCount, scan.pageCount)} · " +
-                    Formatter.formatShortFileSize(context, scan.pdfBytes),
-                style = MaterialTheme.typography.bodySmall,
-            )
+    val handleClick = { target: RecentRowTarget ->
+        when (recentRowAction(target)) {
+            RecentRowAction.Open -> onOpen(scan.cacheId)
+            RecentRowAction.ShowMenu -> menuExpanded = true
         }
-        Box {
-            IconButton(
-                onClick = { menuExpanded = true },
-                enabled = !deletionInProgress,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = stringResource(R.string.more_actions),
-                    modifier = Modifier.size(24.dp),
+    }
+    Surface(
+        onClick = { handleClick(RecentRowTarget.Content) },
+        enabled = !deletionInProgress,
+        color = Color.Transparent,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RecentThumbnail(scan.firstPage, onLoadThumbnail)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(scan.displayName, style = MaterialTheme.typography.titleMedium)
+                Text(formattedDate, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "${pluralStringResource(R.plurals.page_count, scan.pageCount, scan.pageCount)} · " +
+                        Formatter.formatShortFileSize(context, scan.pdfBytes),
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.open_scan)) },
+            Box {
+                IconButton(
+                    onClick = { handleClick(RecentRowTarget.Overflow) },
                     enabled = !deletionInProgress,
-                    onClick = {
-                        menuExpanded = false
-                        onOpen(scan.cacheId)
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.send_pdf)) },
-                    enabled = !deletionInProgress,
-                    onClick = {
-                        menuExpanded = false
-                        onSharePdf(scan.cacheId)
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.delete_scan)) },
-                    enabled = !deletionInProgress,
-                    onClick = {
-                        menuExpanded = false
-                        showDeleteDialog = true
-                    },
-                )
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_more_vert),
+                        contentDescription = stringResource(R.string.more_actions),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.open_scan)) },
+                        enabled = !deletionInProgress,
+                        onClick = {
+                            menuExpanded = false
+                            onOpen(scan.cacheId)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.send_pdf)) },
+                        enabled = !deletionInProgress,
+                        onClick = {
+                            menuExpanded = false
+                            onSharePdf(scan.cacheId)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete_scan)) },
+                        enabled = !deletionInProgress,
+                        onClick = {
+                            menuExpanded = false
+                            showDeleteDialog = true
+                        },
+                    )
+                }
             }
         }
     }
@@ -2070,6 +2928,41 @@ private fun SettingsScreen(
         }
     }
 }
+
+@Composable
+private fun scanColorModeLabel(mode: ScanColorMode): String =
+    stringResource(
+        when (mode) {
+            ScanColorMode.Natural -> R.string.filter_natural
+            ScanColorMode.Color -> R.string.filter_color
+            ScanColorMode.LightText -> R.string.filter_light_text
+            ScanColorMode.Grayscale -> R.string.filter_grayscale
+            ScanColorMode.BlackWhite -> R.string.filter_black_white
+            ScanColorMode.Whiteboard -> R.string.filter_whiteboard
+        },
+    )
+
+@Composable
+private fun imageSizePresetLabel(preset: ImageSizePreset): String =
+    stringResource(
+        when (preset) {
+            ImageSizePreset.Original -> R.string.image_size_original
+            ImageSizePreset.High -> R.string.image_size_3840
+            ImageSizePreset.Balanced -> R.string.image_size_2560
+            ImageSizePreset.Small -> R.string.image_size_1600
+            ImageSizePreset.Custom -> R.string.image_size_custom
+        },
+    )
+
+@Composable
+private fun imageExportFormatLabel(format: ImageExportFormat): String =
+    stringResource(
+        when (format) {
+            ImageExportFormat.Original -> R.string.image_format_original
+            ImageExportFormat.Jpeg -> R.string.image_format_jpeg
+            ImageExportFormat.Png -> R.string.image_format_png
+        },
+    )
 
 @Composable
 private fun pdfSizeTargetLabel(target: PdfSizeTarget): String =
