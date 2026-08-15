@@ -625,6 +625,70 @@ class OutputMetadataTest {
         }
 
     @Test
+    fun rewritePromotesV1ToV2UnlessCallerExplicitlySelectsV3() =
+        withDirectory { directory ->
+            File(directory, OUTPUT_METADATA_FILE_NAME).writeText(validJson())
+            val pendingImage =
+                ImageOutputRef(
+                    page = 1,
+                    uri = "content://media/external/images/pending",
+                    displayName = "pending.jpg",
+                    mimeType = "image/jpeg",
+                    ownerPackageName = "com.majkeylab.scanit.internal",
+                    byteLength = 10L,
+                    sha256 = "11".repeat(32),
+                    pending = true,
+                )
+
+            val promoted =
+                rewriteOutputMetadata(directory, cacheId, entryId, pageCount = 1) {
+                    it.copy(images = listOf(pendingImage))
+                }
+            assertEquals(2, promoted.version)
+            assertEquals(promoted, readOutputMetadata(directory, cacheId, pageCount = 1))
+
+            File(directory, OUTPUT_METADATA_FILE_NAME).writeText(validJson())
+            val upgraded =
+                rewriteOutputMetadata(directory, cacheId, entryId, pageCount = 1) {
+                    it.copy(
+                        images = listOf(exactImage(1, "content://media/external/images/current")),
+                        version = 3,
+                    )
+                }
+            assertEquals(3, upgraded.version)
+            assertEquals(upgraded, readOutputMetadata(directory, cacheId, pageCount = 1))
+        }
+
+    @Test
+    fun v3RejectsWhitespaceOnlyPdfAndImageOwners() {
+        val imageMetadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images =
+                    listOf(
+                        exactImage(1, "content://media/external/images/current")
+                            .copy(ownerPackageName = "   "),
+                    ),
+                version = 3,
+            )
+        val pdfMetadata =
+            imageMetadata.copy(
+                images = emptyList(),
+                pdf = exactPdf("content://media/external/downloads/current")
+                    .copy(ownerPackageName = "   "),
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(imageMetadata, 1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(pdfMetadata, 1)
+        }
+    }
+
+    @Test
     fun rewriteRejectsAnotherCacheGenerationWithoutChangingMetadata() =
         withDirectory { directory ->
             val original =

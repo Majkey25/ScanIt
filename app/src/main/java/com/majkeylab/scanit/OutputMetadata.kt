@@ -339,7 +339,11 @@ internal fun rewriteOutputMetadata(
     if (current.entryId != expectedEntryId) {
         throw IOException("Output metadata belongs to another cache generation")
     }
-    val updated = update(current)
+    val requested = update(current)
+    val updated =
+        if (current.version == OUTPUT_METADATA_LEGACY_VERSION &&
+            requested.version == OUTPUT_METADATA_LEGACY_VERSION
+        ) requested.copy(version = OUTPUT_METADATA_VERSION_2) else requested
     if (
         updated.entryId != current.entryId ||
             updated.cacheId != current.cacheId ||
@@ -582,7 +586,7 @@ private fun isValidMediaIdentity(
 }
 
 private fun isValidOwnerPackageName(value: String?): Boolean =
-    value != null && value.length in 1..255 && value.none(Char::isISOControl)
+    value != null && value.isNotBlank() && value.length <= 255 && value.none(Char::isISOControl)
 
 private fun JSONObject.hasOnlyKeys(
     allowed: Set<String>,
