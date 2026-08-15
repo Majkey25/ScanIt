@@ -251,10 +251,10 @@ internal fun prepareImageShareCopies(
     try {
         val files =
             outputs.mapIndexed { index, output ->
-                throwIfShareCancelled(isCancelled)
+                throwIfOutputCopyCancelled(isCancelled)
                 val extension = if (mimeTypes[index] == PNG_MIME_TYPE) "png" else "jpg"
                 val target = File(directory, "page-${output.page.toString().padStart(2, '0')}.$extension")
-                copyImageShareOutput(open(output.uri), target, fingerprints[index], isCancelled)
+                copyExactOutput(open(output.uri), target, fingerprints[index], isCancelled)
                 target
             }
         return prepared.copy(files = files)
@@ -397,7 +397,7 @@ private fun isPreparedImageShareDirectoryName(name: String): Boolean =
 
 private val PREPARED_IMAGE_FILE_NAME = Regex("page-[0-9]+\\.(jpg|png)")
 
-private fun copyImageShareOutput(
+internal fun copyExactOutput(
     input: InputStream,
     target: File,
     fingerprint: OutputFingerprint,
@@ -408,12 +408,12 @@ private fun copyImageShareOutput(
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             var remaining = fingerprint.byteLength
             while (remaining > 0L) {
-                throwIfShareCancelled(isCancelled)
+                throwIfOutputCopyCancelled(isCancelled)
                 val read = source.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
-                if (read < 0) throw IOException("Saved image is shorter than its metadata")
+                if (read < 0) throw IOException("Saved output is shorter than its metadata")
                 if (read == 0) {
                     val byte = source.read()
-                    if (byte < 0) throw IOException("Saved image is shorter than its metadata")
+                    if (byte < 0) throw IOException("Saved output is shorter than its metadata")
                     output.write(byte)
                     remaining--
                 } else {
@@ -421,19 +421,19 @@ private fun copyImageShareOutput(
                     remaining -= read
                 }
             }
-            if (source.read() >= 0) throw IOException("Saved image is longer than its metadata")
+            if (source.read() >= 0) throw IOException("Saved output is longer than its metadata")
             output.fd.sync()
         }
     }
     FileInputStream(target).use { copied ->
         if (readOutputFingerprint(copied, fingerprint.byteLength) != fingerprint) {
-            throw IOException("Prepared image share differs from its saved output")
+            throw IOException("Copied output differs from its saved output")
         }
     }
 }
 
-private fun throwIfShareCancelled(isCancelled: () -> Boolean) {
-    if (isCancelled()) throw CancellationException("Image share preparation was cancelled")
+private fun throwIfOutputCopyCancelled(isCancelled: () -> Boolean) {
+    if (isCancelled()) throw CancellationException("Output copy was cancelled")
 }
 
 internal fun Activity.launchShareChooser(

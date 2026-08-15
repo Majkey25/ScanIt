@@ -17,6 +17,51 @@ class OutputMetadataTest {
     private val cacheId = "Scan_2026-08-09_12-12-00"
 
     @Test
+    fun initializedPdfTargetUsesCurrentMetadataVersion() =
+        withDirectory { directory ->
+            val metadata =
+                initializeOutputMetadata(
+                    directory = directory,
+                    cacheId = cacheId,
+                    pageCount = 1,
+                    createdAtEpochMs = 1L,
+                    entryId = entryId,
+                    pdfSizeTarget = PdfSizeTarget.Mb5,
+                )
+
+            assertEquals(OUTPUT_METADATA_VERSION, metadata.version)
+            assertEquals(metadata, readOutputMetadata(directory, cacheId, pageCount = 1))
+        }
+
+    @Test
+    fun v3RoundTripsPdfTargetAndIntendedImagePreset() {
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images =
+                    listOf(
+                        exactImage(
+                            page = 1,
+                            uri = "content://media/external/images/media/1",
+                            format = ImageExportFormat.Jpeg,
+                        ).copy(
+                            sizePreset = ImageSizePreset.Custom,
+                            customMaxDimension = 2400,
+                        ),
+                    ),
+                pdfSizeTarget = PdfSizeTarget.Mb10,
+                version = OUTPUT_METADATA_VERSION,
+            )
+
+        assertEquals(
+            metadata,
+            decodeOutputMetadata(encodeOutputMetadata(metadata, 1), cacheId, 1),
+        )
+    }
+
+    @Test
     fun downloadsPdfRoundTripsWithoutATree() {
         val metadata =
             OutputMetadata(

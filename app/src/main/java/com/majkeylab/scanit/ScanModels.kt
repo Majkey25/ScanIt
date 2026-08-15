@@ -57,12 +57,7 @@ internal sealed interface OutputChangeKind {
 
     data class ImageFormat(val format: ImageExportFormat) : OutputChangeKind
 
-    data class ImageLocation(val options: ImageExportOptions) : OutputChangeKind {
-        init {
-            require(options.treeUri == null) { "Picker options must not contain a tree URI" }
-            resolveImageExport(options)
-        }
-    }
+    data object ImageLocation : OutputChangeKind
 
     data class UnknownOutputCreate(val operationId: String) : OutputChangeKind {
         init {
@@ -178,49 +173,27 @@ internal class OutputTreePickerGate(initialPending: OutputChangeRequest?) {
 
 internal fun encodeOutputTreePickerRequest(request: OutputChangeRequest): String {
     require(request.kind.isTreePicker()) { "Only a location change may be persisted for a picker" }
-    return when (val kind = request.kind) {
+    return when (request.kind) {
         OutputChangeKind.PdfLocation ->
             listOf("1", request.cacheId, request.entryId, "pdf", request.generation.toString())
                 .joinToString("\t")
-        is OutputChangeKind.ImageLocation ->
-            listOf(
-                "1",
-                request.cacheId,
-                request.entryId,
-                "image",
-                request.generation.toString(),
-                kind.options.format.wireValue,
-                kind.options.sizePreset.name,
-                kind.options.customMaxDimension?.toString().orEmpty(),
-            ).joinToString("\t")
+        OutputChangeKind.ImageLocation ->
+            listOf("1", request.cacheId, request.entryId, "image", request.generation.toString())
+                .joinToString("\t")
         else -> error("Tree picker kind validation changed")
     }
 }
 
 internal fun decodeOutputTreePickerRequest(value: String?): OutputChangeRequest? {
     val parts = value?.split('\t') ?: return null
-    if (parts.size !in setOf(5, 8) || parts[0] != "1") return null
+    if (parts.size != 5 || parts[0] != "1") return null
     val cacheId = parts[1]
     val entryId = parts[2]
     val generation = parts[4].toLongOrNull()?.takeIf { it > 0L } ?: return null
     val kind =
         when {
             parts.size == 5 && parts[3] == "pdf" -> OutputChangeKind.PdfLocation
-            parts.size == 8 && parts[3] == "image" -> {
-                val format = ImageExportFormat.entries.singleOrNull { it.wireValue == parts[5] }
-                    ?: return null
-                val preset = ImageSizePreset.entries.singleOrNull { it.name == parts[6] }
-                    ?: return null
-                val custom = parts[7].takeIf(String::isNotEmpty)?.toIntOrNull()
-                if ((preset == ImageSizePreset.Custom) != (custom != null)) return null
-                try {
-                    OutputChangeKind.ImageLocation(
-                        ImageExportOptions(format, preset, custom),
-                    )
-                } catch (_: IllegalArgumentException) {
-                    return null
-                }
-            }
+            parts.size == 5 && parts[3] == "image" -> OutputChangeKind.ImageLocation
             else -> return null
         }
     return try {
@@ -270,7 +243,7 @@ internal fun unknownOutputAcknowledgementRefreshAllowed(
         result == UnknownOutputAcknowledgementResult.Absent
 
 private fun OutputChangeKind.isTreePicker(): Boolean =
-    this == OutputChangeKind.PdfLocation || this is OutputChangeKind.ImageLocation
+    this == OutputChangeKind.PdfLocation || this == OutputChangeKind.ImageLocation
 
 private fun validateOutputChangeKind(kind: OutputChangeKind) {
     when (kind) {
@@ -279,7 +252,7 @@ private fun validateOutputChangeKind(kind: OutputChangeKind) {
         is OutputChangeKind.ImageSize ->
             resolveImageExport(kind.preset, kind.customMaxDimension)
         is OutputChangeKind.ImageFormat -> Unit
-        is OutputChangeKind.ImageLocation -> Unit
+        OutputChangeKind.ImageLocation -> Unit
         is OutputChangeKind.UnknownOutputCreate -> Unit
     }
 }
@@ -578,6 +551,8 @@ internal data class SavedImageOutput(
     val width: Int?,
     val height: Int?,
     val format: ImageExportFormat?,
+    val sizePreset: ImageSizePreset? = null,
+    val customMaxDimension: Int? = null,
 )
 
 internal data class SavedScan(
@@ -775,30 +750,48 @@ internal fun imageExportOptionsForChange(scan: SavedScan): ImageExportOptions? {
         return ImageExportOptions(ImageExportFormat.Original, ImageSizePreset.Original)
     }
     if (scan.savedImages.size != scan.cached.pages.size) return null
-    val formats = scan.savedImages.mapNotNull(SavedImageOutput::format).distinct()
-    if (formats.size != 1 || scan.savedImages.any { it.format == null }) return null
-    val treeUris = scan.savedImages.map { it.treeUri?.toString() }.distinct()
-    if (treeUris.size != 1) return null
-    val maxDimension =
-        scan.savedImages.maxOfOrNull { output ->
-            maxOf(output.width ?: return null, output.height ?: return null)
-        } ?: return null
-    val preset =
-        ImageSizePreset.entries.firstOrNull {
-            it != ImageSizePreset.Custom && it.maxDimension == maxDimension
-        }
-    val (sizePreset, customMaxDimension) =
-        when {
-            preset != null -> preset to null
-            maxDimension in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION ->
-                ImageSizePreset.Custom to maxDimension
-            else -> ImageSizePreset.Original to null
-        }
+    return activeImageExportOptions(
+        formats = scan.savedImages.map(SavedImageOutput::format),
+        treeUris = scan.savedImages.map { it.treeUri?.toString() },
+        sizePresets = scan.savedImages.map { it.sizePreset ?: ImageSizePreset.Original },
+        customMaxDimensions = scan.savedImages.map(SavedImageOutput::customMaxDimension),
+    )
+}
+
+internal fun activeImageExportOptions(
+    formats: List<ImageExportFormat?>,
+    treeUris: List<String?>,
+    sizePresets: List<ImageSizePreset>,
+    customMaxDimensions: List<Int?>,
+): ImageExportOptions? {
+    if (
+        formats.isEmpty() ||
+            treeUris.size != formats.size ||
+            sizePresets.size != formats.size ||
+            customMaxDimensions.size != formats.size
+    ) {
+        return null
+    }
+    val distinctFormats = formats.filterNotNull().distinct()
+    if (distinctFormats.size != 1 || formats.any { it == null }) return null
+    val distinctTreeUris = treeUris.distinct()
+    if (distinctTreeUris.size != 1) return null
+    val distinctPresets = sizePresets.distinct()
+    if (distinctPresets.size != 1) return null
+    val distinctCustomDimensions = customMaxDimensions.distinct()
+    if (distinctCustomDimensions.size != 1) return null
+    val sizePreset = distinctPresets.single()
+    val customMaxDimension = distinctCustomDimensions.single()
+    try {
+        resolveImageExport(sizePreset, customMaxDimension)
+    } catch (_: IllegalArgumentException) {
+        return null
+    }
     return ImageExportOptions(
-        format = formats.single(),
+        format = distinctFormats.single(),
         sizePreset = sizePreset,
         customMaxDimension = customMaxDimension,
-        treeUri = treeUris.single(),
+        treeUri = distinctTreeUris.single(),
     )
 }
 

@@ -513,14 +513,8 @@ internal class ScanViewModel(
         beginOutputTreePicker(OutputChangeKind.PdfLocation)
     }
 
-    fun requestImageLocationChange(options: ImageExportOptions) {
-        val kind =
-            try {
-                OutputChangeKind.ImageLocation(options.copy(treeUri = null))
-            } catch (_: IllegalArgumentException) {
-                return
-            }
-        beginOutputTreePicker(kind)
+    fun requestImageLocationChange() {
+        beginOutputTreePicker(OutputChangeKind.ImageLocation)
     }
 
     fun claimOutputTreePicker(request: OutputChangeRequest): Boolean {
@@ -796,10 +790,10 @@ internal class ScanViewModel(
                                 when (val kind = request.kind) {
                                     OutputChangeKind.PdfLocation ->
                                         storage.replacePdfOutput(current.scan.cached, selection.uri)
-                                    is OutputChangeKind.ImageLocation ->
-                                        storage.replaceImageOutputs(
+                                    OutputChangeKind.ImageLocation ->
+                                        storage.relocateImageOutputs(
                                             current.scan.cached,
-                                            kind.options.copy(treeUri = selection.uri),
+                                            selection.uri,
                                             isCancelled = { !operationContext.isActive },
                                         )
                                     else ->
@@ -1916,13 +1910,11 @@ internal class ScanViewModel(
         val entryId = current.scan.cached.entryId ?: return
         if (
             current.resultActionsBlocked ||
-                appearanceApplyJob?.isActive == true ||
                 !canChangePdfSize(current.scan, target)
         ) {
             return
         }
         val cached = current.scan.cached
-        val appearanceSettings = cached.appearanceSettings ?: return
         val request =
             outputChangeGate.begin(
                 cached.baseName,
@@ -1930,154 +1922,19 @@ internal class ScanViewModel(
                 OutputChangeKind.PdfSize(target),
             ) ?: return
         persistOutputGeneration()
-        val generation = beginRouteMutation(keepOutputChange = true)
         mutableState.value =
             current.copy(
-                appearanceApplyInProgress = true,
                 outputChangeInProgress = true,
                 appearanceMessage = null,
             )
-        appearanceApplyJob =
-            viewModelScope.launch {
-                var created: CachedScan? = null
-                var checkpointCommitted = false
-                var pageIndex = current.selectedPageIndex
-                var thumbnail = current.thumbnail
-                var buildWarnings: List<UiMessage> = emptyList()
-                try {
-                    withContext(Dispatchers.IO) {
-                        val coroutineContext = currentCoroutineContext()
-                        val build =
-                            storage.createAppearanceVariant(
-                                source = cached,
-                                appearanceSettings = appearanceSettings,
-                                pdfSizeTarget = target,
-                                restoreSettingsOnActivation = false,
-                                isCancelled = { !coroutineContext.isActive },
-                            )
-                        created = build.cached
-                        buildWarnings =
-                            if (build.pdf.targetMet) {
-                                emptyList()
-                            } else {
-                                listOf(pdfSizeTargetWarning(build.pdf))
-                            }
-                        pageIndex =
-                            resolvedPageIndex(
-                                current.selectedPageIndex,
-                                build.cached.pages.size,
-                            )
-                        thumbnail =
-                            storage.loadThumbnail(
-                                build.cached.pages[pageIndex],
-                                RESULT_PREVIEW_SIZE,
-                            )
-                    }
-                    val candidate = checkNotNull(created)
-                    if (
-                        persistResultCheckpoint(generation, candidate.baseName) !=
-                            ResultActivation.Applied
-                    ) {
-                        throw IOException("PDF size checkpoint changed")
-                    }
-                    checkpointCommitted = true
-                    val saved =
-                        withContext(NonCancellable + Dispatchers.IO) {
-                            completeAppearanceCandidate(candidate, buildWarnings)
-                        }
-                    routeMutationMutex.withLock {
-                        if (
-                            routeMutationGate.isCurrent(generation) &&
-                                outputChangeGate.isCurrent(request, cached.baseName, entryId)
-                        ) {
-                            finishOutputChange(request)
-                            publishResult(
-                                ScreenState.Result(
-                                    scan = saved,
-                                    thumbnail = thumbnail,
-                                    selectedPageIndex = pageIndex,
-                                ),
-                            )
-                        }
-                    }
-                } catch (cancellation: CancellationException) {
-                    if (!checkpointCommitted) {
-                        created?.let { discardAppearanceVariantUnlessActive(it) }
-                    }
-                    throw cancellation
-                } catch (_: Exception) {
-                    if (checkpointCommitted) {
-                        val recovered =
-                            try {
-                                withContext(NonCancellable + Dispatchers.IO) {
-                                    created?.let { candidate ->
-                                        completeAppearanceCandidate(
-                                            candidate,
-                                            buildWarnings + UiMessage(R.string.state_update_failed),
-                                        )
-                                    }
-                                }
-                            } catch (_: Exception) {
-                                null
-                            }
-                        routeMutationMutex.withLock {
-                            if (
-                                routeMutationGate.isCurrent(generation) &&
-                                    outputChangeGate.isCurrent(request, cached.baseName, entryId) &&
-                                    recovered != null
-                            ) {
-                                finishOutputChange(request)
-                                publishResult(
-                                    ScreenState.Result(
-                                        scan = recovered,
-                                        thumbnail = thumbnail,
-                                        selectedPageIndex = pageIndex,
-                                    ),
-                                )
-                            } else if (
-                                routeMutationGate.isCurrent(generation) &&
-                                    outputChangeGate.isCurrent(request, cached.baseName, entryId)
-                            ) {
-                                finishOutputChange(request)
-                                navigationInitialized = true
-                                persistRoute(ROUTE_FAILURE)
-                                mutableState.value =
-                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
-                            }
-                        }
-                    } else {
-                        created?.let { discardAppearanceVariantUnlessActive(it) }
-                        routeMutationMutex.withLock {
-                            val latest = mutableState.value as? ScreenState.Result
-                            if (
-                                routeMutationGate.isCurrent(generation) &&
-                                    outputChangeGate.isCurrent(
-                                        request,
-                                        cached.baseName,
-                                        entryId,
-                                    ) &&
-                                    latest?.scan?.cached?.baseName == cached.baseName &&
-                                    latest.scan.cached.entryId == cached.entryId
-                            ) {
-                                mutableState.value =
-                                    latest.copy(
-                                        appearanceApplyInProgress = false,
-                                        scan =
-                                            latest.scan.copy(
-                                                warnings =
-                                                    (latest.scan.warnings +
-                                                        UiMessage(R.string.state_update_failed))
-                                                        .distinct(),
-                                            ),
-                                    )
-                            }
-                        }
-                    }
-                } finally {
-                    finishOutputChange(request)
-                    appearanceApplyJob = null
-                }
-            }
+        startOutputReplacement(request) {
+            val operationContext = currentCoroutineContext()
+            storage.replacePdfSize(
+                cached,
+                target,
+                isCancelled = { !operationContext.isActive },
+            )
+        }
     }
 
     fun runDocumentAction(action: DocumentAction) {

@@ -49,6 +49,8 @@ internal data class ImageOutputRef(
     val width: Int? = null,
     val height: Int? = null,
     val format: ImageExportFormat? = null,
+    val sizePreset: ImageSizePreset? = null,
+    val customMaxDimension: Int? = null,
 )
 
 internal data class OutputMetadata(
@@ -62,6 +64,7 @@ internal data class OutputMetadata(
     val stagedImages: List<ImageOutputRef> = emptyList(),
     val retiredPdf: PdfOutputRef? = null,
     val retiredImages: List<ImageOutputRef> = emptyList(),
+    val pdfSizeTarget: PdfSizeTarget? = null,
     val version: Int = OUTPUT_METADATA_VERSION_2,
 )
 
@@ -93,6 +96,7 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
     json.put("images", metadata.images.toJson())
     if (metadata.removeRecentPending) json.put("removeRecentPending", true)
     if (metadata.version == OUTPUT_METADATA_VERSION) {
+        metadata.pdfSizeTarget?.let { json.put("pdfSizeTarget", it.wireValue) }
         metadata.stagedPdf?.let { json.put("stagedPdf", it.toJson()) }
         if (metadata.stagedImages.isNotEmpty()) {
             json.put("stagedImages", metadata.stagedImages.toJson())
@@ -135,6 +139,8 @@ private fun List<ImageOutputRef>.toJson(): JSONArray =
                     image.width?.let { value.put("width", it) }
                     image.height?.let { value.put("height", it) }
                     image.format?.let { value.put("format", it.wireValue) }
+                    image.sizePreset?.let { value.put("sizePreset", it.name) }
+                    image.customMaxDimension?.let { value.put("customMaxDimension", it) }
                 },
             )
         }
@@ -183,6 +189,13 @@ internal fun decodeOutputMetadata(
                 stagedImages = stagedImages.value ?: return null,
                 retiredPdf = retiredPdf.value,
                 retiredImages = retiredImages.value ?: return null,
+                pdfSizeTarget =
+                    if (json.has("pdfSizeTarget")) {
+                        decodePdfSizeTarget(json.strictString("pdfSizeTarget") ?: return null)
+                            ?: return null
+                    } else {
+                        null
+                    },
                 version = version,
             )
         metadata.takeIf { isValidOutputMetadata(it, expectedCacheId, pageCount) }
@@ -263,6 +276,15 @@ private fun decodeImageOutputRefs(
                         } else {
                             null
                         },
+                    sizePreset =
+                        if (value.has("sizePreset")) {
+                            val name = value.strictString("sizePreset") ?: return null
+                            ImageSizePreset.entries.firstOrNull { it.name == name } ?: return null
+                        } else {
+                            null
+                        },
+                    customMaxDimension =
+                        (value.optionalInt("customMaxDimension") ?: return null).value,
                 ),
             )
         }
@@ -307,12 +329,24 @@ internal fun initializeOutputMetadata(
     pageCount: Int,
     createdAtEpochMs: Long,
     entryId: String = UUID.randomUUID().toString(),
+    pdfSizeTarget: PdfSizeTarget? = null,
 ): OutputMetadata {
     val file = File(directory, OUTPUT_METADATA_FILE_NAME)
     if (Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
         throw IOException("Output metadata already exists")
     }
-    return OutputMetadata(entryId, cacheId, createdAtEpochMs).also {
+    return OutputMetadata(
+        entryId = entryId,
+        cacheId = cacheId,
+        createdAtEpochMs = createdAtEpochMs,
+        pdfSizeTarget = pdfSizeTarget,
+        version =
+            if (pdfSizeTarget == null) {
+                OUTPUT_METADATA_VERSION_2
+            } else {
+                OUTPUT_METADATA_VERSION
+            },
+    ).also {
         writeOutputMetadata(directory, it, pageCount)
     }
 }
@@ -484,10 +518,12 @@ private fun OutputMetadata.hasV3Data(): Boolean =
         stagedImages.isNotEmpty() ||
         retiredPdf != null ||
         retiredImages.isNotEmpty() ||
+        pdfSizeTarget != null ||
         images.any(ImageOutputRef::hasV3Data)
 
 private fun ImageOutputRef.hasV3Data(): Boolean =
-    treeUri != null || width != null || height != null || format != null
+    treeUri != null || width != null || height != null || format != null ||
+        sizePreset != null || customMaxDimension != null
 
 private fun List<ImageOutputRef>.hasValidPageOrder(
     pageCount: Int,
@@ -542,6 +578,11 @@ private fun ImageOutputRef.isValid(version: Int): Boolean {
         actualFormat.mimeType?.let { it != actualMimeType } == true ||
         outputFingerprint() == null ||
         !isProviderDisplayName(displayName)
+    ) return false
+    if (
+        sizePreset == ImageSizePreset.Custom &&
+            customMaxDimension !in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION ||
+        sizePreset != ImageSizePreset.Custom && customMaxDimension != null
     ) return false
     return if (treeUri == null) isValidOwnerPackageName(ownerPackageName) else ownerPackageName == null
 }
@@ -617,6 +658,7 @@ internal fun upgradeLegacyImageReference(
         width = width,
         height = height,
         format = ImageExportFormat.Jpeg,
+        sizePreset = ImageSizePreset.Original,
     )
 }
 
@@ -695,6 +737,7 @@ private val ROOT_KEYS_V3 =
             "stagedImages",
             "retiredPdf",
             "retiredImages",
+            "pdfSizeTarget",
         )
 private val REQUIRED_ROOT_KEYS = ROOT_KEYS_V2 - setOf("pdf", "removeRecentPending")
 private val PDF_KEYS =
@@ -721,7 +764,15 @@ private val IMAGE_KEYS_V2 =
         "pending",
     )
 private val IMAGE_KEYS_V3 =
-    IMAGE_KEYS_V2 + setOf("treeUri", "width", "height", "format")
+    IMAGE_KEYS_V2 +
+        setOf(
+            "treeUri",
+            "width",
+            "height",
+            "format",
+            "sizePreset",
+            "customMaxDimension",
+        )
 private val REQUIRED_IMAGE_KEYS = setOf("page", "uri")
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"

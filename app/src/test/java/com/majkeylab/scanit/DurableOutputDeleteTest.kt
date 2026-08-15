@@ -5,6 +5,7 @@ import android.service.chooser.ChooserResult
 import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.nio.file.Files
 import java.util.concurrent.CancellationException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -16,6 +17,149 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DurableOutputDeleteTest {
+    @Test
+    fun imageLocationReplacementCopiesExactBytesAndPreservesPdfState() {
+        val directory = Files.createTempDirectory("scanit-image-relocation-").toFile()
+        try {
+            val bytes = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3, 0xFF.toByte(), 0xD9.toByte())
+            val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+            val copied = java.io.File(directory, "page.jpg")
+
+            val pdf = exactPdf("content://media/external/downloads/1")
+            val old =
+                exactImage(1, "content://media/external/images/media/1").copy(
+                    byteLength = fingerprint.byteLength,
+                    sha256 = fingerprint.sha256,
+                    sizePreset = ImageSizePreset.Original,
+                )
+            val relocated =
+                old.copy(
+                    uri = "content://docs/tree/new/document/new%3Apage.jpg",
+                    treeUri = "content://docs/tree/new",
+                    ownerPackageName = null,
+                )
+            var metadata = metadata().copy(pdf = pdf, images = listOf(old))
+            val events = mutableListOf<String>()
+            val replacement =
+                replacement(
+                    read = { metadata },
+                    write = { expected, updated ->
+                        assertEquals(expected, metadata)
+                        metadata = updated
+                        events += if (updated.retiredImages.isEmpty()) "stage" else "active"
+                        updated
+                    },
+                    deleteImage = {
+                        events += "delete:${it.uri}"
+                        OutputDeleteStatus.Deleted
+                    },
+                )
+
+            val result =
+                replacement.replaceImages(
+                    pageCount = 1,
+                    create = {
+                        copyExactOutput(
+                            input = ByteArrayInputStream(bytes),
+                            target = copied,
+                            fingerprint = fingerprint,
+                            isCancelled = { false },
+                        )
+                        relocated
+                    },
+                    publish = { it },
+                )
+
+            assertArrayEquals(bytes, copied.readBytes())
+            assertEquals(pdf, result.metadata.pdf)
+            assertEquals(listOf(relocated), result.metadata.images)
+            assertEquals(ImageSizePreset.Original, result.metadata.images.single().sizePreset)
+            assertEquals(listOf("stage", "active", "delete:${old.uri}", "stage"), events)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun pdfSizeReplacementCommitsTargetWithPdfAndPreservesImages() {
+        val old = exactPdf("content://docs/tree/pdf/document/pdf%3Aold.pdf", tree = true)
+        val created = exactPdf("content://docs/tree/pdf/document/pdf%3Anew.pdf", tree = true)
+        val image = exactImage(1, "content://media/external/images/media/1")
+        var metadata =
+            metadata().copy(
+                pdf = old,
+                images = listOf(image),
+                pdfSizeTarget = PdfSizeTarget.Original,
+            )
+        val deleted = mutableListOf<PdfOutputRef>()
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = {
+                    deleted += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        val result =
+            replacement.replacePdf(
+                create = { created },
+                publish = { it },
+                activePdfSizeTarget = PdfSizeTarget.Mb5,
+            )
+
+        assertEquals(ENTRY_ID, result.metadata.entryId)
+        assertEquals(CACHE_ID, result.metadata.cacheId)
+        assertEquals(created, result.metadata.pdf)
+        assertEquals(old.treeUri, result.metadata.pdf?.treeUri)
+        assertEquals(listOf(image), result.metadata.images)
+        assertEquals(PdfSizeTarget.Mb5, result.metadata.pdfSizeTarget)
+        assertEquals(listOf(old), deleted)
+    }
+
+    @Test
+    fun pdfSizeReplacementFailureKeepsOldPdfTargetAndImages() {
+        val old = exactPdf("content://media/external/downloads/1")
+        val created = exactPdf("content://media/external/downloads/2", pending = true)
+        val image = exactImage(1, "content://media/external/images/media/1")
+        val original =
+            metadata().copy(
+                pdf = old,
+                images = listOf(image),
+                pdfSizeTarget = PdfSizeTarget.Original,
+            )
+        var metadata = original
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { OutputDeleteStatus.Deleted },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replacePdf(
+                create = { created },
+                publish = { throw IOException("publish") },
+                activePdfSizeTarget = PdfSizeTarget.Mb5,
+            )
+        }
+
+        assertEquals(original.pdf, metadata.pdf)
+        assertEquals(original.images, metadata.images)
+        assertEquals(original.pdfSizeTarget, metadata.pdfSizeTarget)
+        assertNull(metadata.stagedPdf)
+        assertNull(metadata.retiredPdf)
+    }
+
     @Test
     fun pdfReplacementCommitsNewBeforeDeletingOldAndRetainsFailedCleanup() {
         val old = exactPdf("content://media/external/downloads/1")

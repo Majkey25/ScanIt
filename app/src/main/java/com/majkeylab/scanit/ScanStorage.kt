@@ -35,6 +35,7 @@ private const val DEFAULT_THUMBNAIL_SIZE = 1024
 private const val PDF_MAX_BITMAP_SIDE = 3508
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
+private const val PNG_MIME_TYPE = "image/png"
 private const val MAX_SHARE_CACHE_SCANS = 8
 private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
 private const val DELETE_PENDING_PREFIX = ".pending-delete-"
@@ -145,15 +146,24 @@ private fun SavedMediaOutput.toPdfOutputRef(): PdfOutputRef =
 private fun SavedMediaOutput.toImageOutputRef(
     page: Int,
     rendered: RenderedImageExport,
-    format: ImageExportFormat,
+    options: ImageExportOptions,
 ): ImageOutputRef =
-    toImageOutputRef(page, rendered.width, rendered.height, format)
+    toImageOutputRef(
+        page,
+        rendered.width,
+        rendered.height,
+        options.format,
+        options.sizePreset,
+        options.customMaxDimension,
+    )
 
 private fun SavedMediaOutput.toImageOutputRef(
     page: Int,
     width: Int,
     height: Int,
     format: ImageExportFormat,
+    sizePreset: ImageSizePreset,
+    customMaxDimension: Int?,
 ): ImageOutputRef =
     ImageOutputRef(
         page = page,
@@ -167,6 +177,8 @@ private fun SavedMediaOutput.toImageOutputRef(
         width = width,
         height = height,
         format = format,
+        sizePreset = sizePreset,
+        customMaxDimension = customMaxDimension,
     )
 
 private fun PdfOutputRef.toSavedMediaOutput(): SavedMediaOutput =
@@ -245,7 +257,7 @@ private data class VerifiedSafOutput(
     fun toImageOutputRef(
         page: Int,
         rendered: RenderedImageExport,
-        format: ImageExportFormat,
+        options: ImageExportOptions,
     ): ImageOutputRef =
         ImageOutputRef(
             page = page,
@@ -257,9 +269,16 @@ private data class VerifiedSafOutput(
             sha256 = fingerprint.sha256,
             width = rendered.width,
             height = rendered.height,
-            format = format,
+            format = options.format,
+            sizePreset = options.sizePreset,
+            customMaxDimension = options.customMaxDimension,
         )
 }
+
+private data class StagedImageOutput(
+    val rendered: RenderedImageExport,
+    val options: ImageExportOptions,
+)
 
 private class SafOutputCreationFailure(
     val outputCreated: Boolean,
@@ -1121,7 +1140,9 @@ private fun readCacheEntry(
                 sourcePages = orderedSourcePages,
                 appearance = appearanceMetadata?.appearance,
                 appearanceSettings = appearanceMetadata?.appearanceSettings,
-                pdfSizeTarget = appearanceMetadata?.pdfSizeTarget ?: PdfSizeTarget.Original,
+                pdfSizeTarget =
+                    outputs?.pdfSizeTarget ?: appearanceMetadata?.pdfSizeTarget
+                        ?: PdfSizeTarget.Original,
                 lineageCacheId = appearanceMetadata?.lineageCacheId ?: cacheId,
                 parentCacheId = appearanceMetadata?.parentCacheId,
                 parentEntryId = appearanceMetadata?.parentEntryId,
@@ -1599,6 +1620,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = pageUris.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
@@ -1677,6 +1699,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = renderedPages.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached =
@@ -1767,6 +1790,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = renderedPages.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = source.pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
@@ -2164,193 +2188,322 @@ internal class ScanStorage(
             requireResolvedProvisionalOutputCreate(cached)
             val replacement = replacementFor(cached)
             val reconciled = upgradeImagesForV3(cached, replacement.reconcile())
-            val fingerprint = fingerprintFile(cached.pdf)
-            if (
-                pdfReplacementIsUnchanged(reconciled.metadata.pdf, treeUri, fingerprint) &&
-                    verifyExistingPdf(requireNotNull(reconciled.metadata.pdf), fingerprint)
-            ) {
-                val scan = savedScan(cached, reconciled.metadata, reconciled.warnings)
-                return@withLock OutputReplacementResult(scan, reconciled.warnings)
-            }
-            val displayName = scanPdfFileName(cached.baseName)
-            var marker =
-                newProvisionalOutputCreate(
-                    cached,
-                    ProvisionalOutputKind.Pdf,
-                    page = null,
-                    provider =
-                        if (treeUri == null) ProvisionalOutputProvider.MediaStore
-                        else ProvisionalOutputProvider.Saf,
-                    displayName = displayName,
-                    mimeType = PDF_MIME_TYPE,
-                    treeUri = treeUri,
-                )
-            val result =
-                replacement.replacePdf(
-                    create = {
-                        if (treeUri == null) {
-                            savePdfToDownloads(
-                                cached.pdf,
-                                displayName,
-                                DEFAULT_ALBUM_NAME,
-                                beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
-                                onCreated = { marker = updateProvisionalOutputCreate(cached, marker, it) },
-                            )
-                                .toPdfOutputRef()
-                        } else {
-                            createSafOutput(
-                                source = cached.pdf,
-                                displayName = displayName,
-                                mimeType = PDF_MIME_TYPE,
-                                treeUriValue = treeUri,
-                                beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
-                                onCreated = { marker = updateProvisionalOutputCreate(cached, marker, it) },
-                            ).toPdfOutputRef()
-                        }
-                    },
-                    onStaged = { clearProvisionalOutputCreate(cached, marker) },
-                    publish = { output ->
-                        if (!output.pending) {
-                            output
-                        } else {
-                            publishPendingFile(
-                                output.toSavedMediaOutput(),
-                                MediaOutputCollection.Downloads,
-                            ).toPdfOutputRef()
-                        }
-                    },
-                )
-            val scan = savedScan(cached, result.metadata, result.warnings)
-            OutputReplacementResult(scan, result.warnings)
+            replacePdfOutputLocked(cached, cached.pdf, treeUri, reconciled)
         }
 
-    fun replaceImageOutputs(
+    private fun replacePdfOutputLocked(
         cached: CachedScan,
-        options: ImageExportOptions,
+        sourcePdf: File,
+        treeUri: String?,
+        current: OutputReplacementJournalResult,
+        pdfSizeTarget: PdfSizeTarget? = null,
+    ): OutputReplacementResult {
+        requireReadableFile(sourcePdf)
+        val fingerprint = fingerprintFile(sourcePdf)
+        if (
+            pdfReplacementIsUnchanged(current.metadata.pdf, treeUri, fingerprint) &&
+                verifyExistingPdf(requireNotNull(current.metadata.pdf), fingerprint)
+        ) {
+            val activated =
+                if (pdfSizeTarget == null) {
+                    current.metadata
+                } else {
+                    current.metadata.copy(
+                        pdfSizeTarget = pdfSizeTarget,
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            val metadata =
+                if (activated == current.metadata) {
+                    current.metadata
+                } else {
+                    rewriteCachedOutputMetadata(cached) { observed ->
+                        exactReplacementMetadataUpdate(observed, current.metadata, activated)
+                    }
+                }
+            val scan = savedScan(cached, metadata, current.warnings)
+            return OutputReplacementResult(scan, current.warnings)
+        }
+        val displayName = scanPdfFileName(cached.baseName)
+        var marker =
+            newProvisionalOutputCreate(
+                cached,
+                ProvisionalOutputKind.Pdf,
+                page = null,
+                provider =
+                    if (treeUri == null) ProvisionalOutputProvider.MediaStore
+                    else ProvisionalOutputProvider.Saf,
+                displayName = displayName,
+                mimeType = PDF_MIME_TYPE,
+                treeUri = treeUri,
+            )
+        val result =
+            replacementFor(cached).replacePdf(
+                create = {
+                    if (treeUri == null) {
+                        savePdfToDownloads(
+                            sourcePdf,
+                            displayName,
+                            DEFAULT_ALBUM_NAME,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toPdfOutputRef()
+                    } else {
+                        createSafOutput(
+                            source = sourcePdf,
+                            displayName = displayName,
+                            mimeType = PDF_MIME_TYPE,
+                            treeUriValue = treeUri,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toPdfOutputRef()
+                    }
+                },
+                onStaged = { clearProvisionalOutputCreate(cached, marker) },
+                publish = { output ->
+                    if (!output.pending) {
+                        output
+                    } else {
+                        publishPendingFile(
+                            output.toSavedMediaOutput(),
+                            MediaOutputCollection.Downloads,
+                        ).toPdfOutputRef()
+                    }
+                },
+                activePdfSizeTarget = pdfSizeTarget,
+            )
+        val warnings = (current.warnings + result.warnings).distinct()
+        return OutputReplacementResult(savedScan(cached, result.metadata, warnings), warnings)
+    }
+
+    fun replacePdfSize(
+        cached: CachedScan,
+        target: PdfSizeTarget,
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): OutputReplacementResult {
-        val resolved = resolveImageExport(options)
+        val appearance = cached.appearance ?: throw IOException("Scan appearance is unavailable")
+        if (
+            cached.sourcePages.isEmpty() ||
+                cached.sourcePages.size != cached.pages.size ||
+                cached.appearanceSettings == null
+        ) {
+            throw IOException("Scan appearance sources are incomplete")
+        }
+        storageTransactionLock.withLock { requireCurrentOutputMetadata(cached) }
+        val workDirectory = createOutputStagingDirectory()
+        val candidate = File(workDirectory, "replacement.pdf")
+        val backup = File(workDirectory, "previous.pdf")
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        var localReplaced = false
+        var activeCommitted = false
+        try {
+            val build =
+                buildScanPdfFromPages(
+                    output = candidate,
+                    sourcePages = cached.sourcePages,
+                    renderedPages = cached.pages,
+                    appearance = appearance,
+                    target = target,
+                    isCancelled = isCancelled,
+                )
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                copyPdfForRollback(cached.pdf, backup)
+                Files.move(
+                    candidate.toPath(),
+                    cached.pdf.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                localReplaced = true
+                val result =
+                    if (current.metadata.pdf == null) {
+                        val updated =
+                            current.metadata.copy(
+                                pdfSizeTarget = target,
+                                version = OUTPUT_METADATA_VERSION,
+                            )
+                        val stored =
+                            rewriteCachedOutputMetadata(cached) { observed ->
+                                exactReplacementMetadataUpdate(observed, current.metadata, updated)
+                            }
+                        OutputReplacementResult(
+                            savedScan(cached, stored, current.warnings),
+                            current.warnings,
+                        )
+                    } else {
+                        replacePdfOutputLocked(
+                            cached = cached,
+                            sourcePdf = cached.pdf,
+                            treeUri = current.metadata.pdf.treeUri,
+                            current = current,
+                            pdfSizeTarget = target,
+                        )
+                    }
+                activeCommitted = true
+                val warnings =
+                    (result.warnings + listOfNotNull(pdfSizeTargetWarning(target, build.bytes)))
+                        .distinct()
+                result.copy(
+                    scan =
+                        result.scan.copy(
+                            cached = cached.copy(pdfSizeTarget = target),
+                            warnings = (result.scan.warnings + warnings).distinct(),
+                        ),
+                    warnings = warnings,
+                )
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            if (localReplaced && !activeCommitted) {
+                activeCommitted =
+                    try {
+                        storageTransactionLock.withLock {
+                            val metadata = requireCurrentOutputMetadata(cached.copy(pdfSizeTarget = target))
+                            metadata.pdfSizeTarget == target &&
+                                (metadata.pdf == null ||
+                                    metadata.pdf.outputFingerprint() == fingerprintFile(cached.pdf))
+                        }
+                    } catch (_: Exception) {
+                        false
+                    }
+            }
+            if (localReplaced && !activeCommitted) {
+                try {
+                    restorePdfAfterFailedReplacement(backup, cached.pdf)
+                } catch (rollbackFailure: Throwable) {
+                    if (rollbackFailure !== failure) failure.addSuppressed(rollbackFailure)
+                }
+            }
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("PDF output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("PDF output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    private fun copyPdfForRollback(source: File, backup: File) {
+        requireReadableFile(source)
+        if (backup.exists()) throw IOException("PDF rollback file already exists")
+        Files.copy(source.toPath(), backup.toPath())
+        if (fingerprintFile(backup) != fingerprintFile(source)) {
+            throw IOException("PDF rollback copy differs from the active PDF")
+        }
+    }
+
+    private fun restorePdfAfterFailedReplacement(backup: File, destination: File) {
+        requireReadableFile(backup)
+        Files.move(
+            backup.toPath(),
+            destination.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+    }
+
+    fun relocateImageOutputs(
+        cached: CachedScan,
+        treeUri: String,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        requireCanonicalOutputTreeUri(treeUri.toUri())
         require(cached.pages.isNotEmpty()) { "Scan has no pages" }
         val workDirectory = createOutputStagingDirectory()
         var operationFailure: Throwable? = null
         var cleanupFailed = false
         var replacementResult: OutputReplacementResult? = null
         try {
-            val rendered =
-                cached.pages.mapIndexed { index, source ->
-                    val page = index + 1
-                    val requestedExtension =
-                        when (resolved.format) {
-                            ImageExportFormat.Png -> "png"
-                            ImageExportFormat.Original,
-                            ImageExportFormat.Jpeg,
-                            -> "jpg"
-                        }
-                    renderImageExport(
-                        source = source,
-                        destination =
-                            File(
-                                workDirectory,
-                                "${cached.baseName}_${page.toString().padStart(2, '0')}.$requestedExtension",
-                            ),
-                        options = resolved,
-                        isCancelled = isCancelled,
-                    )
-                }
             replacementResult = storageTransactionLock.withLock {
                 requireResolvedProvisionalOutputCreate(cached)
                 var current = replacementFor(cached).reconcile()
                 current = upgradeImagesForV3(cached, current)
-                if (
-                    current.metadata.images.size == rendered.size &&
-                        current.metadata.images.zip(rendered).all { (saved, output) ->
-                            imageReplacementIsUnchanged(
-                                current = saved,
-                                treeUri = resolved.treeUri,
-                                mimeType = output.mimeType,
-                                width = output.width,
-                                height = output.height,
-                                format = resolved.format,
-                                fingerprint = fingerprintFile(output.file),
-                            ) && verifyExistingImage(saved)
-                        }
-                ) {
-                    val scan = savedScan(cached, current.metadata, current.warnings)
-                    return@withLock OutputReplacementResult(scan, current.warnings)
-                }
-                val replacement = replacementFor(cached)
-                val markers = mutableMapOf<String, ProvisionalOutputCreate>()
-                val result =
-                    replacement.replaceImages(
-                        pageCount = rendered.size,
-                        create = { page ->
-                            val output = rendered[page - 1]
-                            val displayName =
-                                "${cached.baseName}_${page.toString().padStart(2, '0')}.${output.extension}"
-                            var marker =
-                                newProvisionalOutputCreate(
-                                    cached,
-                                    ProvisionalOutputKind.Image,
-                                    page,
-                                    if (resolved.treeUri == null) ProvisionalOutputProvider.MediaStore
-                                    else ProvisionalOutputProvider.Saf,
-                                    displayName,
-                                    output.mimeType,
-                                    resolved.treeUri,
+                val active = existingCompleteImagesForSave(current.metadata, cached.pages.size)
+                val staged =
+                    if (active == null) {
+                        cached.pages.mapIndexed { index, page ->
+                            val destination = File(workDirectory, "page-${index + 1}.jpg")
+                            val options =
+                                ImageExportOptions(
+                                    ImageExportFormat.Original,
+                                    ImageSizePreset.Original,
+                                    treeUri = treeUri,
                                 )
-                            if (resolved.treeUri == null) {
-                                val values =
-                                    pendingValues(
-                                        displayName,
-                                        output.mimeType,
-                                        "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(DEFAULT_ALBUM_NAME)}",
-                                    )
-                                insertPendingFile(
-                                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                    values,
-                                    output.file,
-                                    MediaOutputCollection.Images,
-                                    output.mimeType,
-                                    beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
-                                    onCreated = { marker = updateProvisionalOutputCreate(cached, marker, it) },
-                                ).toImageOutputRef(page, output, resolved.format)
-                            } else {
-                                createSafOutput(
-                                    source = output.file,
-                                    displayName = displayName,
-                                    mimeType = output.mimeType,
-                                    treeUriValue = resolved.treeUri,
-                                    expectedWidth = output.width,
-                                    expectedHeight = output.height,
-                                    beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
-                                    onCreated = { marker = updateProvisionalOutputCreate(cached, marker, it) },
-                                ).toImageOutputRef(page, output, resolved.format)
-                            }.also { markers[it.uri] = marker }
-                        },
-                        onStaged = { staged ->
-                            val marker = markers.remove(staged.uri)
-                                ?: throw IOException("Provisional image marker is unavailable")
-                            clearProvisionalOutputCreate(cached, marker)
-                        },
-                        publish = { output ->
-                            if (!output.pending) {
-                                output
-                            } else {
-                                publishPendingFile(
-                                    output.toSavedMediaOutput(),
-                                    MediaOutputCollection.Images,
-                                ).toImageOutputRef(
-                                    page = output.page,
+                            StagedImageOutput(
+                                renderImageExport(
+                                    page,
+                                    destination,
+                                    resolveImageExport(options),
+                                    isCancelled,
+                                ),
+                                options,
+                            )
+                        }
+                    } else {
+                        active.map { output ->
+                            if (isCancelled()) throw CancellationException("Image move cancelled")
+                            val fingerprint = output.outputFingerprint()
+                                ?: throw IOException("Saved image fingerprint is unavailable")
+                            val mimeType = output.mimeType
+                                ?: throw IOException("Saved image MIME type is unavailable")
+                            val extension =
+                                when (mimeType) {
+                                    JPEG_MIME_TYPE -> "jpg"
+                                    PNG_MIME_TYPE -> "png"
+                                    else -> throw IOException("Saved image MIME type is unsupported")
+                                }
+                            val destination =
+                                File(workDirectory, "page-${output.page}.$extension")
+                            val input = resolver.openInputStream(output.uri.toUri())
+                                ?: throw IOException("Saved image could not be opened")
+                            copyExactOutput(input, destination, fingerprint, isCancelled)
+                            val format = output.format
+                                ?: throw IOException("Saved image format is unavailable")
+                            val options =
+                                ImageExportOptions(
+                                    format = format,
+                                    sizePreset = output.sizePreset ?: ImageSizePreset.Original,
+                                    customMaxDimension = output.customMaxDimension,
+                                    treeUri = treeUri,
+                                )
+                            resolveImageExport(options)
+                            StagedImageOutput(
+                                RenderedImageExport(
+                                    file = destination,
+                                    mimeType = mimeType,
+                                    extension = extension,
                                     width = requireNotNull(output.width),
                                     height = requireNotNull(output.height),
-                                    format = requireNotNull(output.format),
-                                )
-                            }
-                        },
-                    )
-                val warnings = (current.warnings + result.warnings).distinct()
-                val scan = savedScan(cached, result.metadata, warnings)
-                OutputReplacementResult(scan, warnings)
+                                    exactSourceCopy = true,
+                                ),
+                                options,
+                            )
+                        }
+                    }
+                replaceStagedImageOutputs(cached, current, staged)
             }
         } catch (failure: Throwable) {
             operationFailure = failure
@@ -2375,6 +2528,182 @@ internal class ScanStorage(
             checkNotNull(replacementResult),
             cleanupFailed,
         )
+    }
+
+    fun replaceImageOutputs(
+        cached: CachedScan,
+        options: ImageExportOptions,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        val resolved = resolveImageExport(options)
+        require(cached.pages.isNotEmpty()) { "Scan has no pages" }
+        val workDirectory = createOutputStagingDirectory()
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        try {
+            val rendered =
+                cached.pages.mapIndexed { index, source ->
+                    val page = index + 1
+                    val requestedExtension =
+                        when (resolved.format) {
+                            ImageExportFormat.Png -> "png"
+                            ImageExportFormat.Original,
+                            ImageExportFormat.Jpeg,
+                            -> "jpg"
+                        }
+                    val output = renderImageExport(
+                        source = source,
+                        destination =
+                            File(
+                                workDirectory,
+                                "${cached.baseName}_${page.toString().padStart(2, '0')}.$requestedExtension",
+                            ),
+                        options = resolved,
+                        isCancelled = isCancelled,
+                    )
+                    StagedImageOutput(output, options.copy(treeUri = resolved.treeUri))
+                }
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                replaceStagedImageOutputs(cached, current, rendered)
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("Image output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("Image output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    private fun replaceStagedImageOutputs(
+        cached: CachedScan,
+        current: OutputReplacementJournalResult,
+        staged: List<StagedImageOutput>,
+    ): OutputReplacementResult {
+        require(staged.isNotEmpty()) { "Image replacement is empty" }
+        val treeUris = staged.map { it.options.treeUri }.distinct()
+        if (treeUris.size != 1) throw IOException("Image destinations do not match")
+        val treeUri = treeUris.single()
+        if (
+            current.metadata.images.size == staged.size &&
+                current.metadata.images.zip(staged).all { (saved, replacement) ->
+                    val output = replacement.rendered
+                    val options = replacement.options
+                    imageReplacementIsUnchanged(
+                        current = saved,
+                        treeUri = treeUri,
+                        mimeType = output.mimeType,
+                        width = output.width,
+                        height = output.height,
+                        format = options.format,
+                        sizePreset = options.sizePreset,
+                        customMaxDimension = options.customMaxDimension,
+                        fingerprint = fingerprintFile(output.file),
+                    ) && verifyExistingImage(saved)
+                }
+        ) {
+            val scan = savedScan(cached, current.metadata, current.warnings)
+            return OutputReplacementResult(scan, current.warnings)
+        }
+        val replacement = replacementFor(cached)
+        val markers = mutableMapOf<String, ProvisionalOutputCreate>()
+        val result =
+            replacement.replaceImages(
+                pageCount = staged.size,
+                create = { page ->
+                    val source = staged[page - 1]
+                    val output = source.rendered
+                    val displayName =
+                        "${cached.baseName}_${page.toString().padStart(2, '0')}.${output.extension}"
+                    var marker =
+                        newProvisionalOutputCreate(
+                            cached,
+                            ProvisionalOutputKind.Image,
+                            page,
+                            if (treeUri == null) ProvisionalOutputProvider.MediaStore
+                            else ProvisionalOutputProvider.Saf,
+                            displayName,
+                            output.mimeType,
+                            treeUri,
+                        )
+                    if (treeUri == null) {
+                        val values =
+                            pendingValues(
+                                displayName,
+                                output.mimeType,
+                                "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(DEFAULT_ALBUM_NAME)}",
+                            )
+                        insertPendingFile(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            values,
+                            output.file,
+                            MediaOutputCollection.Images,
+                            output.mimeType,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toImageOutputRef(page, output, source.options)
+                    } else {
+                        createSafOutput(
+                            source = output.file,
+                            displayName = displayName,
+                            mimeType = output.mimeType,
+                            treeUriValue = treeUri,
+                            expectedWidth = output.width,
+                            expectedHeight = output.height,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toImageOutputRef(page, output, source.options)
+                    }.also { markers[it.uri] = marker }
+                },
+                onStaged = { output ->
+                    val marker = markers.remove(output.uri)
+                        ?: throw IOException("Provisional image marker is unavailable")
+                    clearProvisionalOutputCreate(cached, marker)
+                },
+                publish = { output ->
+                    if (!output.pending) {
+                        output
+                    } else {
+                        publishPendingFile(
+                            output.toSavedMediaOutput(),
+                            MediaOutputCollection.Images,
+                        ).toImageOutputRef(
+                            page = output.page,
+                            width = requireNotNull(output.width),
+                            height = requireNotNull(output.height),
+                            format = requireNotNull(output.format),
+                            sizePreset = output.sizePreset ?: ImageSizePreset.Original,
+                            customMaxDimension = output.customMaxDimension,
+                        )
+                    }
+                },
+            )
+        val warnings = (current.warnings + result.warnings).distinct()
+        return OutputReplacementResult(savedScan(cached, result.metadata, warnings), warnings)
     }
 
     fun reconcileRetiredOutputs(cached: CachedScan): OutputReplacementResult =
@@ -2456,6 +2785,7 @@ internal class ScanStorage(
                                     width = size?.first,
                                     height = size?.second,
                                     format = ImageExportFormat.Jpeg.takeIf { size != null },
+                                    sizePreset = ImageSizePreset.Original.takeIf { size != null },
                                 )
                             },
                     )
@@ -2687,6 +3017,8 @@ internal class ScanStorage(
                         width = image.width,
                         height = image.height,
                         format = image.format,
+                        sizePreset = image.sizePreset,
+                        customMaxDimension = image.customMaxDimension,
                     )
                 },
             savedPdf = activePdf?.uri?.toUri(),
@@ -3050,7 +3382,6 @@ internal class ScanStorage(
                 current.sourcePages != cached.sourcePages ||
                 current.appearance != cached.appearance ||
                 current.appearanceSettings != cached.appearanceSettings ||
-                current.pdfSizeTarget != cached.pdfSizeTarget ||
                 current.lineageCacheId != cached.lineageCacheId ||
                 current.parentCacheId != cached.parentCacheId ||
                 current.parentEntryId != cached.parentEntryId ||

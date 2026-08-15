@@ -29,6 +29,8 @@ internal fun imageReplacementIsUnchanged(
     width: Int,
     height: Int,
     format: ImageExportFormat,
+    sizePreset: ImageSizePreset = ImageSizePreset.Original,
+    customMaxDimension: Int? = null,
     fingerprint: OutputFingerprint,
 ): Boolean =
     !current.pending &&
@@ -37,6 +39,8 @@ internal fun imageReplacementIsUnchanged(
         current.width == width &&
         current.height == height &&
         current.format == format &&
+        (current.sizePreset ?: ImageSizePreset.Original) == sizePreset &&
+        current.customMaxDimension == customMaxDimension &&
         current.outputFingerprint() == fingerprint
 
 internal fun exactReplacementMetadataUpdate(
@@ -65,6 +69,7 @@ internal class DurableOutputReplacement(
         create: () -> PdfOutputRef,
         onStaged: (PdfOutputRef) -> Unit = {},
         publish: (PdfOutputRef) -> PdfOutputRef,
+        activePdfSizeTarget: PdfSizeTarget? = null,
     ): OutputReplacementJournalResult {
         var current = reconcile().metadata
         if (current.stagedPdf != null || current.retiredPdf != null) {
@@ -80,16 +85,15 @@ internal class DurableOutputReplacement(
             staged = true
             onStaged(created)
             val published = publish(created)
-            current =
-                commit(
-                    current,
-                    current.copy(
-                        pdf = published,
-                        stagedPdf = null,
-                        retiredPdf = old,
-                        version = OUTPUT_METADATA_VERSION,
-                    ),
+            val active =
+                current.copy(
+                    pdf = published,
+                    stagedPdf = null,
+                    retiredPdf = old,
+                    pdfSizeTarget = activePdfSizeTarget ?: current.pdfSizeTarget,
+                    version = OUTPUT_METADATA_VERSION,
                 )
+            current = commit(current, active)
             activeCommitted = true
             return cleanup(current)
         } catch (failure: Throwable) {

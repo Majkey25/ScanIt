@@ -111,6 +111,19 @@ class PureLogicTest {
     }
 
     @Test
+    fun savedImageOptionsUsePersistedPresetInsteadOfRenderedDimensions() {
+        assertEquals(
+            ImageExportOptions(ImageExportFormat.Jpeg, ImageSizePreset.High),
+            activeImageExportOptions(
+                formats = listOf(ImageExportFormat.Jpeg),
+                treeUris = listOf(null),
+                sizePresets = listOf(ImageSizePreset.High),
+                customMaxDimensions = listOf(null),
+            ),
+        )
+    }
+
+    @Test
     fun outputChangeGateRejectsDoubleTapAndReusedCacheGeneration() {
         val gate = OutputChangeGate()
         val request =
@@ -137,13 +150,7 @@ class PureLogicTest {
             OutputChangeRequest(
                 CACHE_ID,
                 ENTRY_ID,
-                OutputChangeKind.ImageLocation(
-                    ImageExportOptions(
-                        format = ImageExportFormat.Png,
-                        sizePreset = ImageSizePreset.Custom,
-                        customMaxDimension = 2400,
-                    ),
-                ),
+                OutputChangeKind.ImageLocation,
                 generation = 7L,
             )
         val encoded = encodeOutputTreePickerRequest(request)

@@ -180,7 +180,7 @@ internal fun ScanItApp(
     onChangePdfLocation: () -> Unit = {},
     onChangeImageSize: (ImageSizePreset, Int?) -> Unit = { _, _ -> },
     onChangeImageFormat: (ImageExportFormat) -> Unit = {},
-    onChangeImageLocation: (ImageExportOptions) -> Unit = {},
+    onChangeImageLocation: () -> Unit = {},
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit = {},
     onOpenAppearanceEditor: () -> Unit = {},
     onCloseAppearanceEditor: () -> Unit = {},
@@ -604,7 +604,7 @@ private fun ResultScreen(
     onChangePdfLocation: () -> Unit,
     onChangeImageSize: (ImageSizePreset, Int?) -> Unit,
     onChangeImageFormat: (ImageExportFormat) -> Unit,
-    onChangeImageLocation: (ImageExportOptions) -> Unit,
+    onChangeImageLocation: () -> Unit,
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit,
     onEdit: () -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
@@ -831,9 +831,7 @@ private fun ResultScreen(
                         onChangePdfLocation = onChangePdfLocation,
                         onChangeImageSize = { showImageSizeDialog = true },
                         onChangeImageFormat = { showImageFormatDialog = true },
-                        onChangeImageLocation = {
-                            imageExportOptionsForChange(scan)?.let(onChangeImageLocation)
-                        },
+                        onChangeImageLocation = onChangeImageLocation,
                         onAcknowledgeUnknownOutput = { showUnknownOutputDialog = true },
                     )
                 }
