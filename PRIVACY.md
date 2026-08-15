@@ -10,6 +10,8 @@ analytics, or public cloud-processing feature. Scanned document content is
 processed on the device. Google Play services and ML Kit process limited
 diagnostic and usage telemetry as described in the canonical policy and
 [Google's ML Kit disclosure](https://developers.google.com/ml-kit/android-data-disclosure).
+Optional text extraction and QR/barcode detection also run on-device; ScanIt
+does not upload their input or results to a maintainer-operated service.
 
 Temporary scan working copies are kept in a bounded app-private cache. Durable
 PDFs and images are stored only according to the user's settings and actions.

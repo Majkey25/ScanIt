@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `7` |
-| Version name | `1.1.0` |
+| Version code | `13` |
+| Version name | `1.2.5` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -59,6 +59,8 @@ the Play developer account.
 > - page thumbnails for browsing multi-page results
 > - Google review filters including Auto, Color, Grayscale, Black and white, and Shadows
 > - measured Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB PDF size goals
+> - per-document PDF size changes from File details without changing the saved default
+> - on-device text extraction across all pages and QR/barcode detection on the current page
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
 > - PDF saving to Downloads or a folder you choose
@@ -98,8 +100,10 @@ the Play developer account.
 > - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
 > - jednostránkový i vícestránkový výstup do PDF a JPEG
 > - náhledy stránek pro procházení vícestránkových výsledků
-> - barevný, šedotónový a černobílý režim s nastavitelnou intenzitou a stíny
+> - filtry Google pro Auto, Barvy, Odstíny šedi, Černobíle a Stíny
 > - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB, 20 MB nebo vlastní cíl 1–500 MB
+> - změna cílové velikosti konkrétního PDF v detailech souboru bez změny uloženého výchozího nastavení
+> - místní rozpoznání textu ze všech stran a QR nebo čárových kódů na aktuální straně
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
 > - ukládání PDF do Stažených souborů nebo zvolené složky
@@ -279,7 +283,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [x] Signed AAB is exactly `com.majkeylab.scanit`, version code 7, version `1.1.0`.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 13, version `1.2.5`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

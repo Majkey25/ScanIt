@@ -274,6 +274,30 @@ internal data class SavedScan(
     val savedImagesDeleteVerified: Boolean = false,
 )
 
+internal fun totalFileBytes(files: List<File>): Long {
+    var total = 0L
+    files.forEach { file ->
+        val bytes = file.length().coerceAtLeast(0L)
+        if (Long.MAX_VALUE - total < bytes) return Long.MAX_VALUE
+        total += bytes
+    }
+    return total
+}
+
+internal fun canChangePdfSize(
+    scan: SavedScan,
+    target: PdfSizeTarget,
+): Boolean = canChoosePdfSize(scan) && scan.cached.pdfSizeTarget != target
+
+internal fun canChoosePdfSize(scan: SavedScan): Boolean {
+    val cached = scan.cached
+    return scan.outputMetadataValid &&
+        cached.entryId != null &&
+        cached.pages.isNotEmpty() &&
+        cached.sourcePages.size == cached.pages.size &&
+        cached.appearanceSettings != null
+}
+
 internal enum class SaveNowTarget {
     Pdf,
     Images,
@@ -290,6 +314,45 @@ internal data class VisualMarkEditorState(
     val applying: Boolean = false,
     val message: UiMessage? = null,
 )
+
+internal enum class DocumentAction {
+    ExtractText,
+    DetectCodes,
+}
+
+internal sealed interface DocumentActionOutput {
+    data class Text(
+        val value: String,
+        val truncated: Boolean,
+    ) : DocumentActionOutput
+
+    data class Codes(val values: List<String>) : DocumentActionOutput
+}
+
+internal sealed interface DocumentActionState {
+    data class Processing(val action: DocumentAction) : DocumentActionState
+
+    data class Completed(val output: DocumentActionOutput) : DocumentActionState
+
+    data class Failed(val message: UiMessage) : DocumentActionState
+}
+
+internal data class DocumentActionRequest(
+    val cacheId: String,
+    val entryId: String,
+    val pageIndex: Int,
+    val action: DocumentAction,
+    val generation: Long,
+)
+
+internal fun DocumentActionRequest.matches(
+    cacheId: String,
+    entryId: String?,
+    generation: Long,
+): Boolean =
+    this.cacheId == cacheId &&
+        this.entryId == entryId &&
+        this.generation == generation
 
 internal enum class SavedOutputKind {
     Pdf,
@@ -510,6 +573,7 @@ internal sealed interface ScreenState {
         val appearanceReviewRequired: Boolean = false,
         val appearanceMessage: UiMessage? = null,
         val visualMarkEditor: VisualMarkEditorState? = null,
+        val documentActionState: DocumentActionState? = null,
     ) : ScreenState
 
     data class Recent(
@@ -525,7 +589,17 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
     get() =
         outputSaveInProgress ||
             appearanceApplyInProgress ||
+            documentActionState is DocumentActionState.Processing ||
             visualMarkEditor != null
+
+internal val ScreenState.Result.canAddVisualMark: Boolean
+    get() =
+        !pagePreviewLoading &&
+            thumbnail != null &&
+            scan.cached.entryId != null &&
+            scan.cached.sourcePages.size == scan.cached.pages.size &&
+            scan.cached.appearanceSettings != null &&
+            scan.outputMetadataValid
 
 internal enum class AppBackAction {
     CloseSettings,
@@ -542,9 +616,7 @@ internal fun appBackAction(
 ): AppBackAction =
     when {
         settingsOpen -> AppBackAction.CloseSettings
-        state is ScreenState.Result &&
-            (state.outputSaveInProgress ||
-                state.appearanceApplyInProgress) -> AppBackAction.Consume
+        state is ScreenState.Result && state.resultActionsBlocked -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume
         state is ScreenState.Recent && state.deletionInProgress -> AppBackAction.Consume

@@ -298,6 +298,7 @@ internal class ScanViewModel(
     private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val storage = ScanStorage(application)
+    private val documentActionProcessor = DocumentActionProcessor(application)
     private val markTemplateStore = MarkTemplateStore(application)
     private val scannerLaunchGate =
         ScannerLaunchGate(
@@ -319,6 +320,8 @@ internal class ScanViewModel(
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
     private var appearanceApplyJob: Job? = null
+    private var documentActionJob: Job? = null
+    private var documentActionGeneration = 0L
     private var visualMarkTemplateJob: Job? = null
     private var visualMarkApplyJob: Job? = null
     private var visualMarkScanSource: MarkEditorSource? = null
@@ -1292,6 +1295,214 @@ internal class ScanViewModel(
             }
     }
 
+    fun changeCurrentPdfSize(target: PdfSizeTarget) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (
+            current.resultActionsBlocked ||
+                appearanceApplyJob?.isActive == true ||
+                !canChangePdfSize(current.scan, target)
+        ) {
+            return
+        }
+        val cached = current.scan.cached
+        val appearanceSettings = cached.appearanceSettings ?: return
+        val generation = beginRouteMutation()
+        mutableState.value =
+            current.copy(
+                appearanceApplyInProgress = true,
+                appearanceMessage = null,
+            )
+        appearanceApplyJob =
+            viewModelScope.launch {
+                var created: CachedScan? = null
+                var checkpointCommitted = false
+                var pageIndex = current.selectedPageIndex
+                var thumbnail = current.thumbnail
+                var buildWarnings: List<UiMessage> = emptyList()
+                try {
+                    withContext(Dispatchers.IO) {
+                        val coroutineContext = currentCoroutineContext()
+                        val build =
+                            storage.createAppearanceVariant(
+                                source = cached,
+                                appearanceSettings = appearanceSettings,
+                                pdfSizeTarget = target,
+                                restoreSettingsOnActivation = false,
+                                isCancelled = { !coroutineContext.isActive },
+                            )
+                        created = build.cached
+                        buildWarnings =
+                            if (build.pdf.targetMet) {
+                                emptyList()
+                            } else {
+                                listOf(pdfSizeTargetWarning(build.pdf))
+                            }
+                        pageIndex =
+                            resolvedPageIndex(
+                                current.selectedPageIndex,
+                                build.cached.pages.size,
+                            )
+                        thumbnail =
+                            storage.loadThumbnail(
+                                build.cached.pages[pageIndex],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                    }
+                    val candidate = checkNotNull(created)
+                    if (
+                        persistResultCheckpoint(generation, candidate.baseName) !=
+                            ResultActivation.Applied
+                    ) {
+                        throw IOException("PDF size checkpoint changed")
+                    }
+                    checkpointCommitted = true
+                    val saved =
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            completeAppearanceCandidate(candidate, buildWarnings)
+                        }
+                    routeMutationMutex.withLock {
+                        if (routeMutationGate.isCurrent(generation)) {
+                            publishResult(
+                                ScreenState.Result(
+                                    scan = saved,
+                                    thumbnail = thumbnail,
+                                    selectedPageIndex = pageIndex,
+                                ),
+                            )
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    if (!checkpointCommitted) {
+                        created?.let { discardAppearanceVariantUnlessActive(it) }
+                    }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (checkpointCommitted) {
+                        val recovered =
+                            try {
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    created?.let { candidate ->
+                                        completeAppearanceCandidate(
+                                            candidate,
+                                            buildWarnings + UiMessage(R.string.state_update_failed),
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = recovered,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = pageIndex,
+                                    ),
+                                )
+                            } else if (routeMutationGate.isCurrent(generation)) {
+                                navigationInitialized = true
+                                persistRoute(ROUTE_FAILURE)
+                                mutableState.value =
+                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                            }
+                        }
+                    } else {
+                        created?.let { discardAppearanceVariantUnlessActive(it) }
+                        routeMutationMutex.withLock {
+                            val latest = mutableState.value as? ScreenState.Result
+                            if (
+                                routeMutationGate.isCurrent(generation) &&
+                                    latest?.scan?.cached?.baseName == cached.baseName &&
+                                    latest.scan.cached.entryId == cached.entryId
+                            ) {
+                                mutableState.value =
+                                    latest.copy(
+                                        appearanceApplyInProgress = false,
+                                        scan =
+                                            latest.scan.copy(
+                                                warnings =
+                                                    (latest.scan.warnings +
+                                                        UiMessage(R.string.state_update_failed))
+                                                        .distinct(),
+                                            ),
+                                    )
+                            }
+                        }
+                    }
+                } finally {
+                    appearanceApplyJob = null
+                }
+            }
+    }
+
+    fun runDocumentAction(action: DocumentAction) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked || current.documentActionState != null) return
+        val pageIndex = resolvedPageIndex(current.selectedPageIndex, current.scan.cached.pages.size)
+        val request =
+            DocumentActionRequest(
+                cacheId = current.scan.cached.baseName,
+                entryId = entryId,
+                pageIndex = pageIndex,
+                action = action,
+                generation = nextDocumentActionGeneration(),
+            )
+        mutableState.value =
+            current.copy(documentActionState = DocumentActionState.Processing(action))
+        documentActionJob =
+            viewModelScope.launch {
+                val state =
+                    try {
+                        val output =
+                            withContext(Dispatchers.IO) {
+                                when (action) {
+                                    DocumentAction.ExtractText ->
+                                        documentActionProcessor.extractText(current.scan.cached.pages)
+                                    DocumentAction.DetectCodes ->
+                                        documentActionProcessor.detectCodes(
+                                            current.scan.cached.pages[pageIndex],
+                                        )
+                                }
+                            }
+                        DocumentActionState.Completed(output)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        DocumentActionState.Failed(UiMessage(R.string.document_action_failed))
+                    }
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                if (
+                    request.matches(
+                        cacheId = latest.scan.cached.baseName,
+                        entryId = latest.scan.cached.entryId,
+                        generation = documentActionGeneration,
+                    )
+                ) {
+                    mutableState.value = latest.copy(documentActionState = state)
+                }
+            }
+    }
+
+    fun dismissDocumentAction() {
+        documentActionJob?.cancel()
+        documentActionJob = null
+        nextDocumentActionGeneration()
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.documentActionState != null) {
+            mutableState.value = current.copy(documentActionState = null)
+        }
+    }
+
+    private fun nextDocumentActionGeneration(): Long {
+        check(documentActionGeneration < Long.MAX_VALUE) {
+            "Document action generation exhausted"
+        }
+        documentActionGeneration += 1L
+        return documentActionGeneration
+    }
+
     private fun finishUnchangedAppearanceReview(
         current: ScreenState.Result,
         settings: AppSettings,
@@ -1847,6 +2058,9 @@ internal class ScanViewModel(
 
     private fun beginRouteMutation(keepVisualMarkEditor: Boolean = false): Long {
         appearanceApplyJob?.cancel()
+        documentActionJob?.cancel()
+        documentActionJob = null
+        nextDocumentActionGeneration()
         visualMarkTemplateJob?.cancel()
         if (!keepVisualMarkEditor) {
             visualMarkApplyJob?.cancel()

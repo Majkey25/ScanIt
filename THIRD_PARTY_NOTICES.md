@@ -5,7 +5,7 @@ Android release includes third-party components under their own licenses and
 terms.
 
 The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
-`1.1.0` on 2026-08-12. Its direct runtime dependencies are:
+`1.2.5` on 2026-08-15. Its direct runtime dependencies are:
 
 - Kotlin standard library 2.4.10.
 - AndroidX Activity Compose 1.13.0.
@@ -13,6 +13,8 @@ The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
 - AndroidX Compose Material 3 1.4.0 and Compose 1.11.4 modules selected by the Compose BOM 2026.06.01.
 - AndroidX Lifecycle ViewModel KTX 2.10.0.
 - Google Play services ML Kit Document Scanner 16.0.0 and its runtime dependencies.
+- Google ML Kit Text Recognition 16.0.1 and its runtime dependencies.
+- Google ML Kit Barcode Scanning 17.3.0 and its runtime dependencies.
 
 ## Apache License 2.0 components
 
@@ -27,16 +29,23 @@ The official reference is <https://www.apache.org/licenses/LICENSE-2.0>.
 Copyright notices remain with their respective authors and contributors. No
 changes to these libraries are represented by this notice.
 
-## Google ML Kit Document Scanner
+## Google ML Kit
 
 `com.google.android.gms:play-services-mlkit-document-scanner:16.0.0` declares
 the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms). Its
 scanner UI, models, and related resources are delivered through Google Play
 services. The public ScanIt build does not claim ownership of them.
 
+`com.google.mlkit:text-recognition:16.0.1` and
+`com.google.mlkit:barcode-scanning:17.3.0` bundle on-device models used by
+ScanIt's local text-extraction and QR/barcode Actions. These results remain on
+the device unless the user copies or shares them.
+
 See also:
 
 - [ML Kit Document Scanner documentation](https://developers.google.com/ml-kit/vision/doc-scanner/android)
+- [ML Kit Text Recognition documentation](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
+- [ML Kit Barcode Scanning documentation](https://developers.google.com/ml-kit/vision/barcode-scanning/android)
 - [Google APIs Terms of Service](https://developers.google.com/terms)
 
 Android, Google Play, Google Play services, and ML Kit are trademarks of Google

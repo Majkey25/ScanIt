@@ -1367,6 +1367,7 @@ internal class ScanStorage(
         source: CachedScan,
         appearanceSettings: ScanAppearanceSettings,
         pdfSizeTarget: PdfSizeTarget,
+        restoreSettingsOnActivation: Boolean = true,
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): CachedScanBuild =
         storageTransactionLock.withLock {
@@ -1422,6 +1423,7 @@ internal class ScanStorage(
                     source.lineageCacheId,
                     parentCacheId = source.baseName,
                     parentEntryId = source.entryId,
+                    restoreSettingsOnActivation = restoreSettingsOnActivation,
                 )
                 initializeOutputMetadata(
                     directory = workDirectory,

@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.4"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.5"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
 </p>
 
-## v1.2.4 update
+## v1.2.5 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -32,7 +32,14 @@ fine-tuned from the collapsed Manual position panel.
 ScanIt now supports Android 13 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
 
-[Download ScanIt v1.2.4](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.4)
+The Result screen now keeps the document preview prominent, groups its sharing
+actions clearly, and presents PDF and image size, status, and location together
+in File details. A document can use its own Original, preset, or custom PDF size
+target without changing the default in Settings. The new Actions panel extracts
+selectable text from all pages or detects QR codes and barcodes on the current
+page using bundled on-device ML Kit models.
+
+[Download ScanIt v1.2.5](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.5)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -71,6 +78,8 @@ source, release artifacts, and real-device workflows.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
 - Manual PDF, image, or combined saving from File details.
+- Per-document PDF target changes from File details without changing the saved default.
+- On-device text extraction across all pages and QR/barcode detection on the current page, with selectable and copyable results.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
 - Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
