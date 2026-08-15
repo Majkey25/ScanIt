@@ -5,15 +5,378 @@ import android.service.chooser.ChooserResult
 import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.util.concurrent.CancellationException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DurableOutputDeleteTest {
+    @Test
+    fun pdfReplacementCommitsNewBeforeDeletingOldAndRetainsFailedCleanup() {
+        val old = exactPdf("content://media/external/downloads/1")
+        val staged = exactPdf("content://media/external/downloads/2", pending = true)
+        val published = staged.copy(pending = false)
+        val events = mutableListOf<String>()
+        var metadata = metadata().copy(pdf = old)
+        var deleteStatus = OutputDeleteStatus.Failed
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    events +=
+                        when {
+                            updated.stagedPdf != null -> "staged"
+                            updated.pdf == published && updated.retiredPdf == old -> "active"
+                            else -> "cleanup"
+                        }
+                    updated
+                },
+                deletePdf = {
+                    events += "delete:${it.uri}"
+                    deleteStatus
+                },
+            )
+
+        val first =
+            replacement.replacePdf(
+                create = {
+                    events += "create"
+                    staged
+                },
+                publish = {
+                    events += "publish"
+                    published
+                },
+            )
+
+        assertEquals(listOf("create", "staged", "publish", "active", "delete:${old.uri}"), events)
+        assertEquals(published, first.metadata.pdf)
+        assertEquals(old, first.metadata.retiredPdf)
+        assertEquals(R.string.shared_output_delete_failed, first.warnings.single().resourceId)
+
+        deleteStatus = OutputDeleteStatus.Deleted
+        val retried = replacement.reconcile()
+
+        assertEquals(published, retried.metadata.pdf)
+        assertNull(retried.metadata.retiredPdf)
+        assertTrue(retried.warnings.isEmpty())
+    }
+
+    @Test
+    fun unsavedPdfAndMissingRetiredOutputCompleteWithoutWarning() {
+        val output = exactPdf("content://docs/tree/root/document/root%3Ascan.pdf", tree = true)
+        var metadata = metadata().copy(pdf = null)
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { OutputDeleteStatus.Absent },
+            )
+
+        val result = replacement.replacePdf(create = { output }, publish = { it })
+
+        assertEquals(output, result.metadata.pdf)
+        assertNull(result.metadata.stagedPdf)
+        assertNull(result.metadata.retiredPdf)
+        assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun partialImageCreationRollsBackOnlyExactJournaledOutputs() {
+        val old = exactImage(1, "content://media/external/images/media/1")
+        val created = exactImage(1, "content://media/external/images/media/2", pending = true)
+        var metadata = metadata().copy(images = listOf(old))
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deleteImage = {
+                    deleted += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replaceImages(
+                pageCount = 2,
+                create = { page ->
+                    if (page == 1) created else throw IOException("provider failed")
+                },
+                publish = { it.copy(pending = false) },
+            )
+        }
+
+        assertEquals(listOf(created), deleted)
+        assertEquals(listOf(old), metadata.images)
+        assertTrue(metadata.stagedImages.isEmpty())
+    }
+
+    @Test
+    fun metadataFailureAndCancellationPreserveOldOutputAndRollbackNew() {
+        listOf<Exception>(IOException("metadata"), CancellationException("cancelled")).forEach { failure ->
+            val old = exactPdf("content://media/external/downloads/1")
+            val created = exactPdf("content://media/external/downloads/2", pending = true)
+            var metadata = metadata().copy(pdf = old)
+            var writes = 0
+            val deleted = mutableListOf<PdfOutputRef>()
+            val replacement =
+                replacement(
+                    read = { metadata },
+                    write = { expected, updated ->
+                        assertEquals(expected, metadata)
+                        writes++
+                        if (writes == 2) throw failure
+                        metadata = updated
+                        updated
+                    },
+                    deletePdf = {
+                        deleted += it
+                        OutputDeleteStatus.Deleted
+                    },
+                )
+
+            assertThrows(failure::class.java) {
+                replacement.replacePdf(
+                    create = { created },
+                    publish = { it.copy(pending = false) },
+                )
+            }
+
+            assertEquals(old, metadata.pdf)
+            assertNull(metadata.stagedPdf)
+            assertEquals(listOf(created), deleted)
+        }
+    }
+
+    @Test
+    fun rollbackCancellationDoesNotMaskTheReplacementCancellation() {
+        val old = exactPdf("content://media/external/downloads/1")
+        val created = exactPdf("content://media/external/downloads/2", pending = true)
+        val cancellation = CancellationException("replacement cancelled")
+        val cleanupCancellation = CancellationException("cleanup cancelled")
+        var metadata = metadata().copy(pdf = old)
+        var writes = 0
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { _, updated ->
+                    writes++
+                    if (writes == 2) throw cancellation
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { throw cleanupCancellation },
+            )
+
+        val thrown =
+            assertThrows(CancellationException::class.java) {
+                replacement.replacePdf(
+                    create = { created },
+                    publish = { it.copy(pending = false) },
+                )
+            }
+
+        assertSame(cancellation, thrown)
+        assertEquals(listOf(cleanupCancellation), thrown.suppressed.toList())
+        assertEquals(old, metadata.pdf)
+        assertEquals(created, metadata.stagedPdf)
+    }
+
+    @Test
+    fun imageStagingMetadataFailureRollsBackTheUnjournaledCreatedOutput() {
+        val created = exactImage(1, "content://media/external/images/media/2", pending = true)
+        var metadata = metadata().copy(images = emptyList())
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { _, _ -> throw IOException("metadata") },
+                deleteImage = {
+                    deleted += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replaceImages(
+                pageCount = 1,
+                create = { created },
+                publish = { it.copy(pending = false) },
+            )
+        }
+
+        assertEquals(listOf(created), deleted)
+        assertTrue(metadata.images.isEmpty())
+        assertTrue(metadata.stagedImages.isEmpty())
+    }
+
+    @Test
+    fun providerMismatchAndStaleGenerationFailClosed() {
+        val old = exactPdf("content://media/external/downloads/1")
+        val created = exactPdf("content://media/external/downloads/2", pending = true)
+        var metadata = metadata().copy(pdf = old)
+        var staleOnCommit = false
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    if (staleOnCommit) {
+                        metadata = metadata.copy(entryId = OTHER_ENTRY_ID)
+                        staleOnCommit = false
+                    }
+                    if (expected != metadata) throw IOException("stale generation")
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { OutputDeleteStatus.Deleted },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replacePdf(
+                create = { created },
+                publish = { throw IOException("provider identity mismatch") },
+            )
+        }
+        assertEquals(old, metadata.pdf)
+        assertNull(metadata.stagedPdf)
+
+        staleOnCommit = true
+        assertThrows(IOException::class.java) {
+            replacement.replacePdf(create = { created }, publish = { it.copy(pending = false) })
+        }
+        assertEquals(OTHER_ENTRY_ID, metadata.entryId)
+        assertEquals(old, metadata.pdf)
+    }
+
+    @Test
+    fun processRecoveryRollsBackStagedAndCleansRetiredIndependently() {
+        val active = exactPdf("content://media/external/downloads/1")
+        val staged = exactPdf("content://media/external/downloads/2", pending = true)
+        val retiredImage = exactImage(1, "content://docs/tree/root/document/root%3Aold.png", tree = true)
+        var metadata =
+            metadata().copy(
+                pdf = active,
+                stagedPdf = staged,
+                retiredImages = listOf(retiredImage),
+                version = OUTPUT_METADATA_VERSION,
+            )
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { OutputDeleteStatus.Absent },
+                deleteImage = { OutputDeleteStatus.Deleted },
+            )
+
+        val result = replacement.reconcile()
+
+        assertEquals(active, result.metadata.pdf)
+        assertNull(result.metadata.stagedPdf)
+        assertTrue(result.metadata.retiredImages.isEmpty())
+        assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun imageDeleteAndTreeInventorySupportSafPngAndAllJournals() {
+        val safPng = exactImage(1, "content://docs/tree/root/document/root%3Apage.png", tree = true)
+        val mediaJpeg = exactImage(1, "content://media/external/images/media/8")
+        val live =
+            metadata().copy(
+                images = listOf(safPng),
+                stagedPdf = exactPdf("content://docs/tree/stage/document/stage%3Ascan.pdf", tree = true),
+                retiredImages = listOf(mediaJpeg.copy(treeUri = "content://docs/tree/retired", ownerPackageName = null)),
+                version = OUTPUT_METADATA_VERSION,
+            )
+
+        assertTrue(live.hasCompleteExactDeleteInventory(PACKAGE_NAME))
+        assertEquals(
+            setOf("content://docs/tree/root", "content://docs/tree/stage", "content://docs/tree/retired"),
+            completeOutputTreeGrantInventory(
+                listOf(OutputMetadataInventoryEntry(sidecarPresent = true, metadata = live)),
+            ),
+        )
+        assertTrue(isExactSafDocument(
+            SafDocumentRow(
+                documentId = "root:page.png",
+                displayName = "page.png",
+                mimeType = "image/png",
+                flags = DocumentsContract.Document.FLAG_SUPPORTS_DELETE,
+            ),
+            expectedDocumentId = "root:page.png",
+            expectedDisplayName = "page.png",
+            expectedMimeType = "image/png",
+        ))
+    }
+
+    @Test
+    fun activeImageShareMimeUsesConcreteTypeUnlessSetIsMixed() {
+        assertEquals("image/jpeg", activeImageShareMimeType(listOf("image/jpeg")))
+        assertEquals("image/png", activeImageShareMimeType(listOf("image/png", "image/png")))
+        assertEquals("image/*", activeImageShareMimeType(listOf("image/jpeg", "image/png")))
+        assertEquals("image/jpeg", activeImageShareMimeType(listOf(null)))
+        assertThrows(IllegalArgumentException::class.java) {
+            activeImageShareMimeType(listOf("application/pdf"))
+        }
+    }
+
+    @Test
+    fun unchangedReplacementRequiresExactDestinationFingerprintAndImageShape() {
+        val pdf = exactPdf("content://media/external/downloads/1")
+        val pdfFingerprint = requireNotNull(pdf.outputFingerprint())
+        assertTrue(pdfReplacementIsUnchanged(pdf, null, pdfFingerprint))
+        assertFalse(pdfReplacementIsUnchanged(pdf, "content://docs/tree/root", pdfFingerprint))
+        assertFalse(
+            pdfReplacementIsUnchanged(
+                pdf,
+                null,
+                OutputFingerprint(pdfFingerprint.byteLength, "03".repeat(32)),
+            ),
+        )
+
+        val image = exactImage(1, "content://media/external/images/media/1")
+        assertTrue(
+            imageReplacementIsUnchanged(
+                image,
+                treeUri = null,
+                mimeType = "image/jpeg",
+                width = 10,
+                height = 20,
+                format = ImageExportFormat.Jpeg,
+                fingerprint = requireNotNull(image.outputFingerprint()),
+            ),
+        )
+        assertFalse(
+            imageReplacementIsUnchanged(
+                image,
+                treeUri = null,
+                mimeType = "image/png",
+                width = 10,
+                height = 20,
+                format = ImageExportFormat.Png,
+                fingerprint = requireNotNull(image.outputFingerprint()),
+            ),
+        )
+    }
     @Test
     fun mediaItemParserAcceptsOnlyExactNumericImageAndDownloadItems() {
         assertEquals(
@@ -619,6 +982,50 @@ class DurableOutputDeleteTest {
             ),
         )
     }
+
+    private fun replacement(
+        read: () -> OutputMetadata,
+        write: (OutputMetadata, OutputMetadata) -> OutputMetadata,
+        deletePdf: (PdfOutputRef) -> OutputDeleteStatus = { OutputDeleteStatus.Deleted },
+        deleteImage: (ImageOutputRef) -> OutputDeleteStatus = { OutputDeleteStatus.Deleted },
+    ) = DurableOutputReplacement(read, write, deletePdf, deleteImage)
+
+    private fun exactPdf(
+        uri: String,
+        pending: Boolean = false,
+        tree: Boolean = false,
+    ) =
+        PdfOutputRef(
+            uri = uri,
+            treeUri = "content://docs/tree/${uri.substringAfter("tree/").substringBefore('/') }".takeIf { tree },
+            displayName = "scan.pdf",
+            mimeType = "application/pdf",
+            ownerPackageName = PACKAGE_NAME.takeUnless { tree },
+            byteLength = 4L,
+            sha256 = "01".repeat(32),
+            pending = pending,
+        )
+
+    private fun exactImage(
+        page: Int,
+        uri: String,
+        pending: Boolean = false,
+        tree: Boolean = false,
+    ) =
+        ImageOutputRef(
+            page = page,
+            uri = uri,
+            displayName = if (tree) "page.png" else "page.jpg",
+            mimeType = if (tree) "image/png" else "image/jpeg",
+            ownerPackageName = PACKAGE_NAME.takeUnless { tree },
+            byteLength = 4L,
+            sha256 = "02".repeat(32),
+            pending = pending,
+            treeUri = "content://docs/tree/${uri.substringAfter("tree/").substringBefore('/') }".takeIf { tree },
+            width = 10,
+            height = 20,
+            format = if (tree) ImageExportFormat.Png else ImageExportFormat.Jpeg,
+        )
 
     private fun metadata() =
         OutputMetadata(

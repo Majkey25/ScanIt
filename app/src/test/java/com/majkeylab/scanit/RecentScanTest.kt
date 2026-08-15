@@ -17,6 +17,33 @@ import org.junit.Test
 
 class RecentScanTest {
     @Test
+    fun replacementMetadataUpdateRequiresTheExactCacheGeneration() {
+        val current =
+            OutputMetadata(
+                entryId = "123e4567-e89b-12d3-a456-426614174000",
+                cacheId = "Scan_exact_generation",
+                createdAtEpochMs = 1L,
+            )
+        val updated = current.copy(version = OUTPUT_METADATA_VERSION)
+
+        assertEquals(updated, exactReplacementMetadataUpdate(current, current, updated))
+        assertThrows(IOException::class.java) {
+            exactReplacementMetadataUpdate(
+                current.copy(entryId = "00000000-0000-0000-0000-000000000002"),
+                current,
+                updated,
+            )
+        }
+        assertThrows(IOException::class.java) {
+            exactReplacementMetadataUpdate(
+                current.copy(cacheId = "Scan_reused_cache_id"),
+                current,
+                updated,
+            )
+        }
+    }
+
+    @Test
     fun sourcePageFileNamesAreStableAndRejectInvalidInput() {
         val id = "Scan_2026-08-09_10-20-30"
 

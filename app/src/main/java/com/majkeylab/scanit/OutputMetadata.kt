@@ -65,6 +65,12 @@ internal data class OutputMetadata(
     val version: Int = OUTPUT_METADATA_VERSION_2,
 )
 
+internal fun OutputMetadata.outputTreeUris(): Set<String> =
+    buildSet {
+        listOfNotNull(pdf, stagedPdf, retiredPdf).mapNotNullTo(this) { it.treeUri }
+        listOf(images, stagedImages, retiredImages).flatten().mapNotNullTo(this) { it.treeUri }
+    }
+
 internal sealed interface OutputMetadataReadResult {
     data class Valid(val metadata: OutputMetadata) : OutputMetadataReadResult
 

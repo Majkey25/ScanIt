@@ -14,6 +14,17 @@ import java.util.UUID
 
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
+private const val PNG_MIME_TYPE = "image/png"
+private const val MIXED_IMAGE_MIME_TYPE = "image/*"
+
+internal fun activeImageShareMimeType(mimeTypes: List<String?>): String {
+    require(mimeTypes.isNotEmpty()) { "Image share requires at least one output" }
+    val concrete = mimeTypes.map { it ?: JPEG_MIME_TYPE }.toSet()
+    require(concrete.all { it == JPEG_MIME_TYPE || it == PNG_MIME_TYPE }) {
+        "Image output MIME type is invalid"
+    }
+    return concrete.singleOrNull() ?: MIXED_IMAGE_MIME_TYPE
+}
 
 internal fun pdfShareIntent(
     context: Context,
@@ -42,6 +53,30 @@ internal fun imageShareIntent(
         if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE,
     ).apply {
         type = JPEG_MIME_TYPE
+        if (uris.size == 1) {
+            putExtra(Intent.EXTRA_STREAM, uris.single())
+        } else {
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+        }
+        putExtra(Intent.EXTRA_SUBJECT, settings.emailSubject)
+        putExtra(Intent.EXTRA_TEXT, settings.emailBody)
+        clipData = ClipData.newUri(context.contentResolver, context.getString(R.string.app_name), uris.first())
+        uris.drop(1).forEach { clipData?.addItem(ClipData.Item(it)) }
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+}
+
+internal fun imageShareIntent(
+    context: Context,
+    scan: SavedScan,
+    settings: AppSettings,
+): Intent {
+    if (scan.savedImages.isEmpty()) return imageShareIntent(context, scan.cached, settings)
+    val uris = ArrayList(scan.savedImages.map(SavedImageOutput::uri))
+    return Intent(
+        if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE,
+    ).apply {
+        type = activeImageShareMimeType(scan.savedImages.map(SavedImageOutput::mimeType))
         if (uris.size == 1) {
             putExtra(Intent.EXTRA_STREAM, uris.single())
         } else {
