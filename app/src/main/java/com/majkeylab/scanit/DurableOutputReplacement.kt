@@ -115,6 +115,8 @@ internal class DurableOutputReplacement(
     private val writeMetadata: (OutputMetadata, OutputMetadata) -> OutputMetadata,
     private val deletePdf: (PdfOutputRef) -> OutputDeleteStatus,
     private val deleteImage: (ImageOutputRef) -> OutputDeleteStatus,
+    private val reconcileStagedPdf: (PdfOutputRef) -> PdfOutputRef = { it },
+    private val reconcileStagedImage: (ImageOutputRef) -> ImageOutputRef = { it },
 ) {
     fun replacePdf(
         create: () -> PdfOutputRef,
@@ -211,7 +213,15 @@ internal class DurableOutputReplacement(
         }
     }
 
-    fun reconcile(): OutputReplacementJournalResult = cleanup(readMetadata())
+    fun reconcile(): OutputReplacementJournalResult {
+        val current = readMetadata()
+        val reconciled =
+            current.copy(
+                stagedPdf = current.stagedPdf?.let(reconcileStagedPdf),
+                stagedImages = current.stagedImages.map(reconcileStagedImage),
+            )
+        return cleanup(if (reconciled == current) current else commit(current, reconciled))
+    }
 
     private fun cleanup(initial: OutputMetadata): OutputReplacementJournalResult {
         var failed = false

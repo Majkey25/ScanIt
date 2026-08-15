@@ -451,6 +451,30 @@ class DurableOutputDeleteTest {
                 sameSha256 = false,
             ),
         )
+        assertFalse(
+            pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = false,
+                sameUri = true,
+                sameDisplayName = false,
+                safeDisplayName = true,
+                sameMimeType = false,
+                sameOwner = true,
+                sameByteLength = true,
+                sameSha256 = true,
+            ),
+        )
+        assertFalse(
+            pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = false,
+                sameUri = true,
+                sameDisplayName = false,
+                safeDisplayName = true,
+                sameMimeType = true,
+                sameOwner = false,
+                sameByteLength = true,
+                sameSha256 = true,
+            ),
+        )
     }
 
     @Test
@@ -595,6 +619,80 @@ class DurableOutputDeleteTest {
         assertEquals(listOf(firstPublished, secondPublished), recoveredDeletes)
         assertTrue(recovered.metadata.stagedImages.isEmpty())
         assertTrue(recovered.warnings.isEmpty())
+    }
+
+    @Test
+    fun restartReconcilesStaleStagedProviderNamesBeforeExactCleanup() {
+        val pendingPdf = exactPdf("content://media/external/downloads/2", pending = true)
+        val pendingImage = exactImage(1, "content://media/external/images/media/2", pending = true)
+        val actualPdf = pendingPdf.copy(displayName = "scan (1).pdf", pending = false)
+        val actualImage = pendingImage.copy(displayName = "page (1).jpg", pending = false)
+        var metadata =
+            metadata().copy(
+                stagedPdf = pendingPdf,
+                stagedImages = listOf(pendingImage),
+            )
+        val deletedPdf = mutableListOf<PdfOutputRef>()
+        val deletedImages = mutableListOf<ImageOutputRef>()
+        val restarted =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = {
+                    assertEquals(actualPdf, metadata.stagedPdf)
+                    assertEquals(listOf(actualImage), metadata.stagedImages)
+                    deletedPdf += it
+                    OutputDeleteStatus.Deleted
+                },
+                deleteImage = {
+                    assertEquals(actualPdf, metadata.stagedPdf)
+                    assertEquals(listOf(actualImage), metadata.stagedImages)
+                    deletedImages += it
+                    OutputDeleteStatus.Deleted
+                },
+                reconcileStagedPdf = { actualPdf },
+                reconcileStagedImage = { actualImage },
+            )
+
+        val result = restarted.reconcile()
+
+        assertEquals(listOf(actualPdf), deletedPdf)
+        assertEquals(listOf(actualImage), deletedImages)
+        assertNull(result.metadata.stagedPdf)
+        assertTrue(result.metadata.stagedImages.isEmpty())
+        assertTrue(result.warnings.isEmpty())
+    }
+
+    @Test
+    fun restartKeepsStaleStagedIdentityWhenPublishedOutputIsNotExactlyVerified() {
+        val pendingPdf = exactPdf("content://media/external/downloads/2", pending = true)
+        val pendingImage = exactImage(1, "content://media/external/images/media/2", pending = true)
+        var metadata =
+            metadata().copy(
+                stagedPdf = pendingPdf,
+                stagedImages = listOf(pendingImage),
+            )
+        val restarted =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deletePdf = { OutputDeleteStatus.IdentityMismatch },
+                deleteImage = { OutputDeleteStatus.IdentityMismatch },
+            )
+
+        val result = restarted.reconcile()
+
+        assertEquals(pendingPdf, result.metadata.stagedPdf)
+        assertEquals(listOf(pendingImage), result.metadata.stagedImages)
+        assertEquals(listOf(UiMessage(R.string.shared_output_delete_failed)), result.warnings)
     }
 
     @Test
@@ -1402,7 +1500,17 @@ class DurableOutputDeleteTest {
         write: (OutputMetadata, OutputMetadata) -> OutputMetadata,
         deletePdf: (PdfOutputRef) -> OutputDeleteStatus = { OutputDeleteStatus.Deleted },
         deleteImage: (ImageOutputRef) -> OutputDeleteStatus = { OutputDeleteStatus.Deleted },
-    ) = DurableOutputReplacement(read, write, deletePdf, deleteImage)
+        reconcileStagedPdf: (PdfOutputRef) -> PdfOutputRef = { it },
+        reconcileStagedImage: (ImageOutputRef) -> ImageOutputRef = { it },
+    ) =
+        DurableOutputReplacement(
+            readMetadata = read,
+            writeMetadata = write,
+            deletePdf = deletePdf,
+            deleteImage = deleteImage,
+            reconcileStagedPdf = reconcileStagedPdf,
+            reconcileStagedImage = reconcileStagedImage,
+        )
 
     private fun exactPdf(
         uri: String,

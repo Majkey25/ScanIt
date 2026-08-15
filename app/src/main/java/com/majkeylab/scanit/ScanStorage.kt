@@ -3076,7 +3076,83 @@ internal class ScanStorage(
             },
             deletePdf = outputDeleter::deletePdf,
             deleteImage = { outputDeleter.deleteImage(cached, it) },
+            reconcileStagedPdf = ::reconcileStagedPdf,
+            reconcileStagedImage = ::reconcileStagedImage,
         )
+
+    private fun reconcileStagedPdf(reference: PdfOutputRef): PdfOutputRef {
+        if (reference.treeUri != null || !reference.pending) return reference
+        val observed = reconcilePublishedMediaOutput(
+            uri = reference.uri,
+            displayName = reference.displayName,
+            mimeType = reference.mimeType,
+            ownerPackageName = reference.ownerPackageName,
+            fingerprint = reference.outputFingerprint(),
+            collection = MediaOutputCollection.Downloads,
+        ) ?: return reference
+        return mergePublishedPdfIdentity(reference, observed.toPdfOutputRef())
+    }
+
+    private fun reconcileStagedImage(reference: ImageOutputRef): ImageOutputRef {
+        if (reference.treeUri != null || !reference.pending) return reference
+        val observed = reconcilePublishedMediaOutput(
+            uri = reference.uri,
+            displayName = reference.displayName,
+            mimeType = reference.mimeType,
+            ownerPackageName = reference.ownerPackageName,
+            fingerprint = reference.outputFingerprint(),
+            collection = MediaOutputCollection.Images,
+        ) ?: return reference
+        return mergePublishedImageIdentity(
+            reference,
+            reference.copy(
+                displayName = observed.displayName,
+                mimeType = observed.mimeType,
+                ownerPackageName = observed.ownerPackageName,
+                byteLength = observed.byteLength,
+                sha256 = observed.sha256,
+                pending = false,
+            ),
+        )
+    }
+
+    private fun reconcilePublishedMediaOutput(
+        uri: String,
+        displayName: String?,
+        mimeType: String?,
+        ownerPackageName: String?,
+        fingerprint: OutputFingerprint?,
+        collection: MediaOutputCollection,
+    ): SavedMediaOutput? {
+        val expected = fingerprint ?: return null
+        if (
+            !isProviderDisplayName(displayName) ||
+                mimeType == null ||
+                ownerPackageName != context.packageName
+        ) {
+            return null
+        }
+        return try {
+            val observed = readSavedMediaOutput(uri.toUri(), collection, mimeType, expected)
+            observed.takeIf {
+                !it.pending &&
+                    pendingMediaReconciliationIdentityIsAcceptable(
+                        observedPending = false,
+                        sameUri = it.uri.toString() == uri,
+                        sameDisplayName = it.displayName == displayName,
+                        safeDisplayName = isProviderDisplayName(it.displayName),
+                        sameMimeType = it.mimeType == mimeType,
+                        sameOwner = it.ownerPackageName == ownerPackageName,
+                        sameByteLength = it.byteLength == expected.byteLength,
+                        sameSha256 = it.sha256 == expected.sha256,
+                    )
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun savedScan(
         cached: CachedScan,
