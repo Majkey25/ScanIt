@@ -1,5 +1,6 @@
 package com.majkeylab.scanit
 
+import android.content.Intent
 import android.content.SharedPreferences
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import java.io.File
@@ -23,6 +24,212 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PureLogicTest {
+    @Test
+    fun outputChangeGateRejectsDoubleTapAndReusedCacheGeneration() {
+        val gate = OutputChangeGate()
+        val request =
+            gate.begin(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfLocation,
+            )!!
+
+        assertNull(gate.begin(CACHE_ID, ENTRY_ID, OutputChangeKind.PdfLocation))
+        assertTrue(gate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertFalse(gate.isCurrent(request, CACHE_ID, OTHER_ENTRY_ID))
+
+        gate.invalidate()
+
+        assertFalse(gate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        val replacement = gate.begin(CACHE_ID, OTHER_ENTRY_ID, OutputChangeKind.PdfLocation)!!
+        assertTrue(replacement.generation > request.generation)
+    }
+
+    @Test
+    fun outputTreePickerRestoresBeforeClaimAndLaunchesOnlyOnce() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.ImageLocation(
+                    ImageExportOptions(
+                        format = ImageExportFormat.Png,
+                        sizePreset = ImageSizePreset.Custom,
+                        customMaxDimension = 2400,
+                    ),
+                ),
+                generation = 7L,
+            )
+        val encoded = encodeOutputTreePickerRequest(request)
+        val restored = decodeOutputTreePickerRequest(encoded)
+        val operationGate = OutputChangeGate(initialGeneration = 7L, initialCurrent = restored)
+        val pickerGate = OutputTreePickerGate(restored)
+
+        assertEquals(request, restored)
+        assertTrue(pickerGate.claim(request))
+        assertFalse(pickerGate.claim(request))
+        assertTrue(operationGate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertNull(pickerGate.pending)
+    }
+
+    @Test
+    fun outputTreePickerRestoredAfterClaimWaitsForExactCallback() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfLocation,
+                generation = 4L,
+            )
+        val operationGate = OutputChangeGate(initialGeneration = 4L, initialCurrent = request)
+        val pickerGate = OutputTreePickerGate(initialPending = null)
+
+        assertNull(pickerGate.pending)
+        assertTrue(operationGate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertFalse(
+            operationGate.isCurrent(
+                request.copy(generation = 3L),
+                CACHE_ID,
+                ENTRY_ID,
+            ),
+        )
+
+        assertTrue(pickerGate.offer(request))
+        assertFalse(pickerGate.offer(request))
+    }
+
+    @Test
+    fun outputTreePickerCodecRejectsNonPickerAndMalformedState() {
+        val immediate =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfSize(PdfSizeTarget.Mb5),
+                generation = 1L,
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputTreePickerRequest(immediate)
+        }
+        assertNull(decodeOutputTreePickerRequest(null))
+        assertNull(decodeOutputTreePickerRequest(""))
+        assertNull(decodeOutputTreePickerRequest("2\t$CACHE_ID\t$ENTRY_ID\tpdf\t1"))
+        assertNull(decodeOutputTreePickerRequest("1\t../outside\t$ENTRY_ID\tpdf\t1"))
+        assertNull(decodeOutputTreePickerRequest("1\t$CACHE_ID\t$ENTRY_ID\timage\t0\tpng\tCustom\t2400"))
+    }
+
+    @Test
+    fun outputTreeGrantRequiresValidatedTreeAndExactReadWriteAccess() {
+        val extraFlags = Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+
+        assertEquals(
+            PDF_TREE_FLAGS,
+            exactOutputTreeGrantFlags("content", isTreeUri = true, PDF_TREE_FLAGS or extraFlags),
+        )
+        assertNull(exactOutputTreeGrantFlags("file", isTreeUri = true, PDF_TREE_FLAGS))
+        assertNull(exactOutputTreeGrantFlags("content", isTreeUri = false, PDF_TREE_FLAGS))
+        assertNull(exactOutputTreeGrantFlags("content", isTreeUri = true, PDF_TREE_FLAGS))
+        assertNull(
+            exactOutputTreeGrantFlags(
+                "content",
+                isTreeUri = true,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            ),
+        )
+    }
+
+    @Test
+    fun outputChangeRefreshRequiresExactIdentityAndValidMetadata() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.ImageFormat(ImageExportFormat.Png),
+                generation = 11L,
+            )
+        val exact = savedScan(entryId = ENTRY_ID, outputMetadataValid = true)
+        val stale = savedScan(entryId = OTHER_ENTRY_ID, outputMetadataValid = true)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
+
+        assertSame(exact, matchingOutputChangeScan(exact, request))
+        assertNull(matchingOutputChangeScan(stale, request))
+        assertNull(matchingOutputChangeScan(unreadable, request))
+        assertSame(unreadable, matchingOutputChangeIdentityScan(unreadable, request))
+        assertNull(matchingOutputChangeIdentityScan(stale, request))
+    }
+
+    @Test
+    fun outputChangeBusyStateBlocksActionsAndConsumesBack() {
+        val result =
+            ScreenState.Result(
+                scan = savedScan(entryId = ENTRY_ID, outputMetadataValid = true),
+                thumbnail = null,
+                outputChangeInProgress = true,
+            )
+
+        assertTrue(result.resultActionsBlocked)
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun unknownOutputAcknowledgementRefreshesOnlyExactTerminalSuccess() {
+        assertTrue(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Applied,
+            ),
+        )
+        assertTrue(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Absent,
+            ),
+        )
+        assertFalse(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Stale,
+            ),
+        )
+        assertFalse(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Failed,
+            ),
+        )
+    }
+
+    @Test
+    fun imageShareModeUsesPrivateCopiesForRichOutputsAndCachedFilesForLegacy() {
+        val rich =
+            listOf(
+                PreparedImageSource(
+                    page = 1,
+                    uri = "content://media/images/1",
+                    mimeType = "image/png",
+                    byteLength = 42L,
+                    sha256 = "a".repeat(64),
+                ),
+            )
+        val legacy =
+            listOf(
+                PreparedImageSource(
+                    page = 1,
+                    uri = "content://media/images/1",
+                    mimeType = null,
+                    byteLength = null,
+                    sha256 = null,
+                ),
+            )
+
+        assertEquals(ResultImageShareMode.PrivateCopies, resultImageShareMode(rich))
+        assertEquals(ResultImageShareMode.CachedPages, resultImageShareMode(legacy))
+        assertEquals(ResultImageShareMode.Unavailable, resultImageShareMode(rich + legacy))
+        assertEquals(
+            "image/*",
+            activeImageShareMimeType(listOf("image/jpeg", "image/png")),
+        )
+    }
+
     @Test
     fun imagePresetsResolveExactLongEdges() {
         assertEquals(null, resolveImageExport(ImageSizePreset.Original, null).maxDimension)

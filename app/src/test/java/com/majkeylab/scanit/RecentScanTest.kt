@@ -2,6 +2,7 @@ package com.majkeylab.scanit
 
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -370,6 +371,32 @@ class RecentScanTest {
             assertTrue(prepared.files.all { it.canonicalFile.parentFile == prepared.directory })
             assertTrue(cleanupPreparedImageShare(prepared))
             assertFalse(prepared.directory.exists())
+        }
+
+    @Test
+    fun preparedImageShareSurvivesDurableSourceDeletion() =
+        withShareRoot { root ->
+            val bytes = byteArrayOf(8, 6, 7, 5, 3, 0, 9)
+            val durable = File(root, "durable.jpg").apply { writeBytes(bytes) }
+            val prepared =
+                prepareImageShareCopies(
+                    shareRoot = File(root, "private").apply { assertTrue(mkdir()) },
+                    outputs =
+                        listOf(
+                            savedImage(
+                                1,
+                                "content://provider/image/1",
+                                "image/jpeg",
+                                bytes,
+                            ),
+                        ),
+                    open = { FileInputStream(durable) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174094",
+                )
+
+            assertTrue(durable.delete())
+            assertEquals(bytes.toList(), prepared.files.single().readBytes().toList())
+            assertTrue(cleanupPreparedImageShare(prepared))
         }
 
     @Test

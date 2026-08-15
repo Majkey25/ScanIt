@@ -33,6 +33,9 @@ private const val ROUTE_RECENT = "recent"
 private const val ROUTE_RESULT = "result"
 private const val ROUTE_FAILURE = "failure"
 private const val RESULT_PAGE_INDEX_KEY = "result_page_index"
+private const val OUTPUT_CHANGE_GENERATION_KEY = "output_change_generation"
+private const val OUTPUT_TREE_ACTIVE_KEY = "output_tree_active"
+private const val OUTPUT_TREE_PENDING_KEY = "output_tree_pending"
 private const val RESULT_PREVIEW_SIZE = 1024
 private const val PAGE_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
@@ -309,16 +312,40 @@ internal class ScanViewModel(
     private val recentActionGate = RecentActionGate()
     private val recentDeletionGate = RecentDeletionGate()
     private val resultSaveGate = ResultSaveGate()
+    private val restoredOutputTreeActiveValue =
+        savedStateHandle.get<String>(OUTPUT_TREE_ACTIVE_KEY)
+    private val restoredOutputTreePendingValue =
+        savedStateHandle.get<String>(OUTPUT_TREE_PENDING_KEY)
+    private val decodedOutputTreePending =
+        decodeOutputTreePickerRequest(restoredOutputTreePendingValue)
+    private val restoredOutputTreeRequest =
+        decodeOutputTreePickerRequest(restoredOutputTreeActiveValue)?.takeIf {
+            restoredOutputTreePendingValue == null || decodedOutputTreePending == it
+        }
+    private val restoredOutputChangeGeneration =
+        maxOf(
+            savedStateHandle.get<Long>(OUTPUT_CHANGE_GENERATION_KEY) ?: 0L,
+            restoredOutputTreeRequest?.generation ?: 0L,
+        )
+    private val outputChangeGate =
+        OutputChangeGate(restoredOutputChangeGeneration, restoredOutputTreeRequest)
+    private val outputTreePickerGate =
+        OutputTreePickerGate(
+            decodedOutputTreePending?.takeIf { it == restoredOutputTreeRequest },
+        )
+    private val resultImageShareGate = RecentActionGate()
     private val routeMutationGate = RouteMutationGate()
     private val shareRefreshGate = DirtyRefreshGate()
     private val routeMutationMutex = Mutex()
     private val mutableState = MutableStateFlow(initialScreenState(null))
     private val mutableScannerRequest = MutableStateFlow<Long?>(null)
+    private val mutableOutputTreePickerRequest = MutableStateFlow<OutputChangeRequest?>(null)
     private val mutableSettings = MutableStateFlow(settingsStore.load())
     private var processingJob: Job? = null
     private var recentJob: Job? = null
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
+    private var outputChangeJob: Job? = null
     private var appearanceApplyJob: Job? = null
     private var documentActionJob: Job? = null
     private var documentActionGeneration = 0L
@@ -333,6 +360,8 @@ internal class ScanViewModel(
 
     val state: StateFlow<ScreenState> = mutableState.asStateFlow()
     val scannerRequest: StateFlow<Long?> = mutableScannerRequest.asStateFlow()
+    val outputTreePickerRequest: StateFlow<OutputChangeRequest?> =
+        mutableOutputTreePickerRequest.asStateFlow()
     val settings: StateFlow<AppSettings> = mutableSettings.asStateFlow()
 
     init {
@@ -349,6 +378,393 @@ internal class ScanViewModel(
     }
 
     fun currentSettings(): AppSettings = mutableSettings.value
+
+    fun requestPdfLocationChange() {
+        beginOutputTreePicker(OutputChangeKind.PdfLocation)
+    }
+
+    fun requestImageLocationChange(options: ImageExportOptions) {
+        val kind =
+            try {
+                OutputChangeKind.ImageLocation(options.copy(treeUri = null))
+            } catch (_: IllegalArgumentException) {
+                return
+            }
+        beginOutputTreePicker(kind)
+    }
+
+    fun claimOutputTreePicker(request: OutputChangeRequest): Boolean {
+        val current = mutableState.value as? ScreenState.Result ?: return false
+        val entryId = current.scan.cached.entryId ?: return false
+        if (!outputChangeGate.isCurrent(request, current.scan.cached.baseName, entryId) ||
+            !outputTreePickerGate.claim(request)
+        ) {
+            return false
+        }
+        savedStateHandle[OUTPUT_TREE_PENDING_KEY] = null
+        mutableOutputTreePickerRequest.value = null
+        return true
+    }
+
+    fun isOutputTreePickerCurrent(request: OutputChangeRequest): Boolean {
+        val current = mutableState.value as? ScreenState.Result ?: return false
+        return outputChangeGate.isCurrent(
+            request,
+            current.scan.cached.baseName,
+            current.scan.cached.entryId,
+        )
+    }
+
+    fun outputTreePickerCancelled(request: OutputChangeRequest) {
+        finishOutputChange(request)
+    }
+
+    fun outputTreePickerSelected(
+        request: OutputChangeRequest,
+        treeUri: Uri,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val validTree =
+            try {
+                treeUri.scheme == "content" && DocumentsContract.isTreeUri(treeUri)
+            } catch (_: RuntimeException) {
+                false
+            }
+        if (!validTree) {
+            finishOutputChange(request)
+            return
+        }
+        if (!outputChangeGate.isCurrent(
+                request,
+                current.scan.cached.baseName,
+                current.scan.cached.entryId,
+            )
+        ) {
+            return
+        }
+        savedStateHandle[OUTPUT_TREE_ACTIVE_KEY] = null
+        savedStateHandle[OUTPUT_TREE_PENDING_KEY] = null
+        val uri = treeUri.toString()
+        startOutputReplacement(request) {
+            val operationContext = currentCoroutineContext()
+            when (val kind = request.kind) {
+                OutputChangeKind.PdfLocation -> storage.replacePdfOutput(current.scan.cached, uri)
+                is OutputChangeKind.ImageLocation ->
+                    storage.replaceImageOutputs(
+                        current.scan.cached,
+                        kind.options.copy(treeUri = uri),
+                        isCancelled = { !operationContext.isActive },
+                    )
+                else -> throw IllegalArgumentException("Output request is not a tree change")
+            }
+        }
+    }
+
+    fun changeCurrentImageSize(
+        preset: ImageSizePreset,
+        customMaxDimension: Int? = null,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val options = currentImageExportOptions(current.scan) ?: return
+        val kind =
+            try {
+                OutputChangeKind.ImageSize(preset, customMaxDimension)
+            } catch (_: IllegalArgumentException) {
+                return
+            }
+        runImageOutputChange(
+            current,
+            kind,
+            options.copy(sizePreset = preset, customMaxDimension = customMaxDimension),
+        )
+    }
+
+    fun changeCurrentImageFormat(format: ImageExportFormat) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val options = currentImageExportOptions(current.scan) ?: return
+        runImageOutputChange(
+            current,
+            OutputChangeKind.ImageFormat(format),
+            options.copy(format = format),
+        )
+    }
+
+    fun acknowledgeUnknownOutputCreate(acknowledgement: UnknownOutputCreateAcknowledgement) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.scan.unknownOutputCreateAcknowledgement != acknowledgement) return
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked ||
+            acknowledgement.cacheId != current.scan.cached.baseName ||
+            acknowledgement.entryId != entryId
+        ) {
+            return
+        }
+        val request =
+            outputChangeGate.begin(
+                current.scan.cached.baseName,
+                entryId,
+                OutputChangeKind.UnknownOutputCreate(acknowledgement.operationId),
+            ) ?: return
+        persistOutputGeneration()
+        mutableState.value = current.copy(outputChangeInProgress = true)
+        outputChangeJob =
+            viewModelScope.launch {
+                try {
+                    val refreshed =
+                        withContext(Dispatchers.IO) {
+                            val result =
+                                storage.acknowledgeUnknownOutputCreate(
+                                    current.scan.cached,
+                                    acknowledgement,
+                                )
+                            if (!unknownOutputAcknowledgementRefreshAllowed(result)) {
+                                throw IOException("Output acknowledgement was not applied")
+                            }
+                            storage.openSavedScan(request.cacheId)
+                                ?: throw IOException("Acknowledged output metadata is unavailable")
+                        }
+                    publishOutputChangeResult(request, refreshed, emptyList())
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    publishOutputChangeFailure(request, recoverOutputChangeScan(request))
+                } finally {
+                    finishOutputChange(request)
+                }
+            }
+    }
+
+    fun beginResultImageShare(): RecentAction? {
+        val current = mutableState.value as? ScreenState.Result ?: return null
+        val entryId = current.scan.cached.entryId ?: return null
+        if (current.resultActionsBlocked || current.scan.cached.pages.isEmpty()) return null
+        val action = resultImageShareGate.begin(current.scan.cached.baseName, entryId)
+        mutableState.value = current.copy(imageSharePreparationInProgress = true)
+        return action
+    }
+
+    suspend fun prepareResultImageShare(action: RecentAction): PreparedResultImageShare? =
+        (mutableState.value as? ScreenState.Result)?.let { current ->
+            if (!isResultImageShareCurrent(action, current)) return@let null
+            withContext(Dispatchers.IO) {
+                val operationContext = currentCoroutineContext()
+                val mode = resultImageShareMode(current.scan)
+                val copies =
+                    when (mode) {
+                        ResultImageShareMode.PrivateCopies ->
+                            prepareImageShareCopies(
+                                getApplication<Application>(),
+                                current.scan,
+                                isCancelled = { !operationContext.isActive },
+                            )
+                        ResultImageShareMode.CachedPages -> null
+                        ResultImageShareMode.Unavailable -> return@withContext null
+                    }
+                PreparedResultImageShare(current.scan, copies)
+            }
+        }
+
+    fun claimResultImageShare(action: RecentAction): Boolean {
+        val current = mutableState.value as? ScreenState.Result ?: return false
+        if (!isResultImageShareCurrent(action, current)) return false
+        resultImageShareGate.invalidate()
+        mutableState.value = current.copy(imageSharePreparationInProgress = false)
+        return true
+    }
+
+    fun resultImageShareFailed(action: RecentAction) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (!isResultImageShareCurrent(action, current)) return
+        resultImageShareGate.invalidate()
+        mutableState.value = current.copy(imageSharePreparationInProgress = false)
+    }
+
+    private fun beginOutputTreePicker(kind: OutputChangeKind) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked || !current.scan.outputMetadataValid) return
+        val request = outputChangeGate.begin(current.scan.cached.baseName, entryId, kind) ?: return
+        if (!outputTreePickerGate.offer(request)) {
+            outputChangeGate.complete(request)
+            return
+        }
+        persistOutputGeneration()
+        val encoded = encodeOutputTreePickerRequest(request)
+        savedStateHandle[OUTPUT_TREE_ACTIVE_KEY] = encoded
+        savedStateHandle[OUTPUT_TREE_PENDING_KEY] = encoded
+        mutableState.value = current.copy(outputChangeInProgress = true)
+        mutableOutputTreePickerRequest.value = request
+    }
+
+    private fun runImageOutputChange(
+        current: ScreenState.Result,
+        kind: OutputChangeKind,
+        options: ImageExportOptions,
+    ) {
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked || !current.scan.outputMetadataValid) return
+        val request =
+            outputChangeGate.begin(current.scan.cached.baseName, entryId, kind) ?: return
+        persistOutputGeneration()
+        mutableState.value = current.copy(outputChangeInProgress = true)
+        startOutputReplacement(request) {
+            val operationContext = currentCoroutineContext()
+            storage.replaceImageOutputs(
+                current.scan.cached,
+                options,
+                isCancelled = { !operationContext.isActive },
+            )
+        }
+    }
+
+    private fun currentImageExportOptions(scan: SavedScan): ImageExportOptions? {
+        if (!scan.outputMetadataValid || scan.savedImages.isEmpty()) return null
+        val formats = scan.savedImages.mapNotNull(SavedImageOutput::format).distinct()
+        if (formats.size != 1 || scan.savedImages.any { it.format == null }) {
+            return null
+        }
+        val treeUris = scan.savedImages.map { it.treeUri?.toString() }.distinct()
+        if (treeUris.size != 1) return null
+        val maxDimension =
+            scan.savedImages.maxOfOrNull { output ->
+                maxOf(output.width ?: return null, output.height ?: return null)
+            } ?: return null
+        val (preset, custom) =
+            if (maxDimension in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION) {
+                ImageSizePreset.Custom to maxDimension
+            } else {
+                ImageSizePreset.Original to null
+            }
+        return ImageExportOptions(
+            format = formats.single(),
+            sizePreset = preset,
+            customMaxDimension = custom,
+            treeUri = treeUris.single(),
+        )
+    }
+
+    private fun startOutputReplacement(
+        request: OutputChangeRequest,
+        operation: suspend () -> OutputReplacementResult,
+    ) {
+        outputChangeJob =
+            viewModelScope.launch {
+                try {
+                    val result = withContext(Dispatchers.IO) { operation() }
+                    publishOutputChangeResult(request, result.scan, result.warnings)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    publishOutputChangeFailure(request, recoverOutputChangeScan(request))
+                } finally {
+                    finishOutputChange(request)
+                }
+            }
+    }
+
+    private suspend fun recoverOutputChangeScan(request: OutputChangeRequest): SavedScan? =
+        try {
+            withContext(Dispatchers.IO) { storage.openSavedScan(request.cacheId) }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun publishOutputChangeResult(
+        request: OutputChangeRequest,
+        refreshed: SavedScan?,
+        warnings: List<UiMessage>,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (!outputChangeGate.isCurrent(
+                request,
+                current.scan.cached.baseName,
+                current.scan.cached.entryId,
+            )
+        ) {
+            return
+        }
+        val exact = matchingOutputChangeScan(refreshed, request) ?: return
+        mutableState.value =
+            current.copy(
+                scan =
+                    exact.copy(
+                        warnings =
+                            (current.scan.warnings + exact.warnings + warnings).distinct(),
+                    ),
+            )
+        refreshRecentCache(request.cacheId)
+    }
+
+    private fun publishOutputChangeFailure(
+        request: OutputChangeRequest,
+        recovered: SavedScan? = null,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (!outputChangeGate.isCurrent(
+                request,
+                current.scan.cached.baseName,
+                current.scan.cached.entryId,
+            )
+        ) {
+            return
+        }
+        val exact = matchingOutputChangeIdentityScan(recovered, request)
+        val scan = exact ?: current.scan
+        mutableState.value =
+            current.copy(
+                scan =
+                    scan.copy(
+                        warnings =
+                            (current.scan.warnings +
+                                scan.warnings +
+                                UiMessage(R.string.state_update_failed))
+                                .distinct(),
+                    ),
+            )
+    }
+
+    private fun finishOutputChange(request: OutputChangeRequest) {
+        if (outputChangeGate.active != request) return
+        outputChangeGate.complete(request)
+        outputTreePickerGate.clear()
+        savedStateHandle[OUTPUT_TREE_ACTIVE_KEY] = null
+        savedStateHandle[OUTPUT_TREE_PENDING_KEY] = null
+        mutableOutputTreePickerRequest.value = null
+        persistOutputGeneration()
+        outputChangeJob = null
+        val current = mutableState.value as? ScreenState.Result ?: return
+        mutableState.value = current.copy(outputChangeInProgress = false)
+    }
+
+    private fun persistOutputGeneration() {
+        savedStateHandle[OUTPUT_CHANGE_GENERATION_KEY] = outputChangeGate.currentGeneration
+    }
+
+    private fun invalidateOutputChange() {
+        outputChangeJob?.cancel()
+        outputChangeJob = null
+        outputChangeGate.invalidate()
+        outputTreePickerGate.clear()
+        savedStateHandle[OUTPUT_TREE_ACTIVE_KEY] = null
+        savedStateHandle[OUTPUT_TREE_PENDING_KEY] = null
+        mutableOutputTreePickerRequest.value = null
+        persistOutputGeneration()
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.outputChangeInProgress) {
+            mutableState.value = current.copy(outputChangeInProgress = false)
+        }
+    }
+
+    private fun isResultImageShareCurrent(
+        action: RecentAction,
+        current: ScreenState.Result,
+    ): Boolean =
+        resultImageShareGate.isCurrent(
+            action,
+            listOf(current.scan.cached.baseName to current.scan.cached.entryId),
+        )
 
     fun refreshAfterShareCleanup() {
         if (mutableState.value !is ScreenState.Result && mutableState.value !is ScreenState.Recent) {
@@ -1297,6 +1713,7 @@ internal class ScanViewModel(
 
     fun changeCurrentPdfSize(target: PdfSizeTarget) {
         val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
         if (
             current.resultActionsBlocked ||
                 appearanceApplyJob?.isActive == true ||
@@ -1306,10 +1723,18 @@ internal class ScanViewModel(
         }
         val cached = current.scan.cached
         val appearanceSettings = cached.appearanceSettings ?: return
-        val generation = beginRouteMutation()
+        val request =
+            outputChangeGate.begin(
+                cached.baseName,
+                entryId,
+                OutputChangeKind.PdfSize(target),
+            ) ?: return
+        persistOutputGeneration()
+        val generation = beginRouteMutation(keepOutputChange = true)
         mutableState.value =
             current.copy(
                 appearanceApplyInProgress = true,
+                outputChangeInProgress = true,
                 appearanceMessage = null,
             )
         appearanceApplyJob =
@@ -1361,7 +1786,11 @@ internal class ScanViewModel(
                             completeAppearanceCandidate(candidate, buildWarnings)
                         }
                     routeMutationMutex.withLock {
-                        if (routeMutationGate.isCurrent(generation)) {
+                        if (
+                            routeMutationGate.isCurrent(generation) &&
+                                outputChangeGate.isCurrent(request, cached.baseName, entryId)
+                        ) {
+                            finishOutputChange(request)
                             publishResult(
                                 ScreenState.Result(
                                     scan = saved,
@@ -1392,7 +1821,12 @@ internal class ScanViewModel(
                                 null
                             }
                         routeMutationMutex.withLock {
-                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                            if (
+                                routeMutationGate.isCurrent(generation) &&
+                                    outputChangeGate.isCurrent(request, cached.baseName, entryId) &&
+                                    recovered != null
+                            ) {
+                                finishOutputChange(request)
                                 publishResult(
                                     ScreenState.Result(
                                         scan = recovered,
@@ -1400,7 +1834,11 @@ internal class ScanViewModel(
                                         selectedPageIndex = pageIndex,
                                     ),
                                 )
-                            } else if (routeMutationGate.isCurrent(generation)) {
+                            } else if (
+                                routeMutationGate.isCurrent(generation) &&
+                                    outputChangeGate.isCurrent(request, cached.baseName, entryId)
+                            ) {
+                                finishOutputChange(request)
                                 navigationInitialized = true
                                 persistRoute(ROUTE_FAILURE)
                                 mutableState.value =
@@ -1413,6 +1851,11 @@ internal class ScanViewModel(
                             val latest = mutableState.value as? ScreenState.Result
                             if (
                                 routeMutationGate.isCurrent(generation) &&
+                                    outputChangeGate.isCurrent(
+                                        request,
+                                        cached.baseName,
+                                        entryId,
+                                    ) &&
                                     latest?.scan?.cached?.baseName == cached.baseName &&
                                     latest.scan.cached.entryId == cached.entryId
                             ) {
@@ -1431,6 +1874,7 @@ internal class ScanViewModel(
                         }
                     }
                 } finally {
+                    finishOutputChange(request)
                     appearanceApplyJob = null
                 }
             }
@@ -1790,11 +2234,18 @@ internal class ScanViewModel(
         }
 
     private fun restoreNavigation() {
-        val generation = beginRouteMutation()
+        val restoreOutputChange =
+            restoredOutputTreeRequest != null &&
+                savedRoute == ROUTE_RESULT &&
+                savedCacheId == restoredOutputTreeRequest.cacheId
+        val generation = beginRouteMutation(keepOutputChange = restoreOutputChange)
         recentJob =
             viewModelScope.launch {
                 val checkpoint = readActiveResultCheckpoint(generation)
-                if (checkpoint.mutation != CheckpointMutationResult.Applied) return@launch
+                if (checkpoint.mutation != CheckpointMutationResult.Applied) {
+                    if (restoreOutputChange) invalidateOutputChange()
+                    return@launch
+                }
                 val activeCheckpoint = checkpoint.checkpoint
                 val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
                 val destination =
@@ -1808,6 +2259,7 @@ internal class ScanViewModel(
                                 activeCheckpoint?.appearanceReviewEntryId,
                             )
                         if (result == null) {
+                            if (restoreOutputChange) invalidateOutputChange()
                             if (
                                 keepCheckpointAfterRestoreFailure(
                                     authoritativeWasProvisional,
@@ -1991,7 +2443,19 @@ internal class ScanViewModel(
 
     private fun publishResult(result: ScreenState.Result) {
         val cacheId = result.scan.cached.baseName
-        mutableState.value = result
+        val request = outputChangeGate.active
+        val outputChangeRestored =
+            request != null &&
+                outputChangeGate.isCurrent(
+                    request,
+                    result.scan.cached.baseName,
+                    result.scan.cached.entryId,
+                )
+        if (request != null && !outputChangeRestored) invalidateOutputChange()
+        mutableState.value = result.copy(outputChangeInProgress = outputChangeRestored)
+        if (outputChangeRestored) {
+            mutableOutputTreePickerRequest.value = outputTreePickerGate.pending
+        }
         savedStateHandle[RESULT_PAGE_INDEX_KEY] = result.selectedPageIndex
         persistRoute(ROUTE_RESULT, cacheId)
         refreshRecentCache(cacheId)
@@ -2056,7 +2520,10 @@ internal class ScanViewModel(
         savedStateHandle[ROUTE_CACHE_ID_KEY] = cacheId
     }
 
-    private fun beginRouteMutation(keepVisualMarkEditor: Boolean = false): Long {
+    private fun beginRouteMutation(
+        keepVisualMarkEditor: Boolean = false,
+        keepOutputChange: Boolean = false,
+    ): Long {
         appearanceApplyJob?.cancel()
         documentActionJob?.cancel()
         documentActionJob = null
@@ -2072,6 +2539,8 @@ internal class ScanViewModel(
         }
         resultSaveGate.invalidate()
         outputSaveJob?.cancel()
+        if (!keepOutputChange) invalidateOutputChange()
+        resultImageShareGate.invalidate()
         recentActionGate.invalidate()
         recentDeletionGate.invalidateCurrent()
         recentJob?.cancel()

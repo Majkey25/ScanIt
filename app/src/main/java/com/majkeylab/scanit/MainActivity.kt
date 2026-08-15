@@ -10,6 +10,7 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.os.LocaleList
 import android.print.PrintManager
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,7 +34,27 @@ import kotlinx.coroutines.withContext
 
 internal fun scannerPageLimit(multipage: Boolean): Int = if (multipage) MAX_SCAN_PAGES else 1
 
+private const val LAUNCHED_OUTPUT_TREE_REQUEST_KEY = "launched_output_tree_request"
+private const val OUTPUT_TREE_INTENT_FLAGS =
+    PDF_TREE_FLAGS or
+        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+
 internal fun isAcceptedScanPageCount(pageCount: Int): Boolean = pageCount in 1..MAX_SCAN_PAGES
+
+internal fun exactOutputTreeGrantFlags(
+    scheme: String?,
+    isTreeUri: Boolean,
+    returnedFlags: Int,
+): Int? {
+    val grantedFlags = returnedFlags and PDF_TREE_FLAGS
+    return grantedFlags.takeIf {
+        scheme == "content" &&
+            isTreeUri &&
+            grantedFlags == PDF_TREE_FLAGS &&
+            returnedFlags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0
+    }
+}
 
 internal enum class ScannerPurpose {
     Document,
@@ -48,6 +69,7 @@ internal fun scannerMode(purpose: ScannerPurpose): Int =
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
+    private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private val savedOutputsChangedReceiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -64,9 +86,17 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
             handleVisualMarkScannerResult(it)
         }
+    private val outputTreeLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            handleOutputTreeResult(it)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        launchedOutputTreeRequest =
+            decodeOutputTreePickerRequest(
+                savedInstanceState?.getString(LAUNCHED_OUTPUT_TREE_REQUEST_KEY),
+            )
         val defaultEmailSubjects = supportedDefaultEmailSubjects()
         viewModel.localizeDefaultEmailSubject(
             targetDefault = getString(R.string.default_email_subject),
@@ -123,6 +153,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.outputTreePickerRequest.collect { request ->
+                    if (request != null && viewModel.claimOutputTreePicker(request)) {
+                        launchOutputTreePicker(request)
+                    }
+                }
+            }
+        }
         viewModel.resumeScannerPreparation()
         lifecycleScope.launch(Dispatchers.IO) {
             val result = retryPendingShareCleanup(applicationContext)
@@ -139,6 +178,16 @@ class MainActivity : ComponentActivity() {
             IntentFilter(ACTION_SAVED_OUTPUTS_CHANGED),
             Context.RECEIVER_NOT_EXPORTED,
         )
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        launchedOutputTreeRequest?.let { request ->
+            outState.putString(
+                LAUNCHED_OUTPUT_TREE_REQUEST_KEY,
+                encodeOutputTreePickerRequest(request),
+            )
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStop() {
@@ -206,6 +255,60 @@ class MainActivity : ComponentActivity() {
                     UiMessage(R.string.scanner_unexpected_error),
                 )
         }
+    }
+
+    private fun launchOutputTreePicker(request: OutputChangeRequest) {
+        launchedOutputTreeRequest = request
+        try {
+            outputTreeLauncher.launch(
+                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(OUTPUT_TREE_INTENT_FLAGS),
+            )
+        } catch (_: RuntimeException) {
+            launchedOutputTreeRequest = null
+            viewModel.outputTreePickerCancelled(request)
+            showToast(R.string.folder_permission_failed)
+        }
+    }
+
+    private fun handleOutputTreeResult(activityResult: ActivityResult) {
+        val request = launchedOutputTreeRequest ?: return
+        launchedOutputTreeRequest = null
+        if (!viewModel.isOutputTreePickerCurrent(request)) return
+        if (activityResult.resultCode == Activity.RESULT_CANCELED) {
+            viewModel.outputTreePickerCancelled(request)
+            return
+        }
+        val data = activityResult.data
+        val treeUri = data?.data
+        val isTreeUri =
+            try {
+                treeUri?.let(DocumentsContract::isTreeUri) == true
+            } catch (_: RuntimeException) {
+                false
+            }
+        val grantedFlags =
+            exactOutputTreeGrantFlags(treeUri?.scheme, isTreeUri, data?.flags ?: 0)
+        if (
+            activityResult.resultCode != Activity.RESULT_OK ||
+                treeUri == null ||
+                grantedFlags == null
+        ) {
+            viewModel.outputTreePickerCancelled(request)
+            showToast(R.string.folder_permission_missing)
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(treeUri, grantedFlags)
+        } catch (_: SecurityException) {
+            viewModel.outputTreePickerCancelled(request)
+            showToast(R.string.folder_permission_failed)
+            return
+        } catch (_: IllegalArgumentException) {
+            viewModel.outputTreePickerCancelled(request)
+            showToast(R.string.folder_permission_failed)
+            return
+        }
+        viewModel.outputTreePickerSelected(request, treeUri)
     }
 
     private fun processScannerResult(data: Intent?) {
@@ -360,7 +463,62 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shareCurrentImages() {
-        shareCurrentScan(ShareCleanupKind.Images, ::imageShareIntent)
+        val action = viewModel.beginResultImageShare()
+        if (action == null) {
+            showToast(R.string.share_failed)
+            return
+        }
+        val settings = viewModel.currentSettings()
+        lifecycleScope.launch {
+            val prepared =
+                try {
+                    viewModel.prepareResultImageShare(action)
+                } catch (cancellation: CancellationException) {
+                    viewModel.resultImageShareFailed(action)
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+            if (prepared == null) {
+                viewModel.resultImageShareFailed(action)
+                showToast(R.string.share_failed)
+                return@launch
+            }
+            if (!viewModel.claimResultImageShare(action)) {
+                prepared.privateCopies?.let { copies ->
+                    withContext(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
+                }
+                return@launch
+            }
+            var chooserLaunched = false
+            try {
+                val payload =
+                    withContext(Dispatchers.IO) {
+                        val intent =
+                            prepared.privateCopies?.let { copies ->
+                                imageShareIntent(this@MainActivity, copies, settings)
+                            } ?: imageShareIntent(this@MainActivity, prepared.scan.cached, settings)
+                        intent to
+                            shareCleanupRequest(
+                                prepared.scan,
+                                ShareCleanupKind.Images,
+                                settings.deleteImagesAfterShare,
+                            )
+                    }
+                chooserLaunched = launchShareChooser(payload.first, payload.second)
+                if (!chooserLaunched) showToast(R.string.share_failed)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                showToast(R.string.share_failed)
+            } finally {
+                if (!chooserLaunched) {
+                    prepared.privateCopies?.let { copies ->
+                        withContext(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
+                    }
+                }
+            }
+        }
     }
 
     private fun shareCurrentScan(

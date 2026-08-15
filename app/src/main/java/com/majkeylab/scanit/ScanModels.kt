@@ -45,6 +45,213 @@ internal data class ResolvedImageExport(
         get() = MAX_IMAGE_EXPORT_PIXELS
 }
 
+internal sealed interface OutputChangeKind {
+    data class PdfSize(val target: PdfSizeTarget) : OutputChangeKind
+
+    data object PdfLocation : OutputChangeKind
+
+    data class ImageSize(
+        val preset: ImageSizePreset,
+        val customMaxDimension: Int? = null,
+    ) : OutputChangeKind
+
+    data class ImageFormat(val format: ImageExportFormat) : OutputChangeKind
+
+    data class ImageLocation(val options: ImageExportOptions) : OutputChangeKind {
+        init {
+            require(options.treeUri == null) { "Picker options must not contain a tree URI" }
+            resolveImageExport(options)
+        }
+    }
+
+    data class UnknownOutputCreate(val operationId: String) : OutputChangeKind {
+        init {
+            require(isCanonicalUuid(operationId)) { "Output operation ID is invalid" }
+        }
+    }
+}
+
+internal data class OutputChangeRequest(
+    val cacheId: String,
+    val entryId: String,
+    val kind: OutputChangeKind,
+    val generation: Long,
+) {
+    init {
+        require(isSafeCacheId(cacheId)) { "Output cache ID is invalid" }
+        require(isCanonicalUuid(entryId)) { "Output entry ID is invalid" }
+        require(generation > 0L) { "Output generation is invalid" }
+        validateOutputChangeKind(kind)
+    }
+}
+
+internal class OutputChangeGate(
+    initialGeneration: Long = 0L,
+    initialCurrent: OutputChangeRequest? = null,
+) {
+    private var generation = initialGeneration
+    private var current = initialCurrent
+
+    init {
+        require(initialGeneration >= 0L) { "Output generation is invalid" }
+        require(initialCurrent == null || initialCurrent.generation == initialGeneration) {
+            "Restored output generation does not match its request"
+        }
+    }
+
+    val active: OutputChangeRequest?
+        get() = current
+
+    val currentGeneration: Long
+        get() = generation
+
+    fun begin(
+        cacheId: String,
+        entryId: String,
+        kind: OutputChangeKind,
+    ): OutputChangeRequest? {
+        if (current != null) return null
+        return OutputChangeRequest(cacheId, entryId, kind, nextGeneration()).also { current = it }
+    }
+
+    fun isCurrent(
+        request: OutputChangeRequest,
+        cacheId: String,
+        entryId: String?,
+    ): Boolean = current == request && request.cacheId == cacheId && request.entryId == entryId
+
+    fun complete(request: OutputChangeRequest) {
+        if (current == request) current = null
+    }
+
+    fun invalidate() {
+        current = null
+        nextGeneration()
+    }
+
+    private fun nextGeneration(): Long {
+        check(generation < Long.MAX_VALUE) { "Output generation exhausted" }
+        generation += 1L
+        return generation
+    }
+}
+
+internal class OutputTreePickerGate(initialPending: OutputChangeRequest?) {
+    var pending: OutputChangeRequest? = initialPending
+        private set
+
+    init {
+        require(initialPending == null || initialPending.kind.isTreePicker()) {
+            "Only a location change may launch the tree picker"
+        }
+    }
+
+    fun claim(request: OutputChangeRequest): Boolean {
+        if (pending != request) return false
+        pending = null
+        return true
+    }
+
+    fun offer(request: OutputChangeRequest): Boolean {
+        if (pending != null || !request.kind.isTreePicker()) return false
+        pending = request
+        return true
+    }
+
+    fun clear() {
+        pending = null
+    }
+}
+
+internal fun encodeOutputTreePickerRequest(request: OutputChangeRequest): String {
+    require(request.kind.isTreePicker()) { "Only a location change may be persisted for a picker" }
+    return when (val kind = request.kind) {
+        OutputChangeKind.PdfLocation ->
+            listOf("1", request.cacheId, request.entryId, "pdf", request.generation.toString())
+                .joinToString("\t")
+        is OutputChangeKind.ImageLocation ->
+            listOf(
+                "1",
+                request.cacheId,
+                request.entryId,
+                "image",
+                request.generation.toString(),
+                kind.options.format.wireValue,
+                kind.options.sizePreset.name,
+                kind.options.customMaxDimension?.toString().orEmpty(),
+            ).joinToString("\t")
+        else -> error("Tree picker kind validation changed")
+    }
+}
+
+internal fun decodeOutputTreePickerRequest(value: String?): OutputChangeRequest? {
+    val parts = value?.split('\t') ?: return null
+    if (parts.size !in setOf(5, 8) || parts[0] != "1") return null
+    val cacheId = parts[1]
+    val entryId = parts[2]
+    val generation = parts[4].toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val kind =
+        when {
+            parts.size == 5 && parts[3] == "pdf" -> OutputChangeKind.PdfLocation
+            parts.size == 8 && parts[3] == "image" -> {
+                val format = ImageExportFormat.entries.singleOrNull { it.wireValue == parts[5] }
+                    ?: return null
+                val preset = ImageSizePreset.entries.singleOrNull { it.name == parts[6] }
+                    ?: return null
+                val custom = parts[7].takeIf(String::isNotEmpty)?.toIntOrNull()
+                if ((preset == ImageSizePreset.Custom) != (custom != null)) return null
+                try {
+                    OutputChangeKind.ImageLocation(
+                        ImageExportOptions(format, preset, custom),
+                    )
+                } catch (_: IllegalArgumentException) {
+                    return null
+                }
+            }
+            else -> return null
+        }
+    return try {
+        OutputChangeRequest(cacheId, entryId, kind, generation)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+}
+
+internal fun matchingOutputChangeScan(
+    scan: SavedScan?,
+    request: OutputChangeRequest,
+): SavedScan? =
+    matchingOutputChangeIdentityScan(scan, request)?.takeIf(SavedScan::outputMetadataValid)
+
+internal fun matchingOutputChangeIdentityScan(
+    scan: SavedScan?,
+    request: OutputChangeRequest,
+): SavedScan? =
+    scan?.takeIf {
+        it.cached.baseName == request.cacheId && it.cached.entryId == request.entryId
+    }
+
+internal fun unknownOutputAcknowledgementRefreshAllowed(
+    result: UnknownOutputAcknowledgementResult,
+): Boolean =
+    result == UnknownOutputAcknowledgementResult.Applied ||
+        result == UnknownOutputAcknowledgementResult.Absent
+
+private fun OutputChangeKind.isTreePicker(): Boolean =
+    this == OutputChangeKind.PdfLocation || this is OutputChangeKind.ImageLocation
+
+private fun validateOutputChangeKind(kind: OutputChangeKind) {
+    when (kind) {
+        is OutputChangeKind.PdfSize -> Unit
+        OutputChangeKind.PdfLocation -> Unit
+        is OutputChangeKind.ImageSize ->
+            resolveImageExport(kind.preset, kind.customMaxDimension)
+        is OutputChangeKind.ImageFormat -> Unit
+        is OutputChangeKind.ImageLocation -> Unit
+        is OutputChangeKind.UnknownOutputCreate -> Unit
+    }
+}
+
 internal fun resolveImageExport(
     sizePreset: ImageSizePreset,
     customMaxDimension: Int?,
@@ -691,6 +898,8 @@ internal sealed interface ScreenState {
         val selectedPageIndex: Int = 0,
         val pagePreviewLoading: Boolean = false,
         val outputSaveInProgress: Boolean = false,
+        val outputChangeInProgress: Boolean = false,
+        val imageSharePreparationInProgress: Boolean = false,
         val appearanceApplyInProgress: Boolean = false,
         val appearanceReviewRequired: Boolean = false,
         val appearanceMessage: UiMessage? = null,
@@ -710,6 +919,8 @@ internal sealed interface ScreenState {
 internal val ScreenState.Result.resultActionsBlocked: Boolean
     get() =
         outputSaveInProgress ||
+            outputChangeInProgress ||
+            imageSharePreparationInProgress ||
             appearanceApplyInProgress ||
             documentActionState is DocumentActionState.Processing ||
             visualMarkEditor != null

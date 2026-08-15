@@ -36,6 +36,11 @@ internal data class PreparedImageShare(
     val mimeType: String,
 )
 
+internal data class PreparedResultImageShare(
+    val scan: SavedScan,
+    val privateCopies: PreparedImageShare?,
+)
+
 internal data class PreparedImageSource(
     val page: Int,
     val uri: String,
@@ -43,6 +48,37 @@ internal data class PreparedImageSource(
     val byteLength: Long?,
     val sha256: String?,
 )
+
+internal enum class ResultImageShareMode {
+    PrivateCopies,
+    CachedPages,
+    Unavailable,
+}
+
+internal fun resultImageShareMode(outputs: List<PreparedImageSource>): ResultImageShareMode {
+    if (outputs.isEmpty()) return ResultImageShareMode.CachedPages
+    val rich = outputs.map(PreparedImageSource::hasExactShareIdentity)
+    return when {
+        rich.all { it } -> ResultImageShareMode.PrivateCopies
+        rich.none { it } -> ResultImageShareMode.CachedPages
+        else -> ResultImageShareMode.Unavailable
+    }
+}
+
+internal fun resultImageShareMode(scan: SavedScan): ResultImageShareMode =
+    resultImageShareMode(scan.savedImages.map(SavedImageOutput::toPreparedImageSource)).let { mode ->
+        if (!scan.outputMetadataValid && mode == ResultImageShareMode.PrivateCopies) {
+            ResultImageShareMode.Unavailable
+        } else {
+            mode
+        }
+    }
+
+private fun PreparedImageSource.hasExactShareIdentity(): Boolean =
+    page in 1..MAX_SCAN_PAGES &&
+        isContentUri(uri) &&
+        mimeType in setOf(JPEG_MIME_TYPE, PNG_MIME_TYPE) &&
+        outputFingerprintOrNull(byteLength, sha256) != null
 
 internal fun activeImageShareMimeType(mimeTypes: List<String?>): String {
     require(mimeTypes.isNotEmpty()) { "Image share requires at least one output" }
@@ -235,7 +271,7 @@ internal fun prepareImageShareCopies(
     }
 }
 
-private fun SavedImageOutput.toPreparedImageSource(): PreparedImageSource =
+internal fun SavedImageOutput.toPreparedImageSource(): PreparedImageSource =
     PreparedImageSource(page, uri.toString(), mimeType, byteLength, sha256)
 
 internal fun cleanupPreparedImageShare(prepared: PreparedImageShare): Boolean {
