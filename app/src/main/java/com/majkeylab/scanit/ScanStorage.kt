@@ -379,14 +379,39 @@ private data class ParsedCacheEntry(
     val recent: RecentScan,
     val cached: CachedScan,
     val outputs: OutputMetadata?,
+    val outputMetadataReadResult: OutputMetadataReadResult,
     val provisional: Boolean,
 )
 
-private fun ParsedCacheEntry.hasPendingMediaOwnership(): Boolean =
-    File(directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).exists() ||
-        outputs?.let { metadata ->
-        metadata.pdf?.pending == true || metadata.images.any(ImageOutputRef::pending)
-        } == true
+private fun readCacheOutputMetadata(
+    directory: File,
+    cacheId: String,
+    pageCount: Int,
+): OutputMetadataReadResult = readOutputMetadataResult(directory, cacheId, pageCount)
+
+private fun cacheEntryHasUnresolvedDurableState(entry: ParsedCacheEntry): Boolean {
+    if (
+        Files.isRegularFile(
+            File(entry.directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).toPath(),
+            LinkOption.NOFOLLOW_LINKS,
+        )
+    ) {
+        return true
+    }
+    val metadata =
+        when (val result = entry.outputMetadataReadResult) {
+            is OutputMetadataReadResult.Valid -> result.metadata
+            OutputMetadataReadResult.Invalid,
+            OutputMetadataReadResult.Failed,
+            -> return true
+        }
+    return metadata.pdf?.pending == true ||
+        metadata.images.any(ImageOutputRef::pending) ||
+        metadata.stagedPdf != null ||
+        metadata.stagedImages.isNotEmpty() ||
+        metadata.retiredPdf != null ||
+        metadata.retiredImages.isNotEmpty()
+}
 
 internal fun nextDerivedCacheId(
     sourceCacheId: String,
@@ -450,12 +475,19 @@ internal fun listRecentScansInRoot(
     root: File,
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): List<RecentScan> {
     require(maxEntries >= 0) { "Recent scan retention must not be negative" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
     val safeRoot = ensureShareRoot(root)
     maintainPendingDirectories(safeRoot)
-    return pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries).map(ParsedCacheEntry::recent)
+    return pruneRecentEntries(
+        safeRoot,
+        protectedCacheIds,
+        maxEntries,
+        readOutputMetadata,
+    ).map(ParsedCacheEntry::recent)
 }
 
 internal fun recoverPendingRecentRemovalsInRoot(
@@ -489,6 +521,8 @@ private fun publishCacheEntryInRoot(
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     require(maxEntries > 0) { "Recent scan retention must be positive for publishing" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
@@ -508,9 +542,15 @@ private fun publishCacheEntryInRoot(
     var published = false
     try {
         maintainPendingDirectories(safeRoot, work)
-        val entriesToPrune = entriesToPrune(safeRoot, protectedCacheIds, maxEntries - 1)
+        val entriesToPrune =
+            entriesToPrune(
+                safeRoot,
+                protectedCacheIds,
+                maxEntries - 1,
+                readOutputMetadata,
+            )
         val pending =
-            readCacheEntry(safeRoot, work, cacheId)
+            readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
                 ?: throw IOException("Pending cache entry is incomplete")
         ensureOutputMetadata(
             directory = work,
@@ -518,12 +558,12 @@ private fun publishCacheEntryInRoot(
             pageCount = pending.cached.pages.size,
             createdAtEpochMs = System.currentTimeMillis(),
         )
-        readCacheEntry(safeRoot, work, cacheId)
+        readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
             ?: throw IOException("Pending cache metadata is incomplete")
         cleanDisposablePendingDirectories(safeRoot, work)
         moveEntry(work.toPath(), final.toPath())
         published = true
-        val cached = readCacheEntry(safeRoot, final, cacheId)?.cached
+        val cached = readCacheEntry(safeRoot, final, cacheId, readOutputMetadata)?.cached
             ?: throw IOException("Published cache entry is incomplete")
         commitCacheEntryRemovals(safeRoot, cacheId, entriesToPrune, moveEntry)
         return cached
@@ -581,6 +621,8 @@ private fun activateProvisionalCacheEntryInRoot(
     protectedCacheIds: Set<String>,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     require(maxEntries > 0) { "Recent scan retention must be positive for activation" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
@@ -588,7 +630,7 @@ private fun activateProvisionalCacheEntryInRoot(
     maintainPendingDirectories(safeRoot)
     if (!isSafeCacheId(candidateCacheId)) throw IOException("Candidate cache ID is unsafe")
     val candidateDirectory = File(safeRoot, candidateCacheId).absoluteFile
-    val candidate = readCacheEntry(safeRoot, candidateDirectory, candidateCacheId)
+    val candidate = readCacheEntry(safeRoot, candidateDirectory, candidateCacheId, readOutputMetadata)
         ?.takeIf(ParsedCacheEntry::provisional)
         ?: throw IOException("Provisional cache entry is unavailable")
     var activated: CachedScan? = null
@@ -600,6 +642,7 @@ private fun activateProvisionalCacheEntryInRoot(
                 candidate.cached.lineageCacheId,
                 protectedCacheIds,
                 maxEntries - 1,
+                readOutputMetadata,
             )
         commitCacheEntryRemovals(
             root = safeRoot,
@@ -610,7 +653,12 @@ private fun activateProvisionalCacheEntryInRoot(
         ) {
             Files.delete(File(candidateDirectory, PROVISIONAL_CACHE_MARKER).toPath())
             activated =
-                readCacheEntry(safeRoot, candidateDirectory, candidateCacheId)
+                readCacheEntry(
+                    safeRoot,
+                    candidateDirectory,
+                    candidateCacheId,
+                    readOutputMetadata,
+                )
                     ?.takeUnless(ParsedCacheEntry::provisional)
                     ?.cached
                     ?: throw IOException("Activated cache entry is incomplete")
@@ -665,6 +713,8 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     candidateCacheId: String,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     val safeRoot = ensureShareRoot(root)
     maintainPendingDirectories(safeRoot)
@@ -674,6 +724,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             safeRoot,
             File(safeRoot, candidateCacheId).absoluteFile,
             candidateCacheId,
+            readOutputMetadata,
     ) ?: throw IOException("Checkpoint cache entry is unavailable")
     if (!candidate.provisional) return candidate.cached
     if (candidate.cached.appearanceSettings == null) {
@@ -689,12 +740,13 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             protectedCacheIds = emptySet(),
             maxEntries = maxEntries,
             moveEntry = moveEntry,
+            readOutputMetadata = readOutputMetadata,
         )
     }
     if (parentCacheId == null || parentEntryId == null) {
         throw IOException("Provisional cache parent generation is incomplete")
     }
-    val parent = readCacheEntries(safeRoot).singleOrNull {
+    val parent = readCacheEntries(safeRoot, readOutputMetadata = readOutputMetadata).singleOrNull {
         it.recent.cacheId == parentCacheId
     }
     val exactParent = parent?.takeIf { it.cached.entryId == parentEntryId }
@@ -703,7 +755,8 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     }
     val retireParent =
         exactParent?.takeIf { entry ->
-            entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true
+            entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true &&
+                !cacheEntryHasUnresolvedDurableState(entry)
         }
     val protectedParent =
         parent?.takeUnless { it === retireParent }?.recent?.cacheId?.let(::setOf).orEmpty()
@@ -714,6 +767,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
         protectedCacheIds = protectedParent,
         maxEntries = maxEntries,
         moveEntry = moveEntry,
+        readOutputMetadata = readOutputMetadata,
     )
 }
 
@@ -723,6 +777,7 @@ private fun activationEntriesToRemove(
     candidateLineageCacheId: String,
     protectedCacheIds: Set<String>,
     activeCapacity: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
     require(activeCapacity >= 0) { "Active cache capacity must not be negative" }
     if (retireCacheId != null && !isSafeCacheId(retireCacheId)) {
@@ -731,7 +786,7 @@ private fun activationEntriesToRemove(
     if (retireCacheId != null && retireCacheId in protectedCacheIds) {
         throw IOException("Retired cache entry cannot also be protected")
     }
-    val entries = readCacheEntries(root)
+    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
     val retired =
         retireCacheId?.let { id ->
             val entry =
@@ -740,12 +795,16 @@ private fun activationEntriesToRemove(
             if (entry.cached.lineageCacheId != candidateLineageCacheId) {
                 throw IOException("Retired cache entry belongs to another lineage")
             }
+            if (cacheEntryHasUnresolvedDurableState(entry)) {
+                throw IOException("Retired cache entry has unresolved durable state")
+            }
             entry
         }
     val remaining = entries.filterNot { it === retired }
     val protectedEntries =
         remaining.filter { entry ->
-            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+            entry.recent.cacheId in protectedCacheIds ||
+                cacheEntryHasUnresolvedDurableState(entry)
         }
     if (protectedEntries.size > activeCapacity) {
         throw IOException("Protected recent scans exceed cache capacity")
@@ -833,25 +892,29 @@ private fun pruneRecentEntries(
     root: File,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entriesToPrune = entriesToPrune(root, protectedCacheIds, maxEntries)
+    val entriesToPrune =
+        entriesToPrune(root, protectedCacheIds, maxEntries, readOutputMetadata)
     entriesToPrune.forEach { entry ->
         if (!deleteRecentScanInRoot(root, entry.recent.cacheId)) {
             throw IOException("Old recent scan could not be deleted")
         }
     }
-    return readCacheEntries(root)
+    return readCacheEntries(root, readOutputMetadata = readOutputMetadata)
 }
 
 private fun entriesToPrune(
     root: File,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entries = readCacheEntries(root)
+    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
     val protectedEntries =
         entries.filter { entry ->
-            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+            entry.recent.cacheId in protectedCacheIds ||
+                cacheEntryHasUnresolvedDurableState(entry)
         }
     if (protectedEntries.size > maxEntries) {
         throw IOException("Protected recent scans exceed cache capacity")
@@ -872,10 +935,14 @@ private fun moveCacheEntryAtomically(source: Path, target: Path) {
 private fun readCacheEntries(
     root: File,
     includeProvisional: Boolean = false,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): List<ParsedCacheEntry> {
     val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
     return children
-        .mapNotNull { child -> readCacheEntry(root, child.absoluteFile, child.name) }
+        .mapNotNull { child ->
+            readCacheEntry(root, child.absoluteFile, child.name, readOutputMetadata)
+        }
         .filter { includeProvisional || !it.provisional }
         .sortedWith(
             compareByDescending<ParsedCacheEntry> { it.recent.createdAt }
@@ -908,6 +975,8 @@ private fun readCacheEntry(
     root: File,
     directory: File,
     cacheId: String,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): ParsedCacheEntry? {
     if (
         !isSafeCacheId(cacheId) ||
@@ -990,7 +1059,10 @@ private fun readCacheEntry(
     val exactPdf = pdf
     val appearanceMetadata = readScanAppearanceMetadata(directory, cacheId)
     if (orderedSourcePages.isNotEmpty() && appearanceMetadata == null) return null
-    val outputs = readOutputMetadata(directory, cacheId, orderedPages.size)
+    val outputMetadataReadResult =
+        readOutputMetadata(directory, cacheId, orderedPages.size)
+    val outputs =
+        (outputMetadataReadResult as? OutputMetadataReadResult.Valid)?.metadata
     val recent =
         RecentScan(
             cacheId = cacheId,
@@ -1028,6 +1100,7 @@ private fun readCacheEntry(
                     appearanceMetadata?.restoreSettingsOnActivation ?: true,
             ),
         outputs = outputs,
+        outputMetadataReadResult = outputMetadataReadResult,
         provisional = provisional,
     )
 }
@@ -1307,13 +1380,15 @@ internal class RecentScanCache(
     private val root: File,
     private val lock: ReentrantLock = ReentrantLock(),
     private val moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
+    private val readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ) {
     fun list(
         protectedCacheIds: Set<String> = emptySet(),
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     ): List<RecentScan> =
         lock.withLock {
-            listRecentScansInRoot(root, protectedCacheIds, maxEntries)
+            listRecentScansInRoot(root, protectedCacheIds, maxEntries, readOutputMetadata)
         }
 
     fun open(cacheId: String): CachedScan? =
@@ -1361,6 +1436,7 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 
@@ -1386,6 +1462,7 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 
@@ -1429,6 +1506,7 @@ internal class RecentScanCache(
                 candidateCacheId,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 }

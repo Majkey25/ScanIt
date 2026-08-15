@@ -896,7 +896,7 @@ class RecentScanTest {
     @Test
     fun pruningKeepsProtectedEntryAndNewestUnprotectedEntries() = withShareRoot { root ->
         (1..10).forEach { index ->
-            createEntry(root, "Scan_$index").apply { assertTrue(setLastModified(index.toLong())) }
+            createManagedEntry(root, "Scan_$index", index.toLong())
         }
 
         val visible =
@@ -1032,8 +1032,7 @@ class RecentScanTest {
             val oldIds =
                 (1..8).map { index ->
                     "Scan_old_$index".also { id ->
-                        createEntry(root, id).apply {
-                            assertTrue(setLastModified(index.toLong()))
+                        createManagedEntry(root, id, index.toLong()).apply {
                             if (index == 1) {
                                 writeLegacyAppearanceMetadata(this, lineageId)
                             }
@@ -1208,7 +1207,7 @@ class RecentScanTest {
             val oldIds =
                 (1..8).map { index ->
                     "Scan_old_$index".also { id ->
-                        createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                        createManagedEntry(root, id, index.toLong())
                     }
                 }
             val candidateId = "Scan_initial"
@@ -1264,7 +1263,7 @@ class RecentScanTest {
         }
         assertTrue(ownedDirectory.setLastModified(1L))
         val disposableId = "Scan_disposable"
-        createEntry(root, disposableId).apply { assertTrue(setLastModified(2L)) }
+        createManagedEntry(root, disposableId, 2L)
         val candidateId = "Scan_initial"
         val pending =
             createEntry(root, ".pending-initial", fileBaseName = candidateId).apply {
@@ -1492,8 +1491,8 @@ class RecentScanTest {
             writeBytes(byteArrayOf(1, 2, 3))
         }
         try {
-            createEntry(root, "Scan_old").apply { assertTrue(setLastModified(1L)) }
-            createEntry(root, "Scan_new").apply { assertTrue(setLastModified(2L)) }
+            createManagedEntry(root, "Scan_old", 1L)
+            createManagedEntry(root, "Scan_new", 2L)
 
             listRecentScansInRoot(root, maxEntries = 1)
 
@@ -1526,7 +1525,7 @@ class RecentScanTest {
             )
         }
         assertTrue(pendingDirectory.setLastModified(1L))
-        createEntry(root, "Scan_newer").apply { assertTrue(setLastModified(2L)) }
+        createManagedEntry(root, "Scan_newer", 2L)
 
         val listed = listRecentScansInRoot(root, maxEntries = 1)
 
@@ -1535,10 +1534,135 @@ class RecentScanTest {
     }
 
     @Test
+    fun ninthPublishKeepsEveryUnresolvedDurableState() {
+        val states =
+            listOf(
+                "staged_pdf" to DurableState.StagedPdf,
+                "staged_images" to DurableState.StagedImages,
+                "retired_pdf" to DurableState.RetiredPdf,
+                "retired_images" to DurableState.RetiredImages,
+                "pending_pdf" to DurableState.PendingPdf,
+                "pending_images" to DurableState.PendingImages,
+                "marker" to DurableState.Marker,
+                "missing" to DurableState.Missing,
+                "invalid" to DurableState.Invalid,
+                "oversize" to DurableState.Oversize,
+                "read_failure" to DurableState.ReadFailure,
+            )
+        states.forEachIndexed { stateIndex, (label, state) ->
+            withShareRoot { root ->
+                val protectedId = "Scan_protected_$label"
+                val protected = createManagedEntry(root, protectedId, 1L)
+                applyDurableState(protected, protectedId, state)
+                assertTrue(protected.setLastModified(1L))
+                (2..8).forEach { index ->
+                    createManagedEntry(root, "Scan_clean_$index", index.toLong())
+                }
+                val candidateId = "Scan_candidate_$stateIndex"
+                val pending = createEntry(root, ".pending-$stateIndex", fileBaseName = candidateId)
+                val cache =
+                    RecentScanCache(
+                        root,
+                        readOutputMetadata = failingMetadataReader(protectedId, state),
+                    )
+
+                cache.publish(pending, File(root, candidateId), maxEntries = 8)
+
+                assertTrue("$label was pruned", protected.isDirectory)
+                assertTrue(File(root, candidateId).isDirectory)
+                assertEquals(
+                    8,
+                    root.listFiles()!!.count { it.isDirectory && !it.name.startsWith('.') },
+                )
+            }
+        }
+    }
+
+    @Test
+    fun checkpointActivationKeepsParentWithEveryUnresolvedDurableState() {
+        val states =
+            listOf(
+                DurableState.StagedPdf,
+                DurableState.StagedImages,
+                DurableState.RetiredPdf,
+                DurableState.RetiredImages,
+                DurableState.PendingPdf,
+                DurableState.PendingImages,
+                DurableState.Marker,
+                DurableState.Missing,
+                DurableState.Invalid,
+                DurableState.Oversize,
+                DurableState.ReadFailure,
+            )
+        states.forEachIndexed { index, state ->
+            withShareRoot { root ->
+                val lineageId = "Scan_lineage_$index"
+                val parentId = "Scan_parent_$index"
+                val parentEntryId = "00000000-0000-0000-0000-${(index + 1).toString().padStart(12, '0')}"
+                val parent =
+                    createEntry(root, parentId, sourcePageCount = 1).apply {
+                        initializeOutputMetadata(this, parentId, 1, 1L, parentEntryId)
+                        writeLegacyAppearanceMetadata(this, lineageId)
+                    }
+                applyDurableState(parent, parentId, state)
+                val candidateId = "Scan_candidate_$index"
+                val pending =
+                    createEntry(
+                        root,
+                        ".pending-candidate-$index",
+                        sourcePageCount = 1,
+                        fileBaseName = candidateId,
+                    ).apply {
+                        writeScanAppearanceMetadata(
+                            this,
+                            ScanAppearanceSettings(),
+                            lineageCacheId = lineageId,
+                            parentCacheId = parentId,
+                            parentEntryId = parentEntryId,
+                        )
+                    }
+                val cache =
+                    RecentScanCache(
+                        root,
+                        readOutputMetadata = failingMetadataReader(parentId, state),
+                    )
+                cache.publishProvisional(pending, File(root, candidateId))
+
+                val activated = cache.activateCheckpointProvisional(candidateId)
+
+                assertEquals(candidateId, activated.baseName)
+                assertFalse(cache.isProvisional(candidateId))
+                assertTrue("$state parent was removed", parent.isDirectory)
+            }
+        }
+    }
+
+    @Test
+    fun automaticPruneKeepsResolvedActiveRefPolicyUnchanged() = withShareRoot { root ->
+        val resolvedId = "Scan_resolved"
+        val resolved = createManagedEntry(root, resolvedId, 1L)
+        rewriteOutputMetadata(
+            resolved,
+            resolvedId,
+            checkNotNull(readOutputMetadata(resolved, resolvedId, 1)).entryId,
+            1,
+        ) {
+            it.copy(pdf = exactPdf("content://media/external/downloads/1"))
+        }
+        assertTrue(resolved.setLastModified(1L))
+        createManagedEntry(root, "Scan_newer", 2L)
+
+        val listed = listRecentScansInRoot(root, maxEntries = 1)
+
+        assertEquals(listOf("Scan_newer"), listed.map(RecentScan::cacheId))
+        assertFalse(resolved.exists())
+    }
+
+    @Test
     fun pruneFailureRestoresOldHistoryAndRollsBackPublishedEntry() = withShareRoot { root ->
         val oldIds = (1..3).map { index ->
             "Scan_old_$index".also { id ->
-                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                createManagedEntry(root, id, index.toLong())
             }
         }
         val finalId = "Scan_new"
@@ -1646,7 +1770,7 @@ class RecentScanTest {
     fun failedRollbackRemainsRecoverableAndMaintenanceRestoresOldEntry() = withShareRoot { root ->
         val oldIds = (1..3).map { index ->
             "Scan_old_$index".also { id ->
-                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                createManagedEntry(root, id, index.toLong())
             }
         }
         val finalId = "Scan_new"
@@ -1897,6 +2021,123 @@ class RecentScanTest {
                 )
             }
         }
+
+    private enum class DurableState {
+        StagedPdf,
+        StagedImages,
+        RetiredPdf,
+        RetiredImages,
+        PendingPdf,
+        PendingImages,
+        Marker,
+        Missing,
+        Invalid,
+        Oversize,
+        ReadFailure,
+    }
+
+    private fun createManagedEntry(root: File, cacheId: String, createdAt: Long): File =
+        createEntry(root, cacheId).apply {
+            initializeOutputMetadata(this, cacheId, 1, createdAt)
+            assertTrue(setLastModified(createdAt))
+        }
+
+    private fun applyDurableState(directory: File, cacheId: String, state: DurableState) {
+        val metadata = readOutputMetadata(directory, cacheId, 1)
+        when (state) {
+            DurableState.StagedPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        stagedPdf = exactPdf("content://media/external/downloads/staged"),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.StagedImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        stagedImages =
+                            listOf(exactImage(1, "content://media/external/images/media/11", false)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.RetiredPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        retiredPdf = exactPdf("content://media/external/downloads/retired"),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.RetiredImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        retiredImages =
+                            listOf(exactImage(1, "content://media/external/images/media/12", false)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.PendingPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        pdf = exactPdf("content://media/external/downloads/pending", pending = true),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.PendingImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        images =
+                            listOf(exactImage(1, "content://media/external/images/media/13", true)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.Marker ->
+                writeProvisionalOutputCreate(
+                    directory,
+                    ProvisionalOutputCreate(
+                        operationId = "123e4567-e89b-12d3-a456-426614174096",
+                        cacheId = cacheId,
+                        entryId = checkNotNull(metadata).entryId,
+                        kind = ProvisionalOutputKind.Image,
+                        page = 1,
+                        provider = ProvisionalOutputProvider.MediaStore,
+                        displayName = "page-01.jpg",
+                        mimeType = "image/jpeg",
+                        treeUri = null,
+                        returnedUri = null,
+                    ),
+                    pageCount = 1,
+                )
+            DurableState.Missing -> assertTrue(File(directory, OUTPUT_METADATA_FILE_NAME).delete())
+            DurableState.Invalid -> File(directory, OUTPUT_METADATA_FILE_NAME).writeText("{}")
+            DurableState.Oversize ->
+                File(directory, OUTPUT_METADATA_FILE_NAME)
+                    .writeBytes(ByteArray(MAX_OUTPUT_METADATA_BYTES + 1) { 1 })
+            DurableState.ReadFailure -> Unit
+        }
+    }
+
+    private fun failingMetadataReader(
+        cacheId: String,
+        state: DurableState,
+    ): (File, String, Int) -> OutputMetadataReadResult = { directory, actualCacheId, pageCount ->
+        if (state == DurableState.ReadFailure && actualCacheId == cacheId) {
+            OutputMetadataReadResult.Failed
+        } else {
+            readOutputMetadataResult(directory, actualCacheId, pageCount)
+        }
+    }
+
+    private fun exactPdf(uri: String, pending: Boolean = false) =
+        PdfOutputRef(
+            uri = uri,
+            treeUri = null,
+            displayName = "scan.pdf",
+            mimeType = "application/pdf",
+            ownerPackageName = "com.majkeylab.scanit.internal",
+            byteLength = 1L,
+            sha256 = "00".repeat(32),
+            pending = pending,
+        )
 
     private fun writeLegacyAppearanceMetadata(
         directory: File,
