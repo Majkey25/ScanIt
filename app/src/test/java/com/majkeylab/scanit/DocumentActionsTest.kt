@@ -3,6 +3,7 @@ package com.majkeylab.scanit
 import android.content.ClipDescription
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -44,7 +45,7 @@ class DocumentActionsTest {
                 displayValue = "value",
                 rawBytes = byteArrayOf(0xc3.toByte(), 0x28),
                 isQrCode = false,
-                isUrlType = false,
+                typedUrl = null,
             ),
         )
         assertNull(
@@ -53,7 +54,7 @@ class DocumentActionsTest {
                 displayValue = null,
                 rawBytes = null,
                 isQrCode = false,
-                isUrlType = false,
+                typedUrl = null,
             ),
         )
     }
@@ -73,7 +74,28 @@ class DocumentActionsTest {
                 displayValue = value,
                 rawBytes = value.toByteArray(StandardCharsets.UTF_8),
                 isQrCode = true,
-                isUrlType = true,
+                typedUrl = value,
+            ),
+        )
+    }
+
+    @Test
+    fun structuredBookmarkDisplaysRawPayloadButOpensTypedUrl() {
+        val rawValue = "MEBKM:TITLE:ScanIt;URL:https://example.com/document;;"
+        val typedUrl = "https://example.com/document"
+
+        assertEquals(
+            DetectedCode(
+                kind = DetectedCodeKind.QrCode,
+                value = rawValue,
+                openableHttpUrl = typedUrl,
+            ),
+            validatedDetectedCode(
+                rawValue = rawValue,
+                displayValue = "ScanIt",
+                rawBytes = rawValue.toByteArray(StandardCharsets.UTF_8),
+                isQrCode = true,
+                typedUrl = typedUrl,
             ),
         )
     }
@@ -88,7 +110,7 @@ class DocumentActionsTest {
                 displayValue = value,
                 rawBytes = value.toByteArray(StandardCharsets.UTF_8),
                 isQrCode = true,
-                isUrlType = false,
+                typedUrl = null,
             )?.openableHttpUrl,
         )
         assertNull(validatedHttpUrl("javascript:alert(1)"))
@@ -178,6 +200,45 @@ class DocumentActionsTest {
 
         expectFailure<IOException> {
             writeDocumentTextUtf8(failingOutput, "text")
+        }
+    }
+
+    @Test
+    fun providerTextExportTruncatesExistingContentAndMapsFailure() {
+        val destination = File.createTempFile("scanit-text-export", ".txt")
+        try {
+            destination.writeText("existing content that is longer than the replacement")
+            var openedMode: String? = null
+
+            val saved =
+                writeDocumentTextToDestination(
+                    text = "short",
+                    openOutputStream = { mode ->
+                        openedMode = mode
+                        FileOutputStream(destination, mode != "wt")
+                    },
+                )
+
+            assertTrue(saved)
+            assertEquals("wt", openedMode)
+            assertEquals("short", destination.readText())
+            val output = DocumentActionOutput.Text("short", truncated = false)
+            assertEquals(
+                DocumentTextExportStatus.Saved,
+                completedDocumentTextExport(output, saved).textExportStatus,
+            )
+            assertFalse(
+                writeDocumentTextToDestination(
+                    text = "short",
+                    openOutputStream = { null },
+                ),
+            )
+            assertEquals(
+                DocumentTextExportStatus.Failed,
+                completedDocumentTextExport(output, saved = false).textExportStatus,
+            )
+        } finally {
+            destination.delete()
         }
     }
 

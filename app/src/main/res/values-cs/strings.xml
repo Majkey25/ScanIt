@@ -260,6 +260,7 @@
     <string name="link_open_failed">Odkaz se nepodařilo otevřít.</string>
     <string name="qr_code">QR kód</string>
     <string name="barcode">Čárový kód</string>
+    <string name="web_link">Webový odkaz</string>
     <string name="document_action_page">Stránka %1$d</string>
     <string name="copy">Kopírovat</string>
     <string name="copied_to_clipboard">Zkopírováno do schránky</string>

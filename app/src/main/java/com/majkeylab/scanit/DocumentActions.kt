@@ -111,7 +111,7 @@ internal fun validatedDetectedCode(
     displayValue: String?,
     rawBytes: ByteArray?,
     isQrCode: Boolean,
-    isUrlType: Boolean,
+    typedUrl: String?,
 ): DetectedCode? {
     val decodedBytes =
         rawBytes?.let { bytes ->
@@ -125,7 +125,7 @@ internal fun validatedDetectedCode(
     return DetectedCode(
         kind = if (isQrCode) DetectedCodeKind.QrCode else DetectedCodeKind.Barcode,
         value = value,
-        openableHttpUrl = if (isUrlType) validatedHttpUrl(value) else null,
+        openableHttpUrl = typedUrl?.let(::validatedHttpUrl),
     )
 }
 
@@ -156,7 +156,6 @@ internal fun buildDetectedCodes(
         val openableUrl =
             candidate.openableHttpUrl
                 ?.let(::validatedHttpUrl)
-                ?.takeIf { it == candidate.value }
         values += candidate.copy(openableHttpUrl = openableUrl)
         characters += candidate.value.length
     }
@@ -226,6 +225,16 @@ internal fun writeDocumentTextUtf8(
     output.write(bytes)
     output.flush()
     if (isCancelled()) throw CancellationException("Text export was cancelled")
+}
+
+internal fun writeDocumentTextToDestination(
+    text: String,
+    openOutputStream: (mode: String) -> OutputStream?,
+    isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+): Boolean {
+    val output = openOutputStream("wt") ?: return false
+    output.use { writeDocumentTextUtf8(it, text, isCancelled) }
+    return true
 }
 
 internal fun isSafeTextExportDestination(
@@ -323,7 +332,7 @@ internal class DocumentActionProcessor(private val context: Context) {
                         displayValue = barcode.displayValue,
                         rawBytes = barcode.rawBytes,
                         isQrCode = barcode.format == Barcode.FORMAT_QR_CODE,
-                        isUrlType = barcode.valueType == Barcode.TYPE_URL,
+                        typedUrl = barcode.url?.url,
                     )
                 },
             )

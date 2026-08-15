@@ -2058,11 +2058,14 @@ internal class ScanViewModel(
                                 false
                             } else {
                                 val operationContext = currentCoroutineContext()
-                                resolver.openOutputStream(destination, "w")?.use { stream ->
-                                    writeDocumentTextUtf8(stream, exporting.output.value) {
-                                        !operationContext.isActive
-                                    }
-                                } != null
+                                writeDocumentTextToDestination(
+                                    text = exporting.output.value,
+                                    openOutputStream = { mode ->
+                                        resolver.openOutputStream(destination, mode)
+                                    },
+                                ) {
+                                    !operationContext.isActive
+                                }
                             }
                         }
                     } catch (cancellation: CancellationException) {
@@ -2077,16 +2080,7 @@ internal class ScanViewModel(
                 ) {
                     mutableState.value =
                         latest.copy(
-                            documentActionState =
-                                DocumentActionState.Completed(
-                                    output = exporting.output,
-                                    textExportStatus =
-                                        if (saved) {
-                                            DocumentTextExportStatus.Saved
-                                        } else {
-                                            DocumentTextExportStatus.Failed
-                                        },
-                                ),
+                            documentActionState = completedDocumentTextExport(exporting.output, saved),
                         )
                 }
                 documentActionJob = null

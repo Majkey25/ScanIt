@@ -855,6 +855,16 @@ internal enum class DocumentTextExportStatus {
     Failed,
 }
 
+internal fun completedDocumentTextExport(
+    output: DocumentActionOutput.Text,
+    saved: Boolean,
+): DocumentActionState.Completed =
+    DocumentActionState.Completed(
+        output = output,
+        textExportStatus =
+            if (saved) DocumentTextExportStatus.Saved else DocumentTextExportStatus.Failed,
+    )
+
 internal enum class DocumentTextExportDisposition {
     Accepted,
     DefiniteStale,

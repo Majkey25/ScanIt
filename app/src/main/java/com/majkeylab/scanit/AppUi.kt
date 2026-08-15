@@ -1193,7 +1193,12 @@ private fun DocumentActionStateDialog(
                 when (val output = state.output) {
                     is DocumentActionOutput.Text -> output.value.takeIf { it.isNotEmpty() }
                     is DocumentActionOutput.Codes ->
-                        output.values.joinToString("\n\n") { it.value }.takeIf { it.isNotEmpty() }
+                        output.values.joinToString("\n\n") { code ->
+                            code.openableHttpUrl
+                                ?.takeIf { it != code.value }
+                                ?.let { url -> "${code.value}\n$url" }
+                                ?: code.value
+                        }.takeIf { it.isNotEmpty() }
                 }
             else -> null
         }
@@ -1255,6 +1260,18 @@ private fun DocumentActionStateDialog(
                                                                 .onSurfaceVariant,
                                                     )
                                                     Text(code.value)
+                                                    val url = code.openableHttpUrl
+                                                    if (url != null && url != code.value) {
+                                                        Text(
+                                                            stringResource(R.string.web_link),
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color =
+                                                                MaterialTheme.colorScheme
+                                                                    .onSurfaceVariant,
+                                                            modifier = Modifier.padding(top = 6.dp),
+                                                        )
+                                                        Text(url)
+                                                    }
                                                 }
                                             }
                                         }

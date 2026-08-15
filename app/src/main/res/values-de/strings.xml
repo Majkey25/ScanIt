@@ -256,6 +256,7 @@
     <string name="link_open_failed">Der Link konnte nicht geöffnet werden.</string>
     <string name="qr_code">QR-Code</string>
     <string name="barcode">Barcode</string>
+    <string name="web_link">Weblink</string>
     <string name="document_action_page">Seite %1$d</string>
     <string name="copy">Kopieren</string>
     <string name="copied_to_clipboard">In die Zwischenablage kopiert</string>

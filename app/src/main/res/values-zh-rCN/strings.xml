@@ -255,6 +255,7 @@
     <string name="link_open_failed">无法打开链接。</string>
     <string name="qr_code">二维码</string>
     <string name="barcode">条形码</string>
+    <string name="web_link">网页链接</string>
     <string name="document_action_page">第 %1$d 页</string>
     <string name="copy">复制</string>
     <string name="copied_to_clipboard">已复制到剪贴板</string>

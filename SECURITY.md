@@ -31,6 +31,6 @@ credentials.
 ## Supply-chain controls
 
 - Gradle resolves dependencies only from Google Maven, Maven Central, and the Gradle Plugin Portal.
-- Resolved dependency artifacts are checked against the committed SHA-256 verification metadata.
+- Dependency artifacts used by Windows development and Ubuntu CI are checked against the committed SHA-256 verification metadata. macOS builds are not currently claimed or tested.
 - GitHub Actions are pinned to full commit SHAs and run the repository test, lint, build, and release-verification gate.
 - Dependabot is configured for weekly Gradle and GitHub Actions update proposals.
