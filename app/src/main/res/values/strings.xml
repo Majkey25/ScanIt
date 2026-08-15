@@ -237,10 +237,10 @@
     <string name="actions">Actions</string>
     <string name="document_actions">Document actions</string>
     <string name="document_actions_on_device">Document content and action results stay on this device.</string>
-    <string name="extract_text">Extract text</string>
+    <string name="extract_text">Extract Latin-script text</string>
     <string name="all_pages">All pages</string>
     <string name="detect_codes">Detect QR and barcodes</string>
-    <string name="current_page">Current page</string>
+    <string name="selected_page">Selected page</string>
     <string name="extracting_text">Extracting text…</string>
     <string name="detecting_codes">Looking for codes…</string>
     <string name="extracted_text">Extracted text</string>
@@ -250,6 +250,14 @@
     <string name="document_action_truncated">The result was shortened to fit.</string>
     <string name="document_action_failed">The document action could not be completed.</string>
     <string name="document_action_clip_label">ScanIt document result</string>
+    <string name="export_text">Export text</string>
+    <string name="exporting_text">Saving text…</string>
+    <string name="text_export_saved">Text saved.</string>
+    <string name="text_export_failed">Text could not be saved.</string>
+    <string name="open_link">Open link</string>
+    <string name="link_open_failed">The link could not be opened.</string>
+    <string name="qr_code">QR code</string>
+    <string name="barcode">Barcode</string>
     <string name="document_action_page">Page %1$d</string>
     <string name="copy">Copy</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>

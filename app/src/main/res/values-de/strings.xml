@@ -235,10 +235,10 @@
     <string name="actions">Aktionen</string>
     <string name="document_actions">Dokumentaktionen</string>
     <string name="document_actions_on_device">Dokumentinhalte und Aktionsergebnisse bleiben auf diesem Gerät.</string>
-    <string name="extract_text">Text extrahieren</string>
+    <string name="extract_text">Lateinischen Text extrahieren</string>
     <string name="all_pages">Alle Seiten</string>
     <string name="detect_codes">QR- und Barcodes erkennen</string>
-    <string name="current_page">Aktuelle Seite</string>
+    <string name="selected_page">Ausgewählte Seite</string>
     <string name="extracting_text">Text wird erkannt…</string>
     <string name="detecting_codes">Codes werden gesucht…</string>
     <string name="extracted_text">Extrahierter Text</string>
@@ -248,6 +248,14 @@
     <string name="document_action_truncated">Das Ergebnis wurde gekürzt.</string>
     <string name="document_action_failed">Die Dokumentaktion konnte nicht abgeschlossen werden.</string>
     <string name="document_action_clip_label">ScanIt-Dokumentergebnis</string>
+    <string name="export_text">Text exportieren</string>
+    <string name="exporting_text">Text wird gespeichert…</string>
+    <string name="text_export_saved">Text wurde gespeichert.</string>
+    <string name="text_export_failed">Text konnte nicht gespeichert werden.</string>
+    <string name="open_link">Link öffnen</string>
+    <string name="link_open_failed">Der Link konnte nicht geöffnet werden.</string>
+    <string name="qr_code">QR-Code</string>
+    <string name="barcode">Barcode</string>
     <string name="document_action_page">Seite %1$d</string>
     <string name="copy">Kopieren</string>
     <string name="copied_to_clipboard">In die Zwischenablage kopiert</string>

@@ -27,3 +27,10 @@ credentials.
 - Android backup and device-to-device transfer are disabled for ScanIt app data.
 - Release signing keys and local signing properties are never stored in this repository.
 - The frozen GitHub preview APK is a historical debug-signed artifact, not the Google Play build.
+
+## Supply-chain controls
+
+- Gradle resolves dependencies only from Google Maven, Maven Central, and the Gradle Plugin Portal.
+- Resolved dependency artifacts are checked against the committed SHA-256 verification metadata.
+- GitHub Actions are pinned to full commit SHAs and run the repository test, lint, build, and release-verification gate.
+- Dependabot is configured for weekly Gradle and GitHub Actions update proposals.

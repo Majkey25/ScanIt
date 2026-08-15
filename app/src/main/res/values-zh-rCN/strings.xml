@@ -234,10 +234,10 @@
     <string name="actions">操作</string>
     <string name="document_actions">文档操作</string>
     <string name="document_actions_on_device">文档内容和操作结果保留在此设备上。</string>
-    <string name="extract_text">提取文字</string>
+    <string name="extract_text">提取拉丁文字</string>
     <string name="all_pages">所有页面</string>
     <string name="detect_codes">识别二维码和条形码</string>
-    <string name="current_page">当前页面</string>
+    <string name="selected_page">所选页面</string>
     <string name="extracting_text">正在提取文字…</string>
     <string name="detecting_codes">正在查找代码…</string>
     <string name="extracted_text">提取的文字</string>
@@ -247,6 +247,14 @@
     <string name="document_action_truncated">结果已缩短以适应显示。</string>
     <string name="document_action_failed">无法完成文档操作。</string>
     <string name="document_action_clip_label">ScanIt 文档结果</string>
+    <string name="export_text">导出文字</string>
+    <string name="exporting_text">正在保存文字…</string>
+    <string name="text_export_saved">文字已保存。</string>
+    <string name="text_export_failed">无法保存文字。</string>
+    <string name="open_link">打开链接</string>
+    <string name="link_open_failed">无法打开链接。</string>
+    <string name="qr_code">二维码</string>
+    <string name="barcode">条形码</string>
     <string name="document_action_page">第 %1$d 页</string>
     <string name="copy">复制</string>
     <string name="copied_to_clipboard">已复制到剪贴板</string>

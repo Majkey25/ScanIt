@@ -20,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -36,6 +37,8 @@ import kotlinx.coroutines.withContext
 internal fun scannerPageLimit(multipage: Boolean): Int = if (multipage) MAX_SCAN_PAGES else 1
 
 private const val LAUNCHED_OUTPUT_TREE_REQUEST_KEY = "launched_output_tree_request"
+private const val LAUNCHED_DOCUMENT_TEXT_EXPORT_REQUEST_KEY =
+    "launched_document_text_export_request"
 private const val OUTPUT_TREE_INTENT_FLAGS =
     PDF_TREE_FLAGS or
         Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
@@ -71,6 +74,7 @@ internal fun scannerMode(purpose: ScannerPurpose): Int =
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
+    private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
     private val savedOutputsChangedReceiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -91,12 +95,20 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             handleOutputTreeResult(it)
         }
+    private val documentTextExportLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            handleDocumentTextExportResult(it)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         launchedOutputTreeRequest =
             decodeOutputTreePickerRequest(
                 savedInstanceState?.getString(LAUNCHED_OUTPUT_TREE_REQUEST_KEY),
+            )
+        launchedDocumentTextExportRequest =
+            decodeDocumentActionRequest(
+                savedInstanceState?.getString(LAUNCHED_DOCUMENT_TEXT_EXPORT_REQUEST_KEY),
             )
         val defaultEmailSubjects = supportedDefaultEmailSubjects()
         viewModel.localizeDefaultEmailSubject(
@@ -141,6 +153,8 @@ class MainActivity : ComponentActivity() {
                 onApplyAppearance = viewModel::applyCurrentAppearance,
                 onRunDocumentAction = viewModel::runDocumentAction,
                 onDismissDocumentAction = viewModel::dismissDocumentAction,
+                onExportDocumentText = ::startDocumentTextExport,
+                onOpenDocumentActionUrl = ::openDocumentActionUrl,
                 onOpenVisualMarkEditor = viewModel::openVisualMarkEditor,
                 onCloseVisualMarkEditor = viewModel::closeVisualMarkEditor,
                 onSelectVisualMarkTemplate = viewModel::selectVisualMarkTemplate,
@@ -197,6 +211,12 @@ class MainActivity : ComponentActivity() {
             outState.putString(
                 LAUNCHED_OUTPUT_TREE_REQUEST_KEY,
                 encodeOutputTreePickerRequest(request),
+            )
+        }
+        launchedDocumentTextExportRequest?.let { request ->
+            outState.putString(
+                LAUNCHED_DOCUMENT_TEXT_EXPORT_REQUEST_KEY,
+                encodeDocumentActionRequest(request),
             )
         }
         super.onSaveInstanceState(outState)
@@ -329,6 +349,87 @@ class MainActivity : ComponentActivity() {
             OutputTreeCallbackDisposition.Accepted,
             OutputTreeCallbackDisposition.DefiniteStale,
             -> if (launchedOutputTreeRequest == request) launchedOutputTreeRequest = null
+        }
+    }
+
+    private fun startDocumentTextExport() {
+        val request = viewModel.beginDocumentTextExport()
+        if (request == null) {
+            showToast(R.string.text_export_failed)
+            return
+        }
+        launchedDocumentTextExportRequest = request
+        val intent =
+            Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("text/plain")
+                .putExtra(
+                    Intent.EXTRA_TITLE,
+                    sanitizeTextExportFileName(request.cacheId),
+                ).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        try {
+            documentTextExportLauncher.launch(intent)
+        } catch (_: RuntimeException) {
+            clearLaunchedDocumentTextExportRequest(
+                request,
+                viewModel.documentTextExportDestinationCancelled(request),
+            )
+            showToast(R.string.text_export_failed)
+        }
+    }
+
+    private fun handleDocumentTextExportResult(activityResult: ActivityResult) {
+        val request = launchedDocumentTextExportRequest ?: return
+        if (activityResult.resultCode == Activity.RESULT_CANCELED) {
+            clearLaunchedDocumentTextExportRequest(
+                request,
+                viewModel.documentTextExportDestinationCancelled(request),
+            )
+            return
+        }
+        val data = activityResult.data
+        val destination = data?.data
+        val disposition =
+            if (activityResult.resultCode == Activity.RESULT_OK && destination != null) {
+                viewModel.exportDocumentText(request, destination, data.flags)
+            } else {
+                viewModel.documentTextExportDestinationCancelled(request)
+            }
+        clearLaunchedDocumentTextExportRequest(request, disposition)
+        if (
+            disposition == DocumentTextExportDisposition.Accepted &&
+                (activityResult.resultCode != Activity.RESULT_OK || destination == null)
+        ) {
+            showToast(R.string.text_export_failed)
+        }
+    }
+
+    private fun clearLaunchedDocumentTextExportRequest(
+        request: DocumentActionRequest,
+        disposition: DocumentTextExportDisposition,
+    ) {
+        when (disposition) {
+            DocumentTextExportDisposition.Accepted,
+            DocumentTextExportDisposition.DefiniteStale,
+            -> if (launchedDocumentTextExportRequest == request) {
+                launchedDocumentTextExportRequest = null
+            }
+        }
+    }
+
+    private fun openDocumentActionUrl(value: String) {
+        val url = validatedHttpUrl(value)
+        if (url == null) {
+            showToast(R.string.link_open_failed)
+            return
+        }
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, url.toUri())
+                    .addCategory(Intent.CATEGORY_BROWSABLE),
+            )
+        } catch (_: RuntimeException) {
+            showToast(R.string.link_open_failed)
         }
     }
 

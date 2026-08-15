@@ -823,9 +823,9 @@ internal data class VisualMarkEditorState(
     val message: UiMessage? = null,
 )
 
-internal enum class DocumentAction {
-    ExtractText,
-    DetectCodes,
+internal enum class DocumentAction(val wireValue: String) {
+    ExtractText("extract_text"),
+    DetectCodes("detect_codes"),
 }
 
 internal sealed interface DocumentActionOutput {
@@ -834,15 +834,30 @@ internal sealed interface DocumentActionOutput {
         val truncated: Boolean,
     ) : DocumentActionOutput
 
-    data class Codes(val values: List<String>) : DocumentActionOutput
+    data class Codes(val values: List<DetectedCode>) : DocumentActionOutput
 }
 
 internal sealed interface DocumentActionState {
     data class Processing(val action: DocumentAction) : DocumentActionState
 
-    data class Completed(val output: DocumentActionOutput) : DocumentActionState
+    data class Completed(
+        val output: DocumentActionOutput,
+        val textExportStatus: DocumentTextExportStatus? = null,
+    ) : DocumentActionState
+
+    data class Exporting(val output: DocumentActionOutput.Text) : DocumentActionState
 
     data class Failed(val message: UiMessage) : DocumentActionState
+}
+
+internal enum class DocumentTextExportStatus {
+    Saved,
+    Failed,
+}
+
+internal enum class DocumentTextExportDisposition {
+    Accepted,
+    DefiniteStale,
 }
 
 internal data class DocumentActionRequest(
@@ -851,15 +866,49 @@ internal data class DocumentActionRequest(
     val pageIndex: Int,
     val action: DocumentAction,
     val generation: Long,
-)
+) {
+    init {
+        require(isSafeCacheId(cacheId)) { "Document action cache ID is invalid" }
+        require(isCanonicalUuid(entryId)) { "Document action entry ID is invalid" }
+        require(pageIndex in 0 until MAX_SCAN_PAGES) { "Document action page is invalid" }
+        require(generation > 0L) { "Document action generation is invalid" }
+    }
+}
+
+internal fun encodeDocumentActionRequest(request: DocumentActionRequest): String =
+    listOf(
+        request.cacheId,
+        request.entryId,
+        request.pageIndex.toString(),
+        request.action.wireValue,
+        request.generation.toString(),
+    ).joinToString("\t")
+
+internal fun decodeDocumentActionRequest(value: String?): DocumentActionRequest? {
+    if (value == null || value.length > 512) return null
+    val parts = value.split('\t')
+    if (parts.size != 5) return null
+    val pageIndex = parts[2].toIntOrNull() ?: return null
+    val action = DocumentAction.entries.firstOrNull { it.wireValue == parts[3] } ?: return null
+    val generation = parts[4].toLongOrNull() ?: return null
+    return try {
+        DocumentActionRequest(parts[0], parts[1], pageIndex, action, generation)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+}
 
 internal fun DocumentActionRequest.matches(
     cacheId: String,
     entryId: String?,
+    pageIndex: Int,
+    action: DocumentAction,
     generation: Long,
 ): Boolean =
     this.cacheId == cacheId &&
         this.entryId == entryId &&
+        this.pageIndex == pageIndex &&
+        this.action == action &&
         this.generation == generation
 
 internal enum class SavedOutputKind {
@@ -1102,6 +1151,7 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
             imageSharePreparationInProgress ||
             appearanceApplyInProgress ||
             documentActionState is DocumentActionState.Processing ||
+            documentActionState is DocumentActionState.Exporting ||
             visualMarkEditor != null
 
 internal val ScreenState.Result.canAddVisualMark: Boolean

@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.PersistableBundle
 import android.provider.MediaStore
 import android.text.format.Formatter
 import android.widget.Toast
@@ -88,7 +89,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.painterResource
@@ -187,6 +190,8 @@ internal fun ScanItApp(
     onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
     onRunDocumentAction: (DocumentAction) -> Unit = {},
     onDismissDocumentAction: () -> Unit = {},
+    onExportDocumentText: () -> Unit = {},
+    onOpenDocumentActionUrl: (String) -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
     onCloseVisualMarkEditor: () -> Unit = {},
     onSelectVisualMarkTemplate: (String) -> Unit = {},
@@ -319,6 +324,8 @@ internal fun ScanItApp(
                         onEdit = onOpenAppearanceEditor,
                         onRunDocumentAction = onRunDocumentAction,
                         onDismissDocumentAction = onDismissDocumentAction,
+                        onExportDocumentText = onExportDocumentText,
+                        onOpenDocumentActionUrl = onOpenDocumentActionUrl,
                         onSelectPage = onSelectResultPage,
                         onLoadThumbnail = onLoadThumbnail,
                         onLoadResultPreview = onLoadResultPreview,
@@ -609,6 +616,8 @@ private fun ResultScreen(
     onEdit: () -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
     onDismissDocumentAction: () -> Unit,
+    onExportDocumentText: () -> Unit,
+    onOpenDocumentActionUrl: (String) -> Unit,
     onSelectPage: (Int) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
     onLoadResultPreview: suspend (File, Int) -> Bitmap?,
@@ -924,6 +933,8 @@ private fun ResultScreen(
         DocumentActionStateDialog(
             state = actionState,
             onDismiss = onDismissDocumentAction,
+            onExportText = onExportDocumentText,
+            onOpenUrl = onOpenDocumentActionUrl,
         )
     }
 }
@@ -1089,31 +1100,17 @@ private fun DocumentActionPickerDialog(
                     stringResource(R.string.document_actions_on_device),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Button(
+                DocumentActionPickerRow(
+                    iconRes = R.drawable.ic_text,
+                    labelRes = R.string.extract_text,
+                    scopeRes = R.string.all_pages,
                     onClick = { onSelect(DocumentAction.ExtractText) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    ActionButtonContent(
-                        iconRes = R.drawable.ic_text,
-                        textRes = R.string.extract_text,
-                    )
-                }
-                Text(
-                    stringResource(R.string.all_pages),
-                    style = MaterialTheme.typography.bodySmall,
                 )
-                OutlinedButton(
+                DocumentActionPickerRow(
+                    iconRes = R.drawable.ic_qr_code,
+                    labelRes = R.string.detect_codes,
+                    scopeRes = R.string.selected_page,
                     onClick = { onSelect(DocumentAction.DetectCodes) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    ActionButtonContent(
-                        iconRes = R.drawable.ic_qr_code,
-                        textRes = R.string.detect_codes,
-                    )
-                }
-                Text(
-                    stringResource(R.string.current_page),
-                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         },
@@ -1124,13 +1121,57 @@ private fun DocumentActionPickerDialog(
 }
 
 @Composable
+private fun DocumentActionPickerRow(
+    iconRes: Int,
+    labelRes: Int,
+    scopeRes: Int,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(labelRes), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(scopeRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DocumentActionStateDialog(
     state: DocumentActionState,
     onDismiss: () -> Unit,
+    onExportText: () -> Unit,
+    onOpenUrl: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val truncatedMessage = stringResource(R.string.document_action_truncated)
     val clipboardLabel = stringResource(R.string.document_action_clip_label)
+    val qrCodeLabel = stringResource(R.string.qr_code)
+    val barcodeLabel = stringResource(R.string.barcode)
+    val noTextFound = stringResource(R.string.no_text_found)
+    val maxContentHeight =
+        with(LocalDensity.current) {
+            (LocalWindowInfo.current.containerSize.height * 0.55f).toDp()
+        }.coerceAtLeast(180.dp)
     val title =
         when (state) {
             is DocumentActionState.Processing ->
@@ -1143,6 +1184,7 @@ private fun DocumentActionStateDialog(
                     is DocumentActionOutput.Text -> stringResource(R.string.extracted_text)
                     is DocumentActionOutput.Codes -> stringResource(R.string.detected_codes)
                 }
+            is DocumentActionState.Exporting -> stringResource(R.string.exporting_text)
             is DocumentActionState.Failed -> stringResource(R.string.document_actions)
         }
     val copyText =
@@ -1150,25 +1192,22 @@ private fun DocumentActionStateDialog(
             is DocumentActionState.Completed ->
                 when (val output = state.output) {
                     is DocumentActionOutput.Text -> output.value.takeIf { it.isNotEmpty() }
-                    is DocumentActionOutput.Codes -> output.values.joinToString("\n\n").takeIf { it.isNotEmpty() }
+                    is DocumentActionOutput.Codes ->
+                        output.values.joinToString("\n\n") { it.value }.takeIf { it.isNotEmpty() }
                 }
             else -> null
         }
-    val completedText =
-        when (state) {
-            is DocumentActionState.Completed ->
-                copyText ?: when (state.output) {
-                    is DocumentActionOutput.Text -> stringResource(R.string.no_text_found)
-                    is DocumentActionOutput.Codes -> stringResource(R.string.no_codes_found)
-                }
-            else -> null
-        }
+    val completedCodes =
+        (state as? DocumentActionState.Completed)?.output as? DocumentActionOutput.Codes
+    val openableUrl = completedCodes?.values?.singleOrNull()?.openableHttpUrl
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             when (state) {
-                is DocumentActionState.Processing ->
+                is DocumentActionState.Processing,
+                is DocumentActionState.Exporting,
+                ->
                     Box(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
                         contentAlignment = Alignment.Center,
@@ -1176,52 +1215,140 @@ private fun DocumentActionStateDialog(
                         CircularProgressIndicator()
                     }
                 is DocumentActionState.Completed ->
-                    SelectionContainer {
-                        Text(
-                            text =
-                                buildString {
-                                    append(checkNotNull(completedText))
-                                    if (
-                                        state.output is DocumentActionOutput.Text &&
-                                            state.output.truncated
-                                    ) {
-                                        append("\n\n")
-                                        append(truncatedMessage)
+                    Column(
+                        modifier =
+                            Modifier.heightIn(max = maxContentHeight)
+                                .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SelectionContainer {
+                            when (val output = state.output) {
+                                is DocumentActionOutput.Text ->
+                                    Text(
+                                        buildString {
+                                            append(
+                                                output.value.ifEmpty {
+                                                    noTextFound
+                                                },
+                                            )
+                                            if (output.truncated) {
+                                                append("\n\n")
+                                                append(truncatedMessage)
+                                            }
+                                        },
+                                    )
+                                is DocumentActionOutput.Codes ->
+                                    if (output.values.isEmpty()) {
+                                        Text(stringResource(R.string.no_codes_found))
+                                    } else {
+                                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            output.values.forEach { code ->
+                                                Column {
+                                                    Text(
+                                                        when (code.kind) {
+                                                            DetectedCodeKind.QrCode -> qrCodeLabel
+                                                            DetectedCodeKind.Barcode -> barcodeLabel
+                                                        },
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color =
+                                                            MaterialTheme.colorScheme
+                                                                .onSurfaceVariant,
+                                                    )
+                                                    Text(code.value)
+                                                }
+                                            }
+                                        }
                                     }
-                                },
-                            modifier =
-                                Modifier.heightIn(max = 420.dp)
-                                    .verticalScroll(rememberScrollState()),
-                        )
+                            }
+                        }
+                        state.textExportStatus?.let { status ->
+                            Text(
+                                stringResource(
+                                    when (status) {
+                                        DocumentTextExportStatus.Saved -> R.string.text_export_saved
+                                        DocumentTextExportStatus.Failed -> R.string.text_export_failed
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color =
+                                    if (status == DocumentTextExportStatus.Saved) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    },
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            )
+                        }
                     }
                 is DocumentActionState.Failed -> Text(state.message.resolve())
             }
         },
         confirmButton = {
-            if (state is DocumentActionState.Completed && copyText != null) {
-                TextButton(
-                    onClick = {
-                        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
-                            ClipData.newPlainText(
-                                clipboardLabel,
-                                copyText,
-                            ),
-                        )
-                        Toast.makeText(
-                            context,
-                            R.string.copied_to_clipboard,
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    },
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.End,
+            ) {
+                if (
+                    state is DocumentActionState.Completed &&
+                        state.output is DocumentActionOutput.Text &&
+                        copyText != null
                 ) {
-                    Text(stringResource(R.string.copy))
+                    Button(
+                        onClick = onExportText,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.export_text))
+                    }
+                }
+                if (openableUrl != null) {
+                    Button(
+                        onClick = { onOpenUrl(openableUrl) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.open_link))
+                    }
+                }
+                Row {
+                    if (state is DocumentActionState.Completed && copyText != null) {
+                        TextButton(
+                            onClick = {
+                                copySensitiveDocumentActionResult(
+                                    context = context,
+                                    label = clipboardLabel,
+                                    value = copyText,
+                                )
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.copy))
+                        }
+                    }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.close))
+                    }
                 }
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
-        },
     )
+}
+
+private fun copySensitiveDocumentActionResult(
+    context: android.content.Context,
+    label: String,
+    value: String,
+) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    val clip = ClipData.newPlainText(label, value)
+    val sensitive = documentClipboardSensitiveExtra()
+    clip.description.extras =
+        PersistableBundle().apply {
+            putBoolean(sensitive.key, sensitive.value)
+        }
+    clipboard.setPrimaryClip(clip)
+    Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
 }
 
 @Composable

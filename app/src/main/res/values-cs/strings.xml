@@ -239,10 +239,10 @@
     <string name="actions">Akce</string>
     <string name="document_actions">Akce dokumentu</string>
     <string name="document_actions_on_device">Obsah dokumentu a výsledky akcí zůstávají v tomto zařízení.</string>
-    <string name="extract_text">Extrahovat text</string>
+    <string name="extract_text">Extrahovat text v latince</string>
     <string name="all_pages">Všechny stránky</string>
     <string name="detect_codes">Najít QR a čárové kódy</string>
-    <string name="current_page">Aktuální stránka</string>
+    <string name="selected_page">Vybraná stránka</string>
     <string name="extracting_text">Rozpoznávání textu…</string>
     <string name="detecting_codes">Hledání kódů…</string>
     <string name="extracted_text">Extrahovaný text</string>
@@ -252,6 +252,14 @@
     <string name="document_action_truncated">Výsledek byl zkrácen.</string>
     <string name="document_action_failed">Akci dokumentu se nepodařilo dokončit.</string>
     <string name="document_action_clip_label">Výsledek dokumentu ScanIt</string>
+    <string name="export_text">Exportovat text</string>
+    <string name="exporting_text">Ukládání textu…</string>
+    <string name="text_export_saved">Text byl uložen.</string>
+    <string name="text_export_failed">Text se nepodařilo uložit.</string>
+    <string name="open_link">Otevřít odkaz</string>
+    <string name="link_open_failed">Odkaz se nepodařilo otevřít.</string>
+    <string name="qr_code">QR kód</string>
+    <string name="barcode">Čárový kód</string>
     <string name="document_action_page">Stránka %1$d</string>
     <string name="copy">Kopírovat</string>
     <string name="copied_to_clipboard">Zkopírováno do schránky</string>

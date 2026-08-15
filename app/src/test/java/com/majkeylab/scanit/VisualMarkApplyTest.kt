@@ -131,6 +131,8 @@ class VisualMarkApplyTest {
             request.matches(
                 cacheId = "Scan_A",
                 entryId = "4de93580-a259-4d3d-a9e0-225a6b150462",
+                pageIndex = 0,
+                action = DocumentAction.DetectCodes,
                 generation = 7L,
             ),
         )
@@ -138,6 +140,8 @@ class VisualMarkApplyTest {
             request.matches(
                 cacheId = "Scan_A",
                 entryId = "new-generation",
+                pageIndex = 0,
+                action = DocumentAction.DetectCodes,
                 generation = 7L,
             ),
         )
@@ -145,6 +149,8 @@ class VisualMarkApplyTest {
             request.matches(
                 cacheId = "Scan_A",
                 entryId = "4de93580-a259-4d3d-a9e0-225a6b150462",
+                pageIndex = 0,
+                action = DocumentAction.DetectCodes,
                 generation = 8L,
             ),
         )

@@ -479,6 +479,8 @@ internal class ScanViewModel(
     private var appearanceApplyJob: Job? = null
     private var documentActionJob: Job? = null
     private var documentActionGeneration = 0L
+    private var activeDocumentActionRequest: DocumentActionRequest? = null
+    private var documentTextExportWriteStarted = false
     private var visualMarkTemplateJob: Job? = null
     private var visualMarkApplyJob: Job? = null
     private var visualMarkScanSource: MarkEditorSource? = null
@@ -1289,13 +1291,7 @@ internal class ScanViewModel(
 
     fun selectResultPage(selectedPageIndex: Int) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (
-            current.outputSaveInProgress ||
-                current.appearanceApplyInProgress ||
-                current.visualMarkEditor != null
-        ) {
-            return
-        }
+        if (current.resultActionsBlocked) return
         val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
         if (
             pageIndex == current.selectedPageIndex &&
@@ -1950,6 +1946,8 @@ internal class ScanViewModel(
                 action = action,
                 generation = nextDocumentActionGeneration(),
             )
+        activeDocumentActionRequest = request
+        documentTextExportWriteStarted = false
         mutableState.value =
             current.copy(documentActionState = DocumentActionState.Processing(action))
         documentActionJob =
@@ -1975,20 +1973,132 @@ internal class ScanViewModel(
                     }
                 val latest = mutableState.value as? ScreenState.Result ?: return@launch
                 if (
-                    request.matches(
-                        cacheId = latest.scan.cached.baseName,
-                        entryId = latest.scan.cached.entryId,
-                        generation = documentActionGeneration,
-                    )
+                    isDocumentActionRequestCurrent(request, latest)
                 ) {
                     mutableState.value = latest.copy(documentActionState = state)
                 }
+                documentActionJob = null
             }
+    }
+
+    fun beginDocumentTextExport(): DocumentActionRequest? {
+        val current = mutableState.value as? ScreenState.Result ?: return null
+        val completed = current.documentActionState as? DocumentActionState.Completed ?: return null
+        val output = completed.output as? DocumentActionOutput.Text ?: return null
+        val request = activeDocumentActionRequest ?: return null
+        if (
+            output.value.isEmpty() ||
+                request.action != DocumentAction.ExtractText ||
+                !isDocumentActionRequestCurrent(request, current)
+        ) {
+            return null
+        }
+        documentTextExportWriteStarted = false
+        mutableState.value = current.copy(documentActionState = DocumentActionState.Exporting(output))
+        return request
+    }
+
+    fun documentTextExportDestinationCancelled(
+        request: DocumentActionRequest,
+    ): DocumentTextExportDisposition {
+        val current = mutableState.value as? ScreenState.Result
+            ?: return DocumentTextExportDisposition.DefiniteStale
+        val exporting = current.documentActionState as? DocumentActionState.Exporting
+            ?: return DocumentTextExportDisposition.DefiniteStale
+        if (
+            activeDocumentActionRequest != request ||
+                documentTextExportWriteStarted ||
+                !isDocumentActionRequestCurrent(request, current)
+        ) {
+            return DocumentTextExportDisposition.DefiniteStale
+        }
+        mutableState.value =
+            current.copy(documentActionState = DocumentActionState.Completed(exporting.output))
+        return DocumentTextExportDisposition.Accepted
+    }
+
+    fun exportDocumentText(
+        request: DocumentActionRequest,
+        destination: Uri,
+        returnedFlags: Int,
+    ): DocumentTextExportDisposition {
+        val current = mutableState.value as? ScreenState.Result
+            ?: return DocumentTextExportDisposition.DefiniteStale
+        val exporting = current.documentActionState as? DocumentActionState.Exporting
+            ?: return DocumentTextExportDisposition.DefiniteStale
+        if (
+            activeDocumentActionRequest != request ||
+                documentTextExportWriteStarted ||
+                !isDocumentActionRequestCurrent(request, current)
+        ) {
+            return DocumentTextExportDisposition.DefiniteStale
+        }
+        documentTextExportWriteStarted = true
+        documentActionJob =
+            viewModelScope.launch {
+                val saved =
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val resolver = getApplication<Application>().contentResolver
+                            val mimeType = resolver.getType(destination)
+                            if (
+                                !isSafeTextExportDestination(
+                                    scheme = destination.scheme,
+                                    authority = destination.authority,
+                                    path = destination.path,
+                                    query = destination.query,
+                                    fragment = destination.fragment,
+                                    uriLength = destination.toString().length,
+                                    mimeType = mimeType,
+                                    writeGranted =
+                                        returnedFlags and
+                                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0,
+                                )
+                            ) {
+                                false
+                            } else {
+                                val operationContext = currentCoroutineContext()
+                                resolver.openOutputStream(destination, "w")?.use { stream ->
+                                    writeDocumentTextUtf8(stream, exporting.output.value) {
+                                        !operationContext.isActive
+                                    }
+                                } != null
+                            }
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        false
+                    }
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                if (
+                    isDocumentActionRequestCurrent(request, latest) &&
+                        latest.documentActionState is DocumentActionState.Exporting
+                ) {
+                    mutableState.value =
+                        latest.copy(
+                            documentActionState =
+                                DocumentActionState.Completed(
+                                    output = exporting.output,
+                                    textExportStatus =
+                                        if (saved) {
+                                            DocumentTextExportStatus.Saved
+                                        } else {
+                                            DocumentTextExportStatus.Failed
+                                        },
+                                ),
+                        )
+                }
+                documentActionJob = null
+            }
+        return DocumentTextExportDisposition.Accepted
     }
 
     fun dismissDocumentAction() {
         documentActionJob?.cancel()
         documentActionJob = null
+        activeDocumentActionRequest = null
+        documentTextExportWriteStarted = false
         nextDocumentActionGeneration()
         val current = mutableState.value as? ScreenState.Result ?: return
         if (current.documentActionState != null) {
@@ -2003,6 +2113,22 @@ internal class ScanViewModel(
         documentActionGeneration += 1L
         return documentActionGeneration
     }
+
+    private fun isDocumentActionRequestCurrent(
+        request: DocumentActionRequest,
+        current: ScreenState.Result,
+    ): Boolean =
+        request.matches(
+            cacheId = current.scan.cached.baseName,
+            entryId = current.scan.cached.entryId,
+            pageIndex =
+                resolvedPageIndex(
+                    current.selectedPageIndex,
+                    current.scan.cached.pages.size,
+                ),
+            action = request.action,
+            generation = documentActionGeneration,
+        )
 
     private fun finishUnchangedAppearanceReview(
         current: ScreenState.Result,
@@ -2588,6 +2714,8 @@ internal class ScanViewModel(
         appearanceApplyJob?.cancel()
         documentActionJob?.cancel()
         documentActionJob = null
+        activeDocumentActionRequest = null
+        documentTextExportWriteStarted = false
         nextDocumentActionGeneration()
         visualMarkTemplateJob?.cancel()
         if (!keepVisualMarkEditor) {
