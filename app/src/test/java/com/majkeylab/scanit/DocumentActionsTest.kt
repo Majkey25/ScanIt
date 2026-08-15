@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import android.content.ClipDescription
+import com.google.mlkit.common.MlKitException
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -24,6 +25,18 @@ class DocumentActionsTest {
             buildDocumentText(listOf(" ", "\n")),
         )
         assertTrue(buildDetectedCodes(emptySequence()).values.isEmpty())
+    }
+
+    @Test
+    fun unavailablePlayServicesModelGetsHonestRetryMessage() {
+        assertEquals(
+            DocumentActionFailureKind.ModelUnavailable,
+            documentActionFailureKindForMlKitError(MlKitException.UNAVAILABLE),
+        )
+        assertEquals(
+            DocumentActionFailureKind.Failed,
+            documentActionFailureKind(IOException("page unavailable")),
+        )
     }
 
     @Test

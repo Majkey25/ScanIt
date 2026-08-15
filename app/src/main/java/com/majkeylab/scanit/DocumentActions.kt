@@ -4,6 +4,7 @@ import android.content.ClipDescription
 import android.content.Context
 import android.net.Uri
 import com.google.android.gms.tasks.Task
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
@@ -35,6 +36,21 @@ private const val MAX_DETECTED_CODE_BYTES = MAX_DETECTED_CODE_CHARACTERS * 4
 private const val MAX_DOCUMENT_ACTION_IMAGE_BYTES = 64L * 1024L * 1024L
 private const val MAX_OPENABLE_HTTP_URL_CHARACTERS = 4_096
 private const val TEXT_EXPORT_SUFFIX = "_text.txt"
+
+internal enum class DocumentActionFailureKind {
+    ModelUnavailable,
+    Failed,
+}
+
+internal fun documentActionFailureKind(failure: Throwable): DocumentActionFailureKind =
+    documentActionFailureKindForMlKitError((failure as? MlKitException)?.errorCode)
+
+internal fun documentActionFailureKindForMlKitError(errorCode: Int?): DocumentActionFailureKind =
+    if (errorCode == MlKitException.UNAVAILABLE) {
+        DocumentActionFailureKind.ModelUnavailable
+    } else {
+        DocumentActionFailureKind.Failed
+    }
 
 internal enum class DetectedCodeKind {
     QrCode,

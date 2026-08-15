@@ -1100,6 +1100,11 @@ private fun DocumentActionPickerDialog(
                     stringResource(R.string.document_actions_on_device),
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                Text(
+                    stringResource(R.string.document_actions_model_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 DocumentActionPickerRow(
                     iconRes = R.drawable.ic_text,
                     labelRes = R.string.extract_text,

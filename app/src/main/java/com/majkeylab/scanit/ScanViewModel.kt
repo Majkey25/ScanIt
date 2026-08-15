@@ -1968,8 +1968,14 @@ internal class ScanViewModel(
                         DocumentActionState.Completed(output)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
-                    } catch (_: Exception) {
-                        DocumentActionState.Failed(UiMessage(R.string.document_action_failed))
+                    } catch (failure: Exception) {
+                        val message =
+                            when (documentActionFailureKind(failure)) {
+                                DocumentActionFailureKind.ModelUnavailable ->
+                                    R.string.document_action_model_unavailable
+                                DocumentActionFailureKind.Failed -> R.string.document_action_failed
+                            }
+                        DocumentActionState.Failed(UiMessage(message))
                     }
                 val latest = mutableState.value as? ScreenState.Result ?: return@launch
                 if (

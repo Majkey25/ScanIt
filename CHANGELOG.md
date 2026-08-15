@@ -2,7 +2,29 @@
 
 All notable changes are documented here.
 
-## [1.2.5] - 2026-08-15
+## [1.3.0] - 2026-08-15
+
+### Added
+
+- Added compact per-document controls for changing PDF size and location, plus image size, format, and location from File details.
+- Added exact Original image export, high-quality JPEG, and lossless PNG with Original, 3840 px, 2560 px, 1600 px, and custom 320–6000 px size options.
+- Added a full-screen, zoomable multipage preview opened by tapping the Result image.
+- Added stable on-device Actions for Latin-script text extraction, text export, and selected-page QR/barcode detection.
+
+### Changed
+
+- Tapping a Recent scan now opens its Result directly, while the overflow menu keeps secondary file actions.
+- Added an explicit Result Edit action for ScanIt's appearance presets. Crop and perspective correction remain in Google's scan-time editor.
+- Saved-output changes now use verified create, metadata commit, and exact old-output cleanup transactions instead of overwriting files in place.
+- Moved OCR and barcode recognition to on-demand Google Play services modules, keeping recognition-model payloads out of the APK while processing remains on-device. The model may download before first use.
+
+### Security
+
+- Added strict bounds and stale-request rejection for OCR, barcodes, previews, exports, and storage-provider callbacks.
+- Marked copied recognition results as sensitive, kept detected codes inert by default, and restricted URL opening to validated typed HTTP(S) results.
+- Enforced SHA-256 dependency verification for the built Windows and Ubuntu CI dependency graphs.
+
+## 1.2.5 test candidate - 2026-08-15
 
 ### Added
 
@@ -123,7 +145,7 @@ Historical copies retain the license supplied with them. See
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
 [1.2.4]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.2.4
-[1.2.5]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.2.5
+[1.3.0]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.3.0
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
