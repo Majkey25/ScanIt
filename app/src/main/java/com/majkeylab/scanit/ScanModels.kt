@@ -11,6 +11,70 @@ import java.util.Locale
 
 internal const val DEFAULT_ALBUM_NAME = "Scan to PDF"
 internal const val MAX_SCAN_PAGES = 20
+internal const val MIN_IMAGE_EXPORT_DIMENSION = 320
+internal const val MAX_IMAGE_EXPORT_DIMENSION = 6000
+internal const val MAX_IMAGE_EXPORT_PIXELS = 12_000_000L
+
+internal enum class ImageExportFormat(val wireValue: String, val mimeType: String?) {
+    Original("original", null),
+    Jpeg("jpeg", "image/jpeg"),
+    Png("png", "image/png"),
+}
+
+internal enum class ImageSizePreset(val maxDimension: Int?) {
+    Original(null),
+    High(3840),
+    Balanced(2560),
+    Small(1600),
+    Custom(null),
+}
+
+internal data class ImageExportOptions(
+    val format: ImageExportFormat,
+    val sizePreset: ImageSizePreset,
+    val customMaxDimension: Int? = null,
+    val treeUri: String? = null,
+)
+
+internal data class ResolvedImageExport(
+    val format: ImageExportFormat,
+    val maxDimension: Int?,
+    val treeUri: String?,
+) {
+    val maxPixels: Long
+        get() = MAX_IMAGE_EXPORT_PIXELS
+}
+
+internal fun resolveImageExport(
+    sizePreset: ImageSizePreset,
+    customMaxDimension: Int?,
+): ResolvedImageExport =
+    resolveImageExport(
+        ImageExportOptions(
+            format = ImageExportFormat.Original,
+            sizePreset = sizePreset,
+            customMaxDimension = customMaxDimension,
+        ),
+    )
+
+internal fun resolveImageExport(options: ImageExportOptions): ResolvedImageExport {
+    val maxDimension =
+        if (options.sizePreset == ImageSizePreset.Custom) {
+            require(options.customMaxDimension in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION) {
+                "Custom image dimension must be between $MIN_IMAGE_EXPORT_DIMENSION and $MAX_IMAGE_EXPORT_DIMENSION"
+            }
+            options.customMaxDimension
+        } else {
+            require(options.customMaxDimension == null) {
+                "Custom image dimension requires the Custom preset"
+            }
+            options.sizePreset.maxDimension
+        }
+    require(options.treeUri == null || isContentUri(options.treeUri)) {
+        "Image export tree URI is invalid"
+    }
+    return ResolvedImageExport(options.format, maxDimension, options.treeUri)
+}
 
 internal data class AppSettings(
     val savePdf: Boolean = true,
@@ -263,16 +327,71 @@ internal data class CachedScan(
 
 private const val PDF_DISPLAY_BYTES = 1_000_000L
 
+internal data class SavedImageOutput(
+    val page: Int,
+    val uri: Uri,
+    val treeUri: Uri?,
+    val displayName: String?,
+    val mimeType: String?,
+    val ownerPackageName: String?,
+    val byteLength: Long?,
+    val sha256: String?,
+    val width: Int?,
+    val height: Int?,
+    val format: ImageExportFormat?,
+)
+
 internal data class SavedScan(
     val cached: CachedScan,
-    val galleryPages: List<Uri>,
+    val savedImages: List<SavedImageOutput>,
     val savedPdf: Uri?,
     val savedPdfTree: Uri? = null,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,
     val savedImagesDeleteVerified: Boolean = false,
-)
+) {
+    val galleryPages: List<Uri>
+        get() = savedImages.map(SavedImageOutput::uri)
+
+    companion object {
+        operator fun invoke(
+            cached: CachedScan,
+            galleryPages: List<Uri>,
+            savedPdf: Uri?,
+            savedPdfTree: Uri? = null,
+            warnings: List<UiMessage> = emptyList(),
+            outputMetadataValid: Boolean = false,
+            savedPdfDeleteVerified: Boolean = false,
+            savedImagesDeleteVerified: Boolean = false,
+        ): SavedScan =
+            SavedScan(
+                cached = cached,
+                savedImages =
+                    galleryPages.mapIndexed { index, uri ->
+                        SavedImageOutput(
+                            page = index + 1,
+                            uri = uri,
+                            treeUri = null,
+                            displayName = null,
+                            mimeType = null,
+                            ownerPackageName = null,
+                            byteLength = null,
+                            sha256 = null,
+                            width = null,
+                            height = null,
+                            format = null,
+                        )
+                    },
+                savedPdf = savedPdf,
+                savedPdfTree = savedPdfTree,
+                warnings = warnings,
+                outputMetadataValid = outputMetadataValid,
+                savedPdfDeleteVerified = savedPdfDeleteVerified,
+                savedImagesDeleteVerified = savedImagesDeleteVerified,
+            )
+    }
+}
 
 internal fun totalFileBytes(files: List<File>): Long {
     var total = 0L

@@ -302,6 +302,204 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun validV1V2AndV3MetadataRemainReadable() {
+        assertEquals(1, decode(validJson(), pageCount = 1)?.version)
+        assertEquals(
+            2,
+            decode(validJson().replace("\"version\":1", "\"version\":2"), pageCount = 1)
+                ?.version,
+        )
+
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 3L,
+                pdf = exactPdf("content://media/external/downloads/current"),
+                images =
+                    listOf(
+                        exactImage(
+                            page = 1,
+                            uri = "content://docs/document/root%3Acurrent.png",
+                            format = ImageExportFormat.Png,
+                            mimeType = "image/png",
+                            treeUri = "content://docs/tree/root",
+                        ),
+                    ),
+                stagedPdf = exactPdf("content://media/external/downloads/staged"),
+                stagedImages =
+                    listOf(exactImage(1, "content://media/external/images/staged")),
+                retiredPdf = exactPdf("content://media/external/downloads/retired"),
+                retiredImages =
+                    listOf(exactImage(1, "content://media/external/images/retired")),
+                version = 3,
+            )
+
+        assertEquals(metadata, decodeOutputMetadata(encodeOutputMetadata(metadata, 1), cacheId, 1))
+    }
+
+    @Test
+    fun readingUntouchedLegacyMetadataDoesNotRewriteIt() = withDirectory { directory ->
+        val bytes = validJson().toByteArray(StandardCharsets.UTF_8)
+        val sidecar = File(directory, OUTPUT_METADATA_FILE_NAME)
+        sidecar.writeBytes(bytes)
+
+        assertEquals(1, ensureOutputMetadata(directory, cacheId, 1, createdAtEpochMs = 99L).version)
+        assertTrue(bytes.contentEquals(sidecar.readBytes()))
+    }
+
+    @Test
+    fun v3RequiresExactFingerprintsForCurrentAndRetiredOutputs() {
+        val currentWithoutFingerprint =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images =
+                    listOf(
+                        ImageOutputRef(
+                            page = 1,
+                            uri = "content://media/external/images/current",
+                            displayName = "current.jpg",
+                            mimeType = "image/jpeg",
+                            ownerPackageName = "com.majkeylab.scanit.internal",
+                            width = 1200,
+                            height = 800,
+                            format = ImageExportFormat.Jpeg,
+                        ),
+                    ),
+                version = 3,
+            )
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(currentWithoutFingerprint, 1)
+        }
+
+        val retiredWithoutFingerprint =
+            currentWithoutFingerprint.copy(
+                images = listOf(exactImage(1, "content://media/external/images/current")),
+                retiredPdf =
+                    PdfOutputRef(
+                        uri = "content://media/external/downloads/retired",
+                        treeUri = null,
+                        displayName = "retired.pdf",
+                        mimeType = "application/pdf",
+                        ownerPackageName = "com.majkeylab.scanit.internal",
+                    ),
+            )
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(retiredWithoutFingerprint, 1)
+        }
+    }
+
+    @Test
+    fun v3CleanupJournalIsBoundedAndKeepsExactPageOrder() {
+        val maximum =
+            (1..MAX_SCAN_PAGES).map { page ->
+                exactImage(page, "content://media/external/images/retired-$page")
+            }
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                retiredImages = maximum,
+                version = 3,
+            )
+
+        assertEquals(metadata, decodeOutputMetadata(encodeOutputMetadata(metadata, 20), cacheId, 20))
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(metadata.copy(retiredImages = maximum.reversed()), 20)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(
+                    retiredImages = maximum + exactImage(21, "content://media/external/images/retired-21"),
+                ),
+                21,
+            )
+        }
+    }
+
+    @Test
+    fun v3RejectsUnknownDataUnsafeUrisFormatMismatchAndDuplicateUris() {
+        val current = exactImage(1, "content://media/external/images/current")
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images = listOf(current),
+                version = 3,
+            )
+
+        val unknown =
+            encodeOutputMetadata(metadata, 1)
+                .toString(StandardCharsets.UTF_8)
+                .replace("\"version\":3", "\"version\":3,\"unknown\":true")
+        assertNull(decode(unknown, 1))
+        assertNull(decode(unknown.replace("\"version\":3", "\"version\":4"), 1))
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(
+                    images = listOf(current.copy(treeUri = "https://example.com/tree")),
+                ),
+                1,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(images = listOf(current.copy(mimeType = "image/png"))),
+                1,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(images = listOf(current.copy(width = 0))),
+                1,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(images = listOf(current.copy(width = 4000, height = 3001))),
+                1,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(
+                    images = listOf(current.copy(ownerPackageName = "a".repeat(256))),
+                ),
+                1,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(metadata.copy(retiredImages = listOf(current)), 1)
+        }
+    }
+
+    @Test
+    fun v3EncodingRetainsTheStrict64KiBBound() {
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                retiredImages =
+                    (1..MAX_SCAN_PAGES).map { page ->
+                        exactImage(
+                            page,
+                            "content://media/external/images/$page/${"a".repeat(3700)}",
+                        )
+                    },
+                version = 3,
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(metadata, MAX_SCAN_PAGES)
+        }
+    }
+
+    @Test
     fun validEmptyMetadataRoundTrips() {
         val metadata = OutputMetadata(entryId, cacheId, createdAtEpochMs = 3L)
 
@@ -540,6 +738,39 @@ class OutputMetadataTest {
             json.toByteArray(StandardCharsets.UTF_8),
             expectedCacheId = cacheId,
             pageCount = pageCount,
+        )
+
+    private fun exactPdf(uri: String): PdfOutputRef =
+        PdfOutputRef(
+            uri = uri,
+            treeUri = null,
+            displayName = "scan.pdf",
+            mimeType = "application/pdf",
+            ownerPackageName = "com.majkeylab.scanit.internal",
+            byteLength = 10L,
+            sha256 = "00".repeat(32),
+        )
+
+    private fun exactImage(
+        page: Int,
+        uri: String,
+        format: ImageExportFormat = ImageExportFormat.Jpeg,
+        mimeType: String = "image/jpeg",
+        treeUri: String? = null,
+    ): ImageOutputRef =
+        ImageOutputRef(
+            page = page,
+            uri = uri,
+            displayName = "scan-$page.${if (format == ImageExportFormat.Png) "png" else "jpg"}",
+            mimeType = mimeType,
+            ownerPackageName =
+                if (treeUri == null) "com.majkeylab.scanit.internal" else null,
+            byteLength = 10L,
+            sha256 = "11".repeat(32),
+            treeUri = treeUri,
+            width = 1200,
+            height = 800,
+            format = format,
         )
 
     private fun validJson(

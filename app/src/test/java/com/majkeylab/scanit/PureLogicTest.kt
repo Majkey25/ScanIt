@@ -24,6 +24,33 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun imagePresetsResolveExactLongEdges() {
+        assertEquals(null, resolveImageExport(ImageSizePreset.Original, null).maxDimension)
+        assertEquals(3840, resolveImageExport(ImageSizePreset.High, null).maxDimension)
+        assertEquals(2560, resolveImageExport(ImageSizePreset.Balanced, null).maxDimension)
+        assertEquals(1600, resolveImageExport(ImageSizePreset.Small, null).maxDimension)
+    }
+
+    @Test
+    fun customImageDimensionIsBounded() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.Custom, 319)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.Custom, 6001)
+        }
+        assertEquals(320, resolveImageExport(ImageSizePreset.Custom, 320).maxDimension)
+        assertEquals(6000, resolveImageExport(ImageSizePreset.Custom, 6000).maxDimension)
+    }
+
+    @Test
+    fun imageExportOptionsRejectUnusedCustomDimension() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.High, 1000)
+        }
+    }
+
+    @Test
     fun supportUsesThePublishedBuyMeACoffeePage() {
         assertEquals("https://www.buymeacoffee.com/majkey", SUPPORT_URL)
     }
