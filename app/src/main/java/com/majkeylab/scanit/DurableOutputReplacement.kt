@@ -133,7 +133,10 @@ internal class DurableOutputReplacement(
                     )
                 onStaged(output)
             }
-            val published = created.map(publish)
+            val published =
+                created.indices.map { index ->
+                    publish(created[index]).also { created[index] = it }
+                }
             current =
                 commit(
                     current,

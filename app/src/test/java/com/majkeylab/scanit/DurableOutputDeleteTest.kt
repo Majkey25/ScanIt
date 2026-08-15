@@ -373,6 +373,76 @@ class DurableOutputDeleteTest {
     }
 
     @Test
+    fun publishedMediaIdentityAcceptsProviderCollisionRenameOnlyWhenContentIdentityMatches() {
+        assertTrue(
+            publishedMediaIdentityIsAcceptable(
+                sameUri = true,
+                safeDisplayName = true,
+                sameMimeType = true,
+                sameOwner = true,
+                sameByteLength = true,
+                sameSha256 = true,
+            ),
+        )
+        listOf(
+            listOf(false, true, true, true, true, true),
+            listOf(true, false, true, true, true, true),
+            listOf(true, true, false, true, true, true),
+            listOf(true, true, true, false, true, true),
+            listOf(true, true, true, true, false, true),
+            listOf(true, true, true, true, true, false),
+        ).forEach { matches ->
+            assertFalse(
+                publishedMediaIdentityIsAcceptable(
+                    sameUri = matches[0],
+                    safeDisplayName = matches[1],
+                    sameMimeType = matches[2],
+                    sameOwner = matches[3],
+                    sameByteLength = matches[4],
+                    sameSha256 = matches[5],
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun failedMultiPagePublishRollsBackUsingPublishedProviderIdentity() {
+        val firstPending =
+            exactImage(1, "content://media/external/images/media/2", pending = true)
+        val secondPending =
+            exactImage(2, "content://media/external/images/media/3", pending = true)
+        val firstPublished = firstPending.copy(displayName = "page (1).jpg", pending = false)
+        var metadata = metadata().copy(images = emptyList())
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement =
+            replacement(
+                read = { metadata },
+                write = { expected, updated ->
+                    assertEquals(expected, metadata)
+                    metadata = updated
+                    updated
+                },
+                deleteImage = {
+                    deleted += it
+                    OutputDeleteStatus.Deleted
+                },
+            )
+
+        assertThrows(IOException::class.java) {
+            replacement.replaceImages(
+                pageCount = 2,
+                create = { page -> if (page == 1) firstPending else secondPending },
+                publish = { image ->
+                    if (image.page == 1) firstPublished else throw IOException("page 2 publish failed")
+                },
+            )
+        }
+
+        assertEquals(listOf(firstPublished, secondPending), deleted)
+        assertTrue(metadata.stagedImages.isEmpty())
+    }
+
+    @Test
     fun successfulReplacementTurnsScratchCleanupFailureIntoAWarning() {
         val result =
             OutputReplacementResult(

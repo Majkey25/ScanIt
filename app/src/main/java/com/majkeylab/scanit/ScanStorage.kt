@@ -210,6 +210,21 @@ internal fun mediaPublishResultIsAcceptable(
 ): Boolean =
     updateCount in 0..1 && !observedPending && sameIdentity
 
+internal fun publishedMediaIdentityIsAcceptable(
+    sameUri: Boolean,
+    safeDisplayName: Boolean,
+    sameMimeType: Boolean,
+    sameOwner: Boolean,
+    sameByteLength: Boolean,
+    sameSha256: Boolean,
+): Boolean =
+    sameUri &&
+        safeDisplayName &&
+        sameMimeType &&
+        sameOwner &&
+        sameByteLength &&
+        sameSha256
+
 internal fun replacementWithScratchCleanupWarning(
     result: OutputReplacementResult,
     cleanupFailed: Boolean,
@@ -3787,7 +3802,13 @@ internal class ScanStorage(
                 output.mimeType,
                 fingerprint,
             )
-        if (!mediaPublishResultIsAcceptable(published, observed.pending, sameMediaOutput(observed, output))) {
+        if (
+            !mediaPublishResultIsAcceptable(
+                published,
+                observed.pending,
+                samePublishedMediaOutput(output, observed),
+            )
+        ) {
             throw IOException("MediaStore row could not be published")
         }
         return observed
@@ -3800,6 +3821,19 @@ internal class ScanStorage(
             left.ownerPackageName == right.ownerPackageName &&
             left.byteLength == right.byteLength &&
             left.sha256 == right.sha256
+
+    private fun samePublishedMediaOutput(
+        expected: SavedMediaOutput,
+        observed: SavedMediaOutput,
+    ): Boolean =
+        publishedMediaIdentityIsAcceptable(
+            sameUri = expected.uri == observed.uri,
+            safeDisplayName = isProviderDisplayName(observed.displayName),
+            sameMimeType = expected.mimeType == observed.mimeType,
+            sameOwner = expected.ownerPackageName == observed.ownerPackageName,
+            sameByteLength = expected.byteLength == observed.byteLength,
+            sameSha256 = expected.sha256 == observed.sha256,
+        )
 
     private fun readSavedMediaOutput(
         uri: Uri,
