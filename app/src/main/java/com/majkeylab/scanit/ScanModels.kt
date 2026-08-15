@@ -85,6 +85,19 @@ internal data class OutputChangeRequest(
     }
 }
 
+internal data class OutputTreeSelection(
+    val request: OutputChangeRequest,
+    val uri: String,
+    val grantFlags: Int,
+) {
+    init {
+        require(uri.isNotBlank() && uri.length <= 4096 && '\u0000' !in uri) {
+            "Output tree URI is invalid"
+        }
+        require(grantFlags == PDF_TREE_FLAGS) { "Output tree grant flags are invalid" }
+    }
+}
+
 internal class OutputChangeGate(
     initialGeneration: Long = 0L,
     initialCurrent: OutputChangeRequest? = null,
@@ -230,6 +243,25 @@ internal fun matchingOutputChangeIdentityScan(
     scan?.takeIf {
         it.cached.baseName == request.cacheId && it.cached.entryId == request.entryId
     }
+
+internal fun replacementFailurePublication(
+    current: SavedScan,
+    recovered: SavedScan?,
+    request: OutputChangeRequest,
+): SavedScan? =
+    matchingOutputChangeIdentityScan(recovered, request)
+        ?: matchingOutputChangeIdentityScan(current, request)
+
+internal fun unknownOutputAcknowledgementMatches(
+    scan: SavedScan,
+    acknowledgement: UnknownOutputCreateAcknowledgement,
+    request: OutputChangeRequest,
+): Boolean =
+    scan.unknownOutputCreateAcknowledgement == acknowledgement &&
+        request.cacheId == acknowledgement.cacheId &&
+        request.entryId == acknowledgement.entryId &&
+        (request.kind as? OutputChangeKind.UnknownOutputCreate)?.operationId ==
+        acknowledgement.operationId
 
 internal fun unknownOutputAcknowledgementRefreshAllowed(
     result: UnknownOutputAcknowledgementResult,

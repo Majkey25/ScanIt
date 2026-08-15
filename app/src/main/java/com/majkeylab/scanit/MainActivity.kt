@@ -28,6 +28,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -264,18 +265,21 @@ class MainActivity : ComponentActivity() {
                 Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(OUTPUT_TREE_INTENT_FLAGS),
             )
         } catch (_: RuntimeException) {
-            launchedOutputTreeRequest = null
-            viewModel.outputTreePickerCancelled(request)
+            clearLaunchedOutputTreeRequest(
+                request,
+                viewModel.outputTreePickerCancelled(request),
+            )
             showToast(R.string.folder_permission_failed)
         }
     }
 
     private fun handleOutputTreeResult(activityResult: ActivityResult) {
         val request = launchedOutputTreeRequest ?: return
-        launchedOutputTreeRequest = null
-        if (!viewModel.isOutputTreePickerCurrent(request)) return
         if (activityResult.resultCode == Activity.RESULT_CANCELED) {
-            viewModel.outputTreePickerCancelled(request)
+            clearLaunchedOutputTreeRequest(
+                request,
+                viewModel.outputTreePickerCancelled(request),
+            )
             return
         }
         val data = activityResult.data
@@ -293,22 +297,28 @@ class MainActivity : ComponentActivity() {
                 treeUri == null ||
                 grantedFlags == null
         ) {
-            viewModel.outputTreePickerCancelled(request)
-            showToast(R.string.folder_permission_missing)
+            val disposition = viewModel.outputTreePickerCancelled(request)
+            clearLaunchedOutputTreeRequest(request, disposition)
+            if (disposition == OutputTreeCallbackDisposition.Accepted) {
+                showToast(R.string.folder_permission_missing)
+            }
             return
         }
-        try {
-            contentResolver.takePersistableUriPermission(treeUri, grantedFlags)
-        } catch (_: SecurityException) {
-            viewModel.outputTreePickerCancelled(request)
-            showToast(R.string.folder_permission_failed)
-            return
-        } catch (_: IllegalArgumentException) {
-            viewModel.outputTreePickerCancelled(request)
-            showToast(R.string.folder_permission_failed)
-            return
+        clearLaunchedOutputTreeRequest(
+            request,
+            viewModel.outputTreePickerSelected(request, treeUri, grantedFlags),
+        )
+    }
+
+    private fun clearLaunchedOutputTreeRequest(
+        request: OutputChangeRequest,
+        disposition: OutputTreeCallbackDisposition,
+    ) {
+        when (disposition) {
+            OutputTreeCallbackDisposition.Accepted,
+            OutputTreeCallbackDisposition.DefiniteStale,
+            -> if (launchedOutputTreeRequest == request) launchedOutputTreeRequest = null
         }
-        viewModel.outputTreePickerSelected(request, treeUri)
     }
 
     private fun processScannerResult(data: Intent?) {
@@ -484,15 +494,8 @@ class MainActivity : ComponentActivity() {
                 showToast(R.string.share_failed)
                 return@launch
             }
-            if (!viewModel.claimResultImageShare(action)) {
-                prepared.privateCopies?.let { copies ->
-                    withContext(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
-                }
-                return@launch
-            }
-            var chooserLaunched = false
-            try {
-                val payload =
+            val payload =
+                try {
                     withContext(Dispatchers.IO) {
                         val intent =
                             prepared.privateCopies?.let { copies ->
@@ -505,18 +508,39 @@ class MainActivity : ComponentActivity() {
                                 settings.deleteImagesAfterShare,
                             )
                     }
-                chooserLaunched = launchShareChooser(payload.first, payload.second)
-                if (!chooserLaunched) showToast(R.string.share_failed)
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: Exception) {
-                showToast(R.string.share_failed)
-            } finally {
-                if (!chooserLaunched) {
+                } catch (cancellation: CancellationException) {
+                    prepared.privateCopies?.let { copies ->
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            cleanupPreparedImageShare(copies)
+                        }
+                    }
+                    viewModel.resultImageShareFailed(action)
+                    throw cancellation
+                } catch (_: Exception) {
                     prepared.privateCopies?.let { copies ->
                         withContext(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
                     }
+                    viewModel.resultImageShareFailed(action)
+                    showToast(R.string.share_failed)
+                    return@launch
                 }
+            if (!viewModel.claimResultImageShare(action)) {
+                prepared.privateCopies?.let { copies ->
+                    withContext(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
+                }
+                return@launch
+            }
+            val chooserLaunched =
+                try {
+                    launchShareChooser(payload.first, payload.second)
+                } catch (_: RuntimeException) {
+                    false
+                }
+            if (!chooserLaunched) {
+                prepared.privateCopies?.let { copies ->
+                    lifecycleScope.launch(Dispatchers.IO) { cleanupPreparedImageShare(copies) }
+                }
+                showToast(R.string.share_failed)
             }
         }
     }

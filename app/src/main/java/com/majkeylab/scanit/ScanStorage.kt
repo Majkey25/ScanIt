@@ -53,6 +53,35 @@ internal inline fun <T> tryStorageTransaction(operation: () -> T): T? {
         storageTransactionLock.unlock()
     }
 }
+
+internal fun requireCanonicalOutputTreeUri(tree: Uri): Uri {
+    val authority = tree.authority
+    val rootId =
+        try {
+            DocumentsContract.getTreeDocumentId(tree)
+        } catch (failure: Exception) {
+            throw IOException("SAF output tree is invalid", failure)
+        }
+    val canonical =
+        try {
+            !authority.isNullOrBlank() &&
+                DocumentsContract.isTreeUri(tree) &&
+                DocumentsContract.buildTreeDocumentUri(authority, rootId) == tree
+        } catch (failure: Exception) {
+            throw IOException("SAF output tree is invalid", failure)
+        }
+    if (
+        tree.scheme != ContentResolver.SCHEME_CONTENT ||
+            rootId.isBlank() ||
+            tree.query != null ||
+            tree.fragment != null ||
+            !canonical
+    ) {
+        throw IOException("SAF output tree is invalid")
+    }
+    return tree
+}
+
 private const val PROVISIONAL_CACHE_MARKER = ".provisional"
 private const val ACTIVATION_ROLLBACK_MARKER = ".activation-rollback"
 private val MEDIA_IDENTITY_PROJECTION =
@@ -3083,21 +3112,10 @@ internal class ScanStorage(
         if (!isProviderDisplayName(displayName)) {
             throw IOException("SAF output name is unsafe")
         }
-        val tree = treeUriValue.toUri()
-        val rootId =
-            try {
-                DocumentsContract.getTreeDocumentId(tree)
-            } catch (failure: Exception) {
-                throw IOException("SAF output tree is invalid", failure)
-            }
+        val tree = requireCanonicalOutputTreeUri(treeUriValue.toUri())
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
         if (
-            tree.scheme != ContentResolver.SCHEME_CONTENT ||
-                tree.authority.isNullOrBlank() ||
-                tree.query != null ||
-                tree.fragment != null ||
-                !DocumentsContract.isTreeUri(tree) ||
-                DocumentsContract.buildTreeDocumentUri(requireNotNull(tree.authority), rootId) != tree ||
-                resolver.persistedUriPermissions.none {
+            resolver.persistedUriPermissions.none {
                     it.uri == tree && it.isReadPermission && it.isWritePermission
                 }
         ) {
