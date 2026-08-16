@@ -77,6 +77,11 @@ android {
             applicationIdSuffix = ".internal"
             versionNameSuffix = "-internal"
         }
+        create("v2test") {
+            dimension = "distribution"
+            applicationIdSuffix = ".v2test"
+            versionNameSuffix = "-v2-test"
+        }
     }
 
     buildFeatures {
@@ -101,6 +106,7 @@ androidComponents {
             "playRelease",
             "githubRelease",
             "internalDebug",
+            "v2testDebug",
         )
     }
 }
