@@ -2247,6 +2247,27 @@ internal class ScanStorage(
             replacePdfOutputLocked(cached, cached.pdf, treeUri, reconciled)
         }
 
+    fun renamePdfOutput(
+        cached: CachedScan,
+        baseName: String,
+    ): OutputReplacementResult =
+        storageTransactionLock.withLock {
+            val normalized = normalizeOutputBaseName(baseName)
+                ?: throw IllegalArgumentException("PDF output name is invalid")
+            requireReadableFile(cached.pdf)
+            requireResolvedProvisionalOutputCreate(cached)
+            val reconciled = upgradeImagesForV3(cached, replacementFor(cached).reconcile())
+            val active = reconciled.metadata.pdf?.takeUnless(PdfOutputRef::pending)
+                ?: throw IOException("Saved PDF is unavailable")
+            replacePdfOutputLocked(
+                cached = cached,
+                sourcePdf = cached.pdf,
+                treeUri = active.treeUri,
+                current = reconciled,
+                requestedDisplayName = pdfOutputDisplayName(normalized),
+            )
+        }
+
     private fun replacePdfOutputLocked(
         cached: CachedScan,
         sourcePdf: File,
@@ -2254,11 +2275,21 @@ internal class ScanStorage(
         current: OutputReplacementJournalResult,
         pdfSizeTarget: PdfSizeTarget? = null,
         reconcileLocalPdf: Boolean = true,
+        requestedDisplayName: String? = null,
     ): OutputReplacementResult {
         requireReadableFile(sourcePdf)
         val fingerprint = fingerprintFile(sourcePdf)
+        val displayName =
+            requestedDisplayName
+                ?: current.metadata.pdf?.displayName
+                ?: scanPdfFileName(cached.baseName)
         if (
-            pdfReplacementIsUnchanged(current.metadata.pdf, treeUri, fingerprint) &&
+            pdfReplacementIsUnchanged(
+                current.metadata.pdf,
+                treeUri,
+                fingerprint,
+                desiredDisplayName = displayName,
+            ) &&
                 verifyExistingPdf(requireNotNull(current.metadata.pdf), fingerprint)
         ) {
             val activated =
@@ -2281,7 +2312,6 @@ internal class ScanStorage(
             val scan = savedScan(cached, metadata, current.warnings)
             return OutputReplacementResult(scan, current.warnings)
         }
-        val displayName = scanPdfFileName(cached.baseName)
         var marker =
             newProvisionalOutputCreate(
                 cached,
@@ -2520,42 +2550,12 @@ internal class ScanStorage(
                             )
                         }
                     } else {
-                        active.map { output ->
-                            if (isCancelled()) throw CancellationException("Image move cancelled")
-                            val fingerprint = output.outputFingerprint()
-                                ?: throw IOException("Saved image fingerprint is unavailable")
-                            val mimeType = output.mimeType
-                                ?: throw IOException("Saved image MIME type is unavailable")
-                            val extension =
-                                when (mimeType) {
-                                    JPEG_MIME_TYPE -> "jpg"
-                                    PNG_MIME_TYPE -> "png"
-                                    else -> throw IOException("Saved image MIME type is unsupported")
-                                }
-                            val destination =
-                                File(workDirectory, "page-${output.page}.$extension")
-                            val input = resolver.openInputStream(output.uri.toUri())
-                                ?: throw IOException("Saved image could not be opened")
-                            copyExactOutput(input, destination, fingerprint, isCancelled)
-                            val format = output.format
-                                ?: throw IOException("Saved image format is unavailable")
-                            StagedImageOutput(
-                                RenderedImageExport(
-                                    file = destination,
-                                    mimeType = mimeType,
-                                    extension = extension,
-                                    width = requireNotNull(output.width),
-                                    height = requireNotNull(output.height),
-                                    exactSourceCopy = true,
-                                ),
-                                PersistedImageExportIntent(
-                                    format = format,
-                                    sizePreset = output.sizePreset,
-                                    customMaxDimension = output.customMaxDimension,
-                                    treeUri = treeUri,
-                                ),
-                            )
-                        }
+                        stageExistingImageOutputs(
+                            active,
+                            treeUri,
+                            workDirectory,
+                            isCancelled,
+                        )
                     }
                 replaceStagedImageOutputs(cached, current, staged)
             }
@@ -2583,6 +2583,103 @@ internal class ScanStorage(
             cleanupFailed,
         )
     }
+
+    fun renameImageOutputs(
+        cached: CachedScan,
+        baseName: String,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        val normalized = normalizeOutputBaseName(baseName)
+            ?: throw IllegalArgumentException("Image output name is invalid")
+        require(cached.pages.isNotEmpty()) { "Scan has no pages" }
+        val workDirectory = createOutputStagingDirectory()
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        try {
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                val active = existingCompleteImagesForSave(current.metadata, cached.pages.size)
+                    ?: throw IOException("Saved images are unavailable")
+                val destinations = active.map(ImageOutputRef::treeUri).distinct()
+                if (destinations.size != 1) throw IOException("Image destinations do not match")
+                val staged =
+                    stageExistingImageOutputs(
+                        active,
+                        destinations.single(),
+                        workDirectory,
+                        isCancelled,
+                    )
+                replaceStagedImageOutputs(cached, current, staged, normalized)
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("Image output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("Image output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    private fun stageExistingImageOutputs(
+        active: List<ImageOutputRef>,
+        treeUri: String?,
+        workDirectory: File,
+        isCancelled: () -> Boolean,
+    ): List<StagedImageOutput> =
+        active.map { output ->
+            if (isCancelled()) throw CancellationException("Image output copy cancelled")
+            val fingerprint = output.outputFingerprint()
+                ?: throw IOException("Saved image fingerprint is unavailable")
+            val mimeType = output.mimeType
+                ?: throw IOException("Saved image MIME type is unavailable")
+            val extension =
+                when (mimeType) {
+                    JPEG_MIME_TYPE -> "jpg"
+                    PNG_MIME_TYPE -> "png"
+                    else -> throw IOException("Saved image MIME type is unsupported")
+                }
+            val destination = File(workDirectory, "page-${output.page}.$extension")
+            val input = resolver.openInputStream(output.uri.toUri())
+                ?: throw IOException("Saved image could not be opened")
+            copyExactOutput(input, destination, fingerprint, isCancelled)
+            val format = output.format
+                ?: throw IOException("Saved image format is unavailable")
+            StagedImageOutput(
+                RenderedImageExport(
+                    file = destination,
+                    mimeType = mimeType,
+                    extension = extension,
+                    width = requireNotNull(output.width),
+                    height = requireNotNull(output.height),
+                    exactSourceCopy = true,
+                ),
+                PersistedImageExportIntent(
+                    format = format,
+                    sizePreset = output.sizePreset,
+                    customMaxDimension = output.customMaxDimension,
+                    treeUri = treeUri,
+                ),
+            )
+        }
 
     fun replaceImageOutputs(
         cached: CachedScan,
@@ -2661,11 +2758,16 @@ internal class ScanStorage(
         cached: CachedScan,
         current: OutputReplacementJournalResult,
         staged: List<StagedImageOutput>,
+        requestedBaseName: String? = null,
     ): OutputReplacementResult {
         require(staged.isNotEmpty()) { "Image replacement is empty" }
         val treeUris = staged.map { it.intent.treeUri }.distinct()
         if (treeUris.size != 1) throw IOException("Image destinations do not match")
         val treeUri = treeUris.single()
+        val outputBaseName =
+            requestedBaseName
+                ?: imageOutputBaseName(current.metadata.images.map { it.page to it.displayName })
+                ?: cached.baseName
         if (
             current.metadata.images.size == staged.size &&
                 current.metadata.images.zip(staged).all { (saved, replacement) ->
@@ -2681,6 +2783,8 @@ internal class ScanStorage(
                         sizePreset = intent.sizePreset,
                         customMaxDimension = intent.customMaxDimension,
                         fingerprint = fingerprintFile(output.file),
+                        desiredDisplayName =
+                            imageOutputDisplayName(outputBaseName, saved.page, output.extension),
                     ) && verifyExistingImage(saved)
                 }
         ) {
@@ -2695,8 +2799,7 @@ internal class ScanStorage(
                 create = { page ->
                     val source = staged[page - 1]
                     val output = source.rendered
-                    val displayName =
-                        "${cached.baseName}_${page.toString().padStart(2, '0')}.${output.extension}"
+                    val displayName = imageOutputDisplayName(outputBaseName, page, output.extension)
                     var marker =
                         newProvisionalOutputCreate(
                             cached,
@@ -3186,6 +3289,7 @@ internal class ScanStorage(
                 },
             savedPdf = activePdf?.uri?.toUri(),
             savedPdfTree = activePdf?.treeUri?.toUri(),
+            savedPdfDisplayName = activePdf?.displayName,
             warnings =
                 (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
                     .distinct(),

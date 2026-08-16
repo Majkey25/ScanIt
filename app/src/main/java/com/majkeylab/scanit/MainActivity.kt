@@ -147,6 +147,8 @@ class MainActivity : ComponentActivity() {
                 onChangeImageSize = viewModel::changeCurrentImageSize,
                 onChangeImageFormat = viewModel::changeCurrentImageFormat,
                 onChangeImageLocation = viewModel::requestImageLocationChange,
+                onRenamePdf = viewModel::renameCurrentPdf,
+                onRenameImages = viewModel::renameCurrentImages,
                 onAcknowledgeUnknownOutput = viewModel::acknowledgeUnknownOutputCreate,
                 onCloseAppearanceEditor = viewModel::closeAppearanceEditor,
                 onApplyAppearance = viewModel::applyCurrentAppearance,

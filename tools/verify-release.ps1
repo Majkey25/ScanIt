@@ -99,15 +99,15 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.3.3-internal"
+        $expectedVersionName = "1.3.4-internal"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "1.3.3"
+        $expectedVersionName = "1.3.4"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "1.3.3"
+        $expectedVersionName = "1.3.4"
     }
 }
 
