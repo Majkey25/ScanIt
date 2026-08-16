@@ -9,6 +9,7 @@ internal enum class ScannerV2Filter(
     Color("color", ScanColorMode.Color),
     LightText("light_text", ScanColorMode.LightText),
     Grayscale("grayscale", ScanColorMode.Grayscale),
+    Drawing("drawing", ScanColorMode.Grayscale),
     BlackWhite("black_white", ScanColorMode.BlackWhite),
     Whiteboard("whiteboard", ScanColorMode.Whiteboard),
     ;
@@ -28,6 +29,9 @@ internal data class ScannerV2Appearance(
         require(shadows in 0..100) { "Scanner shadow strength is invalid" }
         require(filter != ScannerV2Filter.Original || (intensity == 0 && shadows == 0)) {
             "Original scanner appearance cannot modify pixels"
+        }
+        require(filter != ScannerV2Filter.Drawing || shadows == 0) {
+            "Drawing scanner appearance cannot remove shadows"
         }
     }
 

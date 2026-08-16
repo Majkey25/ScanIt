@@ -775,13 +775,15 @@ private fun ScannerV2AppearanceEditor(
             valueRange = 0f..100f,
             enabled = !busy,
         )
-        Text(stringResource(R.string.v2_filter_shadows, shadows))
-        Slider(
-            value = shadows.toFloat(),
-            onValueChange = { shadows = it.toInt() },
-            valueRange = 0f..100f,
-            enabled = !busy,
-        )
+        if (selectedFilter != ScannerV2Filter.Drawing) {
+            Text(stringResource(R.string.v2_filter_shadows, shadows))
+            Slider(
+                value = shadows.toFloat(),
+                onValueChange = { shadows = it.toInt() },
+                valueRange = 0f..100f,
+                enabled = !busy,
+            )
+        }
         val edited = ScannerV2Appearance(selectedFilter, intensity, shadows)
         Button(
             onClick = { onApply(edited) },
@@ -799,6 +801,7 @@ private fun scannerV2FilterLabel(filter: ScannerV2Filter): Int = when (filter) {
     ScannerV2Filter.Color -> R.string.v2_filter_color
     ScannerV2Filter.LightText -> R.string.v2_filter_light_text
     ScannerV2Filter.Grayscale -> R.string.v2_filter_grayscale
+    ScannerV2Filter.Drawing -> R.string.v2_filter_drawing
     ScannerV2Filter.BlackWhite -> R.string.v2_filter_black_white
     ScannerV2Filter.Whiteboard -> R.string.v2_filter_whiteboard
 }

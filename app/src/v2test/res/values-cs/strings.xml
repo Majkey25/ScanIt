@@ -21,6 +21,7 @@
     <string name="v2_filter_color">Barva</string>
     <string name="v2_filter_light_text">Světlý text</string>
     <string name="v2_filter_grayscale">Stupně šedi</string>
+    <string name="v2_filter_drawing">Kresba</string>
     <string name="v2_filter_black_white">Černobílý</string>
     <string name="v2_filter_whiteboard">Tabule</string>
     <string name="v2_filter_intensity">Intenzita: %1$d%%</string>

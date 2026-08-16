@@ -21,6 +21,7 @@
     <string name="v2_filter_color">Farbe</string>
     <string name="v2_filter_light_text">Heller Text</string>
     <string name="v2_filter_grayscale">Graustufen</string>
+    <string name="v2_filter_drawing">Zeichnung</string>
     <string name="v2_filter_black_white">Schwarzweiß</string>
     <string name="v2_filter_whiteboard">Whiteboard</string>
     <string name="v2_filter_intensity">Intensität: %1$d%%</string>

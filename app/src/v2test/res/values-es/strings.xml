@@ -21,6 +21,7 @@
     <string name="v2_filter_color">Color</string>
     <string name="v2_filter_light_text">Texto claro</string>
     <string name="v2_filter_grayscale">Escala de grises</string>
+    <string name="v2_filter_drawing">Dibujo</string>
     <string name="v2_filter_black_white">Blanco y negro</string>
     <string name="v2_filter_whiteboard">Pizarra</string>
     <string name="v2_filter_intensity">Intensidad: %1$d%%</string>
