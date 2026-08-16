@@ -168,6 +168,7 @@ internal fun ScanItApp(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onScan: () -> Unit,
+    onEditScan: (() -> Unit)? = null,
     onSaveSettings: (AppSettings) -> Boolean,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
@@ -309,6 +310,7 @@ internal fun ScanItApp(
                     ResultScreen(
                         result = state,
                         onNewScan = onScan,
+                        onEditScan = onEditScan,
                         onRecent = onRecent,
                         onSettings = {
                             fileDetailsExpanded = false
@@ -605,6 +607,7 @@ private fun ownedAppearancePreview(
 private fun ResultScreen(
     result: ScreenState.Result,
     onNewScan: () -> Unit,
+    onEditScan: (() -> Unit)?,
     onRecent: () -> Unit,
     onSettings: () -> Unit,
     onSharePdf: (() -> Unit)?,
@@ -683,7 +686,7 @@ private fun ResultScreen(
     }
     val onResultEntryAction: (ResultEntryAction) -> Unit = { action ->
         when (resultActionDestination(action)) {
-            ResultActionDestination.Scanner -> onNewScan()
+            ResultActionDestination.Scanner -> (onEditScan ?: onNewScan).invoke()
             ResultActionDestination.MarkEditor -> onAddVisualMark()
             ResultActionDestination.DocumentActions -> showDocumentActions = true
         }
@@ -744,8 +747,8 @@ private fun ResultScreen(
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) {
                             ActionButtonContent(
-                                iconRes = R.drawable.ic_camera,
-                                textRes = R.string.rescan,
+                                iconRes = if (onEditScan == null) R.drawable.ic_camera else R.drawable.ic_edit,
+                                textRes = if (onEditScan == null) R.string.rescan else R.string.edit_scan,
                             )
                         }
                         OutlinedButton(
@@ -787,8 +790,8 @@ private fun ResultScreen(
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
-                                iconRes = R.drawable.ic_camera,
-                                textRes = R.string.rescan,
+                                iconRes = if (onEditScan == null) R.drawable.ic_camera else R.drawable.ic_edit,
+                                textRes = if (onEditScan == null) R.string.rescan else R.string.edit_scan,
                             )
                         }
                         OutlinedButton(

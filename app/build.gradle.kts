@@ -21,6 +21,7 @@ android {
         targetSdk = 36
         versionCode = 17
         versionName = "1.3.3"
+        resValue("string", "edit_scan", "Edit scan")
     }
 
     signingConfigs {
@@ -86,6 +87,7 @@ android {
 
     buildFeatures {
         compose = true
+        resValues = true
     }
 
     bundle {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="edit_scan">Scan bearbeiten</string>
     <string name="app_name">ScanIt v2 Test</string>
     <string name="v2_cancel">Abbrechen</string>
     <string name="v2_capture_title">Scannen</string>
@@ -37,5 +38,6 @@
     <string name="v2_error_capture">Das Foto konnte nicht gespeichert werden. Erneut versuchen.</string>
     <string name="v2_error_capture_recovery">Das unterbrochene Foto muss vor dem nächsten Scan verworfen werden.</string>
     <string name="v2_error_render">Die Seite konnte nicht gerendert werden. Das Quellfoto bleibt erhalten.</string>
+    <string name="v2_error_finish">Der Scan konnte nicht geöffnet werden. Prüfen Sie ihn und tippen Sie erneut auf Weiter.</string>
     <string name="v2_error_camera">Die Kamera ist nicht verfügbar.</string>
 </resources>

@@ -9,6 +9,7 @@ internal fun beginScannerV2Retake(
         sessionId = current.sessionId,
         state = ScannerSessionGate.beginRetake(current.state),
         pages = current.pages,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2PageTimestamp(current, updatedAtMillis),
     )
 }
@@ -27,6 +28,7 @@ internal fun deleteScannerV2Page(
         state = ScannerSessionGate.delete(current.state, index),
         pages = pages,
         retiredPages = listOf(retired),
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2PageTimestamp(current, updatedAtMillis),
     )
 }
@@ -46,6 +48,7 @@ internal fun reorderScannerV2Pages(
         sessionId = current.sessionId,
         state = state,
         pages = pages,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2PageTimestamp(current, updatedAtMillis),
     )
 }
@@ -79,6 +82,7 @@ internal fun completeScannerV2PageRender(
         sessionId = current.sessionId,
         state = current.state,
         pages = pages,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2PageTimestamp(current, updatedAtMillis),
     )
 }

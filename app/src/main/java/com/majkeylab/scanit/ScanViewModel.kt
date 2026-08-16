@@ -468,6 +468,8 @@ internal class ScanViewModel(
     private val shareRefreshGate = DirtyRefreshGate()
     private val routeMutationMutex = Mutex()
     private val mutableState = MutableStateFlow(initialScreenState(null))
+    private val mutableNavigationReady = MutableStateFlow(false)
+    private val mutableInitialScanProcessingActive = MutableStateFlow(false)
     private val mutableScannerRequest = MutableStateFlow<Long?>(null)
     private val mutableOutputTreePickerRequest = MutableStateFlow<OutputChangeRequest?>(null)
     private val mutableSettings = MutableStateFlow(settingsStore.load())
@@ -491,6 +493,9 @@ internal class ScanViewModel(
     private var activeResultOwner: ActiveResultOwner? = null
 
     val state: StateFlow<ScreenState> = mutableState.asStateFlow()
+    val navigationReady: StateFlow<Boolean> = mutableNavigationReady.asStateFlow()
+    val initialScanProcessingActive: StateFlow<Boolean> =
+        mutableInitialScanProcessingActive.asStateFlow()
     val scannerRequest: StateFlow<Long?> = mutableScannerRequest.asStateFlow()
     val outputTreePickerRequest: StateFlow<OutputChangeRequest?> =
         mutableOutputTreePickerRequest.asStateFlow()
@@ -1107,8 +1112,16 @@ internal class ScanViewModel(
         }
     }
 
-    fun processScan(pageUris: List<Uri>): Boolean {
+    fun processScan(
+        pageUris: List<Uri>,
+        parentCacheId: String? = null,
+        parentEntryId: String? = null,
+        onPrepared: suspend (String) -> Unit = {},
+    ): Boolean {
         completeScannerLaunch()
+        require((parentCacheId == null) == (parentEntryId == null)) {
+            "Edited scan parent identity is incomplete"
+        }
         if (!isAcceptedScanPageCount(pageUris.size)) {
             scannerResultFailed(UiMessage(R.string.scanner_result_error))
             return false
@@ -1129,6 +1142,7 @@ internal class ScanViewModel(
                 UiMessage(R.string.saving_document),
                 canNavigateBack = false,
             )
+        mutableInitialScanProcessingActive.value = true
         processingJob =
             viewModelScope.launch {
                 var cached: CachedScan? = null
@@ -1139,15 +1153,23 @@ internal class ScanViewModel(
                         withContext(Dispatchers.IO) {
                             val settings = currentSettings()
                             val processingContext = currentCoroutineContext()
+                            val parent =
+                                parentCacheId?.let { cacheId ->
+                                    storage.openCachedScan(cacheId)
+                                        ?.takeIf { it.entryId == parentEntryId }
+                                        ?: throw IOException("Edited scan parent is unavailable")
+                                }
                             val cacheBuild =
                                 storage.cacheScan(
                                     pageUris = pages,
                                     appearanceSettings = googleScannerAppearanceSettings(),
                                     pdfSizeTarget = settings.pdfSizeTarget,
+                                    parent = parent,
                                     isCancelled = { !processingContext.isActive },
                                 )
                             val cachedScan = cacheBuild.cached
                             cached = cachedScan
+                            onPrepared(cachedScan.baseName)
                             currentCoroutineContext().ensureActive()
                             PreparedInitialScan(
                                 settings = settings,
@@ -1240,7 +1262,7 @@ internal class ScanViewModel(
                         }
                     }
                     throw exception
-                } catch (_: Exception) {
+                } catch (exception: Exception) {
                     if (authorityCommitted) {
                         retainedResult?.let { result ->
                             routeMutationMutex.withLock {
@@ -1280,6 +1302,7 @@ internal class ScanViewModel(
                     }
                 } finally {
                     processingJob = null
+                    mutableInitialScanProcessingActive.value = false
                 }
             }
         return true
@@ -2414,84 +2437,88 @@ internal class ScanViewModel(
         val generation = beginRouteMutation(keepOutputChange = restoreOutputChange)
         recentJob =
             viewModelScope.launch {
-                val checkpoint = readActiveResultCheckpoint(generation)
-                if (checkpoint.mutation != CheckpointMutationResult.Applied) {
-                    if (restoreOutputChange) invalidateOutputChange()
-                    return@launch
-                }
-                val activeCheckpoint = checkpoint.checkpoint
-                val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
-                val destination =
-                    initialNavigation(savedRoute, savedCacheId, activeCheckpoint?.cacheId)
-                when (destination.route) {
-                    RestoredRoute.Result -> {
-                        val cacheId = checkNotNull(destination.cacheId)
-                        val result =
-                            loadCachedResult(
-                                cacheId,
-                                activeCheckpoint?.appearanceReviewEntryId,
-                            )
-                        if (result == null) {
-                            if (restoreOutputChange) invalidateOutputChange()
-                            if (
-                                keepCheckpointAfterRestoreFailure(
-                                    authoritativeWasProvisional,
+                try {
+                    val checkpoint = readActiveResultCheckpoint(generation)
+                    if (checkpoint.mutation != CheckpointMutationResult.Applied) {
+                        if (restoreOutputChange) invalidateOutputChange()
+                        return@launch
+                    }
+                    val activeCheckpoint = checkpoint.checkpoint
+                    val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
+                    val destination =
+                        initialNavigation(savedRoute, savedCacheId, activeCheckpoint?.cacheId)
+                    when (destination.route) {
+                        RestoredRoute.Result -> {
+                            val cacheId = checkNotNull(destination.cacheId)
+                            val result =
+                                loadCachedResult(
+                                    cacheId,
+                                    activeCheckpoint?.appearanceReviewEntryId,
                                 )
-                            ) {
+                            if (result == null) {
+                                if (restoreOutputChange) invalidateOutputChange()
+                                if (
+                                    keepCheckpointAfterRestoreFailure(
+                                        authoritativeWasProvisional,
+                                    )
+                                ) {
+                                    routeMutationMutex.withLock {
+                                        if (routeMutationGate.isCurrent(generation)) {
+                                            navigationInitialized = true
+                                            persistRoute(ROUTE_FAILURE)
+                                            mutableState.value =
+                                                ScreenState.Failure(
+                                                    UiMessage(R.string.state_update_failed),
+                                                )
+                                        }
+                                    }
+                                    return@launch
+                                }
+                                if (
+                                    clearCheckpointAndPublish(generation) {
+                                        navigationInitialized = true
+                                        persistRoute(ROUTE_RECENT)
+                                        mutableState.value =
+                                            ScreenState.Recent(
+                                                recentScans,
+                                                UiMessage(R.string.recent_scan_unavailable),
+                                            )
+                                    } == CheckpointMutationResult.Applied
+                                ) {
+                                    showRecentResult(
+                                        generation,
+                                        UiMessage(R.string.recent_scan_unavailable),
+                                    )
+                                }
+                            } else {
                                 routeMutationMutex.withLock {
                                     if (routeMutationGate.isCurrent(generation)) {
                                         navigationInitialized = true
-                                        persistRoute(ROUTE_FAILURE)
-                                        mutableState.value =
-                                            ScreenState.Failure(
-                                                UiMessage(R.string.state_update_failed),
-                                            )
+                                        publishResult(result)
                                     }
                                 }
-                                return@launch
                             }
-                            if (
-                                clearCheckpointAndPublish(generation) {
-                                    navigationInitialized = true
-                                    persistRoute(ROUTE_RECENT)
-                                    mutableState.value =
-                                        ScreenState.Recent(
-                                            recentScans,
-                                            UiMessage(R.string.recent_scan_unavailable),
-                                        )
-                                } == CheckpointMutationResult.Applied
-                            ) {
-                                showRecentResult(
-                                    generation,
-                                    UiMessage(R.string.recent_scan_unavailable),
-                                )
-                            }
-                        } else {
+                        }
+                        RestoredRoute.Recent -> {
                             routeMutationMutex.withLock {
                                 if (routeMutationGate.isCurrent(generation)) {
                                     navigationInitialized = true
-                                    publishResult(result)
+                                    persistRoute(ROUTE_RECENT)
+                                    mutableState.value = ScreenState.Recent(recentScans)
+                                }
+                            }
+                            showRecentResult(generation)
+                        }
+                        RestoredRoute.Scanner -> {
+                            routeMutationMutex.withLock {
+                                if (routeMutationGate.isCurrent(generation)) {
+                                    publishScannerRequest()
                                 }
                             }
                         }
                     }
-                    RestoredRoute.Recent -> {
-                        routeMutationMutex.withLock {
-                            if (routeMutationGate.isCurrent(generation)) {
-                                navigationInitialized = true
-                                persistRoute(ROUTE_RECENT)
-                                mutableState.value = ScreenState.Recent(recentScans)
-                            }
-                        }
-                        showRecentResult(generation)
-                    }
-                    RestoredRoute.Scanner -> {
-                        routeMutationMutex.withLock {
-                            if (routeMutationGate.isCurrent(generation)) {
-                                publishScannerRequest()
-                            }
-                        }
-                    }
+                } finally {
+                    mutableNavigationReady.value = true
                 }
             }
     }

@@ -1629,12 +1629,20 @@ internal class ScanStorage(
         pageUris: List<Uri>,
         appearanceSettings: ScanAppearanceSettings,
         pdfSizeTarget: PdfSizeTarget,
+        parent: CachedScan? = null,
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): CachedScanBuild =
         storageTransactionLock.withLock {
             require(pageUris.isNotEmpty()) { "Scanner returned no pages" }
             require(isAcceptedScanPageCount(pageUris.size)) { "Scanner returned too many pages" }
-            val baseName = scanBaseName(clock)
+            parent?.let(::requireCurrentOutputMetadata)
+            val parentEntryId = parent?.entryId
+            if (parent != null && parentEntryId == null) {
+                throw IOException("Edited scan parent generation is unavailable")
+            }
+            val baseName =
+                parent?.let { recentScanCache.nextDerivedCacheId(it.lineageCacheId, "edit") }
+                    ?: scanBaseName(clock)
             val appearance = appearanceSettings.selected()
             val shareRoot = ensureShareRoot(shareCacheRoot())
             val finalDirectory = File(shareRoot, baseName)
@@ -1666,10 +1674,13 @@ internal class ScanStorage(
                         isCancelled = isCancelled,
                     )
                 writeScanAppearanceMetadata(
-                    workDirectory,
-                    appearanceSettings,
-                    pdfSizeTarget,
-                    baseName,
+                    directory = workDirectory,
+                    appearanceSettings = appearanceSettings,
+                    pdfSizeTarget = pdfSizeTarget,
+                    lineageCacheId = parent?.lineageCacheId ?: baseName,
+                    parentCacheId = parent?.baseName,
+                    parentEntryId = parentEntryId,
+                    restoreSettingsOnActivation = parent == null,
                 )
                 initializeOutputMetadata(
                     directory = workDirectory,

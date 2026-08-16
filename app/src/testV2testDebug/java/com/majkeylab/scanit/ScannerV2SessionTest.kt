@@ -175,6 +175,19 @@ class ScannerV2SessionTest {
         assertNotEquals(review, finishing)
     }
 
+    @Test
+    fun finishedSessionCanReturnToTheSameReviewAuthority() {
+        val review = reviewing(List(2) { page() }, selectedIndex = 1)
+        val finishing = ScannerSessionGate.finish(review)
+
+        val resumed = ScannerSessionGate.resumeReview(finishing)
+
+        assertEquals(review, resumed)
+        assertThrows(IllegalStateException::class.java) {
+            ScannerSessionGate.resumeReview(review)
+        }
+    }
+
     private fun page(): ScannerPage = ScannerPage(PageId.parse(UUID.randomUUID().toString()))
 
     private fun reviewing(

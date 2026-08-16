@@ -30,6 +30,128 @@ class ScannerV2StoreTest {
     }
 
     @Test
+    fun finishingManifestPersistsExactPreparedResultCacheAuthority() {
+        val review = manifest(updatedAtMillis = 1234)
+        val finishing = ScannerV2Manifest.create(
+            sessionId = review.sessionId,
+            state = ScannerSessionGate.finish(review.state),
+            pages = review.pages,
+            resultCacheId = "Scan_20260816_120000",
+            updatedAtMillis = 1235,
+        )
+
+        val decoded = decodeScannerV2Manifest(encodeScannerV2Manifest(finishing))
+
+        assertEquals(finishing, decoded)
+        assertEquals("Scan_20260816_120000", decoded?.resultCacheId)
+    }
+
+    @Test
+    fun editedRevisionPersistsExactParentGenerationAcrossReviewAndFinish() {
+        val review = manifest(updatedAtMillis = 1234)
+        val source = ScannerV2EditSource(
+            cacheId = "Scan_20260816_110000",
+            entryId = "00000000-0000-0000-0000-000000000001",
+        )
+        val editing = ScannerV2Manifest.create(
+            sessionId = review.sessionId,
+            state = review.state,
+            pages = review.pages,
+            editSource = source,
+            updatedAtMillis = 1235,
+        )
+        val finishing = ScannerV2Manifest.create(
+            sessionId = editing.sessionId,
+            state = ScannerSessionGate.finish(editing.state),
+            pages = editing.pages,
+            editSource = editing.editSource,
+            updatedAtMillis = 1236,
+        )
+
+        val decoded = decodeScannerV2Manifest(encodeScannerV2Manifest(finishing))
+
+        assertEquals(source, decoded?.editSource)
+    }
+
+    @Test
+    fun editedRevisionRejectsUnsafeOrSelfReferentialParentAuthority() {
+        val review = manifest(updatedAtMillis = 1234)
+        val finishingState = ScannerSessionGate.finish(review.state)
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2EditSource(
+                cacheId = "../escape",
+                entryId = "00000000-0000-0000-0000-000000000001",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2Manifest.create(
+                sessionId = review.sessionId,
+                state = finishingState,
+                pages = review.pages,
+                resultCacheId = "Scan_20260816_110000",
+                editSource = ScannerV2EditSource(
+                    cacheId = "Scan_20260816_110000",
+                    entryId = "00000000-0000-0000-0000-000000000001",
+                ),
+                updatedAtMillis = 1235,
+            )
+        }
+    }
+
+    @Test
+    fun resultCacheAuthorityIsOnlyAllowedForFinishingAndMustBeSafe() {
+        val review = manifest(updatedAtMillis = 1234)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2Manifest.create(
+                sessionId = review.sessionId,
+                state = review.state,
+                pages = review.pages,
+                resultCacheId = "Scan_20260816_120000",
+                updatedAtMillis = 1235,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2Manifest.create(
+                sessionId = review.sessionId,
+                state = ScannerSessionGate.finish(review.state),
+                pages = review.pages,
+                resultCacheId = "../escape",
+                updatedAtMillis = 1235,
+            )
+        }
+    }
+
+    @Test
+    fun exactFinishedSessionCanBeRemovedBeforeStartingANewScan() {
+        val store = ScannerV2Store(temporary.newFolder("finished-delete"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val renderedBytes = byteArrayOf(4, 5, 6)
+        val review = manifest(
+            sessionId = initial.sessionId,
+            sourceFingerprint = fingerprint(sourceBytes),
+            renderedFingerprint = fingerprint(renderedBytes),
+        )
+        val page = review.pages.single()
+        store.sourceFile(review.sessionId, page.pageId).writeBytes(sourceBytes)
+        store.renderedFile(review, page).writeBytes(renderedBytes)
+        store.update(initial, review)
+        val finishing = ScannerV2Manifest.create(
+            sessionId = review.sessionId,
+            state = ScannerSessionGate.finish(review.state),
+            pages = review.pages,
+            resultCacheId = "Scan_20260816_120000",
+            updatedAtMillis = 2,
+        )
+        store.update(review, finishing)
+
+        assertTrue(store.deleteFinished(finishing))
+        assertNull(store.loadActive())
+    }
+
+    @Test
     fun versionThreeManifestMigratesOriginalFilterWithoutLosingAuthority() {
         val original = manifest(
             updatedAtMillis = 1234,
@@ -37,6 +159,9 @@ class ScannerV2StoreTest {
         )
         val legacy = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
             put("version", 3)
+            remove("resultCacheId")
+            remove("editSourceCacheId")
+            remove("editSourceEntryId")
             getJSONArray("pages").getJSONObject(0).apply {
                 remove("filterIntensity")
                 remove("filterShadows")
@@ -54,12 +179,54 @@ class ScannerV2StoreTest {
         val original = manifest(updatedAtMillis = 1234)
         val versionFour = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
             put("version", 4)
+            remove("resultCacheId")
+            remove("editSourceCacheId")
+            remove("editSourceEntryId")
             getJSONArray("pages").getJSONObject(0).remove("renderFileId")
         }.toString().toByteArray()
 
         val migrated = decodeScannerV2Manifest(versionFour)
 
         assertEquals(original, migrated)
+    }
+
+    @Test
+    fun versionFiveManifestMigratesWithoutInventingResultCacheAuthority() {
+        val original = manifest(updatedAtMillis = 1234)
+        val versionFive = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
+            put("version", 5)
+            remove("resultCacheId")
+            remove("editSourceCacheId")
+            remove("editSourceEntryId")
+        }.toString().toByteArray()
+
+        val migrated = decodeScannerV2Manifest(versionFive)
+
+        assertEquals(original, migrated)
+        assertNull(migrated?.resultCacheId)
+    }
+
+    @Test
+    fun versionSixManifestKeepsResultAuthorityWithoutInventingEditSource() {
+        val review = manifest(updatedAtMillis = 1234)
+        val original = ScannerV2Manifest.create(
+            sessionId = review.sessionId,
+            state = ScannerSessionGate.finish(review.state),
+            pages = review.pages,
+            resultCacheId = "Scan_20260816_120000",
+            updatedAtMillis = 1235,
+        )
+        val versionSix =
+            JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
+                put("version", 6)
+                remove("editSourceCacheId")
+                remove("editSourceEntryId")
+            }.toString().toByteArray()
+
+        val migrated = decodeScannerV2Manifest(versionSix)
+
+        assertEquals(original, migrated)
+        assertNull(migrated?.editSource)
     }
 
     @Test

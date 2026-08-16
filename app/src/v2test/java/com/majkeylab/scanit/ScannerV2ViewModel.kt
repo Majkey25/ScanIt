@@ -2,8 +2,10 @@ package com.majkeylab.scanit
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
@@ -26,6 +28,7 @@ internal enum class ScannerV2Issue {
     CaptureFailed,
     CaptureRecoveryRequired,
     RenderFailed,
+    FinishFailed,
     CameraUnavailable,
 }
 
@@ -80,6 +83,10 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
 
     fun cameraUnavailable() {
         mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.CameraUnavailable)
+    }
+
+    fun sessionUnavailable() {
+        mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.SessionUnavailable)
     }
 
     suspend fun reserveCapture(): ScannerV2CaptureTicket? = withContext(Dispatchers.IO) {
@@ -243,6 +250,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             state = nextState,
                             pages = current.pages,
                             retiredPages = current.retiredPages,
+                            editSource = current.editSource,
                             updatedAtMillis = nextTimestamp(current),
                         )
                         store.update(current, replacement)
@@ -465,6 +473,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             state = ScannerSessionGate.select(current.state, index),
                             pages = current.pages,
                             retiredPages = current.retiredPages,
+                            editSource = current.editSource,
                             updatedAtMillis = nextTimestamp(current),
                         )
                         store.updateSelection(current, replacement)
@@ -491,6 +500,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             state = ScannerSessionGate.finish(current.state),
                             pages = current.pages,
                             retiredPages = current.retiredPages,
+                            editSource = current.editSource,
                             updatedAtMillis = nextTimestamp(current),
                         )
                         store.update(current, replacement)
@@ -501,6 +511,80 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 if (failure is CancellationException) throw failure
                 mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.SessionUnavailable)
             }
+        }
+    }
+
+    suspend fun finishedPageUris(): List<Uri> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val current = requireNotNull(mutableState.value.manifest)
+            check(current.state.stage == ScannerSessionStage.Finishing)
+            check(current.pages.isNotEmpty() && current.pages.all { it.renderedFingerprint != null })
+            check(store.loadActive() == current) { "Scanner finish authority changed" }
+            current.pages.map { page ->
+                FileProvider.getUriForFile(
+                    getApplication(),
+                    "${getApplication<Application>().packageName}.fileprovider",
+                    store.renderedFile(current, page),
+                )
+            }
+        }
+    }
+
+    suspend fun recordResultCacheId(cacheId: String) = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val current = requireNotNull(mutableState.value.manifest)
+            check(current.state.stage == ScannerSessionStage.Finishing)
+            if (current.resultCacheId == cacheId) return@withLock
+            check(current.resultCacheId == null) { "Scanner result cache authority changed" }
+            val replacement = current.withResultCacheId(cacheId, nextTimestamp(current))
+            store.update(current, replacement)
+            mutableState.value = mutableState.value.copy(manifest = replacement, issue = null)
+        }
+    }
+
+    suspend fun resumeFinishedReview(
+        expectedCacheId: String?,
+        failed: Boolean,
+        editSource: ScannerV2EditSource? = null,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            lock.withLock {
+                val current = mutableState.value.manifest ?: return@withLock false
+                if (
+                    current.state.stage != ScannerSessionStage.Finishing ||
+                        current.resultCacheId != expectedCacheId ||
+                        (editSource != null && editSource.cacheId != expectedCacheId)
+                ) {
+                    return@withLock false
+                }
+                val replacement = ScannerV2Manifest.create(
+                    sessionId = current.sessionId,
+                    state = ScannerSessionGate.resumeReview(current.state),
+                    pages = current.pages,
+                    retiredPages = current.retiredPages,
+                    editSource = editSource ?: current.editSource,
+                    updatedAtMillis = nextTimestamp(current),
+                )
+                store.update(current, replacement)
+                mutableState.value = ScannerV2UiState(replacement, busy = true)
+                loadSelectedPreviewLocked(replacement)
+                if (failed) {
+                    mutableState.value = mutableState.value.copy(issue = ScannerV2Issue.FinishFailed)
+                }
+                true
+            }
+        }
+
+    suspend fun startNewSessionFromFinished(): Boolean = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val current = mutableState.value.manifest ?: return@withLock false
+            if (current.state.stage != ScannerSessionStage.Finishing) return@withLock false
+            if (!store.deleteFinished(current)) {
+                throw IOException("Finished scanner session could not be removed")
+            }
+            val fresh = createSession()
+            mutableState.value = ScannerV2UiState(fresh, busy = false)
+            true
         }
     }
 

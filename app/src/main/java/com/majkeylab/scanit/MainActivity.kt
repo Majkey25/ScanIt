@@ -73,6 +73,7 @@ internal fun scannerMode(purpose: ScannerPurpose): Int =
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ScanViewModel by viewModels()
+    private var scannerV2Opening = false
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
     private val savedOutputsChangedReceiver =
@@ -124,6 +125,12 @@ class MainActivity : ComponentActivity() {
                 language = currentAppLanguage(),
                 defaultEmailSubjects = defaultEmailSubjects,
                 onScan = ::startScan,
+                onEditScan =
+                    if (isScannerV2ApplicationId(packageName)) {
+                        ::editScannerV2Scan
+                    } else {
+                        null
+                    },
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
@@ -187,7 +194,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        viewModel.resumeScannerPreparation()
+        if (!isScannerV2ApplicationId(packageName)) {
+            viewModel.resumeScannerPreparation()
+        }
         lifecycleScope.launch(Dispatchers.IO) {
             val result = retryPendingShareCleanup(applicationContext)
             if (result != null && shareCleanupCompletionPolicy(result).warn) {
@@ -232,7 +241,48 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun startScan() {
-        viewModel.beginScannerLaunch()
+        if (isScannerV2ApplicationId(packageName)) {
+            openScannerV2(ACTION_SCANNER_V2_NEW)
+        } else {
+            viewModel.beginScannerLaunch()
+        }
+    }
+
+    private fun editScannerV2Scan() {
+        val cached = (viewModel.state.value as? ScreenState.Result)?.scan?.cached ?: return
+        val entryId = cached.entryId ?: return
+        openScannerV2(
+            action = ACTION_SCANNER_V2_EDIT,
+            editCacheId = cached.baseName,
+            editEntryId = entryId,
+        )
+    }
+
+    private fun openScannerV2(
+        action: String,
+        editCacheId: String? = null,
+        editEntryId: String? = null,
+    ) {
+        require((editCacheId == null) == (editEntryId == null)) {
+            "Scanner v2 edit identity is incomplete"
+        }
+        if (scannerV2Opening || isFinishing || isDestroyed) return
+        scannerV2Opening = true
+        try {
+            startActivity(
+                Intent()
+                    .setClassName(packageName, SCANNER_V2_ACTIVITY_CLASS)
+                    .setAction(action)
+                    .apply {
+                        editCacheId?.let { putExtra(EXTRA_SCANNER_V2_EDIT_CACHE_ID, it) }
+                        editEntryId?.let { putExtra(EXTRA_SCANNER_V2_EDIT_ENTRY_ID, it) }
+                    },
+            )
+            finish()
+        } catch (failure: RuntimeException) {
+            scannerV2Opening = false
+            throw failure
+        }
     }
 
     private fun requestScannerIntent(requestGeneration: Long) {

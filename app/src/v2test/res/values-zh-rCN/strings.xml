@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="edit_scan">编辑扫描</string>
     <string name="app_name">ScanIt v2 测试版</string>
     <string name="v2_cancel">取消</string>
     <string name="v2_capture_title">扫描</string>
@@ -37,5 +38,6 @@
     <string name="v2_error_capture">无法保存照片，请重试。</string>
     <string name="v2_error_capture_recovery">再次扫描前必须丢弃中断的照片。</string>
     <string name="v2_error_render">无法处理页面，原始照片已保留。</string>
+    <string name="v2_error_finish">无法打开扫描件。请检查后再次点按继续。</string>
     <string name="v2_error_camera">相机不可用。</string>
 </resources>

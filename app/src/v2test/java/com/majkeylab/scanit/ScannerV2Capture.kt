@@ -15,6 +15,7 @@ internal fun reserveScannerV2Capture(
         pages = current.pages,
         retiredPages = current.retiredPages,
         pendingCaptureId = pageId,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2Timestamp(current, updatedAtMillis),
     )
 }
@@ -55,6 +56,7 @@ internal fun completeScannerV2Capture(
         pages = pages,
         retiredPages = retiredPages,
         pendingCaptureId = null,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2Timestamp(current, updatedAtMillis),
     )
 }
@@ -77,6 +79,7 @@ internal fun cancelScannerV2Capture(
         pages = current.pages,
         retiredPages = current.retiredPages,
         pendingCaptureId = null,
+        editSource = current.editSource,
         updatedAtMillis = nextScannerV2Timestamp(current, updatedAtMillis),
     )
 }

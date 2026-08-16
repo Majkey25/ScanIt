@@ -140,6 +140,18 @@ internal object ScannerSessionGate {
         )
     }
 
+    fun resumeReview(current: ScannerSessionState): ScannerSessionState {
+        check(current.stage == ScannerSessionStage.Finishing) {
+            "Scanner session is not finishing"
+        }
+        return state(
+            generation = current.generation,
+            pages = current.pages,
+            selectedIndex = current.selectedIndex,
+            stage = ScannerSessionStage.Reviewing,
+        )
+    }
+
     private fun requireReviewing(state: ScannerSessionState) {
         check(state.stage == ScannerSessionStage.Reviewing) { "Scanner session is not reviewable" }
     }

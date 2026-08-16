@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.Surface
@@ -88,26 +89,165 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
+private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consumed"
+
 class ScannerV2Activity : ComponentActivity() {
     private val viewModel: ScannerV2ViewModel by viewModels()
+    private val resultViewModel: ScanViewModel by viewModels()
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
     private var cameraPermissionGranted by mutableStateOf(false)
     private var cameraBindGeneration = 0L
+    private var launchDirectiveConsumed = false
+    private var launchDirectiveClaimed = false
+    private var importRequestedSessionId: String? = null
+    private var resultOpened = false
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> cameraPermissionGranted = granted }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        launchDirectiveConsumed =
+            savedInstanceState?.getBoolean(V2_LAUNCH_DIRECTIVE_CONSUMED_KEY) == true
         cameraPermissionGranted = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         setContent {
             val state by viewModel.state.collectAsState()
+            val resultState by resultViewModel.state.collectAsState()
+            val resultNavigationReady by resultViewModel.navigationReady.collectAsState()
+            val resultProcessingActive by
+                resultViewModel.initialScanProcessingActive.collectAsState()
             val surfaceRequest by viewModel.surfaceRequest.collectAsState()
+            val manifest = state.manifest
             val stage = state.manifest?.state?.stage
+            LaunchedEffect(
+                manifest?.sessionId,
+                manifest?.state?.stage,
+                manifest?.resultCacheId,
+                resultState,
+                resultNavigationReady,
+                resultProcessingActive,
+            ) {
+                val current = manifest ?: return@LaunchedEffect
+                if (!launchDirectiveConsumed && !launchDirectiveClaimed) {
+                    try {
+                        when {
+                            intent.action == ACTION_SCANNER_V2_EDIT -> {
+                                val editSource = scannerV2EditSource(intent)
+                                val active = (resultState as? ScreenState.Result)?.scan?.cached
+                                when (
+                                    scannerV2EditLaunchAction(
+                                        navigationReady = resultNavigationReady,
+                                        stage = current.state.stage,
+                                        resultCacheId = current.resultCacheId,
+                                        manifestEditSource = current.editSource,
+                                        requestedEditSource = editSource,
+                                        activeCacheId = active?.baseName,
+                                        activeEntryId = active?.entryId,
+                                    )
+                                ) {
+                                    ScannerV2EditLaunchAction.Wait -> return@LaunchedEffect
+                                    ScannerV2EditLaunchAction.Resume -> {
+                                        launchDirectiveClaimed = true
+                                        checkNotNull(editSource)
+                                        check(
+                                            viewModel.resumeFinishedReview(
+                                                expectedCacheId = current.resultCacheId,
+                                                failed = false,
+                                                editSource = editSource,
+                                            ),
+                                        ) { "Scanner edit authority changed" }
+                                        launchDirectiveConsumed = true
+                                        return@LaunchedEffect
+                                    }
+                                    ScannerV2EditLaunchAction.AlreadyApplied -> {
+                                        launchDirectiveClaimed = true
+                                        launchDirectiveConsumed = true
+                                        return@LaunchedEffect
+                                    }
+                                    ScannerV2EditLaunchAction.Reject -> {
+                                        launchDirectiveClaimed = true
+                                        throw IllegalStateException("Scanner edit source is stale")
+                                    }
+                                }
+                            }
+                            current.state.stage == ScannerSessionStage.Finishing -> {
+                                viewModel.startNewSessionFromFinished()
+                                launchDirectiveConsumed = true
+                                return@LaunchedEffect
+                            }
+                            else -> launchDirectiveConsumed = true
+                        }
+                    } catch (failure: Exception) {
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
+                        viewModel.sessionUnavailable()
+                        return@LaunchedEffect
+                    }
+                }
+                if (current.state.stage != ScannerSessionStage.Finishing) {
+                    return@LaunchedEffect
+                }
+                val resultStatus =
+                    scannerV2ResultStatus(
+                        navigationReady = resultNavigationReady,
+                        processingState = resultState is ScreenState.Processing,
+                        processingActive = resultProcessingActive,
+                        failed = resultState is ScreenState.Failure,
+                        matchingResult =
+                            scannerV2ResultMatches(
+                                expectedCacheId = current.resultCacheId,
+                                resultCacheId =
+                                    (resultState as? ScreenState.Result)
+                                        ?.scan
+                                        ?.cached
+                                        ?.baseName,
+                            ),
+                    )
+                try {
+                    when (
+                        scannerV2BridgeAction(
+                            resultCacheId = current.resultCacheId,
+                            resultStatus = resultStatus,
+                            importRequested = importRequestedSessionId == current.sessionId,
+                        )
+                    ) {
+                        ScannerV2BridgeAction.Wait -> Unit
+                        ScannerV2BridgeAction.StartImport -> {
+                            val pageUris = viewModel.finishedPageUris()
+                            importRequestedSessionId = current.sessionId
+                            val accepted = resultViewModel.processScan(
+                                pageUris = pageUris,
+                                parentCacheId = current.editSource?.cacheId,
+                                parentEntryId = current.editSource?.entryId,
+                                onPrepared = viewModel::recordResultCacheId,
+                            )
+                            if (!accepted && resultViewModel.state.value !is ScreenState.Processing) {
+                                viewModel.resumeFinishedReview(current.resultCacheId, failed = true)
+                                importRequestedSessionId = null
+                            }
+                        }
+                        ScannerV2BridgeAction.OpenResult -> openResultScreen()
+                        ScannerV2BridgeAction.RecoverReview -> {
+                            viewModel.resumeFinishedReview(current.resultCacheId, failed = true)
+                            importRequestedSessionId = null
+                        }
+                    }
+                } catch (failure: Exception) {
+                    if (failure is kotlinx.coroutines.CancellationException) throw failure
+                    try {
+                        viewModel.resumeFinishedReview(current.resultCacheId, failed = true)
+                        importRequestedSessionId = null
+                    } catch (recoveryFailure: Exception) {
+                        if (recoveryFailure is kotlinx.coroutines.CancellationException) {
+                            throw recoveryFailure
+                        }
+                        viewModel.sessionUnavailable()
+                    }
+                }
+            }
             LaunchedEffect(cameraPermissionGranted, stage) {
                 if (cameraPermissionGranted && stage == ScannerSessionStage.Capturing) {
                     bindCamera()
@@ -144,6 +284,11 @@ class ScannerV2Activity : ComponentActivity() {
     override fun onDestroy() {
         unbindCamera()
         super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(V2_LAUNCH_DIRECTIVE_CONSUMED_KEY, launchDirectiveConsumed)
+        super.onSaveInstanceState(outState)
     }
 
     private fun bindCamera() {
@@ -220,6 +365,24 @@ class ScannerV2Activity : ComponentActivity() {
     private fun cancelCamera() {
         unbindCamera()
         viewModel.cancelCamera()
+    }
+
+    private fun openResultScreen() {
+        if (resultOpened || isFinishing || isDestroyed) return
+        resultOpened = true
+        startActivity(Intent(this, MainActivity::class.java))
+        finish()
+    }
+}
+
+private fun scannerV2EditSource(intent: Intent): ScannerV2EditSource? {
+    val cacheId = intent.getStringExtra(EXTRA_SCANNER_V2_EDIT_CACHE_ID)
+    val entryId = intent.getStringExtra(EXTRA_SCANNER_V2_EDIT_ENTRY_ID)
+    if (cacheId == null || entryId == null) return null
+    return try {
+        ScannerV2EditSource(cacheId, entryId)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }
 
@@ -732,6 +895,12 @@ private fun ScannerV2FinishedScreen(state: ScannerV2UiState) {
         Text(stringResource(R.string.v2_ready_title), style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         Text(stringResource(R.string.v2_ready_pages, state.manifest?.pages?.size ?: 0))
+        Spacer(Modifier.height(24.dp))
+        if (state.issue == null) {
+            CircularProgressIndicator()
+        } else {
+            ScannerV2IssueText(state.issue)
+        }
     }
 }
 
@@ -749,6 +918,7 @@ private fun ScannerV2IssueText(issue: ScannerV2Issue) {
         ScannerV2Issue.CaptureFailed -> R.string.v2_error_capture
         ScannerV2Issue.CaptureRecoveryRequired -> R.string.v2_error_capture_recovery
         ScannerV2Issue.RenderFailed -> R.string.v2_error_render
+        ScannerV2Issue.FinishFailed -> R.string.v2_error_finish
         ScannerV2Issue.CameraUnavailable -> R.string.v2_error_camera
     }
     Text(stringResource(message), color = MaterialTheme.colorScheme.error)

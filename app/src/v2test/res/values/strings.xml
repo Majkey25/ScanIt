@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="edit_scan">Edit scan</string>
     <string name="app_name">ScanIt v2 Test</string>
     <string name="v2_cancel">Cancel</string>
     <string name="v2_capture_title">Scan</string>
@@ -37,5 +38,6 @@
     <string name="v2_error_capture">The photo could not be saved. Try again.</string>
     <string name="v2_error_capture_recovery">An interrupted photo needs to be discarded before scanning again.</string>
     <string name="v2_error_render">The page could not be rendered. Your source photo is preserved.</string>
+    <string name="v2_error_finish">The scan could not be opened. Review it and try Continue again.</string>
     <string name="v2_error_camera">The camera is unavailable.</string>
 </resources>

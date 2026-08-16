@@ -14,7 +14,9 @@ internal const val MAX_SCANNER_V2_MANIFEST_BYTES = 64 * 1024
 internal const val SCANNER_V2_MANIFEST_NAME = "session.json"
 internal const val SCANNER_V2_MANIFEST_TEMP_NAME = ".session.json.tmp"
 internal const val SCANNER_V2_SESSION_RETENTION_MILLIS = 24L * 60 * 60 * 1000
-private const val SCANNER_V2_MANIFEST_VERSION = 5
+private const val SCANNER_V2_MANIFEST_VERSION = 7
+private const val SCANNER_V2_RESULT_AUTHORITY_MANIFEST_VERSION = 6
+private const val SCANNER_V2_RENDER_GENERATION_MANIFEST_VERSION = 5
 private const val SCANNER_V2_APPEARANCE_MANIFEST_VERSION = 4
 private const val SCANNER_V2_LEGACY_MANIFEST_VERSION = 3
 private const val SCANNER_V2_SESSION_PREFIX = "session-"
@@ -42,6 +44,16 @@ internal data class ScannerV2PageRecord(
     }
 }
 
+internal data class ScannerV2EditSource(
+    val cacheId: String,
+    val entryId: String,
+) {
+    init {
+        require(isSafeActiveResultCacheId(cacheId)) { "Scanner edit source cache id is invalid" }
+        require(isCanonicalUuid(entryId)) { "Scanner edit source entry id is invalid" }
+    }
+}
+
 @ConsistentCopyVisibility
 internal data class ScannerV2Manifest private constructor(
     val sessionId: String,
@@ -49,6 +61,8 @@ internal data class ScannerV2Manifest private constructor(
     val pages: List<ScannerV2PageRecord>,
     val retiredPages: List<ScannerV2PageRecord>,
     val pendingCaptureId: PageId?,
+    val resultCacheId: String?,
+    val editSource: ScannerV2EditSource?,
     val updatedAtMillis: Long,
 ) {
     fun withUpdatedAt(updatedAtMillis: Long): ScannerV2Manifest = create(
@@ -57,6 +71,8 @@ internal data class ScannerV2Manifest private constructor(
         pages = pages,
         retiredPages = retiredPages,
         pendingCaptureId = pendingCaptureId,
+        resultCacheId = resultCacheId,
+        editSource = editSource,
         updatedAtMillis = updatedAtMillis,
     )
 
@@ -69,6 +85,22 @@ internal data class ScannerV2Manifest private constructor(
         pages = pages,
         retiredPages = retiredPages,
         pendingCaptureId = pageId,
+        resultCacheId = resultCacheId,
+        editSource = editSource,
+        updatedAtMillis = updatedAtMillis,
+    )
+
+    fun withResultCacheId(
+        cacheId: String?,
+        updatedAtMillis: Long,
+    ): ScannerV2Manifest = create(
+        sessionId = sessionId,
+        state = state,
+        pages = pages,
+        retiredPages = retiredPages,
+        pendingCaptureId = pendingCaptureId,
+        resultCacheId = cacheId,
+        editSource = editSource,
         updatedAtMillis = updatedAtMillis,
     )
 
@@ -79,6 +111,8 @@ internal data class ScannerV2Manifest private constructor(
             pages: List<ScannerV2PageRecord>,
             retiredPages: List<ScannerV2PageRecord> = emptyList(),
             pendingCaptureId: PageId? = null,
+            resultCacheId: String? = null,
+            editSource: ScannerV2EditSource? = null,
             updatedAtMillis: Long,
         ): ScannerV2Manifest {
             require(isCanonicalUuid(sessionId)) { "Scanner session id is invalid" }
@@ -97,12 +131,23 @@ internal data class ScannerV2Manifest private constructor(
             require(pendingCaptureId == null || pages.none { it.pageId == pendingCaptureId }) {
                 "Pending capture duplicates a saved page"
             }
+            require(resultCacheId == null || state.stage == ScannerSessionStage.Finishing) {
+                "Result cache authority requires the finishing stage"
+            }
+            require(resultCacheId == null || isSafeActiveResultCacheId(resultCacheId)) {
+                "Result cache authority is invalid"
+            }
+            require(resultCacheId == null || resultCacheId != editSource?.cacheId) {
+                "Scanner result cannot replace itself"
+            }
             return ScannerV2Manifest(
                 sessionId = sessionId,
                 state = state,
                 pages = pages.toList(),
                 retiredPages = retiredPages.toList(),
                 pendingCaptureId = pendingCaptureId,
+                resultCacheId = resultCacheId,
+                editSource = editSource,
                 updatedAtMillis = updatedAtMillis,
             )
         }
@@ -123,6 +168,9 @@ internal fun encodeScannerV2Manifest(manifest: ScannerV2Manifest): ByteArray {
         .put("selectedIndex", state.selectedIndex ?: JSONObject.NULL)
         .put("pendingReplacementIndex", state.pendingReplacementIndex ?: JSONObject.NULL)
         .put("pendingCaptureId", manifest.pendingCaptureId?.value ?: JSONObject.NULL)
+        .put("resultCacheId", manifest.resultCacheId ?: JSONObject.NULL)
+        .put("editSourceCacheId", manifest.editSource?.cacheId ?: JSONObject.NULL)
+        .put("editSourceEntryId", manifest.editSource?.entryId ?: JSONObject.NULL)
         .put("updatedAtMillis", manifest.updatedAtMillis)
         .put("pages", pages)
         .put("retiredPages", retiredPages)
@@ -137,10 +185,18 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
         val value = JSONObject(String(bytes, StandardCharsets.UTF_8))
         val version = value.strictInt("version") ?: return null
         if (
-            !value.hasOnlyKeys(MANIFEST_KEYS) ||
+            !value.hasOnlyKeys(
+                when (version) {
+                    SCANNER_V2_MANIFEST_VERSION -> MANIFEST_KEYS_V7
+                    SCANNER_V2_RESULT_AUTHORITY_MANIFEST_VERSION -> MANIFEST_KEYS_V6
+                    else -> MANIFEST_KEYS_V3_TO_V5
+                },
+            ) ||
                 version !in setOf(
                     SCANNER_V2_LEGACY_MANIFEST_VERSION,
                     SCANNER_V2_APPEARANCE_MANIFEST_VERSION,
+                    SCANNER_V2_RENDER_GENERATION_MANIFEST_VERSION,
+                    SCANNER_V2_RESULT_AUTHORITY_MANIFEST_VERSION,
                     SCANNER_V2_MANIFEST_VERSION,
                 )
         ) {
@@ -153,6 +209,19 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
         val pendingReplacement = value.strictOptionalInt("pendingReplacementIndex") ?: return null
         val pendingCaptureRaw = value.strictOptionalString("pendingCaptureId") ?: return null
         val pendingCaptureId = pendingCaptureRaw.value?.let { PageId.parse(it) }
+        val resultCacheId = if (version >= SCANNER_V2_RESULT_AUTHORITY_MANIFEST_VERSION) {
+            (value.strictOptionalString("resultCacheId") ?: return null).value
+        } else {
+            null
+        }
+        val editSource = if (version == SCANNER_V2_MANIFEST_VERSION) {
+            val cacheId = (value.strictOptionalString("editSourceCacheId") ?: return null).value
+            val entryId = (value.strictOptionalString("editSourceEntryId") ?: return null).value
+            if ((cacheId == null) != (entryId == null)) return null
+            cacheId?.let { ScannerV2EditSource(it, checkNotNull(entryId)) }
+        } else {
+            null
+        }
         val updatedAt = value.strictLong("updatedAtMillis") ?: return null
         val array = value.opt("pages") as? JSONArray ?: return null
         if (array.length() > MAX_SCAN_PAGES) return null
@@ -175,7 +244,16 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
             stage = stage,
             pendingReplacementIndex = pendingReplacement.value,
         )
-        ScannerV2Manifest.create(sessionId, state, pages, retiredPages, pendingCaptureId, updatedAt)
+        ScannerV2Manifest.create(
+            sessionId = sessionId,
+            state = state,
+            pages = pages,
+            retiredPages = retiredPages,
+            pendingCaptureId = pendingCaptureId,
+            resultCacheId = resultCacheId,
+            editSource = editSource,
+            updatedAtMillis = updatedAt,
+        )
     } catch (_: Exception) {
         null
     }
@@ -230,6 +308,7 @@ internal class ScannerV2Store(
         require(expected.pages == replacement.pages) { "Scanner page authority changed during selection" }
         require(expected.retiredPages == replacement.retiredPages) { "Scanner cleanup authority changed during selection" }
         require(expected.pendingCaptureId == replacement.pendingCaptureId) { "Scanner capture changed during selection" }
+        require(expected.resultCacheId == replacement.resultCacheId) { "Scanner result authority changed during selection" }
         require(expected.state.generation == replacement.state.generation) { "Scanner generation changed during selection" }
         require(expected.state.pages == replacement.state.pages) { "Scanner page order changed during selection" }
         require(expected.state.stage == replacement.state.stage) { "Scanner stage changed during selection" }
@@ -290,6 +369,15 @@ internal class ScannerV2Store(
         return deleteExactSession(directory, manifest)
     }
 
+    fun deleteFinished(manifest: ScannerV2Manifest): Boolean {
+        require(manifest.state.stage == ScannerSessionStage.Finishing) {
+            "Only a finished scanner session can be deleted"
+        }
+        val directory = requireSessionDirectory(manifest.sessionId)
+        if (readManifest(directory) != manifest) throw IOException("Scanner session changed before deletion")
+        return deleteExactSession(directory, manifest)
+    }
+
     fun deletePendingCaptureFiles(manifest: ScannerV2Manifest): Boolean {
         val pageId = requireNotNull(manifest.pendingCaptureId) { "Scanner capture is not pending" }
         val directory = requireSessionDirectory(manifest.sessionId)
@@ -317,6 +405,8 @@ internal class ScannerV2Store(
             pages = manifest.pages,
             retiredPages = emptyList(),
             pendingCaptureId = manifest.pendingCaptureId,
+            resultCacheId = manifest.resultCacheId,
+            editSource = manifest.editSource,
             updatedAtMillis = manifest.updatedAtMillis,
         )
         update(manifest, cleaned)
@@ -574,7 +664,7 @@ private fun decodePageRecord(value: JSONObject, version: Int): ScannerV2PageReco
             )
         }.getOrNull() ?: return null
     }
-    val renderFileId = if (version == SCANNER_V2_MANIFEST_VERSION) {
+    val renderFileId = if (version >= SCANNER_V2_RENDER_GENERATION_MANIFEST_VERSION) {
         val optional = value.strictOptionalString("renderFileId") ?: return null
         optional.value
     } else {
@@ -639,7 +729,7 @@ private fun JSONObject.strictOptionalString(key: String): ScannerOptional<String
 
 private fun JSONArray.strictDouble(index: Int): Double? = (opt(index) as? Number)?.toDouble()?.takeIf { it.isFinite() }
 
-private val MANIFEST_KEYS = setOf(
+private val MANIFEST_KEYS_V3_TO_V5 = setOf(
     "version",
     "sessionId",
     "generation",
@@ -651,6 +741,10 @@ private val MANIFEST_KEYS = setOf(
     "pages",
     "retiredPages",
 )
+
+private val MANIFEST_KEYS_V6 = MANIFEST_KEYS_V3_TO_V5 + setOf("resultCacheId")
+
+private val MANIFEST_KEYS_V7 = MANIFEST_KEYS_V6 + setOf("editSourceCacheId", "editSourceEntryId")
 
 private val PAGE_KEYS_V3 = setOf(
     "id",
