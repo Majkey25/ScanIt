@@ -42,9 +42,9 @@ the Play developer account.
 
 ### Short description
 
-71 characters including spaces:
+70 characters including spaces:
 
-> Scan documents to PDF and share in seconds. Simple, local, and ad-free.
+> Scan documents to PDF and share in seconds. Simple and stored locally.
 
 ### Full description
 
@@ -88,9 +88,9 @@ the Play developer account.
 
 ### Short description
 
-70 characters including spaces:
+65 characters including spaces:
 
-> Naskenujte dokument do PDF a během pár sekund ho sdílejte. Bez reklam.
+> Skenujte do PDF a sdílejte během pár sekund. Jednoduše a lokálně.
 
 ### Full description
 
