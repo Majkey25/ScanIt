@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.2"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.2 showing the Result screen, file controls, and visual signature editor."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.3 showing the Result screen, file controls, and visual signature editor."></a>
 </p>
 
-## v1.3.2 update
+## v1.3.3 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -43,10 +43,10 @@ delivered by Google Play services. The recognition model may download
 before its first use; Actions report that state and can be retried afterward.
 
 Result pages now swipe horizontally and reveal the edge of the next page.
-Rescan, Sign / stamp, and Actions are clear buttons, while File details groups
+Rescan, Sign / stamp, and Actions are compact accessible buttons, while File details groups
 PDF and image changes into compact Size, Format, and Location controls.
 
-[Download ScanIt v1.3.2](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.2)
+[Download ScanIt v1.3.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `16` |
-| Version name | `1.3.2` |
+| Version code | `17` |
+| Version name | `1.3.3` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 16 / 1.3.2
+## Release notes — version 17 / 1.3.3
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> PDF targets now include 200 KB, 500 KB, and 1 MB, plus custom values from 1 KB to 500 MB. Result actions are more compact. File details groups image Size and Location beside each other with Format below. App info restores Privacy policy, third-party notices, source code, and version links.
+> Result actions are now compact 48 dp buttons with smaller icons and spacing while preserving accessible touch targets. The refreshed Result screenshot matches the final layout. PDF targets still include 200 KB, 500 KB, 1 MB, and custom values from 1 KB to 500 MB.
 
 ### Čeština
 
-> Cíle PDF nově zahrnují 200 KB, 500 KB a 1 MB i vlastní hodnotu 1 KB–500 MB. Akce výsledku jsou úspornější. Detaily souboru řadí velikost a umístění obrázků vedle sebe a formát pod ně. Informace o aplikaci znovu obsahují soukromí, oznámení třetích stran, zdrojový kód a verzi.
+> Akce výsledku jsou nyní kompaktní tlačítka 48 dp s menšími ikonami a rozestupy, ale zachovávají přístupnou dotykovou plochu. Aktualizovaný snímek odpovídá finálnímu vzhledu. Cíle PDF nadále zahrnují 200 KB, 500 KB, 1 MB a vlastní hodnoty 1 KB–500 MB.
 
 ### Deutsch
 
-> PDF-Ziele umfassen jetzt 200 KB, 500 KB und 1 MB sowie eigene Werte von 1 KB bis 500 MB. Ergebnisaktionen sind kompakter. Dateidetails zeigt Bildgröße und Speicherort nebeneinander, das Format darunter. App-Informationen enthält wieder Datenschutz, Drittanbieterhinweise, Quellcode und Version.
+> Die Ergebnisaktionen sind jetzt kompakte 48-dp-Schaltflächen mit kleineren Symbolen und Abständen bei zugänglichen Berührungszielen. Der aktualisierte Screenshot zeigt das finale Layout. PDF-Ziele umfassen weiterhin 200 KB, 500 KB, 1 MB und eigene Werte von 1 KB bis 500 MB.
 
 ### Español
 
-> Los objetivos de PDF ahora incluyen 200 KB, 500 KB y 1 MB, además de valores personalizados de 1 KB a 500 MB. Las acciones son más compactas. Detalles del archivo muestra Tamaño y Ubicación de imágenes juntos y Formato debajo. Información de la aplicación recupera privacidad, avisos, código fuente y versión.
+> Las acciones del resultado ahora son botones compactos de 48 dp con iconos y espacios menores, manteniendo objetivos táctiles accesibles. La captura actualizada refleja el diseño final. Los objetivos PDF siguen incluyendo 200 KB, 500 KB, 1 MB y valores personalizados de 1 KB a 500 MB.
 
 ### 简体中文
 
-> PDF 目标新增 200 KB、500 KB 和 1 MB，并支持 1 KB–500 MB 自定义值。结果操作更紧凑。文件详情将图片大小和位置并排显示，格式置于下方。应用信息重新提供隐私政策、第三方声明、源代码和版本。
+> 结果操作现采用紧凑的 48 dp 按钮、更小的图标和间距，同时保留易用的触控区域。更新后的截图与最终界面一致。PDF 目标仍支持 200 KB、500 KB、1 MB，以及 1 KB–500 MB 自定义值。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 16, version `1.3.2`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 17, version `1.3.3`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

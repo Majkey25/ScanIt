@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.3.3] - 2026-08-16
+
+### Changed
+
+- Tightened Rescan, Sign / stamp, and Actions to compact 48 dp buttons with smaller icons and spacing while preserving accessible touch targets.
+- Refreshed the English and Czech Result screenshots to match the final compact layout.
+
 ## [1.3.2] - 2026-08-16
 
 ### Added
@@ -176,6 +183,7 @@ Historical copies retain the license supplied with them. See
 [1.3.0]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.3.0
 [1.3.1]: https://github.com/Majkey25/ScanIt/compare/v1.3.0...v1.3.1
 [1.3.2]: https://github.com/Majkey25/ScanIt/compare/v1.3.1...v1.3.2
+[1.3.3]: https://github.com/Majkey25/ScanIt/compare/v1.3.2...v1.3.3
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
