@@ -9,6 +9,7 @@
     <string name="v2_review_title">检查</string>
     <string name="v2_crop_title">调整边角</string>
     <string name="v2_page_count">第 %1$d 页，共 %2$d 页</string>
+    <string name="v2_page_thumbnail">第 %1$d 页，共 %2$d 页</string>
     <string name="v2_rotate">旋转</string>
     <string name="v2_keep_page">保留页面</string>
     <string name="v2_adjust_corners">调整边角</string>

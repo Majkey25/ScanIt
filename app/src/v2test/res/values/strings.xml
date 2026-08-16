@@ -9,6 +9,7 @@
     <string name="v2_review_title">Review</string>
     <string name="v2_crop_title">Adjust corners</string>
     <string name="v2_page_count">%1$d of %2$d</string>
+    <string name="v2_page_thumbnail">Page %1$d of %2$d</string>
     <string name="v2_rotate">Rotate</string>
     <string name="v2_keep_page">Keep page</string>
     <string name="v2_adjust_corners">Adjust corners</string>

@@ -36,7 +36,20 @@ internal data class ScannerV2UiState(
     val issue: ScannerV2Issue? = null,
     val cropEditing: Boolean = false,
     val filterPreviews: Map<ScannerV2Filter, Bitmap> = emptyMap(),
+    val pageThumbnails: Map<PageId, ScannerV2PageThumbnail> = emptyMap(),
 )
+
+internal data class ScannerV2PageThumbnail(
+    val sourceFingerprint: OutputFingerprint,
+    val renderedFingerprint: OutputFingerprint?,
+    val renderFileId: String?,
+    val bitmap: Bitmap,
+) {
+    fun matches(record: ScannerV2PageRecord): Boolean =
+        sourceFingerprint == record.sourceFingerprint &&
+            renderedFingerprint == record.renderedFingerprint &&
+            renderFileId == record.renderFileId
+}
 
 internal data class ScannerV2CaptureTicket(
     val sessionId: String,
@@ -206,6 +219,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             issue = null,
                             cropEditing = false,
                             filterPreviews = filterPreviews,
+                            pageThumbnails = loadPageThumbnails(replacement),
                         )
                     }
                 }
@@ -232,7 +246,14 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             updatedAtMillis = nextTimestamp(current),
                         )
                         store.update(current, replacement)
-                        mutableState.value = ScannerV2UiState(replacement, busy = false)
+                        mutableState.value = mutableState.value.copy(
+                            manifest = replacement,
+                            preview = null,
+                            busy = false,
+                            issue = null,
+                            cropEditing = false,
+                            filterPreviews = emptyMap(),
+                        )
                     }
                 }
             } catch (failure: Exception) {
@@ -285,6 +306,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                                 preview = preview,
                                 busy = false,
                                 filterPreviews = mutableState.value.filterPreviews,
+                                pageThumbnails = loadPageThumbnails(reconciled),
                             )
                         } catch (failure: Throwable) {
                             preview.recycle()
@@ -315,6 +337,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             preview = preview,
                             busy = false,
                             cropEditing = true,
+                            pageThumbnails = mutableState.value.pageThumbnails,
                         )
                     }
                 }
@@ -357,7 +380,14 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         val current = requireNotNull(mutableState.value.manifest)
                         val replacement = beginScannerV2Retake(current, nextTimestamp(current))
                         store.update(current, replacement)
-                        mutableState.value = ScannerV2UiState(replacement, busy = false)
+                        mutableState.value = mutableState.value.copy(
+                            manifest = replacement,
+                            preview = null,
+                            busy = false,
+                            issue = null,
+                            cropEditing = false,
+                            filterPreviews = emptyMap(),
+                        )
                     }
                 }
             } catch (failure: Exception) {
@@ -515,6 +545,9 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         mutableState.value.preview?.takeUnless(Bitmap::isRecycled)?.recycle()
         mutableState.value.filterPreviews.values.forEach { bitmap ->
             bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
+        }
+        mutableState.value.pageThumbnails.values.forEach { thumbnail ->
+            thumbnail.bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
         }
         super.onCleared()
     }
@@ -674,6 +707,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 preview = preview,
                 busy = false,
                 issue = if (cleaned.retiredPages.isEmpty()) null else ScannerV2Issue.SessionUnavailable,
+                pageThumbnails = loadPageThumbnails(cleaned),
             )
         } catch (failure: Throwable) {
             preview.recycle()
@@ -713,7 +747,27 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             preview = preview,
             busy = false,
             filterPreviews = filterPreviews,
+            pageThumbnails = loadPageThumbnails(manifest),
         )
+    }
+
+    private fun loadPageThumbnails(
+        manifest: ScannerV2Manifest,
+    ): Map<PageId, ScannerV2PageThumbnail> {
+        val cached = mutableState.value.pageThumbnails
+        return manifest.pages.associate { record ->
+            val existing = cached[record.pageId]
+            record.pageId to if (existing?.matches(record) == true) {
+                existing
+            } else {
+                ScannerV2PageThumbnail(
+                    sourceFingerprint = record.sourceFingerprint,
+                    renderedFingerprint = record.renderedFingerprint,
+                    renderFileId = record.renderFileId,
+                    bitmap = decodeScannerV2Thumbnail(store.previewFile(manifest, record)),
+                )
+            }
+        }
     }
 
     private suspend fun recoverAfterRenderFailure() {
@@ -738,6 +792,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         preview = preview,
                         busy = false,
                         issue = ScannerV2Issue.RenderFailed,
+                        pageThumbnails = loadPageThumbnails(persisted),
                     )
                 }
             }

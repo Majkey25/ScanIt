@@ -18,6 +18,7 @@ import androidx.camera.core.SurfaceRequest
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -30,6 +31,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -79,6 +81,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -437,13 +440,58 @@ private fun ScannerV2ReviewScreen(
                 }
             }
             state.issue?.let { ScannerV2IssueText(it) }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(manifest.pages) { index, _ ->
-                    if (index == selected) {
-                        Button(onClick = { onSelectPage(index) }, enabled = !state.busy) { Text("${index + 1}") }
-                    } else {
-                        OutlinedButton(onClick = { onSelectPage(index) }, enabled = !state.busy) {
-                            Text("${index + 1}")
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(end = 56.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(manifest.pages, key = { _, page -> page.pageId.value }) { index, page ->
+                    val pageDescription = stringResource(
+                        R.string.v2_page_thumbnail,
+                        index + 1,
+                        manifest.pages.size,
+                    )
+                    val selectedPage = index == selected
+                    Surface(
+                        onClick = { onSelectPage(index) },
+                        enabled = !state.busy && rendered,
+                        modifier = Modifier.width(92.dp).height(116.dp)
+                            .clearAndSetSemantics { contentDescription = pageDescription },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedPage) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        border = BorderStroke(
+                            width = if (selectedPage) 2.dp else 1.dp,
+                            color = if (selectedPage) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                        ),
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize().padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            val thumbnail = state.pageThumbnails[page.pageId]?.bitmap
+                            if (thumbnail == null) {
+                                Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(24.dp))
+                                }
+                            } else {
+                                Image(
+                                    bitmap = thumbnail.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxWidth().height(80.dp)
+                                        .background(Color.Black, RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                            Text("${index + 1}", style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }

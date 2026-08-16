@@ -9,6 +9,7 @@
     <string name="v2_review_title">Revisar</string>
     <string name="v2_crop_title">Ajustar esquinas</string>
     <string name="v2_page_count">%1$d de %2$d</string>
+    <string name="v2_page_thumbnail">Página %1$d de %2$d</string>
     <string name="v2_rotate">Girar</string>
     <string name="v2_keep_page">Conservar página</string>
     <string name="v2_adjust_corners">Ajustar esquinas</string>

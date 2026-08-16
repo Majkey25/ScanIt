@@ -9,6 +9,7 @@
     <string name="v2_review_title">Kontrola</string>
     <string name="v2_crop_title">Upravit rohy</string>
     <string name="v2_page_count">%1$d z %2$d</string>
+    <string name="v2_page_thumbnail">Stránka %1$d z %2$d</string>
     <string name="v2_rotate">Otočit</string>
     <string name="v2_keep_page">Ponechat stránku</string>
     <string name="v2_adjust_corners">Upravit rohy</string>

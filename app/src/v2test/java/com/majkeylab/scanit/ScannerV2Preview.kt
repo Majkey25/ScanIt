@@ -16,17 +16,48 @@ import kotlin.math.roundToInt
 
 private const val SCANNER_V2_PREVIEW_MAX_EDGE = 1600
 private const val SCANNER_V2_PREVIEW_MAX_PIXELS = 2_000_000L
+private const val SCANNER_V2_THUMBNAIL_MAX_EDGE = 160
+private const val SCANNER_V2_THUMBNAIL_MAX_PIXELS = 25_600L
 private const val SCANNER_V2_DETECTOR_MAX_EDGE = 512
 
-internal fun decodeScannerV2Preview(source: File): Bitmap {
-    val dimensions = readJpegDimensions(source)
+internal fun decodeScannerV2Preview(source: File): Bitmap = decodeScannerV2Preview(
+    source = source,
+    maxEdge = SCANNER_V2_PREVIEW_MAX_EDGE,
+    maxPixels = SCANNER_V2_PREVIEW_MAX_PIXELS,
+)
+
+internal fun decodeScannerV2Thumbnail(source: File): Bitmap = decodeScannerV2Preview(
+    source = source,
+    maxEdge = SCANNER_V2_THUMBNAIL_MAX_EDGE,
+    maxPixels = SCANNER_V2_THUMBNAIL_MAX_PIXELS,
+)
+
+internal fun scannerV2PreviewSampleSize(
+    width: Int,
+    height: Int,
+    maxEdge: Int,
+    maxPixels: Long,
+): Int {
+    require(width > 0 && height > 0) { "Scanner preview dimensions must be positive" }
+    require(maxEdge > 0 && maxPixels > 0) { "Scanner preview bounds must be positive" }
     var sample = 1
-    while (
-        max(dimensions.width / sample, dimensions.height / sample) > SCANNER_V2_PREVIEW_MAX_EDGE ||
-            dimensions.width.toLong() / sample * (dimensions.height / sample) > SCANNER_V2_PREVIEW_MAX_PIXELS
-    ) {
+    while (true) {
+        val sampledWidth = (width + sample - 1) / sample
+        val sampledHeight = (height + sample - 1) / sample
+        if (
+            max(sampledWidth, sampledHeight) <= maxEdge &&
+            sampledWidth.toLong() * sampledHeight <= maxPixels
+        ) {
+            return sample
+        }
+        check(sample <= Int.MAX_VALUE / 2) { "Scanner preview sample overflow" }
         sample *= 2
     }
+}
+
+private fun decodeScannerV2Preview(source: File, maxEdge: Int, maxPixels: Long): Bitmap {
+    val dimensions = readJpegDimensions(source)
+    val sample = scannerV2PreviewSampleSize(dimensions.width, dimensions.height, maxEdge, maxPixels)
     val decoded = BitmapFactory.decodeFile(
         source.path,
         BitmapFactory.Options().apply {
