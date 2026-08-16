@@ -37,6 +37,13 @@ class OutputSavePolicyTest {
             ),
             pdfSizeTargetWarning(PdfSizeTarget.Mb5, 5_000_001L),
         )
+        assertEquals(
+            UiMessage(
+                R.string.pdf_size_target_not_met_kb,
+                listOf(200, 200.001),
+            ),
+            pdfSizeTargetWarning(PdfSizeTarget.Kb200, 200_001L),
+        )
     }
 
     @Test

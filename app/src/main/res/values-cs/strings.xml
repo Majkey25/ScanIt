@@ -141,8 +141,13 @@
     <string name="cancel">Zrušit</string>
     <string name="privacy_policy">Zásady ochrany osobních údajů</string>
     <string name="third_party_notices">Oznámení třetích stran</string>
+    <string name="source_code">Zdrojový kód</string>
+    <string name="app_info">Informace o aplikaci</string>
+    <string name="app_version">Verze %1$s</string>
+    <string name="expand_app_info">Zobrazit informace o aplikaci</string>
+    <string name="collapse_app_info">Skrýt informace o aplikaci</string>
     <string name="support_scanit">Podpořit tuto aplikaci → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Děkujeme za podporu ScanIt. Otevírá se Buy Me a Coffee.</string>
+    <string name="support_scanit_notice">Děkujeme za podporu této aplikace. Otevírá se Buy Me a Coffee.</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
     <string name="appearance">Vzhled</string>
     <string name="review_scan">Kontrola skenu</string>
@@ -165,14 +170,20 @@
     <string name="appearance_apply_failed">Vzhled se nepodařilo použít. Předchozí sken zůstal zachovaný.</string>
     <string name="pdf_size">Velikost PDF</string>
     <string name="pdf_size_original">Původní</string>
+    <string name="pdf_size_200_kb">200 KB</string>
+    <string name="pdf_size_500_kb">500 KB</string>
+    <string name="pdf_size_1_mb">1 MB</string>
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
     <string name="pdf_size_custom">Vlastní…</string>
-    <string name="pdf_size_custom_value">%1$d MB</string>
+    <string name="pdf_size_custom_value_kb">%1$d KB</string>
+    <string name="pdf_size_custom_value_mb">%1$d MB</string>
     <string name="pdf_size_custom_title">Vlastní velikost PDF</string>
-    <string name="pdf_size_custom_field">Cílová velikost (MB)</string>
-    <string name="pdf_size_custom_hint">Zadejte celé číslo od 1 do 500.</string>
+    <string name="pdf_size_custom_field">Cílová velikost</string>
+    <string name="pdf_size_unit_kb">KB</string>
+    <string name="pdf_size_unit_mb">MB</string>
+    <string name="pdf_size_custom_hint">Použijte 1–500 000 KB nebo 1–500 MB.</string>
     <string name="save">Uložit</string>
     <string name="pdf_size_hint">Limit se vyhodnocuje podle skutečně vytvořených čitelných verzí. Pokud jej nelze dodržet, ScanIt ponechá nejmenší čitelné PDF a zobrazí jeho skutečnou velikost.</string>
 
@@ -196,6 +207,7 @@
     <string name="pdf_save_failed">PDF se nepodařilo uložit. Dokument lze stále odeslat.</string>
     <string name="pdf_auto_save_deferred">Vybranou složku je třeba potvrdit. PDF uložte v Podrobnostech souborů.</string>
     <string name="pdf_size_target_not_met">PDF se nepodařilo zmenšit pod %1$d MB bez příliš malých stránek. Skutečná velikost: %2$.2f MB.</string>
+    <string name="pdf_size_target_not_met_kb">PDF se nepodařilo zmenšit pod %1$d KB bez příliš malých stránek. Skutečná velikost: %2$.1f KB.</string>
     <string name="document_save_failed">Dokument se nepodařilo uložit. Zkuste to znovu.</string>
     <string name="document_save_partial_failed">Dokument se nepodařilo uložit. Některé soubory mohly zůstat uložené.</string>
     <string name="saf_fallback_warning">Vybraná složka není dostupná. PDF bylo uloženo do Stažených souborů.</string>

@@ -513,6 +513,15 @@ internal fun pdfSizeTargetWarning(
 ): UiMessage? {
     val targetBytes = target.maxBytes ?: return null
     if (bytes <= 0L || bytes <= targetBytes) return null
+    if (targetBytes < PDF_DISPLAY_BYTES) {
+        return UiMessage(
+            R.string.pdf_size_target_not_met_kb,
+            listOf(
+                (targetBytes / PDF_DISPLAY_KILOBYTES).toInt(),
+                bytes / PDF_DISPLAY_KILOBYTES.toDouble(),
+            ),
+        )
+    }
     return UiMessage(
         R.string.pdf_size_target_not_met,
         listOf(
@@ -538,6 +547,7 @@ internal data class CachedScan(
 )
 
 private const val PDF_DISPLAY_BYTES = 1_000_000L
+private const val PDF_DISPLAY_KILOBYTES = 1_000L
 
 internal data class SavedImageOutput(
     val page: Int,

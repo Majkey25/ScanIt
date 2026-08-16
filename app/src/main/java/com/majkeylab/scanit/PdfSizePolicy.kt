@@ -1,11 +1,19 @@
 package com.majkeylab.scanit
 
+private const val KILOBYTE = 1_000L
 private const val MEGABYTE = 1_000_000L
 private const val MIN_LEGIBLE_PDF_EDGE = 1_280
-internal const val MIN_CUSTOM_PDF_MEGABYTES = 1
-internal const val MAX_CUSTOM_PDF_MEGABYTES = 500
-private val CUSTOM_PDF_TARGET_PATTERN = Regex("custom_([1-9][0-9]{0,2})_mb")
-private val CUSTOM_PDF_INPUT_PATTERN = Regex("[1-9][0-9]{0,2}")
+internal const val MIN_CUSTOM_PDF_KILOBYTES = 1
+internal const val MAX_CUSTOM_PDF_KILOBYTES = 500_000
+private const val MAX_CUSTOM_PDF_MEGABYTES = MAX_CUSTOM_PDF_KILOBYTES / 1_000
+private val CUSTOM_PDF_KILOBYTE_TARGET_PATTERN = Regex("custom_([1-9][0-9]{0,5})_kb")
+private val LEGACY_CUSTOM_PDF_MEGABYTE_TARGET_PATTERN = Regex("custom_([1-9][0-9]{0,2})_mb")
+private val CUSTOM_PDF_INPUT_PATTERN = Regex("[1-9][0-9]{0,5}")
+
+internal enum class PdfSizeUnit {
+    Kilobytes,
+    Megabytes,
+}
 
 internal sealed class PdfSizeTarget(
     val wireValue: String,
@@ -13,52 +21,82 @@ internal sealed class PdfSizeTarget(
 ) {
     data object Original : PdfSizeTarget("original", null)
 
+    data object Kb200 : PdfSizeTarget("200_kb", 200L * KILOBYTE)
+
+    data object Kb500 : PdfSizeTarget("500_kb", 500L * KILOBYTE)
+
+    data object Mb1 : PdfSizeTarget("1_mb", MEGABYTE)
+
     data object Mb5 : PdfSizeTarget("5_mb", 5L * MEGABYTE)
 
     data object Mb10 : PdfSizeTarget("10_mb", 10L * MEGABYTE)
 
     data object Mb20 : PdfSizeTarget("20_mb", 20L * MEGABYTE)
 
-    data class Custom(val megabytes: Int) :
+    data class Custom(val kilobytes: Int) :
         PdfSizeTarget(
-            wireValue = "custom_${megabytes}_mb",
-            maxBytes = megabytes.toLong() * MEGABYTE,
+            wireValue = "custom_${kilobytes}_kb",
+            maxBytes = kilobytes.toLong() * KILOBYTE,
         ) {
         init {
-            require(megabytes in MIN_CUSTOM_PDF_MEGABYTES..MAX_CUSTOM_PDF_MEGABYTES) {
-                "Custom PDF target must be between 1 and 500 MB"
+            require(kilobytes in MIN_CUSTOM_PDF_KILOBYTES..MAX_CUSTOM_PDF_KILOBYTES) {
+                "Custom PDF target must be between 1 and 500000 KB"
             }
         }
     }
 
     companion object {
-        val presets: List<PdfSizeTarget> = listOf(Original, Mb5, Mb10, Mb20)
+        val presets: List<PdfSizeTarget> =
+            listOf(Original, Kb200, Kb500, Mb1, Mb5, Mb10, Mb20)
     }
 }
 
 internal fun decodePdfSizeTarget(wireValue: String?): PdfSizeTarget? =
     when (wireValue) {
         PdfSizeTarget.Original.wireValue -> PdfSizeTarget.Original
+        PdfSizeTarget.Kb200.wireValue -> PdfSizeTarget.Kb200
+        PdfSizeTarget.Kb500.wireValue -> PdfSizeTarget.Kb500
+        PdfSizeTarget.Mb1.wireValue -> PdfSizeTarget.Mb1
         PdfSizeTarget.Mb5.wireValue -> PdfSizeTarget.Mb5
         PdfSizeTarget.Mb10.wireValue -> PdfSizeTarget.Mb10
         PdfSizeTarget.Mb20.wireValue -> PdfSizeTarget.Mb20
-        else ->
-            CUSTOM_PDF_TARGET_PATTERN.matchEntire(wireValue.orEmpty())
+        else -> {
+            val value = wireValue.orEmpty()
+            CUSTOM_PDF_KILOBYTE_TARGET_PATTERN.matchEntire(value)
                 ?.groupValues
                 ?.get(1)
                 ?.toIntOrNull()
-                ?.takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
+                ?.takeIf { it <= MAX_CUSTOM_PDF_KILOBYTES }
                 ?.let(PdfSizeTarget::Custom)
+                ?: LEGACY_CUSTOM_PDF_MEGABYTE_TARGET_PATTERN.matchEntire(value)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.toIntOrNull()
+                    ?.takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
+                    ?.let { PdfSizeTarget.Custom(it * 1_000) }
+        }
     }
 
 internal fun parsePdfSizeTarget(wireValue: String?): PdfSizeTarget =
     decodePdfSizeTarget(wireValue) ?: PdfSizeTarget.Original
 
-internal fun parseCustomPdfMegabytes(value: String): Int? =
-    CUSTOM_PDF_INPUT_PATTERN.matchEntire(value)
-        ?.value
-        ?.toIntOrNull()
-        ?.takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
+internal fun parseCustomPdfKilobytes(
+    value: String,
+    unit: PdfSizeUnit,
+): Int? {
+    val wholeNumber =
+        CUSTOM_PDF_INPUT_PATTERN.matchEntire(value)
+            ?.value
+            ?.toIntOrNull()
+            ?: return null
+    return when (unit) {
+        PdfSizeUnit.Kilobytes -> wholeNumber.takeIf { it <= MAX_CUSTOM_PDF_KILOBYTES }
+        PdfSizeUnit.Megabytes ->
+            wholeNumber
+                .takeIf { it <= MAX_CUSTOM_PDF_MEGABYTES }
+                ?.times(1_000)
+    }
+}
 
 internal enum class PdfEncoding {
     Jpeg,
