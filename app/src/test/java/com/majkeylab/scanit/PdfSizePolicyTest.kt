@@ -8,20 +8,24 @@ import org.junit.Test
 
 class PdfSizePolicyTest {
     @Test
-    fun namedPdfLimitsUseDecimalMegabytes() {
+    fun namedPdfLimitsUseDecimalBytes() {
+        assertEquals(200_000L, PdfSizeTarget.Kb200.maxBytes)
+        assertEquals(500_000L, PdfSizeTarget.Kb500.maxBytes)
+        assertEquals(1_000_000L, PdfSizeTarget.Mb1.maxBytes)
         assertEquals(5_000_000L, PdfSizeTarget.Mb5.maxBytes)
         assertEquals(10_000_000L, PdfSizeTarget.Mb10.maxBytes)
         assertEquals(20_000_000L, PdfSizeTarget.Mb20.maxBytes)
     }
 
     @Test
-    fun customPdfLimitUsesDecimalMegabytesAndRoundTrips() {
-        val target = PdfSizeTarget.Custom(37)
+    fun customPdfLimitUsesDecimalKilobytesAndRoundTrips() {
+        val target = PdfSizeTarget.Custom(37_500)
 
-        assertEquals(37_000_000L, target.maxBytes)
-        assertEquals("custom_37_mb", target.wireValue)
+        assertEquals(37_500_000L, target.maxBytes)
+        assertEquals("custom_37500_kb", target.wireValue)
         assertEquals(target, decodePdfSizeTarget(target.wireValue))
         assertEquals(target, parsePdfSizeTarget(target.wireValue))
+        assertEquals(PdfSizeTarget.Custom(37_000), decodePdfSizeTarget("custom_37_mb"))
     }
 
     @Test
@@ -32,6 +36,9 @@ class PdfSizePolicyTest {
             "custom_0_mb",
             "custom_01_mb",
             "custom_501_mb",
+            "custom_0_kb",
+            "custom_01_kb",
+            "custom_500001_kb",
             "custom_7_mib",
             "custom_-7_mb",
         ).forEach { value ->
@@ -40,16 +47,19 @@ class PdfSizePolicyTest {
         }
 
         assertThrows(IllegalArgumentException::class.java) { PdfSizeTarget.Custom(0) }
-        assertThrows(IllegalArgumentException::class.java) { PdfSizeTarget.Custom(501) }
+        assertThrows(IllegalArgumentException::class.java) { PdfSizeTarget.Custom(500_001) }
     }
 
     @Test
-    fun customPdfInputAcceptsOnlyWholeMegabytesWithinBounds() {
-        assertEquals(37, parseCustomPdfMegabytes("37"))
-        assertEquals(500, parseCustomPdfMegabytes("500"))
-        listOf("", "0", "01", "1.5", "501", "-1", "7 MB").forEach { value ->
-            assertEquals(null, parseCustomPdfMegabytes(value))
+    fun customPdfInputAcceptsWholeKilobytesOrMegabytesWithinBounds() {
+        assertEquals(1, parseCustomPdfKilobytes("1", PdfSizeUnit.Kilobytes))
+        assertEquals(500_000, parseCustomPdfKilobytes("500000", PdfSizeUnit.Kilobytes))
+        assertEquals(1_000, parseCustomPdfKilobytes("1", PdfSizeUnit.Megabytes))
+        assertEquals(500_000, parseCustomPdfKilobytes("500", PdfSizeUnit.Megabytes))
+        listOf("", "0", "01", "1.5", "500001", "-1", "7 KB").forEach { value ->
+            assertEquals(null, parseCustomPdfKilobytes(value, PdfSizeUnit.Kilobytes))
         }
+        assertEquals(null, parseCustomPdfKilobytes("501", PdfSizeUnit.Megabytes))
     }
 
     @Test

@@ -95,12 +95,12 @@ class ScanAppearanceMetadataTest {
         val encoded =
             encodeScanAppearanceMetadata(
                 ScanAppearanceSettings(),
-                PdfSizeTarget.Custom(37),
+                PdfSizeTarget.Custom(37_000),
                 "Scan_origin",
             )
 
         assertEquals(
-            PdfSizeTarget.Custom(37),
+            PdfSizeTarget.Custom(37_000),
             decodeScanAppearanceMetadata(encoded)?.pdfSizeTarget,
         )
     }

@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## [1.3.2] - 2026-08-16
+
+### Added
+
+- Added measured 200 KB, 500 KB, and 1 MB PDF targets plus custom whole-kilobyte targets from 1 KB to 500 MB.
+- Restored Privacy policy, third-party notices, source code, and the installed version inside a compact expandable App info section.
+
+### Changed
+
+- Reduced the height of Rescan, Sign / stamp, and Actions while keeping clear button affordances and 48 dp minimum touch targets.
+- Put image Size and Location beside each other with the wider Format action below in File details.
+- Added clear icons to the PDF section and the Draw, Import image, and Scan paper signature actions.
+- Made the support confirmation generic so a future display-name change does not require changing that message.
+
 ## [1.3.1] - 2026-08-16
 
 ### Changed
@@ -159,8 +173,9 @@ Historical copies retain the license supplied with them. See
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
 [1.2.4]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.2.4
-[1.3.1]: https://github.com/Majkey25/ScanIt/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.3.0
+[1.3.1]: https://github.com/Majkey25/ScanIt/compare/v1.3.0...v1.3.1
+[1.3.2]: https://github.com/Majkey25/ScanIt/compare/v1.3.1...v1.3.2
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
 [1.2.0-beta.2]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...v1.2.0-beta.2
