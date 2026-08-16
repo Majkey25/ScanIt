@@ -717,7 +717,7 @@ class PureLogicTest {
                         grayscaleIntensity = 63,
                         shadows = 28,
                     ),
-                pdfSizeTarget = PdfSizeTarget.Custom(17),
+                pdfSizeTarget = PdfSizeTarget.Custom(17_000),
             )
         val beforeUpdate = SettingsStore(preferences, "Scanned document")
         beforeUpdate.savePdfTreeUris(current = treeUri, pending = null)
@@ -737,13 +737,13 @@ class PureLogicTest {
         assertEquals(
             AuthorityMutationResult.Applied,
             store.trySave(
-                AppSettings(pdfSizeTarget = PdfSizeTarget.Custom(37)),
+                AppSettings(pdfSizeTarget = PdfSizeTarget.Custom(37_000)),
                 expectedOwner = owner,
             ),
         )
 
-        assertEquals(PdfSizeTarget.Custom(37), store.load().pdfSizeTarget)
-        assertEquals("custom_37_mb", values["pdf_size_target"])
+        assertEquals(PdfSizeTarget.Custom(37_000), store.load().pdfSizeTarget)
+        assertEquals("custom_37000_kb", values["pdf_size_target"])
     }
 
     @Test
@@ -778,7 +778,7 @@ class PureLogicTest {
         values["appearance_black_white_intensity"] = "wrong"
         values["appearance_whiteboard_intensity"] = 101
         values["appearance_shadows"] = 101
-        values["pdf_size_target"] = "1_mb"
+        values["pdf_size_target"] = "2_mb"
 
         val loaded = SettingsStore(preferences, "Scanned document").load()
 

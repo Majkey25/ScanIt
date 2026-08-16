@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `15` |
-| Version name | `1.3.1` |
+| Version code | `17` |
+| Version name | `1.3.3` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -59,7 +59,7 @@ the Play developer account.
 > - page thumbnails for browsing multi-page results
 > - a full-screen zoomable preview opened from the Result image
 > - Google review filters including Auto, Color, Grayscale, Black and white, and Shadows
-> - measured Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB PDF size goals
+> - measured Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, and custom 1 KB–500 MB PDF size goals
 > - per-document PDF size and folder changes from File details without changing saved defaults
 > - per-document image size, format, and folder changes from File details
 > - image size options for Original, 3840 px, 2560 px, 1600 px, or custom 320–6000 px
@@ -105,7 +105,7 @@ the Play developer account.
 > - náhledy stránek pro procházení vícestránkových výsledků
 > - celoobrazovkový náhled s přiblížením otevřený klepnutím na obrázek výsledku
 > - filtry Google pro Auto, Barvy, Odstíny šedi, Černobíle a Stíny
-> - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB, 20 MB nebo vlastní cíl 1–500 MB
+> - měřené cíle velikosti PDF: Původní, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB nebo vlastní cíl 1 KB–500 MB
 > - změna velikosti a složky konkrétního PDF v detailech souboru bez změny uložených výchozích nastavení
 > - změna velikosti, formátu a složky obrázků v detailech souboru
 > - velikost obrázku Původní, 3840 px, 2560 px, 1600 px nebo vlastní 320–6000 px
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 15 / 1.3.1
+## Release notes — version 17 / 1.3.3
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Result pages now swipe with a visible next-page preview. Rescan, Sign / stamp, and Actions are clear buttons. File details groups PDF Size and Location plus image Size, Format, and Location into compact controls. The previous scan stays in Recent when a rescan is canceled.
+> Result actions are now compact 48 dp buttons with smaller icons and spacing while preserving accessible touch targets. The refreshed Result screenshot matches the final layout. PDF targets still include 200 KB, 500 KB, 1 MB, and custom values from 1 KB to 500 MB.
 
 ### Čeština
 
-> Stránky výsledku lze posouvat s viditelným náhledem další strany. Znovu skenovat, Podpis / razítko a Akce jsou jasná tlačítka. Detaily souboru přehledně seskupují velikost a umístění PDF i velikost, formát a umístění obrázků. Při zrušení nového skenu zůstane původní sken v Nedávných.
+> Akce výsledku jsou nyní kompaktní tlačítka 48 dp s menšími ikonami a rozestupy, ale zachovávají přístupnou dotykovou plochu. Aktualizovaný snímek odpovídá finálnímu vzhledu. Cíle PDF nadále zahrnují 200 KB, 500 KB, 1 MB a vlastní hodnoty 1 KB–500 MB.
 
 ### Deutsch
 
-> Ergebnisseiten lassen sich wischen und zeigen einen Teil der nächsten Seite. Neu scannen, Signieren / Stempel und Aktionen sind klare Schaltflächen. Dateidetails gruppiert PDF-Größe und Speicherort sowie Bildgröße, Format und Speicherort. Beim Abbruch eines neuen Scans bleibt der bisherige Scan unter Zuletzt erhalten.
+> Die Ergebnisaktionen sind jetzt kompakte 48-dp-Schaltflächen mit kleineren Symbolen und Abständen bei zugänglichen Berührungszielen. Der aktualisierte Screenshot zeigt das finale Layout. PDF-Ziele umfassen weiterhin 200 KB, 500 KB, 1 MB und eigene Werte von 1 KB bis 500 MB.
 
 ### Español
 
-> Las páginas del resultado se deslizan y muestran parte de la siguiente. Volver a escanear, Firmar / sello y Acciones son botones claros. Detalles del archivo agrupa Tamaño y Ubicación del PDF y Tamaño, Formato y Ubicación de imágenes. Al cancelar un nuevo escaneo, el anterior permanece en Recientes.
+> Las acciones del resultado ahora son botones compactos de 48 dp con iconos y espacios menores, manteniendo objetivos táctiles accesibles. La captura actualizada refleja el diseño final. Los objetivos PDF siguen incluyendo 200 KB, 500 KB, 1 MB y valores personalizados de 1 KB a 500 MB.
 
 ### 简体中文
 
-> 结果页面现在可横向滑动，并显示下一页的一部分。重新扫描、签名/印章和操作均为清晰按钮。文件详情将 PDF 大小与位置，以及图片大小、格式与位置紧凑分组。取消重新扫描时，原扫描仍保留在最近记录中。
+> 结果操作现采用紧凑的 48 dp 按钮、更小的图标和间距，同时保留易用的触控区域。更新后的截图与最终界面一致。PDF 目标仍支持 200 KB、500 KB、1 MB，以及 1 KB–500 MB 自定义值。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 15, version `1.3.1`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 17, version `1.3.3`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

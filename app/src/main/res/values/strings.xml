@@ -139,8 +139,13 @@
     <string name="cancel">Cancel</string>
     <string name="privacy_policy">Privacy policy</string>
     <string name="third_party_notices">Third-party notices</string>
+    <string name="source_code">Source code</string>
+    <string name="app_info">App info</string>
+    <string name="app_version">Version %1$s</string>
+    <string name="expand_app_info">Show app info</string>
+    <string name="collapse_app_info">Hide app info</string>
     <string name="support_scanit">Support this app → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Thank you for supporting ScanIt. This opens Buy Me a Coffee.</string>
+    <string name="support_scanit_notice">Thank you for supporting this app. This opens Buy Me a Coffee.</string>
     <string name="settings_save_failed">Could not save settings.</string>
     <string name="appearance">Appearance</string>
     <string name="review_scan">Review scan</string>
@@ -163,14 +168,20 @@
     <string name="appearance_apply_failed">Could not apply the appearance. The previous scan was kept.</string>
     <string name="pdf_size">PDF size</string>
     <string name="pdf_size_original">Original</string>
+    <string name="pdf_size_200_kb">200 KB</string>
+    <string name="pdf_size_500_kb">500 KB</string>
+    <string name="pdf_size_1_mb">1 MB</string>
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
     <string name="pdf_size_custom">Custom…</string>
-    <string name="pdf_size_custom_value">%1$d MB</string>
+    <string name="pdf_size_custom_value_kb">%1$d KB</string>
+    <string name="pdf_size_custom_value_mb">%1$d MB</string>
     <string name="pdf_size_custom_title">Custom PDF size</string>
-    <string name="pdf_size_custom_field">Target size (MB)</string>
-    <string name="pdf_size_custom_hint">Enter a whole number from 1 to 500.</string>
+    <string name="pdf_size_custom_field">Target size</string>
+    <string name="pdf_size_unit_kb">KB</string>
+    <string name="pdf_size_unit_mb">MB</string>
+    <string name="pdf_size_custom_hint">Use 1–500,000 KB or 1–500 MB.</string>
     <string name="save">Save</string>
     <string name="pdf_size_hint">Size limits use measured, readable versions. If a limit cannot be reached, ScanIt keeps the smallest readable PDF and shows its actual size.</string>
 
@@ -194,6 +205,7 @@
     <string name="pdf_save_failed">The PDF could not be saved. The document can still be shared.</string>
     <string name="pdf_auto_save_deferred">The selected folder needs confirmation. Use File details to save the PDF.</string>
     <string name="pdf_size_target_not_met">The PDF could not fit under %1$d MB without making pages too small. Actual size: %2$.2f MB.</string>
+    <string name="pdf_size_target_not_met_kb">The PDF could not fit under %1$d KB without making pages too small. Actual size: %2$.1f KB.</string>
     <string name="document_save_failed">Could not save the document. Try again.</string>
     <string name="document_save_partial_failed">Could not save the document. Some files may remain saved.</string>
     <string name="saf_fallback_warning">The selected folder is unavailable. The PDF was saved to Downloads.</string>

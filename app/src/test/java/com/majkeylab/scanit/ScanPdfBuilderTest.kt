@@ -127,6 +127,25 @@ class ScanPdfBuilderTest {
         }
 
     @Test
+    fun subMegabyteTargetDownsamplesUntilMeasuredPdfFits() =
+        withTempDirectory { directory ->
+            val rendered = mutableListOf<Int>()
+            val page =
+                fakePage(directory, longestEdge = 5_000) { sample ->
+                    rendered += sample
+                    if (sample == 1) 600_000 else 180_000
+                }
+            val output = File(directory, "small-scan.pdf")
+
+            val result = buildScanPdf(output, listOf(page), PdfSizeTarget.Kb200, false)
+
+            assertEquals(listOf(1, 2), rendered)
+            assertEquals(2, result.sampleMultiplier)
+            assertTrue(result.targetMet)
+            assertTrue(result.bytes <= 200_000L)
+        }
+
+    @Test
     fun blackWhiteKeepsSmallerValidBitonalCandidate() =
         withTempDirectory { directory ->
             val output = File(directory, "scan.pdf")

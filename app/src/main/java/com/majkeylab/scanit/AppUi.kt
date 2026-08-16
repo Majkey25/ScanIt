@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.PersistableBundle
@@ -15,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
@@ -122,6 +124,7 @@ private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
 private const val THIRD_PARTY_NOTICES_URL =
     "https://majkey25.github.io/ScanIt/third-party-notices.txt"
+private const val SOURCE_CODE_URL = "https://github.com/Majkey25/ScanIt"
 internal const val SUPPORT_URL = "https://www.buymeacoffee.com/majkey"
 
 private val LightColorScheme =
@@ -773,15 +776,15 @@ private fun ResultScreen(
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         OutlinedButton(
                             onClick = {
                                 onResultEntryAction(ResultEntryAction.Rescan)
                             },
                             enabled = actionsEnabled,
-                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
-                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_camera,
@@ -793,8 +796,8 @@ private fun ResultScreen(
                                 onResultEntryAction(ResultEntryAction.SignOrStamp)
                             },
                             enabled = actionsEnabled && result.canAddVisualMark,
-                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
-                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_signature,
@@ -806,8 +809,8 @@ private fun ResultScreen(
                                 onResultEntryAction(ResultEntryAction.Actions)
                             },
                             enabled = actionsEnabled,
-                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
-                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_actions,
@@ -1538,13 +1541,14 @@ private fun ResultActionButtonContent(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(18.dp),
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(1.dp))
         Text(
             text = stringResource(textRes),
             maxLines = 2,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }
@@ -1890,16 +1894,16 @@ private fun FileDetails(
                             modifier = Modifier.weight(1f),
                         )
                         FileDetailActionButton(
-                            textRes = R.string.change_format,
-                            onClick = onChangeImageFormat,
-                            enabled = imageFormatEnabled,
+                            textRes = R.string.change_location,
+                            onClick = onChangeImageLocation,
+                            enabled = imageLocationEnabled,
                             modifier = Modifier.weight(1f),
                         )
                     }
                     FileDetailActionButton(
-                        textRes = R.string.change_location,
-                        onClick = onChangeImageLocation,
-                        enabled = imageLocationEnabled,
+                        textRes = R.string.change_format,
+                        onClick = onChangeImageFormat,
+                        enabled = imageFormatEnabled,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -2093,22 +2097,28 @@ private fun PdfSizeTargetDialog(
     onDismiss: () -> Unit,
     onSelect: (PdfSizeTarget) -> Unit,
 ) {
+    val currentCustom = current as? PdfSizeTarget.Custom
+    val initialUnit = preferredPdfSizeUnit(currentCustom)
     var selectedWire by rememberSaveable(current.wireValue) {
         mutableStateOf(current.wireValue)
     }
     var customMode by rememberSaveable(current.wireValue) {
         mutableStateOf(current is PdfSizeTarget.Custom)
     }
-    var customInput by rememberSaveable(current.wireValue) {
-        mutableStateOf((current as? PdfSizeTarget.Custom)?.megabytes?.toString().orEmpty())
+    var customUnit by rememberSaveable(current.wireValue) {
+        mutableStateOf(initialUnit)
     }
-    val customMegabytes = parseCustomPdfMegabytes(customInput)
+    var customInput by rememberSaveable(current.wireValue) {
+        mutableStateOf(formatCustomPdfSizeInput(currentCustom, initialUnit))
+    }
+    val customKilobytes = parseCustomPdfKilobytes(customInput, customUnit)
     val selected =
         if (customMode) {
-            customMegabytes?.let(PdfSizeTarget::Custom)
+            customKilobytes?.let(PdfSizeTarget::Custom)
         } else {
             decodePdfSizeTarget(selectedWire)
         }
+    val choices: List<PdfSizeTarget?> = PdfSizeTarget.presets + null
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.pdf_size)) },
@@ -2119,59 +2129,56 @@ private fun PdfSizeTargetDialog(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        PdfSizeTarget.presets.take(3).forEach { target ->
-                            FilterChip(
-                                selected = !customMode && target.wireValue == selectedWire,
-                                onClick = {
-                                    customMode = false
-                                    selectedWire = target.wireValue
-                                },
-                                label = { Text(pdfSizeTargetLabel(target)) },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        val target = PdfSizeTarget.presets.last()
-                        FilterChip(
-                            selected = !customMode && target.wireValue == selectedWire,
-                            onClick = {
-                                customMode = false
-                                selectedWire = target.wireValue
-                            },
-                            label = { Text(pdfSizeTargetLabel(target)) },
-                            modifier = Modifier.weight(1f),
-                        )
-                        FilterChip(
-                            selected = customMode,
-                            onClick = { customMode = true },
-                            label = {
-                                Text(
-                                    if (customMode && customMegabytes != null) {
-                                        stringResource(
-                                            R.string.pdf_size_custom_value,
-                                            customMegabytes,
-                                        )
-                                    } else {
-                                        stringResource(R.string.pdf_size_custom)
+                    choices.chunked(3).forEach { rowChoices ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            rowChoices.forEach { target ->
+                                FilterChip(
+                                    selected =
+                                        if (target == null) {
+                                            customMode
+                                        } else {
+                                            !customMode && target.wireValue == selectedWire
+                                        },
+                                    onClick = {
+                                        customMode = target == null
+                                        target?.let { selectedWire = it.wireValue }
                                     },
+                                    label = {
+                                        Text(
+                                            if (target == null) {
+                                                customKilobytes
+                                                    ?.let {
+                                                        pdfSizeTargetLabel(
+                                                            PdfSizeTarget.Custom(it),
+                                                        )
+                                                    }
+                                                    ?: stringResource(R.string.pdf_size_custom)
+                                            } else {
+                                                pdfSizeTargetLabel(target)
+                                            },
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f),
                                 )
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
+                            }
+                            repeat(3 - rowChoices.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
                 if (customMode) {
-                    OutlinedTextField(
+                    CustomPdfSizeInput(
                         value = customInput,
                         onValueChange = { customInput = it },
-                        label = { Text(stringResource(R.string.pdf_size_custom_field)) },
-                        supportingText = { Text(stringResource(R.string.pdf_size_custom_hint)) },
-                        isError = customInput.isNotEmpty() && customMegabytes == null,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
+                        unit = customUnit,
+                        onUnitChange = { nextUnit ->
+                            val value = customKilobytes
+                            customUnit = nextUnit
+                            customInput = formatCustomPdfSizeInput(value, nextUnit)
+                        },
+                        valid = customKilobytes != null,
                     )
                 }
                 Text(
@@ -2194,6 +2201,78 @@ private fun PdfSizeTargetDialog(
         },
     )
 }
+
+@Composable
+private fun CustomPdfSizeInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    unit: PdfSizeUnit,
+    onUnitChange: (PdfSizeUnit) -> Unit,
+    valid: Boolean,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(stringResource(R.string.pdf_size_custom_field)) },
+            isError = value.isNotEmpty() && !valid,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PdfSizeUnit.entries.forEach { option ->
+                FilterChip(
+                    selected = unit == option,
+                    onClick = { onUnitChange(option) },
+                    label = {
+                        Text(
+                            stringResource(
+                                if (option == PdfSizeUnit.Kilobytes) {
+                                    R.string.pdf_size_unit_kb
+                                } else {
+                                    R.string.pdf_size_unit_mb
+                                },
+                            ),
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(
+            stringResource(R.string.pdf_size_custom_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun preferredPdfSizeUnit(target: PdfSizeTarget.Custom?): PdfSizeUnit =
+    if (target != null && target.kilobytes % 1_000 == 0) {
+        PdfSizeUnit.Megabytes
+    } else {
+        PdfSizeUnit.Kilobytes
+    }
+
+private fun formatCustomPdfSizeInput(
+    target: PdfSizeTarget.Custom?,
+    unit: PdfSizeUnit,
+): String = formatCustomPdfSizeInput(target?.kilobytes, unit)
+
+private fun formatCustomPdfSizeInput(
+    kilobytes: Int?,
+    unit: PdfSizeUnit,
+): String =
+    when {
+        kilobytes == null -> ""
+        unit == PdfSizeUnit.Kilobytes -> kilobytes.toString()
+        kilobytes % 1_000 == 0 -> (kilobytes / 1_000).toString()
+        else -> ""
+    }
 
 @Composable
 private fun ImageSizeDialog(
@@ -2775,11 +2854,21 @@ private fun SettingsScreen(
     var languageDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeInput by rememberSaveable { mutableStateOf("") }
+    var customPdfSizeUnit by rememberSaveable { mutableStateOf(PdfSizeUnit.Kilobytes) }
+    var appInfoExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val supportNotice = stringResource(R.string.support_scanit_notice)
+    val appVersionName =
+        remember(context) {
+            try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            }
+        }
 
     fun persistSettings() {
         settingsError =
@@ -2844,32 +2933,33 @@ private fun SettingsScreen(
     }
 
     if (customPdfSizeDialogOpen) {
-        val customMegabytes = parseCustomPdfMegabytes(customPdfSizeInput)
+        val customKilobytes = parseCustomPdfKilobytes(customPdfSizeInput, customPdfSizeUnit)
         AlertDialog(
             onDismissRequest = { customPdfSizeDialogOpen = false },
             title = { Text(stringResource(R.string.pdf_size_custom_title)) },
             text = {
-                OutlinedTextField(
+                CustomPdfSizeInput(
                     value = customPdfSizeInput,
                     onValueChange = { customPdfSizeInput = it },
-                    label = { Text(stringResource(R.string.pdf_size_custom_field)) },
-                    supportingText = { Text(stringResource(R.string.pdf_size_custom_hint)) },
-                    isError = customPdfSizeInput.isNotEmpty() && customMegabytes == null,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
+                    unit = customPdfSizeUnit,
+                    onUnitChange = { nextUnit ->
+                        val value = customKilobytes
+                        customPdfSizeUnit = nextUnit
+                        customPdfSizeInput = formatCustomPdfSizeInput(value, nextUnit)
+                    },
+                    valid = customKilobytes != null,
                 )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        customMegabytes?.let { megabytes ->
-                            pdfSizeTargetWire = PdfSizeTarget.Custom(megabytes).wireValue
+                        customKilobytes?.let { kilobytes ->
+                            pdfSizeTargetWire = PdfSizeTarget.Custom(kilobytes).wireValue
                             persistSettings()
                             customPdfSizeDialogOpen = false
                         }
                     },
-                    enabled = customMegabytes != null,
+                    enabled = customKilobytes != null,
                 ) {
                     Text(stringResource(R.string.save))
                 }
@@ -2964,20 +3054,16 @@ private fun SettingsScreen(
                         FilterChip(
                             selected = selectedTarget is PdfSizeTarget.Custom,
                             onClick = {
+                                val selectedCustom = selectedTarget as? PdfSizeTarget.Custom
+                                customPdfSizeUnit = preferredPdfSizeUnit(selectedCustom)
                                 customPdfSizeInput =
-                                    (selectedTarget as? PdfSizeTarget.Custom)
-                                        ?.megabytes
-                                        ?.toString()
-                                        .orEmpty()
+                                    formatCustomPdfSizeInput(selectedCustom, customPdfSizeUnit)
                                 customPdfSizeDialogOpen = true
                             },
                             label = {
                                 Text(
                                     if (selectedTarget is PdfSizeTarget.Custom) {
-                                        stringResource(
-                                            R.string.pdf_size_custom_value,
-                                            selectedTarget.megabytes,
-                                        )
+                                        pdfSizeTargetLabel(selectedTarget)
                                     } else {
                                         stringResource(R.string.pdf_size_custom)
                                     },
@@ -3156,18 +3242,6 @@ private fun SettingsScreen(
             }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                TextButton(
-                    onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.privacy_policy))
-                }
-                TextButton(
-                    onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.third_party_notices))
-                }
                 Button(
                     onClick = {
                         Toast.makeText(context, supportNotice, Toast.LENGTH_SHORT).show()
@@ -3188,6 +3262,78 @@ private fun SettingsScreen(
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(stringResource(R.string.support_scanit))
+                }
+            }
+            item {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column {
+                        Row(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .clickable { appInfoExpanded = !appInfoExpanded }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_file_details),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.app_info),
+                                    style = MaterialTheme.typography.titleSmall,
+                                )
+                                appVersionName?.let { version ->
+                                    Text(
+                                        stringResource(R.string.app_version, version),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Icon(
+                                painter = painterResource(R.drawable.ic_expand_more),
+                                contentDescription =
+                                    stringResource(
+                                        if (appInfoExpanded) {
+                                            R.string.collapse_app_info
+                                        } else {
+                                            R.string.expand_app_info
+                                        },
+                                    ),
+                                modifier =
+                                    Modifier.size(24.dp)
+                                        .rotate(if (appInfoExpanded) 180f else 0f),
+                            )
+                        }
+                        if (appInfoExpanded) {
+                            HorizontalDivider()
+                            TextButton(
+                                onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.privacy_policy))
+                            }
+                            TextButton(
+                                onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.third_party_notices))
+                            }
+                            TextButton(
+                                onClick = { uriHandler.openUri(SOURCE_CODE_URL) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.source_code))
+                            }
+                        }
+                    }
                 }
             }
             item { Spacer(Modifier.height(4.dp)) }
@@ -3234,11 +3380,18 @@ private fun imageExportFormatLabel(format: ImageExportFormat): String =
 private fun pdfSizeTargetLabel(target: PdfSizeTarget): String =
     when (target) {
         PdfSizeTarget.Original -> stringResource(R.string.pdf_size_original)
+        PdfSizeTarget.Kb200 -> stringResource(R.string.pdf_size_200_kb)
+        PdfSizeTarget.Kb500 -> stringResource(R.string.pdf_size_500_kb)
+        PdfSizeTarget.Mb1 -> stringResource(R.string.pdf_size_1_mb)
         PdfSizeTarget.Mb5 -> stringResource(R.string.pdf_size_5_mb)
         PdfSizeTarget.Mb10 -> stringResource(R.string.pdf_size_10_mb)
         PdfSizeTarget.Mb20 -> stringResource(R.string.pdf_size_20_mb)
         is PdfSizeTarget.Custom ->
-            stringResource(R.string.pdf_size_custom_value, target.megabytes)
+            if (target.kilobytes % 1_000 == 0) {
+                stringResource(R.string.pdf_size_custom_value_mb, target.kilobytes / 1_000)
+            } else {
+                stringResource(R.string.pdf_size_custom_value_kb, target.kilobytes)
+            }
     }
 
 @Composable

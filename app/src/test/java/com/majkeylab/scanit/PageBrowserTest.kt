@@ -8,6 +8,11 @@ import org.junit.Test
 
 class PageBrowserTest {
     @Test
+    fun resultActionsUseCompactAccessibleHeight() {
+        assertEquals(48, RESULT_ACTION_MIN_HEIGHT_DP)
+    }
+
+    @Test
     fun resultPageStatusIsOneBasedAndClamped() {
         assertEquals(1 to 1, resultPageStatus(currentIndex = 0, pageCount = 1))
         assertEquals(2 to 3, resultPageStatus(currentIndex = 1, pageCount = 3))

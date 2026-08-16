@@ -25,8 +25,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 336979,
-    "sha256": "578904DECDCF1B15835604E45E17A531D99154983420E0748F47487F542D9125",
+    "bytes": 1671762,
+    "sha256": "D2BFE6C142B409994A5C288430249F527C0B3F34A0E8E4F3BE07AEFF711F150F",
     "altText": "ScanIt result screen with clear buttons for rescanning, signing, document actions, and sharing."
   },
   {
@@ -35,8 +35,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 199671,
-    "sha256": "DDE47C3C86D2E315BE0149A660679EBF56FE770D79573100AEE98E67B815F285",
+    "bytes": 1658149,
+    "sha256": "4884836C2448A00E97E431251968D97FD0671FE3D1711BA14278FAEE8B6DC4C2",
     "altText": "File details with PDF size and location controls plus image size, format, and location controls."
   },
   {
@@ -55,8 +55,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 399064,
-    "sha256": "6AFF1715CC35C573E261285C2162CFD9D311ED1D87165FA52ADA84067F355A00",
+    "bytes": 1836632,
+    "sha256": "4BE1FCA7A53685ABC3DBE49436BB173AD830A67B4D4839D5A00E06E9B4BE01DF",
     "altText": "Signature and stamp editor with direct placement, pinch resize, rotation, drawing, import, and paper scan controls."
   },
   {
@@ -75,9 +75,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 285129,
-    "sha256": "6F8DECD841C10178978CC1310214094ED4CF4D1F3D2FAB005C7F1E96691B46C9",
-    "altText": "Settings for original, 5 MB, 10 MB, 20 MB, and custom PDF size targets."
+    "bytes": 1723470,
+    "sha256": "3720E31B0002BEEF27344D6FC4B38AB4A758615156FC5E047E1E4B6B987A7E58",
+    "altText": "Settings with Original, 200 KB, 500 KB, and 1 MB PDF targets plus custom targets from 1 KB to 500 MB."
   },
   {
     "locale": "cs-CZ",
@@ -105,8 +105,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 351173,
-    "sha256": "E83BA7FF03A36CACB4F08809F2B42339889C3CB4FA003F58F8A01924348E6747",
+    "bytes": 1739531,
+    "sha256": "3B7506B3A1FFDCDCB87FDBDE52425AE347F17D4153276A3440355FAECF6B0043",
     "altText": "Výsledek skenu s jasnými tlačítky pro nový sken, podpis, akce dokumentu a sdílení."
   },
   {
@@ -115,8 +115,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 226020,
-    "sha256": "D8BA248E57C8815D9C60309F406E82AB5D5EA7381C99FC4D59FEFC409314685E",
+    "bytes": 1691442,
+    "sha256": "63172C3ABAF77D49CBD4C924AFB8923554A3943A79C61AC531054242A5E04D1A",
     "altText": "Podrobnosti souborů s ovládáním velikosti a umístění PDF a velikosti, formátu a umístění obrázků."
   },
   {
@@ -135,9 +135,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 415057,
-    "sha256": "B0A5E972BD9C8BE3E670A4E89553AFB143B1ABB99A466B7CF1B8C87654762AD1",
-    "altText": "Editor podpisu a razítka s přímým umístěním, změnou velikosti, otočením, kreslením a importem."
+    "bytes": 1897845,
+    "sha256": "FEF1CCC84299BBD0A0FC30996D43A321EA96804D87E72FB78713EA024815D6AA",
+    "altText": "Editor podpisu a razítka s přímým umístěním, změnou velikosti, otočením, kreslením, importem a skenováním papíru."
   },
   {
     "locale": "cs-CZ",
@@ -155,8 +155,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 303860,
-    "sha256": "766EEEE51A9FE0A92CCEFE2E852A3E1F1650DC6A99CB3C2D901D240E1EEE8CAB",
-    "altText": "Nastavení původní, 5 MB, 10 MB, 20 MB a vlastní cílové velikosti PDF."
+    "bytes": 1802477,
+    "sha256": "06A20B2ADDC1BC351F5BD8F2BFF22E7681E0ECF0F9B0F141D69BAF1C1E758104",
+    "altText": "Nastavení s původní, 200 KB, 500 KB a 1 MB cílovou velikostí PDF a vlastním rozsahem od 1 KB do 500 MB."
   }
 ]

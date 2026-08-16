@@ -348,15 +348,21 @@ private fun VisualMarkCreationActions(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
-            R.string.draw_visual_mark to onDraw,
-            R.string.import_visual_mark to onImport,
-            R.string.scan_visual_mark to onScan,
-        ).forEach { (label, action) ->
+            Triple(R.drawable.ic_signature, R.string.draw_visual_mark, onDraw),
+            Triple(R.drawable.ic_image, R.string.import_visual_mark, onImport),
+            Triple(R.drawable.ic_camera, R.string.scan_visual_mark, onScan),
+        ).forEach { (icon, label, action) ->
             OutlinedButton(
                 onClick = action,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(stringResource(label))
             }
         }

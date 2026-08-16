@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.1"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.3 showing the Result screen, file controls, and visual signature editor."></a>
 </p>
 
-## v1.3.1 update
+## v1.3.3 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -43,14 +43,14 @@ delivered by Google Play services. The recognition model may download
 before its first use; Actions report that state and can be retried afterward.
 
 Result pages now swipe horizontally and reveal the edge of the next page.
-Rescan, Sign / stamp, and Actions are clear buttons, while File details groups
+Rescan, Sign / stamp, and Actions are compact accessible buttons, while File details groups
 PDF and image changes into compact Size, Format, and Location controls.
 
-[Download ScanIt v1.3.1](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.1)
+[Download ScanIt v1.3.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
-  <img src="docs/images/scanit-v1.1-phones.png" width="100%" alt="Current ScanIt screens showing document capture, the Recent scans dashboard, the visual signature editor, and appearance and PDF settings.">
+  <img src="docs/images/scanit-v1.1-phones.png" width="100%" alt="Current ScanIt screens showing document capture, Result, File details, and the visual signature editor.">
 </p>
 
 ## Why ScanIt exists
@@ -82,7 +82,7 @@ source, release artifacts, and real-device workflows.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
 - Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before ScanIt creates the result.
-- Measured PDF size goals of Original, 5 MB, 10 MB, 20 MB, or a custom 1–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
+- Measured PDF size goals of Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, or a custom 1 KB–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
 - Manual PDF, image, or combined saving from File details.
