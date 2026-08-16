@@ -749,16 +749,6 @@ internal fun recentRowAction(target: RecentRowTarget): RecentRowAction =
         RecentRowTarget.Overflow -> RecentRowAction.ShowMenu
     }
 
-internal fun canEditAppearance(scan: SavedScan): Boolean {
-    val cached = scan.cached
-    return scan.outputMetadataValid &&
-        cached.entryId != null &&
-        cached.pages.isNotEmpty() &&
-        cached.sourcePages.size == cached.pages.size &&
-        cached.appearance != null &&
-        cached.appearanceSettings != null
-}
-
 internal fun confirmedUnknownOutputAcknowledgement(
     scan: SavedScan,
     confirmed: Boolean,

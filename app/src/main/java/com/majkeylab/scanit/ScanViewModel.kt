@@ -1384,16 +1384,6 @@ internal class ScanViewModel(
             }
         }
 
-    fun openAppearanceEditor() {
-        val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.resultActionsBlocked || !canEditAppearance(current.scan)) return
-        mutableState.value =
-            current.copy(
-                appearanceReviewRequired = true,
-                appearanceMessage = null,
-            )
-    }
-
     fun closeAppearanceEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return
         if (!current.appearanceReviewRequired || current.appearanceApplyInProgress) return

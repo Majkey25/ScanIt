@@ -46,6 +46,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
@@ -76,6 +78,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -112,6 +115,7 @@ import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
@@ -185,7 +189,6 @@ internal fun ScanItApp(
     onChangeImageFormat: (ImageExportFormat) -> Unit = {},
     onChangeImageLocation: () -> Unit = {},
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit = {},
-    onOpenAppearanceEditor: () -> Unit = {},
     onCloseAppearanceEditor: () -> Unit = {},
     onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
     onRunDocumentAction: (DocumentAction) -> Unit = {},
@@ -321,7 +324,6 @@ internal fun ScanItApp(
                         onChangeImageFormat = onChangeImageFormat,
                         onChangeImageLocation = onChangeImageLocation,
                         onAcknowledgeUnknownOutput = onAcknowledgeUnknownOutput,
-                        onEdit = onOpenAppearanceEditor,
                         onRunDocumentAction = onRunDocumentAction,
                         onDismissDocumentAction = onDismissDocumentAction,
                         onExportDocumentText = onExportDocumentText,
@@ -613,7 +615,6 @@ private fun ResultScreen(
     onChangeImageFormat: (ImageExportFormat) -> Unit,
     onChangeImageLocation: () -> Unit,
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit,
-    onEdit: () -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
     onDismissDocumentAction: () -> Unit,
     onExportDocumentText: () -> Unit,
@@ -627,8 +628,9 @@ private fun ResultScreen(
     val scan = result.scan
     val pageCount = scan.cached.pages.size
     val selectedPageIndex = resolvedPageIndex(result.selectedPageIndex, pageCount)
+    val (displayedPage, displayedPageCount) = resultPageStatus(selectedPageIndex, pageCount)
     val pagePosition =
-        stringResource(R.string.page_position, selectedPageIndex + 1, pageCount)
+        stringResource(R.string.page_position, displayedPage, displayedPageCount)
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showPdfSizeDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
@@ -653,7 +655,30 @@ private fun ResultScreen(
                 }
         }
     val actionsEnabled = !result.resultActionsBlocked
-    val stackSecondaryActions = LocalConfiguration.current.fontScale >= 1.3f
+    val configuration = LocalConfiguration.current
+    val stackSecondaryActions =
+        stackResultActions(configuration.fontScale, configuration.screenWidthDp)
+    val pagerState =
+        rememberPagerState(initialPage = selectedPageIndex) { pageCount }
+    LaunchedEffect(selectedPageIndex) {
+        if (pagerState.currentPage != selectedPageIndex) {
+            pagerState.scrollToPage(selectedPageIndex)
+        }
+    }
+    LaunchedEffect(pagerState, actionsEnabled, selectedPageIndex) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                if (actionsEnabled && page != selectedPageIndex) onSelectPage(page)
+            }
+    }
+    val onResultEntryAction: (ResultEntryAction) -> Unit = { action ->
+        when (resultActionDestination(action)) {
+            ResultActionDestination.Scanner -> onNewScan()
+            ResultActionDestination.MarkEditor -> onAddVisualMark()
+            ResultActionDestination.DocumentActions -> showDocumentActions = true
+        }
+    }
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
@@ -670,57 +695,54 @@ private fun ResultScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                when {
-                    result.pagePreviewLoading -> {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(160.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                    result.thumbnail == null -> {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(160.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(stringResource(R.string.preview_unavailable))
-                        }
-                    }
-                    else -> {
-                        Surface(
-                            onClick = { showFullscreen = true },
-                            enabled = actionsEnabled,
-                            shape = MaterialTheme.shapes.medium,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 360.dp),
-                        ) {
-                            Image(
-                                bitmap = result.thumbnail.asImageBitmap(),
-                                contentDescription =
-                                    stringResource(R.string.open_fullscreen_preview, pagePosition),
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
-                        }
-                    }
+                HorizontalPager(
+                    state = pagerState,
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    pageSpacing = 8.dp,
+                    userScrollEnabled = actionsEnabled && pageCount > 1,
+                    modifier = Modifier.fillMaxWidth().height(360.dp),
+                    key = { page -> scan.cached.pages[page].absolutePath },
+                ) { page ->
+                    ResultPagerPage(
+                        page = scan.cached.pages[page],
+                        pageIndex = page,
+                        pageCount = pageCount,
+                        selectedPageIndex = selectedPageIndex,
+                        selectedPreview = result.thumbnail,
+                        selectedPreviewLoading = result.pagePreviewLoading,
+                        enabled = actionsEnabled,
+                        onOpenFullscreen = { showFullscreen = true },
+                        onLoadPreview = onLoadResultPreview,
+                    )
                 }
+            }
+            item {
+                Text(
+                    text = pagePosition,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
             }
             item {
                 if (stackSecondaryActions) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(pagePosition, style = MaterialTheme.typography.titleMedium)
                         OutlinedButton(
-                            onClick = onEdit,
-                            enabled = actionsEnabled && canEditAppearance(scan),
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.Rescan)
+                            },
+                            enabled = actionsEnabled,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) {
                             ActionButtonContent(
-                                iconRes = R.drawable.ic_edit,
-                                textRes = R.string.edit_scan,
+                                iconRes = R.drawable.ic_camera,
+                                textRes = R.string.new_scan,
                             )
                         }
                         OutlinedButton(
-                            onClick = onAddVisualMark,
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.SignOrStamp)
+                            },
                             enabled = actionsEnabled && result.canAddVisualMark,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) {
@@ -730,7 +752,9 @@ private fun ResultScreen(
                             )
                         }
                         OutlinedButton(
-                            onClick = { showDocumentActions = true },
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.Actions)
+                            },
                             enabled = actionsEnabled,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) {
@@ -743,61 +767,48 @@ private fun ResultScreen(
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            pagePosition,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(0.75f),
-                        )
-                        TextButton(
-                            onClick = onEdit,
-                            enabled = actionsEnabled && canEditAppearance(scan),
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
+                        OutlinedButton(
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.Rescan)
+                            },
+                            enabled = actionsEnabled,
+                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
+                            contentPadding = PaddingValues(8.dp),
                         ) {
-                            CompactActionContent(
-                                iconRes = R.drawable.ic_edit,
-                                textRes = R.string.edit_scan,
+                            ResultActionButtonContent(
+                                iconRes = R.drawable.ic_camera,
+                                textRes = R.string.new_scan,
                             )
                         }
-                        TextButton(
-                            onClick = onAddVisualMark,
+                        OutlinedButton(
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.SignOrStamp)
+                            },
                             enabled = actionsEnabled && result.canAddVisualMark,
-                            modifier = Modifier.weight(1.2f).heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
+                            contentPadding = PaddingValues(8.dp),
                         ) {
-                            CompactActionContent(
+                            ResultActionButtonContent(
                                 iconRes = R.drawable.ic_signature,
                                 textRes = R.string.sign_or_stamp,
                             )
                         }
-                        TextButton(
-                            onClick = { showDocumentActions = true },
+                        OutlinedButton(
+                            onClick = {
+                                onResultEntryAction(ResultEntryAction.Actions)
+                            },
                             enabled = actionsEnabled,
-                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 76.dp),
+                            contentPadding = PaddingValues(8.dp),
                         ) {
-                            CompactActionContent(
+                            ResultActionButtonContent(
                                 iconRes = R.drawable.ic_actions,
                                 textRes = R.string.actions,
                             )
                         }
                     }
-                }
-            }
-            if (pageCount > 1) {
-                item {
-                    ResultPageStrip(
-                        pages = scan.cached.pages,
-                        selectedPageIndex = selectedPageIndex,
-                        enabled = actionsEnabled,
-                        onSelectPage = onSelectPage,
-                        onLoadThumbnail = onLoadThumbnail,
-                    )
                 }
             }
             item {
@@ -842,18 +853,6 @@ private fun ResultScreen(
                         onChangeImageFormat = { showImageFormatDialog = true },
                         onChangeImageLocation = onChangeImageLocation,
                         onAcknowledgeUnknownOutput = { showUnknownOutputDialog = true },
-                    )
-                }
-            }
-            item {
-                OutlinedButton(
-                    onClick = onNewScan,
-                    enabled = actionsEnabled,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    ActionButtonContent(
-                        iconRes = R.drawable.ic_camera,
-                        textRes = R.string.new_scan,
                     )
                 }
             }
@@ -936,6 +935,48 @@ private fun ResultScreen(
             onExportText = onExportDocumentText,
             onOpenUrl = onOpenDocumentActionUrl,
         )
+    }
+}
+
+@Composable
+private fun ResultPagerPage(
+    page: File,
+    pageIndex: Int,
+    pageCount: Int,
+    selectedPageIndex: Int,
+    selectedPreview: Bitmap?,
+    selectedPreviewLoading: Boolean,
+    enabled: Boolean,
+    onOpenFullscreen: () -> Unit,
+    onLoadPreview: suspend (File, Int) -> Bitmap?,
+) {
+    val isSelected = pageIndex == selectedPageIndex
+    val ownedPreview =
+        if (isSelected) null else ownedResultPreview(page, 1024, onLoadPreview)
+    val preview = if (isSelected) selectedPreview else ownedPreview?.bitmap
+    val loading = if (isSelected) selectedPreviewLoading else ownedPreview?.loading == true
+    val pageDescription = stringResource(R.string.page_position, pageIndex + 1, pageCount)
+    Surface(
+        onClick = onOpenFullscreen,
+        enabled = enabled,
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            when {
+                loading -> CircularProgressIndicator()
+                preview == null -> Text(stringResource(R.string.preview_unavailable))
+                else ->
+                    Image(
+                        bitmap = preview.asImageBitmap(),
+                        contentDescription =
+                            stringResource(R.string.open_fullscreen_preview, pageDescription),
+                        modifier = Modifier.fillMaxSize().padding(4.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+            }
+        }
     }
 }
 
@@ -1480,21 +1521,26 @@ private fun ActionButtonContent(
 }
 
 @Composable
-private fun CompactActionContent(
+private fun ResultActionButtonContent(
     iconRes: Int,
     textRes: Int,
 ) {
-    Icon(
-        painter = painterResource(iconRes),
-        contentDescription = null,
-        modifier = Modifier.size(18.dp),
-    )
-    Spacer(Modifier.width(4.dp))
-    Text(
-        text = stringResource(textRes),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(textRes),
+            maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
 }
 
 @Composable
