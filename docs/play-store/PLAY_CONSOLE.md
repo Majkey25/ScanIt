@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `14` |
-| Version name | `1.3.0` |
+| Version code | `15` |
+| Version name | `1.3.1` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 14 / 1.3.0
+## Release notes — version 15 / 1.3.1
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> File details can now change PDF size and folder plus image size, format, and folder. Export exact Original images, high-quality JPEG, or lossless PNG. Tap a Result for full-screen zoom. Actions extract and export Latin-script text or detect QR/barcodes on-device; Google Play services may download the model before first use. Output replacement and clipboard handling are hardened.
+> Result pages now swipe with a visible next-page preview. Rescan, Sign / stamp, and Actions are clear buttons. File details groups PDF Size and Location plus image Size, Format, and Location into compact controls. The previous scan stays in Recent when a rescan is canceled.
 
 ### Čeština
 
-> V detailech souboru lze změnit velikost a složku PDF i velikost, formát a složku obrázků. Exportujte přesný originál, kvalitní JPEG nebo bezeztrátové PNG. Klepnutím otevřete celoobrazovkový náhled. Akce místně rozpoznají text nebo načtou QR a čárové kódy; před prvním použitím mohou služby Google Play stáhnout model. Ukládání a kopírování bylo zabezpečeno.
+> Stránky výsledku lze posouvat s viditelným náhledem další strany. Znovu skenovat, Podpis / razítko a Akce jsou jasná tlačítka. Detaily souboru přehledně seskupují velikost a umístění PDF i velikost, formát a umístění obrázků. Při zrušení nového skenu zůstane původní sken v Nedávných.
 
 ### Deutsch
 
-> In den Dateidetails lassen sich PDF-Größe und Ordner sowie Bildgröße, Format und Ordner ändern. Exportiere das exakte Original, hochwertiges JPEG oder verlustfreies PNG. Tippe für die Vollbild-Zoomansicht. Aktionen erkennen Text oder QR-/Barcodes lokal; Google Play-Dienste können das Modell vor der ersten Nutzung laden. Speicherung und Zwischenablage wurden abgesichert.
+> Ergebnisseiten lassen sich wischen und zeigen einen Teil der nächsten Seite. Neu scannen, Signieren / Stempel und Aktionen sind klare Schaltflächen. Dateidetails gruppiert PDF-Größe und Speicherort sowie Bildgröße, Format und Speicherort. Beim Abbruch eines neuen Scans bleibt der bisherige Scan unter Zuletzt erhalten.
 
 ### Español
 
-> Detalles del archivo permite cambiar el tamaño y la carpeta del PDF, además del tamaño, formato y carpeta de las imágenes. Exporta el original exacto, JPEG de alta calidad o PNG sin pérdida. Toca para ampliar a pantalla completa. Las acciones detectan texto o códigos QR y de barras en el dispositivo; Google Play puede descargar el modelo antes del primer uso. Se reforzó el guardado y copiado.
+> Las páginas del resultado se deslizan y muestran parte de la siguiente. Volver a escanear, Firmar / sello y Acciones son botones claros. Detalles del archivo agrupa Tamaño y Ubicación del PDF y Tamaño, Formato y Ubicación de imágenes. Al cancelar un nuevo escaneo, el anterior permanece en Recientes.
 
 ### 简体中文
 
-> 文件详情现在可更改 PDF 的大小和文件夹，以及图片大小、格式和文件夹。可导出完全保留的原图、高质量 JPEG 或无损 PNG。点击结果可全屏缩放。本地操作可提取文字或识别二维码和条形码；首次使用前，Google Play 服务可能会下载模型。文件替换和剪贴板处理均已加强。
+> 结果页面现在可横向滑动，并显示下一页的一部分。重新扫描、签名/印章和操作均为清晰按钮。文件详情将 PDF 大小与位置，以及图片大小、格式与位置紧凑分组。取消重新扫描时，原扫描仍保留在最近记录中。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -322,7 +322,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 14, version `1.3.0`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 15, version `1.3.1`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

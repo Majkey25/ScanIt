@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## [1.3.1] - 2026-08-16
+
+### Changed
+
+- Reworked Result into a swipeable page preview that shows the edge of the next page and keeps a single clear page count.
+- Replaced the ambiguous Result links with large Rescan, Sign / stamp, and Actions buttons.
+- Reorganized File details into explicit PDF Size / Location and image Size / Format / Location buttons.
+- Replaced the letter-like PDF mark with a plain document icon.
+- Replaced ScanIt's redundant appearance entry with Rescan, which opens a fresh Google scan session while preserving the existing scan if canceled.
+
+### Performance
+
+- Kept adjacent page previews bounded to 1024 px and verified stable memory after repeated page swipes.
+
 ## [1.3.0] - 2026-08-15
 
 ### Added
@@ -145,6 +159,7 @@ Historical copies retain the license supplied with them. See
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
 [1.2.3]: https://github.com/Majkey25/ScanIt/compare/v1.2.2...v1.2.3
 [1.2.4]: https://github.com/Majkey25/ScanIt/compare/v1.2.3...v1.2.4
+[1.3.1]: https://github.com/Majkey25/ScanIt/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Majkey25/ScanIt/compare/v1.2.4...v1.3.0
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main
