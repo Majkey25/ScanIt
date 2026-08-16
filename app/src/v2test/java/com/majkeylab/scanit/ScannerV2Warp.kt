@@ -18,7 +18,6 @@ import kotlin.math.roundToInt
 
 private const val SCANNER_V2_BITMAP_BYTES_PER_PIXEL = 4L
 private const val SCANNER_V2_TILE_EDGE = 1024
-private const val MAX_SCANNER_V2_PAGE_BYTES = 64L * 1024 * 1024
 private const val MAX_SCANNER_V2_BITMAP_PEAK_BYTES = 64L * 1024 * 1024
 
 internal data class ScannerV2WarpPoint(val x: Double, val y: Double)
@@ -109,7 +108,7 @@ internal fun renderScannerV2FilterPreviews(
     if (!input.isFile || input.length() !in 1..MAX_SCANNER_V2_PAGE_BYTES) {
         throw IOException("Scanner preview source is invalid")
     }
-    val dimensions = readJpegDimensions(input)
+    val dimensions = readScannerV2SourceDimensions(input)
     val plan = scannerV2ThumbnailPlan(
         dimensions.width,
         dimensions.height,
@@ -195,7 +194,7 @@ internal fun renderScannerV2Page(
         throw IOException("Scanner render paths are invalid")
     }
     throwIfScannerV2Cancelled(isCancelled)
-    val dimensions = readJpegDimensions(input)
+    val dimensions = readScannerV2SourceDimensions(input)
     val orientation = readScannerV2ExifOrientation(input)
     val plan = scannerV2WarpPlan(
         dimensions.width,
@@ -235,7 +234,7 @@ internal fun renderScannerV2Page(
 
 private fun renderScannerV2Tiles(
     source: File,
-    dimensions: JpegDimensions,
+    dimensions: ImageExportDimensions,
     plan: ScannerV2WarpPlan,
     isCancelled: () -> Boolean,
 ): Bitmap = withImageExportRegionResources(

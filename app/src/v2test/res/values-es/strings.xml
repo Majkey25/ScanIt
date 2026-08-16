@@ -6,6 +6,7 @@
     <string name="v2_capture_title">Escanear</string>
     <string name="v2_allow_camera">Permitir cámara</string>
     <string name="v2_capture_button">Escanear</string>
+    <string name="v2_import_image">Importar imagen</string>
     <string name="v2_discard_interrupted_capture">Descartar foto interrumpida</string>
     <string name="v2_review_title">Revisar</string>
     <string name="v2_crop_title">Ajustar esquinas</string>
@@ -37,6 +38,7 @@
     <string name="v2_error_session">La sesión del escáner no se pudo recuperar de forma segura.</string>
     <string name="v2_error_capture">No se pudo guardar la foto. Inténtalo de nuevo.</string>
     <string name="v2_error_capture_recovery">Debes descartar la foto interrumpida antes de volver a escanear.</string>
+    <string name="v2_error_import">No se pudo importar la imagen. Elige una imagen JPEG, PNG o WebP.</string>
     <string name="v2_error_render">No se pudo procesar la página. La foto original se ha conservado.</string>
     <string name="v2_error_finish">No se pudo abrir el escaneo. Revísalo y pulsa Continuar de nuevo.</string>
     <string name="v2_error_camera">La cámara no está disponible.</string>

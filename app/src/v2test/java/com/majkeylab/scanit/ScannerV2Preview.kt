@@ -56,7 +56,7 @@ internal fun scannerV2PreviewSampleSize(
 }
 
 private fun decodeScannerV2Preview(source: File, maxEdge: Int, maxPixels: Long): Bitmap {
-    val dimensions = readJpegDimensions(source)
+    val dimensions = readScannerV2SourceDimensions(source)
     val sample = scannerV2PreviewSampleSize(dimensions.width, dimensions.height, maxEdge, maxPixels)
     val decoded = BitmapFactory.decodeFile(
         source.path,

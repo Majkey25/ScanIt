@@ -6,6 +6,7 @@
     <string name="v2_capture_title">Scannen</string>
     <string name="v2_allow_camera">Kamera erlauben</string>
     <string name="v2_capture_button">Scannen</string>
+    <string name="v2_import_image">Bild importieren</string>
     <string name="v2_discard_interrupted_capture">Unterbrochenes Foto verwerfen</string>
     <string name="v2_review_title">Prüfen</string>
     <string name="v2_crop_title">Ecken anpassen</string>
@@ -37,6 +38,7 @@
     <string name="v2_error_session">Die Scanner-Sitzung konnte nicht sicher wiederhergestellt werden.</string>
     <string name="v2_error_capture">Das Foto konnte nicht gespeichert werden. Erneut versuchen.</string>
     <string name="v2_error_capture_recovery">Das unterbrochene Foto muss vor dem nächsten Scan verworfen werden.</string>
+    <string name="v2_error_import">Das Bild konnte nicht importiert werden. Wählen Sie ein JPEG-, PNG- oder WebP-Bild.</string>
     <string name="v2_error_render">Die Seite konnte nicht gerendert werden. Das Quellfoto bleibt erhalten.</string>
     <string name="v2_error_finish">Der Scan konnte nicht geöffnet werden. Prüfen Sie ihn und tippen Sie erneut auf Weiter.</string>
     <string name="v2_error_camera">Die Kamera ist nicht verfügbar.</string>

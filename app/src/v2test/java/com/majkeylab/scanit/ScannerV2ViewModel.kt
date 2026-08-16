@@ -27,6 +27,7 @@ internal enum class ScannerV2Issue {
     SessionUnavailable,
     CaptureFailed,
     CaptureRecoveryRequired,
+    ImportFailed,
     RenderFailed,
     FinishFailed,
     CameraUnavailable,
@@ -112,6 +113,62 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
                 mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.CaptureFailed)
+            }
+        }
+    }
+
+    fun importImage(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                lock.withLock {
+                    withContext(Dispatchers.IO) {
+                        val current = requireNotNull(mutableState.value.manifest)
+                        if (mutableState.value.busy || current.state.stage != ScannerSessionStage.Capturing) {
+                            return@withContext
+                        }
+                        val pageId = PageId.parse(UUID.randomUUID().toString())
+                        val destination = store.captureFile(current.sessionId, pageId)
+                        if (destination.exists()) throw IOException("Scanner import destination already exists")
+                        val reserved = reserveScannerV2Capture(current, pageId, nextTimestamp(current))
+                        store.update(current, reserved)
+                        val ticket = ScannerV2CaptureTicket(
+                            current.sessionId,
+                            pageId,
+                            current.state.generation,
+                            destination,
+                        )
+                        mutableState.value = mutableState.value.copy(
+                            manifest = reserved,
+                            busy = true,
+                            issue = null,
+                        )
+                        try {
+                            val input = getApplication<Application>().contentResolver.openInputStream(uri)
+                                ?: throw IOException("Scanner import could not be opened")
+                            input.use { copyScannerV2ImportSource(it, destination) }
+                            completeCaptureLocked(ticket)
+                        } catch (failure: Throwable) {
+                            val pending = mutableState.value.manifest
+                            if (pending != null && ticket.matches(pending)) {
+                                if (!store.deletePendingCaptureFiles(pending)) {
+                                    mutableState.value = mutableState.value.copy(
+                                        busy = false,
+                                        issue = ScannerV2Issue.CaptureRecoveryRequired,
+                                    )
+                                    return@withContext
+                                }
+                                restoreAfterCaptureCancellation(pending)
+                            }
+                            throw failure
+                        }
+                    }
+                }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    issue = ScannerV2Issue.ImportFailed,
+                )
             }
         }
     }
@@ -800,10 +857,10 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
     }
 
     private fun validateScannerV2Source(file: File) {
-        if (!file.isFile || file.length() !in 1..64L * 1024 * 1024) {
+        if (!file.isFile || file.length() !in 1..MAX_SCANNER_V2_PAGE_BYTES) {
             throw IOException("Scanner capture is missing or too large")
         }
-        val dimensions = readJpegDimensions(file)
+        val dimensions = readScannerV2SourceDimensions(file)
         if (
             dimensions.width > MAX_IMAGE_EXPORT_DIMENSION ||
                 dimensions.height > MAX_IMAGE_EXPORT_DIMENSION ||

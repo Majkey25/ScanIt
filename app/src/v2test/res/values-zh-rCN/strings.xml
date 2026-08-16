@@ -6,6 +6,7 @@
     <string name="v2_capture_title">扫描</string>
     <string name="v2_allow_camera">允许使用相机</string>
     <string name="v2_capture_button">扫描</string>
+    <string name="v2_import_image">导入图片</string>
     <string name="v2_discard_interrupted_capture">丢弃中断的照片</string>
     <string name="v2_review_title">检查</string>
     <string name="v2_crop_title">调整边角</string>
@@ -37,6 +38,7 @@
     <string name="v2_error_session">无法安全恢复扫描会话。</string>
     <string name="v2_error_capture">无法保存照片，请重试。</string>
     <string name="v2_error_capture_recovery">再次扫描前必须丢弃中断的照片。</string>
+    <string name="v2_error_import">无法导入图片。请选择 JPEG、PNG 或 WebP 图片。</string>
     <string name="v2_error_render">无法处理页面，原始照片已保留。</string>
     <string name="v2_error_finish">无法打开扫描件。请检查后再次点按继续。</string>
     <string name="v2_error_camera">相机不可用。</string>

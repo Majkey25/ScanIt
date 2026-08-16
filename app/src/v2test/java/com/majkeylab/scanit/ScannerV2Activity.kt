@@ -105,6 +105,9 @@ class ScannerV2Activity : ComponentActivity() {
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted -> cameraPermissionGranted = granted }
+    private val imageImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(viewModel::importImage) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -264,6 +267,9 @@ class ScannerV2Activity : ComponentActivity() {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
                     onCapture = ::capture,
+                    onImportImage = {
+                        imageImportLauncher.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+                    },
                     onCancelCamera = ::cancelCamera,
                     onDiscardInterruptedCapture = viewModel::discardInterruptedCapture,
                     onConfirmCrop = viewModel::confirmCrop,
@@ -403,6 +409,7 @@ private fun ScannerV2App(
     cameraPermissionGranted: Boolean,
     onRequestCameraPermission: () -> Unit,
     onCapture: () -> Unit,
+    onImportImage: () -> Unit,
     onCancelCamera: () -> Unit,
     onDiscardInterruptedCapture: () -> Unit,
     onConfirmCrop: (PageQuad, Int) -> Unit,
@@ -424,6 +431,7 @@ private fun ScannerV2App(
                 permissionGranted = cameraPermissionGranted,
                 onRequestPermission = onRequestCameraPermission,
                 onCapture = onCapture,
+                onImportImage = onImportImage,
                 onCancel = onCancelCamera,
                 onDiscardInterruptedCapture = onDiscardInterruptedCapture,
             )
@@ -453,6 +461,7 @@ private fun ScannerV2CameraScreen(
     permissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     onCapture: () -> Unit,
+    onImportImage: () -> Unit,
     onCancel: () -> Unit,
     onDiscardInterruptedCapture: () -> Unit,
 ) {
@@ -498,7 +507,17 @@ private fun ScannerV2CameraScreen(
             }
         }
         Spacer(Modifier.weight(1f))
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onImportImage,
+                enabled = !state.busy,
+            ) {
+                Text(stringResource(R.string.v2_import_image))
+            }
             Button(
                 onClick = onCapture,
                 enabled = permissionGranted && surfaceRequest != null && !state.busy,
@@ -917,6 +936,7 @@ private fun ScannerV2IssueText(issue: ScannerV2Issue) {
         ScannerV2Issue.SessionUnavailable -> R.string.v2_error_session
         ScannerV2Issue.CaptureFailed -> R.string.v2_error_capture
         ScannerV2Issue.CaptureRecoveryRequired -> R.string.v2_error_capture_recovery
+        ScannerV2Issue.ImportFailed -> R.string.v2_error_import
         ScannerV2Issue.RenderFailed -> R.string.v2_error_render
         ScannerV2Issue.FinishFailed -> R.string.v2_error_finish
         ScannerV2Issue.CameraUnavailable -> R.string.v2_error_camera
