@@ -178,14 +178,17 @@ class MainActivity : ComponentActivity() {
                 onApplyVisualMark = viewModel::applyVisualMark,
             )
         }
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.scannerRequest.collect { request ->
-                    if (request != null && viewModel.claimScannerRequest(request)) {
-                        requestScannerIntent(request)
+        if (!isScannerV2ApplicationId(packageName)) {
+            lifecycleScope.launch {
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    viewModel.scannerRequest.collect { request ->
+                        if (request != null && viewModel.claimScannerRequest(request)) {
+                            requestScannerIntent(request)
+                        }
                     }
                 }
             }
+            viewModel.resumeScannerPreparation()
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -195,9 +198,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        }
-        if (!isScannerV2ApplicationId(packageName)) {
-            viewModel.resumeScannerPreparation()
         }
         lifecycleScope.launch(Dispatchers.IO) {
             val result = retryPendingShareCleanup(applicationContext)
@@ -276,8 +276,14 @@ class MainActivity : ComponentActivity() {
                     .setClassName(packageName, SCANNER_V2_ACTIVITY_CLASS)
                     .setAction(action)
                     .apply {
-                        editCacheId?.let { putExtra(EXTRA_SCANNER_V2_EDIT_CACHE_ID, it) }
-                        editEntryId?.let { putExtra(EXTRA_SCANNER_V2_EDIT_ENTRY_ID, it) }
+                        editCacheId?.let {
+                            putExtra(EXTRA_SCANNER_V2_EDIT_CACHE_ID, it)
+                            putExtra(EXTRA_SCANNER_V2_RESULT_CACHE_ID, it)
+                        }
+                        editEntryId?.let {
+                            putExtra(EXTRA_SCANNER_V2_EDIT_ENTRY_ID, it)
+                            putExtra(EXTRA_SCANNER_V2_RESULT_ENTRY_ID, it)
+                        }
                     },
             )
             finish()

@@ -20,6 +20,36 @@ private const val SCANNER_V2_THUMBNAIL_MAX_EDGE = 160
 private const val SCANNER_V2_THUMBNAIL_MAX_PIXELS = 25_600L
 private const val SCANNER_V2_DETECTOR_MAX_EDGE = 512
 
+internal data class ScannerV2ViewportTransform(
+    val scale: Float,
+    val offsetX: Float,
+    val offsetY: Float,
+)
+
+internal fun updateScannerV2ViewportTransform(
+    current: ScannerV2ViewportTransform,
+    zoomChange: Float,
+    panX: Float,
+    panY: Float,
+    contentWidth: Float,
+    contentHeight: Float,
+    viewportWidth: Float,
+    viewportHeight: Float,
+): ScannerV2ViewportTransform {
+    require(
+        contentWidth > 0f && contentHeight > 0f && viewportWidth > 0f && viewportHeight > 0f,
+    ) { "Scanner viewport dimensions must be positive" }
+    val scale = (current.scale * zoomChange).coerceIn(1f, 5f)
+    if (scale == 1f) return ScannerV2ViewportTransform(1f, 0f, 0f)
+    val maxX = ((contentWidth * scale - viewportWidth) / 2f).coerceAtLeast(0f)
+    val maxY = ((contentHeight * scale - viewportHeight) / 2f).coerceAtLeast(0f)
+    return ScannerV2ViewportTransform(
+        scale = scale,
+        offsetX = (current.offsetX + panX).coerceIn(-maxX, maxX),
+        offsetY = (current.offsetY + panY).coerceIn(-maxY, maxY),
+    )
+}
+
 internal fun decodeScannerV2Preview(source: File): Bitmap = decodeScannerV2Preview(
     source = source,
     maxEdge = SCANNER_V2_PREVIEW_MAX_EDGE,

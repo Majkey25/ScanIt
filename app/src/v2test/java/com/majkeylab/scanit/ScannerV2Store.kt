@@ -369,12 +369,14 @@ internal class ScannerV2Store(
         return deleteExactSession(directory, manifest)
     }
 
-    fun deleteFinished(manifest: ScannerV2Manifest): Boolean {
-        require(manifest.state.stage == ScannerSessionStage.Finishing) {
-            "Only a finished scanner session can be deleted"
-        }
+    fun deleteForFreshLaunch(manifest: ScannerV2Manifest): Boolean {
         val directory = requireSessionDirectory(manifest.sessionId)
-        if (readManifest(directory) != manifest) throw IOException("Scanner session changed before deletion")
+        if (readManifest(directory) != manifest) {
+            throw IOException("Scanner session changed before fresh launch")
+        }
+        reconcilePageInventory(directory, manifest)
+        verifyPageFiles(directory, manifest.pages)
+        verifyRetiredPageFiles(directory, manifest.retiredPages)
         return deleteExactSession(directory, manifest)
     }
 
@@ -594,6 +596,10 @@ internal class ScannerV2Store(
             manifest.retiredPages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
                 if (page.renderedFingerprint != null) add(page.renderFileName())
+            }
+            manifest.pendingCaptureId?.let { pageId ->
+                add(".capture-${pageId.value}.jpg")
+                add("source-${pageId.value}.jpg")
             }
         }
         val children = directory.listFiles() ?: return false

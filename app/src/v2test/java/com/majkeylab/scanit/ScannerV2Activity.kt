@@ -26,6 +26,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +56,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -69,6 +74,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,19 +84,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consumed"
+private const val V2_VIEW_MODEL_TOKEN_KEY = "v2_view_model_token"
 
 class ScannerV2Activity : ComponentActivity() {
     private val viewModel: ScannerV2ViewModel by viewModels()
@@ -99,6 +112,7 @@ class ScannerV2Activity : ComponentActivity() {
     private var imageCapture: ImageCapture? = null
     private var cameraPermissionGranted by mutableStateOf(false)
     private var cameraBindGeneration = 0L
+    private var freshLaunchRequested = false
     private var launchDirectiveConsumed = false
     private var launchDirectiveClaimed = false
     private var importRequestedSessionId: String? = null
@@ -112,8 +126,14 @@ class ScannerV2Activity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        freshLaunchRequested = scannerV2StartsFresh(
+            savedProcessToken = savedInstanceState?.getString(V2_VIEW_MODEL_TOKEN_KEY),
+            currentProcessToken = viewModel.instanceToken,
+            action = intent.action,
+        )
         launchDirectiveConsumed =
-            savedInstanceState?.getBoolean(V2_LAUNCH_DIRECTIVE_CONSUMED_KEY) == true
+            !freshLaunchRequested &&
+                savedInstanceState?.getBoolean(V2_LAUNCH_DIRECTIVE_CONSUMED_KEY) == true
         cameraPermissionGranted = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.CAMERA,
@@ -178,8 +198,16 @@ class ScannerV2Activity : ComponentActivity() {
                                     }
                                 }
                             }
+                            freshLaunchRequested -> {
+                                launchDirectiveClaimed = true
+                                check(viewModel.startNewSessionForFreshLaunch()) {
+                                    "Scanner fresh launch authority changed"
+                                }
+                                launchDirectiveConsumed = true
+                                return@LaunchedEffect
+                            }
                             current.state.stage == ScannerSessionStage.Finishing -> {
-                                viewModel.startNewSessionFromFinished()
+                                viewModel.startNewSessionForFreshLaunch()
                                 launchDirectiveConsumed = true
                                 return@LaunchedEffect
                             }
@@ -295,6 +323,7 @@ class ScannerV2Activity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean(V2_LAUNCH_DIRECTIVE_CONSUMED_KEY, launchDirectiveConsumed)
+        outState.putString(V2_VIEW_MODEL_TOKEN_KEY, viewModel.instanceToken)
         super.onSaveInstanceState(outState)
     }
 
@@ -376,9 +405,20 @@ class ScannerV2Activity : ComponentActivity() {
 
     private fun openResultScreen() {
         if (resultOpened || isFinishing || isDestroyed) return
+        val cached = checkNotNull((resultViewModel.state.value as? ScreenState.Result)?.scan?.cached)
+        val entryId = checkNotNull(cached.entryId)
         resultOpened = true
-        startActivity(Intent(this, MainActivity::class.java))
-        finish()
+        try {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(EXTRA_SCANNER_V2_RESULT_CACHE_ID, cached.baseName)
+                    .putExtra(EXTRA_SCANNER_V2_RESULT_ENTRY_ID, entryId),
+            )
+            finish()
+        } catch (failure: RuntimeException) {
+            resultOpened = false
+            throw failure
+        }
     }
 }
 
@@ -553,6 +593,9 @@ private fun ScannerV2ReviewScreen(
         mutableIntStateOf(record.rotationQuarterTurns)
     }
     var holdingComparison by remember(record.pageId, record.renderedFingerprint) { mutableStateOf(false) }
+    var showFullscreen by rememberSaveable(record.pageId.value, record.renderedFingerprint) {
+        mutableStateOf(false)
+    }
     val rendered = record.renderedFingerprint != null && !state.cropEditing
     val originalPreview = state.filterPreviews[ScannerV2Filter.Original]
     val showOriginal = shouldShowScannerV2Original(
@@ -658,6 +701,27 @@ private fun ScannerV2ReviewScreen(
                             )
                         }
                     }
+                    if (rendered && !state.busy) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .9f),
+                        ) {
+                            IconButton(onClick = { showFullscreen = true }) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_fullscreen),
+                                    contentDescription = stringResource(
+                                        R.string.open_fullscreen_preview,
+                                        stringResource(
+                                            R.string.v2_page_count,
+                                            selected + 1,
+                                            manifest.pages.size,
+                                        ),
+                                    ),
+                                )
+                            }
+                        }
+                    }
                 }
             }
             if (rendered && originalPreview != null) {
@@ -760,6 +824,102 @@ private fun ScannerV2ReviewScreen(
                     ) { Text(stringResource(R.string.v2_move_right)) }
                 }
             }
+            }
+        }
+    }
+    if (showFullscreen) {
+        state.preview?.let { preview ->
+            ScannerV2FullscreenPreview(
+                bitmap = preview,
+                pageIndex = selected,
+                pageCount = manifest.pages.size,
+                onDismiss = { showFullscreen = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScannerV2FullscreenPreview(
+    bitmap: android.graphics.Bitmap,
+    pageIndex: Int,
+    pageCount: Int,
+    onDismiss: () -> Unit,
+) {
+    val pagePosition = stringResource(R.string.v2_page_count, pageIndex + 1, pageCount)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(pagePosition, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = stringResource(R.string.close_fullscreen_preview),
+                        )
+                    }
+                }
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().weight(1f).clipToBounds(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val ratio = bitmap.width.toFloat() / bitmap.height
+                    val pageWidth = minOf(maxWidth, maxHeight * ratio)
+                    val pageHeight = pageWidth / ratio
+                    val density = LocalDensity.current
+                    val contentWidth = with(density) { pageWidth.toPx() }
+                    val contentHeight = with(density) { pageHeight.toPx() }
+                    val viewportWidth = with(density) { maxWidth.toPx() }
+                    val viewportHeight = with(density) { maxHeight.toPx() }
+                    var transform by remember(bitmap) {
+                        mutableStateOf(ScannerV2ViewportTransform(1f, 0f, 0f))
+                    }
+                    val transformableState = rememberTransformableState { _, zoom, pan, _ ->
+                        transform = updateScannerV2ViewportTransform(
+                            current = transform,
+                            zoomChange = zoom,
+                            panX = pan.x,
+                            panY = pan.y,
+                            contentWidth = contentWidth,
+                            contentHeight = contentHeight,
+                            viewportWidth = viewportWidth,
+                            viewportHeight = viewportHeight,
+                        )
+                    }
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = pagePosition,
+                        modifier = Modifier.width(pageWidth).height(pageHeight)
+                            .pointerInput(bitmap) {
+                                detectTapGestures(
+                                    onDoubleTap = {
+                                        transform = ScannerV2ViewportTransform(1f, 0f, 0f)
+                                    },
+                                )
+                            }
+                            .transformable(transformableState)
+                            .graphicsLayer(
+                                scaleX = transform.scale,
+                                scaleY = transform.scale,
+                                translationX = transform.offsetX,
+                                translationY = transform.offsetY,
+                                clip = true,
+                            ),
+                        contentScale = ContentScale.FillBounds,
+                    )
+                }
+                Text(
+                    stringResource(R.string.fullscreen_preview_hint),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }

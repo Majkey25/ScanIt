@@ -147,7 +147,43 @@ class ScannerV2StoreTest {
         )
         store.update(review, finishing)
 
-        assertTrue(store.deleteFinished(finishing))
+        assertTrue(store.deleteForFreshLaunch(finishing))
+        assertNull(store.loadActive())
+    }
+
+    @Test
+    fun freshLaunchCanDiscardAnExactReviewSession() {
+        val store = ScannerV2Store(temporary.newFolder("review-launch-delete"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val renderedBytes = byteArrayOf(4, 5, 6)
+        val review = manifest(
+            sessionId = initial.sessionId,
+            sourceFingerprint = fingerprint(sourceBytes),
+            renderedFingerprint = fingerprint(renderedBytes),
+        )
+        val page = review.pages.single()
+        store.sourceFile(review.sessionId, page.pageId).writeBytes(sourceBytes)
+        store.renderedFile(review, page).writeBytes(renderedBytes)
+        store.update(initial, review)
+
+        assertTrue(store.deleteForFreshLaunch(review))
+        assertNull(store.loadActive())
+    }
+
+    @Test
+    fun freshLaunchCanDiscardAnExactInterruptedCapture() {
+        val store = ScannerV2Store(temporary.newFolder("capture-launch-delete"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val pageId = PageId.parse(UUID.randomUUID().toString())
+        val pending = initial.withPendingCapture(pageId, updatedAtMillis = 2)
+        store.update(initial, pending)
+        store.captureFile(initial.sessionId, pageId).writeBytes(byteArrayOf(1))
+        store.sourceFile(initial.sessionId, pageId).writeBytes(byteArrayOf(2))
+
+        assertTrue(store.deleteForFreshLaunch(pending))
         assertNull(store.loadActive())
     }
 

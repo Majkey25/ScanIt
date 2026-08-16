@@ -143,6 +143,76 @@ class ScannerV2BridgeTest {
     }
 
     @Test
+    fun resultLaunchAcceptsOnlyAnExactV2Authority() {
+        val cacheId = "Scan_20260816_120000"
+        val entryId = "78d24ed3-a901-4de9-ae8c-a16b09462e07"
+        val request = scannerV2ResultLaunch("com.majkeylab.scanit.v2test", cacheId, entryId)
+
+        assertEquals(ScannerV2ResultLaunch(cacheId, entryId), request)
+        assertEquals(true, request?.matches(cacheId, cacheId, entryId))
+        assertEquals(false, request?.matches(null, cacheId, entryId))
+        assertEquals(false, request?.matches(cacheId, "Scan_other", entryId))
+        assertEquals(
+            false,
+            request?.matches(cacheId, cacheId, "9db323b4-9de4-442a-929f-41cac65ccceb"),
+        )
+    }
+
+    @Test
+    fun resultLaunchRejectsStableIncompleteOrUnsafeInputs() {
+        val cacheId = "Scan_20260816_120000"
+        val entryId = "78d24ed3-a901-4de9-ae8c-a16b09462e07"
+
+        assertEquals(null, scannerV2ResultLaunch("com.majkeylab.scanit", cacheId, entryId))
+        assertEquals(null, scannerV2ResultLaunch("com.majkeylab.scanit.v2test", null, entryId))
+        assertEquals(null, scannerV2ResultLaunch("com.majkeylab.scanit.v2test", cacheId, null))
+        assertEquals(
+            null,
+            scannerV2ResultLaunch("com.majkeylab.scanit.v2test", "../outside", entryId),
+        )
+        assertEquals(
+            null,
+            scannerV2ResultLaunch("com.majkeylab.scanit.v2test", cacheId, entryId.uppercase()),
+        )
+    }
+
+    @Test
+    fun onlyANewNonEditTaskDiscardsThePreviousScannerSession() {
+        assertEquals(
+            true,
+            scannerV2StartsFresh(
+                savedProcessToken = null,
+                currentProcessToken = "process-b",
+                action = null,
+            ),
+        )
+        assertEquals(
+            true,
+            scannerV2StartsFresh(
+                savedProcessToken = "process-a",
+                currentProcessToken = "process-b",
+                action = ACTION_SCANNER_V2_NEW,
+            ),
+        )
+        assertEquals(
+            false,
+            scannerV2StartsFresh(
+                savedProcessToken = "process-a",
+                currentProcessToken = "process-b",
+                action = ACTION_SCANNER_V2_EDIT,
+            ),
+        )
+        assertEquals(
+            false,
+            scannerV2StartsFresh(
+                savedProcessToken = "process-b",
+                currentProcessToken = "process-b",
+                action = null,
+            ),
+        )
+    }
+
+    @Test
     fun editLaunchWaitsForResultRestoreThenResumesExactFinishedScan() {
         val source = ScannerV2EditSource(
             cacheId = "Scan_20260816_120000",

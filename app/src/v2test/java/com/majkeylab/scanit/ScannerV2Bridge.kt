@@ -22,6 +22,15 @@ internal enum class ScannerV2EditLaunchAction {
     Reject,
 }
 
+internal fun scannerV2StartsFresh(
+    savedProcessToken: String?,
+    currentProcessToken: String,
+    action: String?,
+): Boolean {
+    require(currentProcessToken.isNotBlank()) { "Scanner process token is empty" }
+    return action != ACTION_SCANNER_V2_EDIT && savedProcessToken != currentProcessToken
+}
+
 internal fun scannerV2EditLaunchAction(
     navigationReady: Boolean,
     stage: ScannerSessionStage,

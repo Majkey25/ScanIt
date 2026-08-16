@@ -63,6 +63,7 @@ internal data class ScannerV2CaptureTicket(
 )
 
 internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(application) {
+    val instanceToken: String = UUID.randomUUID().toString()
     private val store = ScannerV2Store(File(application.filesDir, "scanner-v2-sessions"))
     private val lock = Mutex()
     private val mutableState = MutableStateFlow(ScannerV2UiState())
@@ -632,12 +633,11 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             }
         }
 
-    suspend fun startNewSessionFromFinished(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun startNewSessionForFreshLaunch(): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
             val current = mutableState.value.manifest ?: return@withLock false
-            if (current.state.stage != ScannerSessionStage.Finishing) return@withLock false
-            if (!store.deleteFinished(current)) {
-                throw IOException("Finished scanner session could not be removed")
+            if (!store.deleteForFreshLaunch(current)) {
+                throw IOException("Previous scanner session could not be removed")
             }
             val fresh = createSession()
             mutableState.value = ScannerV2UiState(fresh, busy = false)

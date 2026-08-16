@@ -92,4 +92,50 @@ class ScannerV2AppearanceTest {
         assertFalse(shouldShowScannerV2Original(true, false, true, false))
         assertFalse(shouldShowScannerV2Original(false, false, true, true))
     }
+
+    @Test
+    fun fullscreenTransformClampsZoomAndPanToTheFittedPage() {
+        assertEquals(
+            ScannerV2ViewportTransform(scale = 1f, offsetX = 0f, offsetY = 0f),
+            updateScannerV2ViewportTransform(
+                current = ScannerV2ViewportTransform(scale = 1f, offsetX = 40f, offsetY = -40f),
+                zoomChange = .25f,
+                panX = 100f,
+                panY = 100f,
+                contentWidth = 600f,
+                contentHeight = 800f,
+                viewportWidth = 600f,
+                viewportHeight = 1000f,
+            ),
+        )
+        assertEquals(
+            ScannerV2ViewportTransform(scale = 3f, offsetX = 600f, offsetY = -700f),
+            updateScannerV2ViewportTransform(
+                current = ScannerV2ViewportTransform(scale = 1f, offsetX = 0f, offsetY = 0f),
+                zoomChange = 3f,
+                panX = 900f,
+                panY = -900f,
+                contentWidth = 600f,
+                contentHeight = 800f,
+                viewportWidth = 600f,
+                viewportHeight = 1000f,
+            ),
+        )
+    }
+
+    @Test
+    fun fullscreenTransformRejectsInvalidViewportGeometry() {
+        assertThrows(IllegalArgumentException::class.java) {
+            updateScannerV2ViewportTransform(
+                current = ScannerV2ViewportTransform(1f, 0f, 0f),
+                zoomChange = 2f,
+                panX = 0f,
+                panY = 0f,
+                contentWidth = 0f,
+                contentHeight = 800f,
+                viewportWidth = 600f,
+                viewportHeight = 1000f,
+            )
+        }
+    }
 }

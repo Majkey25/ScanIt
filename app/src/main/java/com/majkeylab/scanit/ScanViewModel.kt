@@ -440,6 +440,20 @@ internal class ScanViewModel(
     private val settingsStore = SettingsStore(application)
     private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
+    private val scannerV2ResultCacheId =
+        savedStateHandle.get<String>(EXTRA_SCANNER_V2_RESULT_CACHE_ID)
+    private val scannerV2ResultEntryId =
+        savedStateHandle.get<String>(EXTRA_SCANNER_V2_RESULT_ENTRY_ID)
+    private val requestedScannerV2Result =
+        scannerV2ResultLaunch(
+            application.packageName,
+            scannerV2ResultCacheId,
+            scannerV2ResultEntryId,
+        )
+    private val invalidScannerV2ResultLaunch =
+        isScannerV2ApplicationId(application.packageName) &&
+            (scannerV2ResultCacheId != null || scannerV2ResultEntryId != null) &&
+            requestedScannerV2Result == null
     private val storage = ScanStorage(application)
     private val documentActionProcessor = DocumentActionProcessor(application)
     private val markTemplateStore = MarkTemplateStore(application)
@@ -2474,6 +2488,41 @@ internal class ScanViewModel(
                     }
                     val activeCheckpoint = checkpoint.checkpoint
                     val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
+                    if (requestedScannerV2Result != null || invalidScannerV2ResultLaunch) {
+                        val requested = requestedScannerV2Result
+                        val result =
+                            if (requested != null && activeCheckpoint?.cacheId == requested.cacheId) {
+                                loadCachedResult(
+                                    requested.cacheId,
+                                    activeCheckpoint.appearanceReviewEntryId,
+                                )
+                            } else {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation)) {
+                                navigationInitialized = true
+                                if (
+                                    requested != null &&
+                                        result != null &&
+                                        requested.matches(
+                                            activeCacheId = activeCheckpoint?.cacheId,
+                                            openedCacheId = result.scan.cached.baseName,
+                                            openedEntryId = result.scan.cached.entryId,
+                                        )
+                                ) {
+                                    publishResult(result)
+                                } else {
+                                    persistRoute(ROUTE_FAILURE)
+                                    mutableState.value =
+                                        ScreenState.Failure(
+                                            UiMessage(R.string.state_update_failed),
+                                        )
+                                }
+                            }
+                        }
+                        return@launch
+                    }
                     val destination =
                         initialNavigation(savedRoute, savedCacheId, activeCheckpoint?.cacheId)
                     when (destination.route) {
