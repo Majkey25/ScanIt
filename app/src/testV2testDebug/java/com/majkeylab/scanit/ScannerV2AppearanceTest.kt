@@ -3,6 +3,7 @@ package com.majkeylab.scanit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScannerV2AppearanceTest {
@@ -77,5 +78,18 @@ class ScannerV2AppearanceTest {
 
         assertEquals(grayscale.toList(), drawing.toList())
         assertFalse(drawing.contentEquals(blackWhite))
+    }
+
+    @Test
+    fun originalComparisonIsVisibleOnlyDuringAValidRenderedPageHold() {
+        assertTrue(
+            shouldShowScannerV2Original(
+                rendered = true, busy = false, holding = true, originalAvailable = true,
+            ),
+        )
+        assertFalse(shouldShowScannerV2Original(true, false, false, true))
+        assertFalse(shouldShowScannerV2Original(true, true, true, true))
+        assertFalse(shouldShowScannerV2Original(true, false, true, false))
+        assertFalse(shouldShowScannerV2Original(false, false, true, true))
     }
 }

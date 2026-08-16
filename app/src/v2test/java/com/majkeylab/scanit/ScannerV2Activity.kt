@@ -25,6 +25,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -551,7 +552,15 @@ private fun ScannerV2ReviewScreen(
     var rotation by remember(record.pageId, record.renderedFingerprint) {
         mutableIntStateOf(record.rotationQuarterTurns)
     }
+    var holdingComparison by remember(record.pageId, record.renderedFingerprint) { mutableStateOf(false) }
     val rendered = record.renderedFingerprint != null && !state.cropEditing
+    val originalPreview = state.filterPreviews[ScannerV2Filter.Original]
+    val showOriginal = shouldShowScannerV2Original(
+        rendered = rendered,
+        busy = state.busy,
+        holding = holdingComparison,
+        originalAvailable = originalPreview != null,
+    )
     if (state.cropEditing) BackHandler(onBack = onCancelCropEdit)
     Scaffold(
         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
@@ -602,10 +611,27 @@ private fun ScannerV2ReviewScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Box(
-                Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 520.dp),
+                Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 520.dp).then(
+                    if (rendered && !state.busy && originalPreview != null) {
+                        Modifier.pointerInput(record.pageId, record.renderedFingerprint, originalPreview) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { holdingComparison = true },
+                                onDragEnd = { holdingComparison = false },
+                                onDragCancel = { holdingComparison = false },
+                                onDrag = { change, _ -> change.consume() },
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
                 contentAlignment = Alignment.Center,
             ) {
-                val preview = state.preview
+                val preview = if (showOriginal) {
+                    originalPreview
+                } else {
+                    state.preview
+                }
                 if (preview == null) {
                     CircularProgressIndicator()
                 } else {
@@ -619,7 +645,27 @@ private fun ScannerV2ReviewScreen(
                     if (state.busy) {
                         LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
                     }
+                    if (showOriginal) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .88f),
+                        ) {
+                            Text(
+                                stringResource(R.string.v2_comparison_original),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
                 }
+            }
+            if (rendered && originalPreview != null) {
+                Text(
+                    stringResource(R.string.v2_hold_to_compare),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             state.issue?.let { ScannerV2IssueText(it) }
             LazyRow(

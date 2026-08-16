@@ -101,7 +101,7 @@ internal fun renderScannerV2FilterPreviews(
     source: File,
     crop: PageQuad,
     rotationQuarterTurns: Int,
-    maxEdge: Int = 256,
+    maxEdge: Int = 512,
     isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
 ): Map<ScannerV2Filter, Bitmap> {
     val input = source.canonicalFile

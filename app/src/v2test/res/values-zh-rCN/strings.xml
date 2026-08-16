@@ -34,6 +34,8 @@
     <string name="v2_move_right">向右移动</string>
     <string name="v2_finish">继续</string>
     <string name="v2_page_preview">扫描页面预览</string>
+    <string name="v2_hold_to_compare">长按预览可与原图比较</string>
+    <string name="v2_comparison_original">原图</string>
     <string name="v2_ready_title">扫描仪 v2 页面已就绪</string>
     <string name="v2_ready_pages">本地已处理页面数：%1$d</string>
     <string name="v2_error_session">无法安全恢复扫描会话。</string>

@@ -34,6 +34,8 @@
     <string name="v2_move_right">Nach rechts</string>
     <string name="v2_finish">Weiter</string>
     <string name="v2_page_preview">Vorschau der gescannten Seite</string>
+    <string name="v2_hold_to_compare">Vorschau gedrückt halten, um das Original zu vergleichen</string>
+    <string name="v2_comparison_original">Original</string>
     <string name="v2_ready_title">Scanner-v2-Seiten sind bereit</string>
     <string name="v2_ready_pages">Lokal gerenderte Seiten: %1$d</string>
     <string name="v2_error_session">Die Scanner-Sitzung konnte nicht sicher wiederhergestellt werden.</string>

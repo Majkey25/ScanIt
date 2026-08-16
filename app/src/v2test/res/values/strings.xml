@@ -34,6 +34,8 @@
     <string name="v2_move_right">Move right</string>
     <string name="v2_finish">Continue</string>
     <string name="v2_page_preview">Scanned page preview</string>
+    <string name="v2_hold_to_compare">Hold the preview to compare with the original</string>
+    <string name="v2_comparison_original">Original</string>
     <string name="v2_ready_title">Scanner v2 pages are ready</string>
     <string name="v2_ready_pages">%1$d pages rendered locally</string>
     <string name="v2_error_session">The scanner session could not be recovered safely.</string>

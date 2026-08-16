@@ -34,6 +34,8 @@
     <string name="v2_move_right">Mover a la derecha</string>
     <string name="v2_finish">Continuar</string>
     <string name="v2_page_preview">Vista previa de la página escaneada</string>
+    <string name="v2_hold_to_compare">Mantén pulsada la vista previa para compararla con el original</string>
+    <string name="v2_comparison_original">Original</string>
     <string name="v2_ready_title">Las páginas del escáner v2 están listas</string>
     <string name="v2_ready_pages">Páginas procesadas localmente: %1$d</string>
     <string name="v2_error_session">La sesión del escáner no se pudo recuperar de forma segura.</string>

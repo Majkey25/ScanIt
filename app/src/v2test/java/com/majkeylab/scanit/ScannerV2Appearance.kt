@@ -19,6 +19,13 @@ internal enum class ScannerV2Filter(
     }
 }
 
+internal fun shouldShowScannerV2Original(
+    rendered: Boolean,
+    busy: Boolean,
+    holding: Boolean,
+    originalAvailable: Boolean,
+): Boolean = rendered && !busy && holding && originalAvailable
+
 internal data class ScannerV2Appearance(
     val filter: ScannerV2Filter,
     val intensity: Int,

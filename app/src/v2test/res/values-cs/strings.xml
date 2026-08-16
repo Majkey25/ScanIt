@@ -34,6 +34,8 @@
     <string name="v2_move_right">Posunout doprava</string>
     <string name="v2_finish">Pokračovat</string>
     <string name="v2_page_preview">Náhled naskenované stránky</string>
+    <string name="v2_hold_to_compare">Podržením náhledu porovnáte originál</string>
+    <string name="v2_comparison_original">Originál</string>
     <string name="v2_ready_title">Stránky skeneru v2 jsou připravené</string>
     <string name="v2_ready_pages">Místně vykresleno stránek: %1$d</string>
     <string name="v2_error_session">Relaci skeneru se nepodařilo bezpečně obnovit.</string>
