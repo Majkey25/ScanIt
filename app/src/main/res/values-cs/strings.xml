@@ -176,7 +176,7 @@
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
-    <string name="pdf_size_custom">Vlastní…</string>
+    <string name="pdf_size_custom">Vlastní</string>
     <string name="pdf_size_custom_value_kb">%1$d KB</string>
     <string name="pdf_size_custom_value_mb">%1$d MB</string>
     <string name="pdf_size_custom_title">Vlastní velikost PDF</string>
@@ -253,7 +253,7 @@
     <string name="document_actions">Akce dokumentu</string>
     <string name="document_actions_on_device">Obsah dokumentu a výsledky akcí zůstávají v tomto zařízení.</string>
     <string name="document_actions_model_hint">Služby Google Play mohou před prvním použitím stáhnout rozpoznávací model.</string>
-    <string name="extract_text">Extrahovat text v latince</string>
+    <string name="extract_text">Extrahovat text</string>
     <string name="all_pages">Všechny stránky</string>
     <string name="detect_codes">Najít QR a čárové kódy</string>
     <string name="selected_page">Vybraná stránka</string>
@@ -280,4 +280,8 @@
     <string name="copy">Kopírovat</string>
     <string name="copied_to_clipboard">Zkopírováno do schránky</string>
     <string name="close">Zavřít</string>
+    <string name="rename_file">Přejmenovat soubor</string>
+    <string name="file_name">Název souboru</string>
+    <string name="save_file_name">Uložit název souboru</string>
+    <string name="invalid_file_name">Použijte název bez znaků / \ : * ? &quot; &lt; &gt; nebo |.</string>
 </resources>

@@ -595,6 +595,27 @@ internal class ScanViewModel(
         )
     }
 
+    fun renameCurrentPdf(value: String) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val baseName = normalizeOutputBaseName(value) ?: return
+        runOutputChange(current, OutputChangeKind.PdfName(baseName)) {
+            storage.renamePdfOutput(current.scan.cached, baseName)
+        }
+    }
+
+    fun renameCurrentImages(value: String) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val baseName = normalizeOutputBaseName(value) ?: return
+        runOutputChange(current, OutputChangeKind.ImageName(baseName)) {
+            val operationContext = currentCoroutineContext()
+            storage.renameImageOutputs(
+                current.scan.cached,
+                baseName,
+                isCancelled = { !operationContext.isActive },
+            )
+        }
+    }
+
     fun acknowledgeUnknownOutputCreate(acknowledgement: UnknownOutputCreateAcknowledgement) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val entryId = current.scan.cached.entryId ?: return
@@ -715,13 +736,7 @@ internal class ScanViewModel(
         kind: OutputChangeKind,
         options: ImageExportOptions,
     ) {
-        val entryId = current.scan.cached.entryId ?: return
-        if (current.resultActionsBlocked || !current.scan.outputMetadataValid) return
-        val request =
-            outputChangeGate.begin(current.scan.cached.baseName, entryId, kind) ?: return
-        persistOutputGeneration()
-        mutableState.value = current.copy(outputChangeInProgress = true)
-        startOutputReplacement(request) {
+        runOutputChange(current, kind) {
             val operationContext = currentCoroutineContext()
             storage.replaceImageOutputs(
                 current.scan.cached,
@@ -729,6 +744,20 @@ internal class ScanViewModel(
                 isCancelled = { !operationContext.isActive },
             )
         }
+    }
+
+    private fun runOutputChange(
+        current: ScreenState.Result,
+        kind: OutputChangeKind,
+        operation: suspend () -> OutputReplacementResult,
+    ) {
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked || !current.scan.outputMetadataValid) return
+        val request =
+            outputChangeGate.begin(current.scan.cached.baseName, entryId, kind) ?: return
+        persistOutputGeneration()
+        mutableState.value = current.copy(outputChangeInProgress = true)
+        startOutputReplacement(request, operation)
     }
 
     private fun startOutputReplacement(
@@ -2486,9 +2515,15 @@ internal class ScanViewModel(
                         showRecentResult(generation)
                     }
                     RestoredRoute.Scanner -> {
-                        routeMutationMutex.withLock {
-                            if (routeMutationGate.isCurrent(generation)) {
+                        if (destination.clearCheckpointBeforeLaunch) {
+                            clearCheckpointAndPublish(generation) {
                                 publishScannerRequest()
+                            }
+                        } else {
+                            routeMutationMutex.withLock {
+                                if (routeMutationGate.isCurrent(generation)) {
+                                    publishScannerRequest()
+                                }
                             }
                         }
                     }

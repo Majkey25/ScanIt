@@ -17,9 +17,11 @@ internal fun pdfReplacementIsUnchanged(
     current: PdfOutputRef?,
     treeUri: String?,
     fingerprint: OutputFingerprint,
+    desiredDisplayName: String? = null,
 ): Boolean =
     current?.pending == false &&
         current.treeUri == treeUri &&
+        (desiredDisplayName == null || current.displayName == desiredDisplayName) &&
         current.outputFingerprint() == fingerprint
 
 internal fun imageReplacementIsUnchanged(
@@ -32,9 +34,11 @@ internal fun imageReplacementIsUnchanged(
     sizePreset: ImageSizePreset? = null,
     customMaxDimension: Int? = null,
     fingerprint: OutputFingerprint,
+    desiredDisplayName: String? = null,
 ): Boolean =
     !current.pending &&
         current.treeUri == treeUri &&
+        (desiredDisplayName == null || current.displayName == desiredDisplayName) &&
         current.mimeType == mimeType &&
         current.width == width &&
         current.height == height &&

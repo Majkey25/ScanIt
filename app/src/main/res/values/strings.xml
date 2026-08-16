@@ -174,7 +174,7 @@
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
-    <string name="pdf_size_custom">Custom…</string>
+    <string name="pdf_size_custom">Custom</string>
     <string name="pdf_size_custom_value_kb">%1$d KB</string>
     <string name="pdf_size_custom_value_mb">%1$d MB</string>
     <string name="pdf_size_custom_title">Custom PDF size</string>
@@ -251,7 +251,7 @@
     <string name="document_actions">Document actions</string>
     <string name="document_actions_on_device">Document content and action results stay on this device.</string>
     <string name="document_actions_model_hint">Google Play services may download the recognition model before first use.</string>
-    <string name="extract_text">Extract Latin-script text</string>
+    <string name="extract_text">Extract text</string>
     <string name="all_pages">All pages</string>
     <string name="detect_codes">Detect QR and barcodes</string>
     <string name="selected_page">Selected page</string>
@@ -278,4 +278,8 @@
     <string name="copy">Copy</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="close">Close</string>
+    <string name="rename_file">Rename file</string>
+    <string name="file_name">File name</string>
+    <string name="save_file_name">Save file name</string>
+    <string name="invalid_file_name">Use a name without / \ : * ? &quot; &lt; &gt; or |.</string>
 </resources>

@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.3 showing the Result screen, file controls, and visual signature editor."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.4"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.4 showing the Result screen, file controls, and visual signature editor."></a>
 </p>
 
-## v1.3.3 update
+## v1.3.4 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -34,9 +34,9 @@ sharing, saving, and verified cleanup behavior.
 
 The Result screen now keeps the document preview prominent and opens a
 full-screen zoomable viewer when tapped. File details can change a document's
-PDF size and folder, and can change its image size, format, and folder. Image
+PDF name, size, and folder, and can change its image name, size, format, and folder. Image
 exports support exact Original files, high-quality JPEG, and lossless PNG. A
-Recent scan opens directly when tapped. The new stable Actions panel extracts
+Recent scan opens directly when tapped. The stable Actions panel extracts
 Latin-script text from all pages, exports it through Android's file picker, or
 detects QR codes and barcodes on the current page using on-device ML Kit models
 delivered by Google Play services. The recognition model may download
@@ -45,8 +45,10 @@ before its first use; Actions report that state and can be retried afterward.
 Result pages now swipe horizontally and reveal the edge of the next page.
 Rescan, Sign / stamp, and Actions are compact accessible buttons, while File details groups
 PDF and image changes into compact Size, Format, and Location controls.
+After a full app restart, ScanIt opens a fresh scanner session instead of reopening
+the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.3.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.3)
+[Download ScanIt v1.3.4](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.4)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -68,7 +70,7 @@ source, release artifacts, and real-device workflows.
 
 <p align="center">
   <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="ScanIt result with rescan, signature, document actions, sharing, printing, and file details.">
-  <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with size, format, and location controls.">
+  <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with inline renaming, size, format, and location controls.">
   <img src="docs/play-store/assets/en-US/phone/06-sign-stamp.png" width="23%" alt="Signature and stamp editor with direct placement controls.">
   <img src="docs/play-store/assets/en-US/phone/07-actions.png" width="23%" alt="On-device text extraction and QR or barcode actions.">
 </p>

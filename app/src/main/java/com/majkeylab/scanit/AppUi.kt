@@ -192,6 +192,8 @@ internal fun ScanItApp(
     onChangeImageSize: (ImageSizePreset, Int?) -> Unit = { _, _ -> },
     onChangeImageFormat: (ImageExportFormat) -> Unit = {},
     onChangeImageLocation: () -> Unit = {},
+    onRenamePdf: (String) -> Unit = {},
+    onRenameImages: (String) -> Unit = {},
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit = {},
     onCloseAppearanceEditor: () -> Unit = {},
     onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
@@ -327,6 +329,8 @@ internal fun ScanItApp(
                         onChangeImageSize = onChangeImageSize,
                         onChangeImageFormat = onChangeImageFormat,
                         onChangeImageLocation = onChangeImageLocation,
+                        onRenamePdf = onRenamePdf,
+                        onRenameImages = onRenameImages,
                         onAcknowledgeUnknownOutput = onAcknowledgeUnknownOutput,
                         onRunDocumentAction = onRunDocumentAction,
                         onDismissDocumentAction = onDismissDocumentAction,
@@ -618,6 +622,8 @@ private fun ResultScreen(
     onChangeImageSize: (ImageSizePreset, Int?) -> Unit,
     onChangeImageFormat: (ImageExportFormat) -> Unit,
     onChangeImageLocation: () -> Unit,
+    onRenamePdf: (String) -> Unit,
+    onRenameImages: (String) -> Unit,
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
     onDismissDocumentAction: () -> Unit,
@@ -861,6 +867,8 @@ private fun ResultScreen(
                         onChangeImageSize = { showImageSizeDialog = true },
                         onChangeImageFormat = { showImageFormatDialog = true },
                         onChangeImageLocation = onChangeImageLocation,
+                        onRenamePdf = onRenamePdf,
+                        onRenameImages = onRenameImages,
                         onAcknowledgeUnknownOutput = { showUnknownOutputDialog = true },
                     )
                 }
@@ -1670,6 +1678,8 @@ private fun FileDetails(
     onChangeImageSize: () -> Unit,
     onChangeImageFormat: () -> Unit,
     onChangeImageLocation: () -> Unit,
+    onRenamePdf: (String) -> Unit,
+    onRenameImages: (String) -> Unit,
     onAcknowledgeUnknownOutput: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1692,6 +1702,11 @@ private fun FileDetails(
             if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
         )
     val imagesLocation = imageLocationLabel(scan)
+    val pdfDisplayName = scan.savedPdfDisplayName ?: scan.cached.pdf.name
+    val pdfBaseName = normalizeOutputBaseName(pdfDisplayName)
+    val imageBaseName =
+        imageOutputBaseName(scan.savedImages.map { it.page to it.displayName })
+            ?: scan.cached.baseName
     val imageStatus =
         when {
             scan.galleryPages.isEmpty() -> stringResource(R.string.file_temporary)
@@ -1756,6 +1771,13 @@ private fun FileDetails(
         FileDetailSection(
             iconRes = R.drawable.ic_pdf,
             title = stringResource(R.string.pdf_document),
+            displayName = pdfDisplayName,
+            editBaseName = pdfBaseName,
+            renameEnabled =
+                FileDetailControl.PdfName in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress,
+            onRename = onRenamePdf,
         ) {
             FileDetailRow(
                 label = stringResource(R.string.format),
@@ -1823,6 +1845,13 @@ private fun FileDetails(
         FileDetailSection(
             iconRes = R.drawable.ic_image,
             title = stringResource(R.string.images),
+            displayName = imageBaseName,
+            editBaseName = imageBaseName,
+            renameEnabled =
+                FileDetailControl.ImageName in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress,
+            onRename = onRenameImages,
         ) {
             FileDetailRow(
                 label = stringResource(R.string.format),
@@ -1955,8 +1984,15 @@ private fun FileDetailActionButton(
 private fun FileDetailSection(
     iconRes: Int,
     title: String,
+    displayName: String,
+    editBaseName: String?,
+    renameEnabled: Boolean,
+    onRename: (String) -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var editing by rememberSaveable(title, displayName) { mutableStateOf(false) }
+    var draft by rememberSaveable(title, displayName) { mutableStateOf(editBaseName.orEmpty()) }
+    val normalizedDraft = normalizeOutputBaseName(draft)
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
@@ -1968,6 +2004,7 @@ private fun FileDetailSection(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -1976,7 +2013,74 @@ private fun FileDetailSection(
                     contentDescription = null,
                     modifier = Modifier.size(22.dp),
                 )
-                Text(title, style = MaterialTheme.typography.titleSmall)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    if (!editing) {
+                        Text(
+                            displayName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (!editing && editBaseName != null) {
+                    IconButton(
+                        onClick = {
+                            draft = editBaseName
+                            editing = true
+                        },
+                        enabled = renameEnabled,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_edit),
+                            contentDescription = stringResource(R.string.rename_file),
+                        )
+                    }
+                }
+            }
+            if (editing) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { if (it.length <= MAX_OUTPUT_BASE_NAME_LENGTH + 5) draft = it },
+                        enabled = renameEnabled,
+                        singleLine = true,
+                        isError = draft.isNotBlank() && normalizedDraft == null,
+                        label = { Text(stringResource(R.string.file_name)) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            onRename(requireNotNull(normalizedDraft))
+                            editing = false
+                        },
+                        enabled = renameEnabled && normalizedDraft != null,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_check),
+                            contentDescription = stringResource(R.string.save_file_name),
+                        )
+                    }
+                    IconButton(onClick = { editing = false }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = stringResource(R.string.cancel),
+                        )
+                    }
+                }
+                if (draft.isNotBlank() && normalizedDraft == null) {
+                    Text(
+                        stringResource(R.string.invalid_file_name),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             HorizontalDivider()
             content()
