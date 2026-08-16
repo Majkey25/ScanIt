@@ -724,6 +724,25 @@ internal enum class RecentRowAction {
     ShowMenu,
 }
 
+internal enum class ResultEntryAction {
+    Rescan,
+    SignOrStamp,
+    Actions,
+}
+
+internal enum class ResultActionDestination {
+    Scanner,
+    MarkEditor,
+    DocumentActions,
+}
+
+internal fun resultActionDestination(action: ResultEntryAction): ResultActionDestination =
+    when (action) {
+        ResultEntryAction.Rescan -> ResultActionDestination.Scanner
+        ResultEntryAction.SignOrStamp -> ResultActionDestination.MarkEditor
+        ResultEntryAction.Actions -> ResultActionDestination.DocumentActions
+    }
+
 internal fun recentRowAction(target: RecentRowTarget): RecentRowAction =
     when (target) {
         RecentRowTarget.Content -> RecentRowAction.Open

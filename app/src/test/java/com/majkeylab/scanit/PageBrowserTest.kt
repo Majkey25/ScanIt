@@ -8,6 +8,21 @@ import org.junit.Test
 
 class PageBrowserTest {
     @Test
+    fun resultPageStatusIsOneBasedAndClamped() {
+        assertEquals(1 to 1, resultPageStatus(currentIndex = 0, pageCount = 1))
+        assertEquals(2 to 3, resultPageStatus(currentIndex = 1, pageCount = 3))
+        assertEquals(1 to 3, resultPageStatus(currentIndex = -1, pageCount = 3))
+        assertEquals(3 to 3, resultPageStatus(currentIndex = 10, pageCount = 3))
+    }
+
+    @Test
+    fun resultActionsStackOnlyWhenWidthOrTextNeedsIt() {
+        assertFalse(stackResultActions(fontScale = 1f, availableWidthDp = 360))
+        assertTrue(stackResultActions(fontScale = 1.3f, availableWidthDp = 320))
+        assertTrue(stackResultActions(fontScale = 1f, availableWidthDp = 319))
+    }
+
+    @Test
     fun selectedPageInsideBoundsIsPreserved() {
         assertEquals(2, resolvedPageIndex(selectedIndex = 2, pageCount = 4))
     }

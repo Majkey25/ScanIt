@@ -93,11 +93,20 @@ class PureLogicTest {
     }
 
     @Test
-    fun appearanceEditAndUnknownOutputWarningFailClosed() {
+    fun resultActionsRouteRescanToScannerAndUnknownOutputWarningFailsClosed() {
         val editable = uiSavedScan()
-        assertTrue(canEditAppearance(editable))
-        assertFalse(canEditAppearance(editable.copy(outputMetadataValid = false)))
-        assertFalse(canEditAppearance(editable.copy(cached = editable.cached.copy(entryId = null))))
+        assertEquals(
+            ResultActionDestination.Scanner,
+            resultActionDestination(ResultEntryAction.Rescan),
+        )
+        assertEquals(
+            ResultActionDestination.MarkEditor,
+            resultActionDestination(ResultEntryAction.SignOrStamp),
+        )
+        assertEquals(
+            ResultActionDestination.DocumentActions,
+            resultActionDestination(ResultEntryAction.Actions),
+        )
 
         val acknowledgement =
             UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, OTHER_ENTRY_ID)
