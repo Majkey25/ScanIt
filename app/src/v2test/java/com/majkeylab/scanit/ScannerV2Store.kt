@@ -1,0 +1,445 @@
+package com.majkeylab.scanit
+
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import org.json.JSONArray
+import org.json.JSONObject
+
+internal const val MAX_SCANNER_V2_MANIFEST_BYTES = 64 * 1024
+internal const val SCANNER_V2_MANIFEST_NAME = "session.json"
+internal const val SCANNER_V2_MANIFEST_TEMP_NAME = ".session.json.tmp"
+internal const val SCANNER_V2_SESSION_RETENTION_MILLIS = 24L * 60 * 60 * 1000
+private const val SCANNER_V2_MANIFEST_VERSION = 1
+private const val SCANNER_V2_SESSION_PREFIX = "session-"
+private val SAFE_FILTER_ID = Regex("[a-z0-9][a-z0-9._-]{0,79}")
+
+internal data class ScannerV2PageRecord(
+    val pageId: PageId,
+    val sourceFingerprint: OutputFingerprint,
+    val crop: PageQuad,
+    val rotationQuarterTurns: Int,
+    val filterId: String,
+    val renderedFingerprint: OutputFingerprint?,
+) {
+    init {
+        require(isValidOutputFingerprint(sourceFingerprint.byteLength, sourceFingerprint.sha256)) {
+            "Scanner source fingerprint is invalid"
+        }
+        require(rotationQuarterTurns in 0..3) { "Scanner rotation is invalid" }
+        require(SAFE_FILTER_ID.matches(filterId)) { "Scanner filter id is invalid" }
+        require(
+            renderedFingerprint == null ||
+                isValidOutputFingerprint(renderedFingerprint.byteLength, renderedFingerprint.sha256),
+        ) { "Scanner render fingerprint is invalid" }
+    }
+}
+
+@ConsistentCopyVisibility
+internal data class ScannerV2Manifest private constructor(
+    val sessionId: String,
+    val state: ScannerSessionState,
+    val pages: List<ScannerV2PageRecord>,
+    val updatedAtMillis: Long,
+) {
+    fun withUpdatedAt(updatedAtMillis: Long): ScannerV2Manifest = create(
+        sessionId = sessionId,
+        state = state,
+        pages = pages,
+        updatedAtMillis = updatedAtMillis,
+    )
+
+    companion object {
+        fun create(
+            sessionId: String,
+            state: ScannerSessionState,
+            pages: List<ScannerV2PageRecord>,
+            updatedAtMillis: Long,
+        ): ScannerV2Manifest {
+            require(isCanonicalUuid(sessionId)) { "Scanner session id is invalid" }
+            require(updatedAtMillis > 0) { "Scanner session timestamp is invalid" }
+            require(pages.size <= MAX_SCAN_PAGES) { "Scanner page limit exceeded" }
+            require(pages.map { it.pageId } == state.pages.map { it.id }) {
+                "Scanner page records do not match session order"
+            }
+            return ScannerV2Manifest(
+                sessionId = sessionId,
+                state = state,
+                pages = pages.toList(),
+                updatedAtMillis = updatedAtMillis,
+            )
+        }
+    }
+}
+
+internal fun encodeScannerV2Manifest(manifest: ScannerV2Manifest): ByteArray {
+    val state = manifest.state
+    val pages = JSONArray()
+    manifest.pages.forEach { record -> pages.put(record.toJson()) }
+    return JSONObject()
+        .put("version", SCANNER_V2_MANIFEST_VERSION)
+        .put("sessionId", manifest.sessionId)
+        .put("generation", state.generation)
+        .put("stage", state.stage.name)
+        .put("selectedIndex", state.selectedIndex ?: JSONObject.NULL)
+        .put("pendingReplacementIndex", state.pendingReplacementIndex ?: JSONObject.NULL)
+        .put("updatedAtMillis", manifest.updatedAtMillis)
+        .put("pages", pages)
+        .toString()
+        .toByteArray(StandardCharsets.UTF_8)
+        .also { require(it.size in 1..MAX_SCANNER_V2_MANIFEST_BYTES) { "Scanner manifest is too large" } }
+}
+
+internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
+    if (bytes.size !in 1..MAX_SCANNER_V2_MANIFEST_BYTES) return null
+    return try {
+        val value = JSONObject(String(bytes, StandardCharsets.UTF_8))
+        if (!value.hasOnlyKeys(MANIFEST_KEYS) || value.strictInt("version") != SCANNER_V2_MANIFEST_VERSION) {
+            return null
+        }
+        val sessionId = value.strictString("sessionId") ?: return null
+        val generation = value.strictLong("generation") ?: return null
+        val stage = value.strictEnum<ScannerSessionStage>("stage") ?: return null
+        val selectedIndex = value.strictOptionalInt("selectedIndex") ?: return null
+        val pendingReplacement = value.strictOptionalInt("pendingReplacementIndex") ?: return null
+        val updatedAt = value.strictLong("updatedAtMillis") ?: return null
+        val array = value.opt("pages") as? JSONArray ?: return null
+        if (array.length() > MAX_SCAN_PAGES) return null
+        val pages = buildList(array.length()) {
+            repeat(array.length()) { index ->
+                add(decodePageRecord(array.opt(index) as? JSONObject ?: return null) ?: return null)
+            }
+        }
+        val state = ScannerSessionState.restore(
+            generation = generation,
+            pages = pages.map { ScannerPage(it.pageId) },
+            selectedIndex = selectedIndex.value,
+            stage = stage,
+            pendingReplacementIndex = pendingReplacement.value,
+        )
+        ScannerV2Manifest.create(sessionId, state, pages, updatedAt)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+internal class ScannerV2Store(
+    root: File,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+) {
+    private val root = root.absoluteFile.also { directory ->
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IOException("Scanner session root could not be created")
+        }
+        if (!directory.isDirectory || directory.canonicalFile != directory) {
+            throw IOException("Scanner session root is invalid")
+        }
+    }
+
+    fun create(manifest: ScannerV2Manifest): File {
+        require(manifest.pages.isEmpty()) { "A new scanner session must be empty" }
+        val existing = root.listFiles().orEmpty().filter { it.name.startsWith(SCANNER_V2_SESSION_PREFIX) }
+        if (existing.isNotEmpty()) throw IOException("Another scanner session already exists")
+        val directory = sessionDirectory(manifest.sessionId)
+        if (!directory.mkdir()) throw IOException("Scanner session directory could not be created")
+        return try {
+            writeManifest(directory, manifest, expected = null, move = ::moveAtomically)
+            directory
+        } catch (failure: Throwable) {
+            if (directory.listFiles().orEmpty().isEmpty()) directory.delete()
+            throw failure
+        }
+    }
+
+    fun update(
+        expected: ScannerV2Manifest,
+        replacement: ScannerV2Manifest,
+        move: (Path, Path) -> Unit = ::moveAtomically,
+    ) {
+        require(expected.sessionId == replacement.sessionId) { "Scanner session identity changed" }
+        require(replacement.updatedAtMillis >= expected.updatedAtMillis) { "Scanner timestamp moved backwards" }
+        val directory = requireSessionDirectory(expected.sessionId)
+        val current = readManifest(directory)
+        if (current != expected) throw IOException("Scanner session changed before update")
+        verifyPageFiles(directory, replacement.pages)
+        writeManifest(directory, replacement, expected, move)
+    }
+
+    fun loadActive(): ScannerV2Manifest? {
+        val directories = root.listFiles().orEmpty().filter { it.name.startsWith(SCANNER_V2_SESSION_PREFIX) }
+        if (directories.size > 1) throw IOException("Multiple scanner sessions require manual recovery")
+        val directory = directories.singleOrNull() ?: return null
+        val manifest = readManifest(requireSessionDirectory(directory.name.removePrefix(SCANNER_V2_SESSION_PREFIX)))
+        verifyPageFiles(directory, manifest.pages)
+        return manifest
+    }
+
+    fun cleanupExpired(): Int {
+        val currentTime = nowMillis()
+        var removed = 0
+        root.listFiles().orEmpty().forEach { candidate ->
+            if (!candidate.name.startsWith(SCANNER_V2_SESSION_PREFIX)) return@forEach
+            val sessionId = candidate.name.removePrefix(SCANNER_V2_SESSION_PREFIX)
+            val directory = try {
+                requireSessionDirectory(sessionId)
+            } catch (_: IllegalArgumentException) {
+                return@forEach
+            } catch (_: IOException) {
+                return@forEach
+            }
+            val manifest = try {
+                readManifest(directory)
+            } catch (_: IOException) {
+                return@forEach
+            }
+            if (
+                manifest.state.stage != ScannerSessionStage.Cancelled ||
+                currentTime < manifest.updatedAtMillis ||
+                currentTime - manifest.updatedAtMillis <= SCANNER_V2_SESSION_RETENTION_MILLIS
+            ) return@forEach
+            if (deleteExactSession(directory, manifest)) removed += 1
+        }
+        return removed
+    }
+
+    fun sessionDirectory(sessionId: String): File {
+        require(isCanonicalUuid(sessionId)) { "Scanner session id is invalid" }
+        val directory = File(root, "$SCANNER_V2_SESSION_PREFIX$sessionId").absoluteFile
+        require(directory.parentFile == root && directory.canonicalFile == directory) {
+            "Scanner session path escaped its root"
+        }
+        return directory
+    }
+
+    fun manifestFile(sessionId: String): File = File(sessionDirectory(sessionId), SCANNER_V2_MANIFEST_NAME)
+
+    fun sourceFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "source", "jpg")
+
+    fun renderedFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "render", "jpg")
+
+    private fun pageFile(sessionId: String, pageId: PageId, prefix: String, extension: String): File {
+        val directory = requireSessionDirectory(sessionId)
+        val file = File(directory, "$prefix-${pageId.value}.$extension").absoluteFile
+        require(file.parentFile == directory && file.canonicalFile == file) { "Scanner page path escaped its session" }
+        return file
+    }
+
+    private fun requireSessionDirectory(sessionId: String): File = sessionDirectory(sessionId).also { directory ->
+        if (!directory.isDirectory || directory.parentFile != root || directory.canonicalFile != directory) {
+            throw IOException("Scanner session directory is invalid")
+        }
+    }
+
+    private fun readManifest(directory: File): ScannerV2Manifest {
+        val target = File(directory, SCANNER_V2_MANIFEST_NAME)
+        val temporary = File(directory, SCANNER_V2_MANIFEST_TEMP_NAME)
+        if (temporary.exists()) throw IOException("Scanner manifest update is incomplete")
+        if (!target.isFile || target.length() !in 1..MAX_SCANNER_V2_MANIFEST_BYTES.toLong()) {
+            throw IOException("Scanner manifest is unavailable")
+        }
+        val decoded = try {
+            decodeScannerV2Manifest(Files.readAllBytes(target.toPath()))
+        } catch (failure: IOException) {
+            throw IOException("Scanner manifest could not be read", failure)
+        } ?: throw IOException("Scanner manifest is invalid")
+        if (directory != sessionDirectory(decoded.sessionId)) {
+            throw IOException("Scanner manifest belongs to another session")
+        }
+        return decoded
+    }
+
+    private fun writeManifest(
+        directory: File,
+        manifest: ScannerV2Manifest,
+        expected: ScannerV2Manifest?,
+        move: (Path, Path) -> Unit,
+    ) {
+        if (expected != null && readManifest(directory) != expected) {
+            throw IOException("Scanner session changed before write")
+        }
+        val target = File(directory, SCANNER_V2_MANIFEST_NAME)
+        val temporary = File(directory, SCANNER_V2_MANIFEST_TEMP_NAME)
+        val bytes = encodeScannerV2Manifest(manifest)
+        var failure: Throwable? = null
+        try {
+            Files.deleteIfExists(temporary.toPath())
+            FileOutputStream(temporary).use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
+            if (decodeScannerV2Manifest(Files.readAllBytes(temporary.toPath())) != manifest) {
+                throw IOException("Scanner manifest verification failed")
+            }
+            move(temporary.toPath(), target.toPath())
+            if (readManifest(directory) != manifest) throw IOException("Scanner manifest publication failed")
+        } catch (throwable: Throwable) {
+            failure = throwable
+            throw throwable
+        } finally {
+            if (temporary.exists() && !temporary.delete()) {
+                val cleanup = IOException("Incomplete scanner manifest could not be deleted")
+                failure?.addSuppressed(cleanup) ?: throw cleanup
+            }
+        }
+    }
+
+    private fun verifyPageFiles(directory: File, pages: List<ScannerV2PageRecord>) {
+        pages.forEach { page ->
+            requireFingerprint(File(directory, "source-${page.pageId.value}.jpg"), page.sourceFingerprint)
+            page.renderedFingerprint?.let { fingerprint ->
+                requireFingerprint(File(directory, "render-${page.pageId.value}.jpg"), fingerprint)
+            }
+        }
+    }
+
+    private fun requireFingerprint(file: File, expected: OutputFingerprint) {
+        if (!file.isFile || file.canonicalFile != file || file.parentFile?.parentFile != root) {
+            throw IOException("Scanner page file is unavailable")
+        }
+        val actual = try {
+            file.inputStream().use { readOutputFingerprint(it, file.length()) }
+        } catch (failure: IOException) {
+            throw IOException("Scanner page fingerprint could not be read", failure)
+        }
+        if (actual != expected) throw IOException("Scanner page fingerprint changed")
+    }
+
+    private fun deleteExactSession(directory: File, manifest: ScannerV2Manifest): Boolean {
+        val expectedNames = buildSet {
+            add(SCANNER_V2_MANIFEST_NAME)
+            manifest.pages.forEach { page ->
+                add("source-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+            }
+        }
+        val children = directory.listFiles() ?: return false
+        if (children.any { it.name !in expectedNames || it.canonicalFile != it || !it.isFile }) return false
+        val ordered = children.sortedBy { it.name == SCANNER_V2_MANIFEST_NAME }
+        if (ordered.any { !it.delete() }) return false
+        return directory.delete()
+    }
+}
+
+private fun ScannerV2PageRecord.toJson(): JSONObject = JSONObject()
+    .put("id", pageId.value)
+    .put("sourceLength", sourceFingerprint.byteLength)
+    .put("sourceSha256", sourceFingerprint.sha256)
+    .put("crop", JSONArray(listOf(
+        crop.topLeft.x,
+        crop.topLeft.y,
+        crop.topRight.x,
+        crop.topRight.y,
+        crop.bottomRight.x,
+        crop.bottomRight.y,
+        crop.bottomLeft.x,
+        crop.bottomLeft.y,
+    )))
+    .put("rotationQuarterTurns", rotationQuarterTurns)
+    .put("filterId", filterId)
+    .put("renderedLength", renderedFingerprint?.byteLength ?: JSONObject.NULL)
+    .put("renderedSha256", renderedFingerprint?.sha256 ?: JSONObject.NULL)
+
+private fun decodePageRecord(value: JSONObject): ScannerV2PageRecord? {
+    if (!value.hasOnlyKeys(PAGE_KEYS)) return null
+    val pageId = runCatching { PageId.parse(value.strictString("id") ?: return null) }.getOrNull() ?: return null
+    val source = outputFingerprintOrNull(value.strictLong("sourceLength"), value.strictString("sourceSha256"))
+        ?: return null
+    val cropValues = value.opt("crop") as? JSONArray ?: return null
+    if (cropValues.length() != 8) return null
+    val crop = runCatching {
+        PageQuad.create(
+            NormalizedPoint(cropValues.strictDouble(0) ?: return null, cropValues.strictDouble(1) ?: return null),
+            NormalizedPoint(cropValues.strictDouble(2) ?: return null, cropValues.strictDouble(3) ?: return null),
+            NormalizedPoint(cropValues.strictDouble(4) ?: return null, cropValues.strictDouble(5) ?: return null),
+            NormalizedPoint(cropValues.strictDouble(6) ?: return null, cropValues.strictDouble(7) ?: return null),
+        )
+    }.getOrNull() ?: return null
+    val renderedLength = value.strictOptionalLong("renderedLength") ?: return null
+    val renderedSha = value.strictOptionalString("renderedSha256") ?: return null
+    if ((renderedLength.value == null) != (renderedSha.value == null)) return null
+    val rendered = if (renderedLength.value == null) null else {
+        outputFingerprintOrNull(renderedLength.value, renderedSha.value) ?: return null
+    }
+    return runCatching {
+        ScannerV2PageRecord(
+            pageId = pageId,
+            sourceFingerprint = source,
+            crop = crop,
+            rotationQuarterTurns = value.strictInt("rotationQuarterTurns") ?: return null,
+            filterId = value.strictString("filterId") ?: return null,
+            renderedFingerprint = rendered,
+        )
+    }.getOrNull()
+}
+
+private fun moveAtomically(source: Path, target: Path) {
+    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+}
+
+private data class ScannerOptional<T>(val value: T?)
+
+private fun JSONObject.hasOnlyKeys(expected: Set<String>): Boolean {
+    val actual = mutableSetOf<String>()
+    val iterator = keys()
+    while (iterator.hasNext()) actual += iterator.next()
+    return actual == expected
+}
+
+private fun JSONObject.strictString(key: String): String? = opt(key) as? String
+
+private fun JSONObject.strictInt(key: String): Int? = opt(key) as? Int
+
+private fun JSONObject.strictLong(key: String): Long? {
+    val value = opt(key)
+    return if (value is Int) value.toLong() else value as? Long
+}
+
+private inline fun <reified T : Enum<T>> JSONObject.strictEnum(key: String): T? =
+    strictString(key)?.let { raw -> enumValues<T>().firstOrNull { it.name == raw } }
+
+private fun JSONObject.strictOptionalInt(key: String): ScannerOptional<Int>? {
+    val value = opt(key)
+    if (value === JSONObject.NULL) return ScannerOptional(null)
+    return (value as? Int)?.let(::ScannerOptional)
+}
+
+private fun JSONObject.strictOptionalLong(key: String): ScannerOptional<Long>? {
+    val value = opt(key)
+    if (value === JSONObject.NULL) return ScannerOptional(null)
+    if (value is Int) return ScannerOptional(value.toLong())
+    return (value as? Long)?.let(::ScannerOptional)
+}
+
+private fun JSONObject.strictOptionalString(key: String): ScannerOptional<String>? {
+    val value = opt(key)
+    if (value === JSONObject.NULL) return ScannerOptional(null)
+    return (value as? String)?.let(::ScannerOptional)
+}
+
+private fun JSONArray.strictDouble(index: Int): Double? = (opt(index) as? Number)?.toDouble()?.takeIf { it.isFinite() }
+
+private val MANIFEST_KEYS = setOf(
+    "version",
+    "sessionId",
+    "generation",
+    "stage",
+    "selectedIndex",
+    "pendingReplacementIndex",
+    "updatedAtMillis",
+    "pages",
+)
+
+private val PAGE_KEYS = setOf(
+    "id",
+    "sourceLength",
+    "sourceSha256",
+    "crop",
+    "rotationQuarterTurns",
+    "filterId",
+    "renderedLength",
+    "renderedSha256",
+)
