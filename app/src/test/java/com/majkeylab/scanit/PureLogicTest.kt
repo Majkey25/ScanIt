@@ -25,6 +25,21 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun resultCopyIsPresentAcrossEverySupportedLanguage() {
+        val repository = File("..").canonicalFile
+        val resourceDirectories =
+            listOf("values", "values-cs", "values-de", "values-es", "values-zh-rCN")
+
+        resourceDirectories.forEach { directory ->
+            val strings =
+                File(repository, "app/src/main/res/$directory/strings.xml").readText()
+            assertTrue(strings.contains("<string name=\"page_position_short\">"))
+            assertTrue(strings.contains("<string name=\"rescan\">"))
+            assertFalse(strings.contains("<string name=\"edit_scan\">"))
+        }
+    }
+
+    @Test
     fun fileDetailControlsCoverSaveAndLegacyStates() {
         val allControls =
             setOf(

@@ -5,6 +5,7 @@
     <string name="preview_unavailable">Preview unavailable</string>
     <string name="scan_preview">Scanned document preview</string>
     <string name="page_position">Page %1$d of %2$d</string>
+    <string name="page_position_short">%1$d of %2$d</string>
     <plurals name="page_count">
         <item quantity="one">%1$d page</item>
         <item quantity="other">%1$d pages</item>
@@ -28,7 +29,7 @@
     <string name="file_details_summary">%1$s · %2$s</string>
     <string name="expand_file_details">Show file details</string>
     <string name="collapse_file_details">Hide file details</string>
-    <string name="edit_scan">Edit</string>
+    <string name="rescan">Rescan</string>
     <string name="edit_filters_hint">Choose a filter for the whole document. Crop and perspective stay in the Google review shown during scanning.</string>
     <string name="open_fullscreen_preview">Open fullscreen preview, %1$s</string>
     <string name="close_fullscreen_preview">Close fullscreen preview</string>

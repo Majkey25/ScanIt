@@ -5,6 +5,7 @@
     <string name="preview_unavailable">Náhled není k dispozici</string>
     <string name="scan_preview">Náhled naskenovaného dokumentu</string>
     <string name="page_position">Stránka %1$d z %2$d</string>
+    <string name="page_position_short">%1$d z %2$d</string>
     <plurals name="page_count">
         <item quantity="one">%1$d stránka</item>
         <item quantity="few">%1$d stránky</item>
@@ -30,7 +31,7 @@
     <string name="file_details_summary">%1$s · %2$s</string>
     <string name="expand_file_details">Zobrazit podrobnosti souborů</string>
     <string name="collapse_file_details">Skrýt podrobnosti souborů</string>
-    <string name="edit_scan">Upravit</string>
+    <string name="rescan">Skenovat znovu</string>
     <string name="edit_filters_hint">Vyberte filtr pro celý dokument. Ořez a perspektiva zůstávají v editoru Google zobrazeném během skenování.</string>
     <string name="open_fullscreen_preview">Otevřít náhled na celou obrazovku, %1$s</string>
     <string name="close_fullscreen_preview">Zavřít náhled na celou obrazovku</string>

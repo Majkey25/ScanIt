@@ -412,7 +412,7 @@ private fun AppearanceEditScreen(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             CompactTopBar(
-                title = stringResource(R.string.edit_scan),
+                title = stringResource(R.string.appearance),
                 onBack = onClose,
                 backEnabled = enabled,
                 actionsEnabled = enabled,
@@ -630,7 +630,7 @@ private fun ResultScreen(
     val selectedPageIndex = resolvedPageIndex(result.selectedPageIndex, pageCount)
     val (displayedPage, displayedPageCount) = resultPageStatus(selectedPageIndex, pageCount)
     val pagePosition =
-        stringResource(R.string.page_position, displayedPage, displayedPageCount)
+        stringResource(R.string.page_position_short, displayedPage, displayedPageCount)
     val saveTargets = saveNowTargets(scan)
     var showSaveDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showPdfSizeDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
@@ -656,8 +656,12 @@ private fun ResultScreen(
         }
     val actionsEnabled = !result.resultActionsBlocked
     val configuration = LocalConfiguration.current
+    val availableWidthDp =
+        with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp().value.toInt()
+        }
     val stackSecondaryActions =
-        stackResultActions(configuration.fontScale, configuration.screenWidthDp)
+        stackResultActions(configuration.fontScale, availableWidthDp)
     val pagerState =
         rememberPagerState(initialPage = selectedPageIndex) { pageCount }
     LaunchedEffect(selectedPageIndex) {
@@ -736,7 +740,7 @@ private fun ResultScreen(
                         ) {
                             ActionButtonContent(
                                 iconRes = R.drawable.ic_camera,
-                                textRes = R.string.new_scan,
+                                textRes = R.string.rescan,
                             )
                         }
                         OutlinedButton(
@@ -779,7 +783,7 @@ private fun ResultScreen(
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_camera,
-                                textRes = R.string.new_scan,
+                                textRes = R.string.rescan,
                             )
                         }
                         OutlinedButton(
@@ -1664,6 +1668,13 @@ private fun FileDetails(
 ) {
     val context = LocalContext.current
     val controls = fileDetailControls(scan)
+    val configuration = LocalConfiguration.current
+    val availableWidthDp =
+        with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp().value.toInt()
+        }
+    val stackFileDetailControls =
+        availableWidthDp < 360 || configuration.fontScale >= 1.3f
     val pdfLocation =
         when {
             scan.savedPdf == null -> stringResource(R.string.file_not_saved)
@@ -1760,29 +1771,46 @@ private fun FileDetails(
                 label = stringResource(R.string.location),
                 value = pdfLocation,
             )
-            Row(
-                modifier = Modifier.align(Alignment.End),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                TextButton(
-                    onClick = onChangePdfSize,
-                    enabled =
-                        FileDetailControl.PdfSize in controls &&
-                            !saveInProgress &&
-                            !outputChangeInProgress,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.change_size))
+            val pdfSizeEnabled =
+                FileDetailControl.PdfSize in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress
+            val pdfLocationEnabled =
+                FileDetailControl.PdfLocation in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress
+            if (stackFileDetailControls) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FileDetailActionButton(
+                        textRes = R.string.change_size,
+                        onClick = onChangePdfSize,
+                        enabled = pdfSizeEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    FileDetailActionButton(
+                        textRes = R.string.change_location,
+                        onClick = onChangePdfLocation,
+                        enabled = pdfLocationEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                TextButton(
-                    onClick = onChangePdfLocation,
-                    enabled =
-                        FileDetailControl.PdfLocation in controls &&
-                            !saveInProgress &&
-                            !outputChangeInProgress,
-                    modifier = Modifier.heightIn(min = 48.dp),
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(stringResource(R.string.change_location))
+                    FileDetailActionButton(
+                        textRes = R.string.change_size,
+                        onClick = onChangePdfSize,
+                        enabled = pdfSizeEnabled,
+                        modifier = Modifier.weight(1f),
+                    )
+                    FileDetailActionButton(
+                        textRes = R.string.change_location,
+                        onClick = onChangePdfLocation,
+                        enabled = pdfLocationEnabled,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
@@ -1814,41 +1842,64 @@ private fun FileDetails(
                 label = stringResource(R.string.location),
                 value = imagesLocation,
             )
-            Column(
-                modifier = Modifier.align(Alignment.End),
-                horizontalAlignment = Alignment.End,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
+            val imageSizeEnabled =
+                FileDetailControl.ImageSize in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress
+            val imageFormatEnabled =
+                FileDetailControl.ImageFormat in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress
+            val imageLocationEnabled =
+                FileDetailControl.ImageLocation in controls &&
+                    !saveInProgress &&
+                    !outputChangeInProgress
+            if (stackFileDetailControls) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FileDetailActionButton(
+                        textRes = R.string.change_size,
                         onClick = onChangeImageSize,
-                        enabled =
-                            FileDetailControl.ImageSize in controls &&
-                                !saveInProgress &&
-                                !outputChangeInProgress,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.change_size))
-                    }
-                    TextButton(
+                        enabled = imageSizeEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    FileDetailActionButton(
+                        textRes = R.string.change_format,
                         onClick = onChangeImageFormat,
-                        enabled =
-                            FileDetailControl.ImageFormat in controls &&
-                                !saveInProgress &&
-                                !outputChangeInProgress,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.change_format))
-                    }
+                        enabled = imageFormatEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    FileDetailActionButton(
+                        textRes = R.string.change_location,
+                        onClick = onChangeImageLocation,
+                        enabled = imageLocationEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
-                TextButton(
-                    onClick = onChangeImageLocation,
-                    enabled =
-                        FileDetailControl.ImageLocation in controls &&
-                            !saveInProgress &&
-                            !outputChangeInProgress,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.change_location))
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FileDetailActionButton(
+                            textRes = R.string.change_size,
+                            onClick = onChangeImageSize,
+                            enabled = imageSizeEnabled,
+                            modifier = Modifier.weight(1f),
+                        )
+                        FileDetailActionButton(
+                            textRes = R.string.change_format,
+                            onClick = onChangeImageFormat,
+                            enabled = imageFormatEnabled,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    FileDetailActionButton(
+                        textRes = R.string.change_location,
+                        onClick = onChangeImageLocation,
+                        enabled = imageLocationEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
         }
@@ -1871,6 +1922,26 @@ private fun FileDetails(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FileDetailActionButton(
+    textRes: Int,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 48.dp),
+    ) {
+        Text(
+            text = stringResource(textRes),
+            maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 }
 
