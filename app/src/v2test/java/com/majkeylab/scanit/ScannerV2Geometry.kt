@@ -51,7 +51,7 @@ internal data class PageQuad private constructor(
         require(kotlin.math.abs(deltaX) <= MAX_CORNER_NUDGE && kotlin.math.abs(deltaY) <= MAX_CORNER_NUDGE) {
             "Crop nudge is too large"
         }
-        val current = point(corner)
+        val current = corner(corner)
         val nudged = current.copy(
             x = (current.x + deltaX).coerceIn(0.0, 1.0),
             y = (current.y + deltaY).coerceIn(0.0, 1.0),
@@ -68,7 +68,7 @@ internal data class PageQuad private constructor(
         }
     }
 
-    private fun point(corner: PageCorner): NormalizedPoint = when (corner) {
+    fun corner(corner: PageCorner): NormalizedPoint = when (corner) {
         PageCorner.TopLeft -> topLeft
         PageCorner.TopRight -> topRight
         PageCorner.BottomRight -> bottomRight
@@ -109,6 +109,21 @@ internal data class PageQuad private constructor(
             bottomLeft = NormalizedPoint(0.0, 1.0),
         )
     }
+}
+
+internal fun moveScannerV2CornerTo(
+    crop: PageQuad,
+    corner: PageCorner,
+    target: NormalizedPoint,
+): PageQuad = try {
+    PageQuad.create(
+        topLeft = if (corner == PageCorner.TopLeft) target else crop.topLeft,
+        topRight = if (corner == PageCorner.TopRight) target else crop.topRight,
+        bottomRight = if (corner == PageCorner.BottomRight) target else crop.bottomRight,
+        bottomLeft = if (corner == PageCorner.BottomLeft) target else crop.bottomLeft,
+    )
+} catch (_: IllegalArgumentException) {
+    crop
 }
 
 internal data class WarpSize(val width: Int, val height: Int)

@@ -14,6 +14,7 @@
     <string name="v2_page_thumbnail">第 %1$d 页，共 %2$d 页</string>
     <string name="v2_rotate">旋转</string>
     <string name="v2_keep_page">保留页面</string>
+    <string name="v2_use_whole_image">使用整张图片</string>
     <string name="v2_adjust_corners">调整边角</string>
     <string name="v2_filters">滤镜</string>
     <string name="v2_filter_original">原图</string>

@@ -14,6 +14,7 @@
     <string name="v2_page_thumbnail">Stránka %1$d z %2$d</string>
     <string name="v2_rotate">Otočit</string>
     <string name="v2_keep_page">Ponechat stránku</string>
+    <string name="v2_use_whole_image">Použít celý obrázek</string>
     <string name="v2_adjust_corners">Upravit rohy</string>
     <string name="v2_filters">Filtry</string>
     <string name="v2_filter_original">Originál</string>

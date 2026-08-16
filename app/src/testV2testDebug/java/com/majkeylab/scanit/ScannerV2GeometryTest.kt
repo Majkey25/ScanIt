@@ -92,6 +92,49 @@ class ScannerV2GeometryTest {
     }
 
     @Test
+    fun absoluteCornerMoveRecoversAfterAnInvalidTarget() {
+        val original = PageQuad.create(
+            topLeft = point(.1, .1),
+            topRight = point(.18, .1),
+            bottomRight = point(.9, .9),
+            bottomLeft = point(.1, .9),
+        )
+
+        val rejected = moveScannerV2CornerTo(
+            original,
+            PageCorner.TopLeft,
+            target = point(.3, .1),
+        )
+        val recovered = moveScannerV2CornerTo(
+            rejected,
+            PageCorner.TopLeft,
+            target = point(.05, .05),
+        )
+
+        assertSame(original, rejected)
+        assertPoint(.05, .05, recovered.topLeft)
+    }
+
+    @Test
+    fun absoluteCornerMoveTracksLargePointerJumpsAndRejectsCrossedCorners() {
+        val original = quad()
+
+        val largeValidJump = moveScannerV2CornerTo(
+            original,
+            PageCorner.TopLeft,
+            target = point(.35, .4),
+        )
+        val crossedCorner = moveScannerV2CornerTo(
+            original,
+            PageCorner.BottomRight,
+            target = point(0.0, 0.0),
+        )
+
+        assertPoint(.35, .4, largeValidJump.topLeft)
+        assertSame(original, crossedCorner)
+    }
+
+    @Test
     fun warpSizeUsesQuadEdgesWithoutUpscaling() {
         val size = deriveWarpSize(
             sourceWidth = 4000,

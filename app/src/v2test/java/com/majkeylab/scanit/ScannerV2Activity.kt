@@ -731,6 +731,14 @@ private fun ScannerV2ReviewScreen(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            if (!rendered && !state.busy) {
+                OutlinedButton(
+                    onClick = { crop = PageQuad.fullFrame() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.v2_use_whole_image))
+                }
+            }
             state.issue?.let { ScannerV2IssueText(it) }
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -1024,7 +1032,8 @@ private fun ScannerV2CropPreview(
         val ratio = bitmap.width.toFloat() / bitmap.height
         val width = minOf(maxWidth, maxHeight * ratio)
         val height = width / ratio
-        var activeCorner by remember { mutableStateOf<PageCorner?>(null) }
+        var activeCorner by remember(bitmap) { mutableStateOf<PageCorner?>(null) }
+        var grabOffset by remember(bitmap) { mutableStateOf(Offset.Zero) }
         val currentCrop by rememberUpdatedState(crop)
         Box(
             Modifier.width(width).height(height)
@@ -1040,17 +1049,37 @@ private fun ScannerV2CropPreview(
                                     currentCrop,
                                     56.dp.toPx(),
                                 )
+                                grabOffset = activeCorner?.let { corner ->
+                                    val point = currentCrop.corner(corner)
+                                    Offset(
+                                        x = (point.x * size.width).toFloat() - offset.x,
+                                        y = (point.y * size.height).toFloat() - offset.y,
+                                    )
+                                } ?: Offset.Zero
                             },
-                            onDragEnd = { activeCorner = null },
-                            onDragCancel = { activeCorner = null },
-                            onDrag = { change, drag ->
-                                change.consume()
+                            onDragEnd = {
+                                activeCorner = null
+                                grabOffset = Offset.Zero
+                            },
+                            onDragCancel = {
+                                activeCorner = null
+                                grabOffset = Offset.Zero
+                            },
+                            onDrag = { change, _ ->
                                 activeCorner?.let { corner ->
+                                    change.consume()
                                     onCropChange(
-                                        currentCrop.nudge(
+                                        moveScannerV2CornerTo(
+                                            crop = currentCrop,
                                             corner,
-                                            (drag.x.toDouble() / size.width).coerceIn(-.1, .1),
-                                            (drag.y.toDouble() / size.height).coerceIn(-.1, .1),
+                                            target = NormalizedPoint(
+                                                x = ((change.position.x + grabOffset.x) / size.width)
+                                                    .toDouble()
+                                                    .coerceIn(0.0, 1.0),
+                                                y = ((change.position.y + grabOffset.y) / size.height)
+                                                    .toDouble()
+                                                    .coerceIn(0.0, 1.0),
+                                            ),
                                         ),
                                     )
                                 }
