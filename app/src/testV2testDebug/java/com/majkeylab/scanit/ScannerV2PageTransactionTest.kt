@@ -3,6 +3,7 @@ package com.majkeylab.scanit
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ScannerV2PageTransactionTest {
@@ -53,6 +54,115 @@ class ScannerV2PageTransactionTest {
         assertTrue(reordered.retiredPages.isEmpty())
     }
 
+    @Test
+    fun appearanceChangePublishesOnlyTheSelectedPageAfterTheNewRenderExists() {
+        val first = record(rendered = true)
+        val second = record(rendered = true)
+        val current = manifest(listOf(first, second), selectedIndex = 1)
+        val appearance = ScannerV2Appearance(
+            ScannerV2Filter.Grayscale,
+            intensity = 72,
+            shadows = 18,
+        )
+
+        val renderFileId = UUID.randomUUID().toString()
+        val fingerprint = OutputFingerprint(5, "c".repeat(64))
+        val completed = completeScannerV2PageRender(
+            current = current,
+            pageId = second.pageId,
+            crop = second.crop,
+            rotationQuarterTurns = second.rotationQuarterTurns,
+            appearance = appearance,
+            renderFileId = renderFileId,
+            renderedFingerprint = fingerprint,
+            updatedAtMillis = 2,
+        )
+
+        assertEquals(first, completed.pages[0])
+        assertEquals(appearance, completed.pages[1].appearance)
+        assertEquals(renderFileId, completed.pages[1].renderFileId)
+        assertEquals(fingerprint, completed.pages[1].renderedFingerprint)
+        assertEquals(current.state, completed.state)
+    }
+
+    @Test
+    fun appearanceChangeRequiresAnExactCurrentPageAndImmutableRenderIdentity() {
+        val page = record(rendered = true)
+        val current = manifest(listOf(page), selectedIndex = 0)
+        val appearance = ScannerV2Appearance.defaultFor(ScannerV2Filter.Whiteboard)
+        val renderFileId = UUID.randomUUID().toString()
+        val fingerprint = OutputFingerprint(5, "c".repeat(64))
+
+        val completed = completeScannerV2PageRender(
+            current = current,
+            pageId = page.pageId,
+            crop = page.crop,
+            rotationQuarterTurns = page.rotationQuarterTurns,
+            appearance = appearance,
+            renderFileId = renderFileId,
+            renderedFingerprint = fingerprint,
+            updatedAtMillis = 3,
+        )
+
+        assertEquals(appearance, completed.pages.single().appearance)
+        assertEquals(renderFileId, completed.pages.single().renderFileId)
+        assertEquals(fingerprint, completed.pages.single().renderedFingerprint)
+        assertThrows(IllegalArgumentException::class.java) {
+            completeScannerV2PageRender(
+                current = current,
+                pageId = page.pageId,
+                crop = page.crop,
+                rotationQuarterTurns = page.rotationQuarterTurns,
+                appearance = appearance,
+                renderFileId = "not-a-uuid",
+                renderedFingerprint = fingerprint,
+                updatedAtMillis = 3,
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            completeScannerV2PageRender(
+                current = current,
+                pageId = PageId.parse(UUID.randomUUID().toString()),
+                crop = page.crop,
+                rotationQuarterTurns = page.rotationQuarterTurns,
+                appearance = appearance,
+                renderFileId = renderFileId,
+                renderedFingerprint = fingerprint,
+                updatedAtMillis = 3,
+            )
+        }
+    }
+
+    @Test
+    fun firstCropAndLaterCropBothPublishOnlyACompleteImmutableRender() {
+        val pending = record(rendered = false)
+        val current = manifest(listOf(pending), selectedIndex = 0)
+        val crop = PageQuad.create(
+            NormalizedPoint(.1, .1),
+            NormalizedPoint(.9, .1),
+            NormalizedPoint(.9, .9),
+            NormalizedPoint(.1, .9),
+        )
+        val renderFileId = UUID.randomUUID().toString()
+        val fingerprint = OutputFingerprint(5, "d".repeat(64))
+
+        val completed = completeScannerV2PageRender(
+            current = current,
+            pageId = pending.pageId,
+            crop = crop,
+            rotationQuarterTurns = 1,
+            appearance = ScannerV2Appearance.original(),
+            renderFileId = renderFileId,
+            renderedFingerprint = fingerprint,
+            updatedAtMillis = 2,
+        )
+
+        assertEquals(crop, completed.pages.single().crop)
+        assertEquals(1, completed.pages.single().rotationQuarterTurns)
+        assertEquals(renderFileId, completed.pages.single().renderFileId)
+        assertEquals(fingerprint, completed.pages.single().renderedFingerprint)
+    }
+
     private fun manifest(
         pages: List<ScannerV2PageRecord>,
         selectedIndex: Int,
@@ -77,7 +187,7 @@ class ScannerV2PageTransactionTest {
         sourceFingerprint = OutputFingerprint(3, "a".repeat(64)),
         crop = PageQuad.fullFrame(),
         rotationQuarterTurns = 0,
-        filterId = "original",
+        appearance = ScannerV2Appearance.original(),
         renderedFingerprint = if (rendered) OutputFingerprint(2, "b".repeat(64)) else null,
     )
 }

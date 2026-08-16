@@ -24,6 +24,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -34,18 +36,24 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -70,6 +78,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -111,9 +121,12 @@ class ScannerV2Activity : ComponentActivity() {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
                     onCapture = ::capture,
-                    onCancelCamera = viewModel::cancelCamera,
+                    onCancelCamera = ::cancelCamera,
                     onDiscardInterruptedCapture = viewModel::discardInterruptedCapture,
                     onConfirmCrop = viewModel::confirmCrop,
+                    onEditCrop = viewModel::editSelectedCrop,
+                    onCancelCropEdit = viewModel::cancelCropEditing,
+                    onApplyAppearance = viewModel::applyAppearance,
                     onAddPage = viewModel::addPage,
                     onRetakePage = viewModel::retakeSelectedPage,
                     onDeletePage = viewModel::deleteSelectedPage,
@@ -200,6 +213,11 @@ class ScannerV2Activity : ComponentActivity() {
             )
         }
     }
+
+    private fun cancelCamera() {
+        unbindCamera()
+        viewModel.cancelCamera()
+    }
 }
 
 @Composable
@@ -222,6 +240,9 @@ private fun ScannerV2App(
     onCancelCamera: () -> Unit,
     onDiscardInterruptedCapture: () -> Unit,
     onConfirmCrop: (PageQuad, Int) -> Unit,
+    onEditCrop: () -> Unit,
+    onCancelCropEdit: () -> Unit,
+    onApplyAppearance: (ScannerV2Appearance) -> Unit,
     onAddPage: () -> Unit,
     onRetakePage: () -> Unit,
     onDeletePage: () -> Unit,
@@ -243,6 +264,9 @@ private fun ScannerV2App(
             ScannerSessionStage.Reviewing -> ScannerV2ReviewScreen(
                 state = state,
                 onConfirmCrop = onConfirmCrop,
+                onEditCrop = onEditCrop,
+                onCancelCropEdit = onCancelCropEdit,
+                onApplyAppearance = onApplyAppearance,
                 onAddPage = onAddPage,
                 onRetakePage = onRetakePage,
                 onDeletePage = onDeletePage,
@@ -325,6 +349,9 @@ private fun ScannerV2CameraScreen(
 private fun ScannerV2ReviewScreen(
     state: ScannerV2UiState,
     onConfirmCrop: (PageQuad, Int) -> Unit,
+    onEditCrop: () -> Unit,
+    onCancelCropEdit: () -> Unit,
+    onApplyAppearance: (ScannerV2Appearance) -> Unit,
     onAddPage: () -> Unit,
     onRetakePage: () -> Unit,
     onDeletePage: () -> Unit,
@@ -339,55 +366,100 @@ private fun ScannerV2ReviewScreen(
     var rotation by remember(record.pageId, record.renderedFingerprint) {
         mutableIntStateOf(record.rotationQuarterTurns)
     }
-    val rendered = record.renderedFingerprint != null
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            if (rendered) stringResource(R.string.v2_review_title) else stringResource(R.string.v2_crop_title),
-            style = MaterialTheme.typography.headlineSmall,
-        )
-        Text(
-            stringResource(R.string.v2_page_count, selected + 1, manifest.pages.size),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (state.preview == null || state.busy) {
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            ScannerV2CropPreview(
-                bitmap = state.preview,
-                crop = crop,
-                editable = !rendered,
-                onCropChange = { crop = it },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
-        }
-        state.issue?.let { ScannerV2IssueText(it) }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(manifest.pages) { index, _ ->
-                if (index == selected) {
-                    Button(onClick = { onSelectPage(index) }) { Text("${index + 1}") }
-                } else {
-                    OutlinedButton(onClick = { onSelectPage(index) }) { Text("${index + 1}") }
+    val rendered = record.renderedFingerprint != null && !state.cropEditing
+    if (state.cropEditing) BackHandler(onBack = onCancelCropEdit)
+    Scaffold(
+        modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+        bottomBar = {
+            Surface(shadowElevation = 4.dp) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (rendered) {
+                        OutlinedButton(
+                            onClick = onAddPage,
+                            enabled = !state.busy && manifest.pages.size < MAX_SCAN_PAGES,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.v2_add_page)) }
+                        Button(
+                            onClick = onFinish,
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.v2_finish)) }
+                    } else {
+                        OutlinedButton(
+                            onClick = { rotation = (rotation + 1) % 4 },
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.v2_rotate)) }
+                        Button(
+                            onClick = { onConfirmCrop(crop, rotation) },
+                            enabled = !state.busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.v2_keep_page)) }
+                    }
                 }
             }
-        }
-        if (!rendered) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { rotation = (rotation + 1) % 4 },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.v2_rotate)) }
-                Button(
-                    onClick = { onConfirmCrop(crop, rotation) },
-                    enabled = !state.busy,
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.v2_keep_page)) }
+        },
+    ) { contentPadding ->
+        Column(
+            Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                if (rendered) stringResource(R.string.v2_review_title) else stringResource(R.string.v2_crop_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                stringResource(R.string.v2_page_count, selected + 1, manifest.pages.size),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 520.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                val preview = state.preview
+                if (preview == null) {
+                    CircularProgressIndicator()
+                } else {
+                    ScannerV2CropPreview(
+                        bitmap = preview,
+                        crop = crop,
+                        editable = !rendered && !state.busy,
+                        onCropChange = { crop = it },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (state.busy) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                    }
+                }
             }
-        } else {
+            state.issue?.let { ScannerV2IssueText(it) }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(manifest.pages) { index, _ ->
+                    if (index == selected) {
+                        Button(onClick = { onSelectPage(index) }, enabled = !state.busy) { Text("${index + 1}") }
+                    } else {
+                        OutlinedButton(onClick = { onSelectPage(index) }, enabled = !state.busy) {
+                            Text("${index + 1}")
+                        }
+                    }
+                }
+            }
+            if (rendered) {
+            ScannerV2AppearanceEditor(
+                appearance = record.appearance,
+                previews = state.filterPreviews,
+                busy = state.busy,
+                onApply = onApplyAppearance,
+            )
+            OutlinedButton(
+                onClick = onEditCrop,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.v2_adjust_corners)) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = onRetakePage,
@@ -412,18 +484,93 @@ private fun ScannerV2ReviewScreen(
                     ) { Text(stringResource(R.string.v2_move_right)) }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onAddPage,
-                    enabled = manifest.pages.size < MAX_SCAN_PAGES,
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.v2_add_page)) }
-                Button(onClick = onFinish, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.v2_finish))
-                }
             }
         }
     }
+}
+
+@Composable
+private fun ScannerV2AppearanceEditor(
+    appearance: ScannerV2Appearance,
+    previews: Map<ScannerV2Filter, android.graphics.Bitmap>,
+    busy: Boolean,
+    onApply: (ScannerV2Appearance) -> Unit,
+) {
+    var selectedFilter by remember(appearance) { mutableStateOf(appearance.filter) }
+    var intensity by remember(appearance) { mutableIntStateOf(appearance.intensity) }
+    var shadows by remember(appearance) { mutableIntStateOf(appearance.shadows) }
+    Text(stringResource(R.string.v2_filters), style = MaterialTheme.typography.titleMedium)
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(ScannerV2Filter.entries.size) { index ->
+            val filter = ScannerV2Filter.entries[index]
+            val filterLabel = stringResource(scannerV2FilterLabel(filter))
+            FilterChip(
+                selected = selectedFilter == filter,
+                enabled = !busy,
+                modifier = Modifier.width(128.dp).heightIn(min = 120.dp)
+                    .semantics { contentDescription = filterLabel },
+                onClick = {
+                    val preset = ScannerV2Appearance.defaultFor(filter)
+                    selectedFilter = filter
+                    intensity = preset.intensity
+                    shadows = preset.shadows
+                    if (preset != appearance) onApply(preset)
+                },
+                label = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        previews[filter]?.let { preview ->
+                            Image(
+                                bitmap = preview.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxWidth().height(72.dp)
+                                    .background(Color.Black, RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                        Text(
+                            text = filterLabel,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                },
+            )
+        }
+    }
+    if (selectedFilter != ScannerV2Filter.Original) {
+        Text(stringResource(R.string.v2_filter_intensity, intensity))
+        Slider(
+            value = intensity.toFloat(),
+            onValueChange = { intensity = it.toInt() },
+            valueRange = 0f..100f,
+            enabled = !busy,
+        )
+        Text(stringResource(R.string.v2_filter_shadows, shadows))
+        Slider(
+            value = shadows.toFloat(),
+            onValueChange = { shadows = it.toInt() },
+            valueRange = 0f..100f,
+            enabled = !busy,
+        )
+        val edited = ScannerV2Appearance(selectedFilter, intensity, shadows)
+        Button(
+            onClick = { onApply(edited) },
+            enabled = !busy && edited != appearance,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.v2_apply_filter))
+        }
+    }
+}
+
+private fun scannerV2FilterLabel(filter: ScannerV2Filter): Int = when (filter) {
+    ScannerV2Filter.Original -> R.string.v2_filter_original
+    ScannerV2Filter.Natural -> R.string.v2_filter_natural
+    ScannerV2Filter.Color -> R.string.v2_filter_color
+    ScannerV2Filter.LightText -> R.string.v2_filter_light_text
+    ScannerV2Filter.Grayscale -> R.string.v2_filter_grayscale
+    ScannerV2Filter.BlackWhite -> R.string.v2_filter_black_white
+    ScannerV2Filter.Whiteboard -> R.string.v2_filter_whiteboard
 }
 
 @Composable

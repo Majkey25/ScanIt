@@ -71,6 +71,30 @@ class ScannerV2WarpTest {
         }
     }
 
+    @Test
+    fun thumbnailPlanKeepsAspectRatioWithoutUpscalingOrFullPageMemory() {
+        val reduced = scannerV2ThumbnailPlan(
+            sourceWidth = 4000,
+            sourceHeight = 3000,
+            crop = PageQuad.fullFrame(),
+            orientation = ImageExifOrientation.Normal,
+            rotationQuarterTurns = 0,
+            maxEdge = 256,
+        )
+        val small = scannerV2ThumbnailPlan(
+            sourceWidth = 120,
+            sourceHeight = 80,
+            crop = PageQuad.fullFrame(),
+            orientation = ImageExifOrientation.Normal,
+            rotationQuarterTurns = 0,
+            maxEdge = 256,
+        )
+
+        assertEquals(WarpSize(256, 192), reduced.output)
+        assertEquals(WarpSize(120, 80), small.output)
+        assertTrue(reduced.peakBitmapBytes <= 5L * 1024 * 1024)
+    }
+
     private fun assertPoint(x: Double, y: Double, actual: ScannerV2WarpPoint) {
         assertEquals(x, actual.x, .01)
         assertEquals(y, actual.y, .01)

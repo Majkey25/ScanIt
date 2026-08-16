@@ -34,6 +34,8 @@ internal data class ScannerV2UiState(
     val preview: Bitmap? = null,
     val busy: Boolean = true,
     val issue: ScannerV2Issue? = null,
+    val cropEditing: Boolean = false,
+    val filterPreviews: Map<ScannerV2Filter, Bitmap> = emptyMap(),
 )
 
 internal data class ScannerV2CaptureTicket(
@@ -99,7 +101,12 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             try {
                 lock.withLock {
                     val current = mutableState.value.manifest ?: return@withLock
-                    if (!ticket.matches(current)) return@withLock
+                    if (!ticket.matches(current)) {
+                        if (ticket.destination.exists() && !ticket.destination.delete()) {
+                            throw IOException("Stale capture could not be removed")
+                        }
+                        return@withLock
+                    }
                     if (ticket.destination.exists() && !ticket.destination.delete()) {
                         throw IOException("Failed capture could not be removed")
                     }
@@ -155,48 +162,56 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         check(current.state.stage == ScannerSessionStage.Reviewing)
                         val selected = requireNotNull(current.state.selectedIndex)
                         val record = current.pages[selected]
-                        check(record.renderedFingerprint == null) { "Scanner page is already rendered" }
+                        val renderFileId = UUID.randomUUID().toString()
+                        val destination = store.renderCandidateFile(current.sessionId, record.pageId, renderFileId)
                         val result = renderScannerV2Page(
                             source = store.sourceFile(current.sessionId, record.pageId),
-                            destination = store.renderedFile(current.sessionId, record.pageId),
+                            destination = destination,
                             crop = crop,
                             rotationQuarterTurns = rotationQuarterTurns,
+                            appearance = record.appearance,
                         )
-                        val pages = current.pages.toMutableList().apply {
-                            this[selected] = record.copy(
-                                crop = crop,
-                                rotationQuarterTurns = rotationQuarterTurns,
-                                renderedFingerprint = result.fingerprint,
-                            )
-                        }
-                        val replacement = ScannerV2Manifest.create(
-                            sessionId = current.sessionId,
-                            state = current.state,
-                            pages = pages,
-                            retiredPages = current.retiredPages,
+                        val replacement = completeScannerV2PageRender(
+                            current = current,
+                            pageId = record.pageId,
+                            crop = crop,
+                            rotationQuarterTurns = rotationQuarterTurns,
+                            appearance = record.appearance,
+                            renderFileId = renderFileId,
+                            renderedFingerprint = result.fingerprint,
                             updatedAtMillis = nextTimestamp(current),
                         )
                         val renderedPreview = decodeScannerV2Preview(
-                            store.renderedFile(current.sessionId, record.pageId),
+                            destination,
                         )
+                        var filterPreviews: Map<ScannerV2Filter, Bitmap> = emptyMap()
                         try {
+                            filterPreviews = renderScannerV2FilterPreviews(
+                                source = store.sourceFile(current.sessionId, record.pageId),
+                                crop = crop,
+                                rotationQuarterTurns = rotationQuarterTurns,
+                            )
                             store.update(current, replacement)
+                            val reconciled = requireNotNull(store.loadActive())
+                            check(reconciled == replacement) { "Scanner crop publication changed" }
                         } catch (failure: Throwable) {
                             renderedPreview.recycle()
+                            filterPreviews.values.forEach { it.recycle() }
                             throw failure
                         }
-                        replacePreview(renderedPreview)
                         mutableState.value = mutableState.value.copy(
                             manifest = replacement,
                             preview = renderedPreview,
                             busy = false,
                             issue = null,
+                            cropEditing = false,
+                            filterPreviews = filterPreviews,
                         )
                     }
                 }
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
-                mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.RenderFailed)
+                recoverAfterRenderFailure()
             }
         }
     }
@@ -217,13 +232,119 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             updatedAtMillis = nextTimestamp(current),
                         )
                         store.update(current, replacement)
-                        replacePreview(null)
                         mutableState.value = ScannerV2UiState(replacement, busy = false)
                     }
                 }
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
                 mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.SessionUnavailable)
+            }
+        }
+    }
+
+    fun applyAppearance(appearance: ScannerV2Appearance) {
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(busy = true, issue = null)
+            try {
+                lock.withLock {
+                    withContext(Dispatchers.IO) {
+                        val current = requireNotNull(mutableState.value.manifest)
+                        val selected = requireNotNull(current.state.selectedIndex)
+                        val page = current.pages[selected]
+                        check(page.renderedFingerprint != null) { "Scanner page render is not published" }
+                        if (page.appearance == appearance) {
+                            mutableState.value = mutableState.value.copy(busy = false)
+                            return@withContext
+                        }
+                        val renderFileId = UUID.randomUUID().toString()
+                        val destination = store.renderCandidateFile(current.sessionId, page.pageId, renderFileId)
+                        val result = renderScannerV2Page(
+                            source = store.sourceFile(current.sessionId, page.pageId),
+                            destination = destination,
+                            crop = page.crop,
+                            rotationQuarterTurns = page.rotationQuarterTurns,
+                            appearance = appearance,
+                        )
+                        val preview = decodeScannerV2Preview(destination)
+                        try {
+                            val completed = completeScannerV2PageRender(
+                                current = current,
+                                pageId = page.pageId,
+                                crop = page.crop,
+                                rotationQuarterTurns = page.rotationQuarterTurns,
+                                appearance = appearance,
+                                renderFileId = renderFileId,
+                                renderedFingerprint = result.fingerprint,
+                                updatedAtMillis = nextTimestamp(current),
+                            )
+                            store.update(current, completed)
+                            val reconciled = requireNotNull(store.loadActive())
+                            check(reconciled == completed) { "Scanner appearance publication changed" }
+                            mutableState.value = ScannerV2UiState(
+                                manifest = reconciled,
+                                preview = preview,
+                                busy = false,
+                                filterPreviews = mutableState.value.filterPreviews,
+                            )
+                        } catch (failure: Throwable) {
+                            preview.recycle()
+                            throw failure
+                        }
+                    }
+                }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                recoverAfterRenderFailure()
+            }
+        }
+    }
+
+    fun editSelectedCrop() {
+        viewModelScope.launch {
+            try {
+                lock.withLock {
+                    withContext(Dispatchers.IO) {
+                        val current = requireNotNull(mutableState.value.manifest)
+                        check(current.state.stage == ScannerSessionStage.Reviewing)
+                        val selected = requireNotNull(current.state.selectedIndex)
+                        val page = current.pages[selected]
+                        check(page.renderedFingerprint != null) { "Scanner page render is not published" }
+                        val preview = decodeScannerV2Preview(store.sourceFile(current.sessionId, page.pageId))
+                        mutableState.value = ScannerV2UiState(
+                            manifest = current,
+                            preview = preview,
+                            busy = false,
+                            cropEditing = true,
+                        )
+                    }
+                }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    issue = ScannerV2Issue.SessionUnavailable,
+                    cropEditing = false,
+                )
+            }
+        }
+    }
+
+    fun cancelCropEditing() {
+        viewModelScope.launch {
+            try {
+                lock.withLock {
+                    withContext(Dispatchers.IO) {
+                        val current = requireNotNull(mutableState.value.manifest)
+                        loadSelectedPreviewLocked(current)
+                    }
+                }
+            } catch (failure: Exception) {
+                if (failure is CancellationException) throw failure
+                mutableState.value = mutableState.value.copy(
+                    busy = false,
+                    issue = ScannerV2Issue.SessionUnavailable,
+                    cropEditing = false,
+                )
             }
         }
     }
@@ -236,7 +357,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         val current = requireNotNull(mutableState.value.manifest)
                         val replacement = beginScannerV2Retake(current, nextTimestamp(current))
                         store.update(current, replacement)
-                        replacePreview(null)
                         mutableState.value = ScannerV2UiState(replacement, busy = false)
                     }
                 }
@@ -257,7 +377,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         val journaled = deleteScannerV2Page(current, selected, nextTimestamp(current))
                         store.update(current, journaled)
                         val replacement = store.reconcileRetiredPages(journaled)
-                        replacePreview(null)
                         if (replacement.retiredPages.isNotEmpty()) {
                             mutableState.value = ScannerV2UiState(
                                 replacement,
@@ -318,7 +437,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             retiredPages = current.retiredPages,
                             updatedAtMillis = nextTimestamp(current),
                         )
-                        store.update(current, replacement)
+                        store.updateSelection(current, replacement)
                         mutableState.value = mutableState.value.copy(manifest = replacement, busy = true, issue = null)
                         loadSelectedPreviewLocked(replacement)
                     }
@@ -361,7 +480,14 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 lock.withLock {
                     withContext(Dispatchers.IO) {
                         val current = requireNotNull(mutableState.value.manifest)
-                        if (current.pendingCaptureId != null) return@withContext
+                        if (current.state.stage != ScannerSessionStage.Capturing) return@withContext
+                        if (current.pendingCaptureId != null && !store.deletePendingCaptureFiles(current)) {
+                            mutableState.value = mutableState.value.copy(
+                                busy = false,
+                                issue = ScannerV2Issue.CaptureRecoveryRequired,
+                            )
+                            return@withContext
+                        }
                         val replacement = cancelScannerV2Capture(
                             current,
                             current.state.generation,
@@ -370,7 +496,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         store.update(current, replacement)
                         if (replacement.state.stage == ScannerSessionStage.Cancelled) {
                             if (!store.deleteCancelled(replacement)) throw IOException("Cancelled session could not be removed")
-                            replacePreview(null)
                             val fresh = createSession()
                             mutableState.value = ScannerV2UiState(fresh, busy = false)
                         } else {
@@ -387,7 +512,10 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
     }
 
     override fun onCleared() {
-        replacePreview(null)
+        mutableState.value.preview?.takeUnless(Bitmap::isRecycled)?.recycle()
+        mutableState.value.filterPreviews.values.forEach { bitmap ->
+            bitmap.takeUnless(Bitmap::isRecycled)?.recycle()
+        }
         super.onCleared()
     }
 
@@ -480,7 +608,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         store.update(current, replacement)
         if (replacement.state.stage == ScannerSessionStage.Cancelled) {
             if (!store.deleteCancelled(replacement)) throw IOException("Cancelled session could not be removed")
-            replacePreview(null)
             val fresh = createSession()
             mutableState.value = ScannerV2UiState(fresh, busy = false)
         } else {
@@ -490,8 +617,13 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
     }
 
     private suspend fun completeCaptureLocked(ticket: ScannerV2CaptureTicket) = withContext(Dispatchers.IO) {
-        val current = mutableState.value.manifest ?: return@withContext
-        if (!ticket.matches(current)) return@withContext
+        val current = mutableState.value.manifest
+        if (current == null || !ticket.matches(current)) {
+            if (ticket.destination.exists() && !ticket.destination.delete()) {
+                throw IOException("Stale capture could not be removed")
+            }
+            return@withContext
+        }
         val source = store.sourceFile(ticket.sessionId, ticket.pageId)
         when {
             source.exists() && ticket.destination.exists() -> throw IOException("Scanner capture recovery is ambiguous")
@@ -511,7 +643,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 sourceFingerprint = fingerprint,
                 crop = crop,
                 rotationQuarterTurns = 0,
-                filterId = "original",
+                appearance = ScannerV2Appearance.original(),
                 renderedFingerprint = null,
             )
             val replacement = completeScannerV2Capture(
@@ -529,7 +661,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 store.reconcileRetiredPages(replacement)
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
-                replacePreview(preview)
                 mutableState.value = ScannerV2UiState(
                     replacement,
                     preview = preview,
@@ -538,7 +669,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 )
                 return@withContext
             }
-            replacePreview(preview)
             mutableState.value = ScannerV2UiState(
                 cleaned,
                 preview = preview,
@@ -567,14 +697,57 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
 
     private fun loadSelectedPreviewLocked(manifest: ScannerV2Manifest) {
         val index = requireNotNull(manifest.state.selectedIndex)
-        val preview = decodeScannerV2Preview(store.sourceFile(manifest.sessionId, manifest.pages[index].pageId))
-        replacePreview(preview)
-        mutableState.value = ScannerV2UiState(manifest, preview = preview, busy = false)
+        val record = manifest.pages[index]
+        val preview = decodeScannerV2Preview(store.previewFile(manifest, record))
+        val filterPreviews = if (record.renderedFingerprint == null) {
+            emptyMap()
+        } else {
+            renderScannerV2FilterPreviews(
+                source = store.sourceFile(manifest.sessionId, record.pageId),
+                crop = record.crop,
+                rotationQuarterTurns = record.rotationQuarterTurns,
+            )
+        }
+        mutableState.value = ScannerV2UiState(
+            manifest = manifest,
+            preview = preview,
+            busy = false,
+            filterPreviews = filterPreviews,
+        )
     }
 
-    private fun replacePreview(preview: Bitmap?) {
-        val previous = mutableState.value.preview
-        if (previous !== preview) previous?.takeUnless(Bitmap::isRecycled)?.recycle()
+    private suspend fun recoverAfterRenderFailure() {
+        try {
+            lock.withLock {
+                withContext(Dispatchers.IO) {
+                    val persisted = store.loadActive()
+                    if (persisted == null || persisted.state.stage != ScannerSessionStage.Reviewing) {
+                        mutableState.value = ScannerV2UiState(
+                            manifest = persisted,
+                            busy = false,
+                            issue = ScannerV2Issue.RenderFailed,
+                        )
+                        return@withContext
+                    }
+                    val selected = requireNotNull(persisted.state.selectedIndex)
+                    val preview = decodeScannerV2Preview(
+                        store.previewFile(persisted, persisted.pages[selected]),
+                    )
+                    mutableState.value = ScannerV2UiState(
+                        manifest = persisted,
+                        preview = preview,
+                        busy = false,
+                        issue = ScannerV2Issue.RenderFailed,
+                    )
+                }
+            }
+        } catch (failure: Exception) {
+            if (failure is CancellationException) throw failure
+            mutableState.value = mutableState.value.copy(
+                busy = false,
+                issue = ScannerV2Issue.SessionUnavailable,
+            )
+        }
     }
 
     private fun nextTimestamp(current: ScannerV2Manifest): Long =

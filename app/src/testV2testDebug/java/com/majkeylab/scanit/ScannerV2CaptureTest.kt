@@ -62,7 +62,7 @@ class ScannerV2CaptureTest {
         sourceFingerprint = OutputFingerprint(3, "a".repeat(64)),
         crop = PageQuad.fullFrame(),
         rotationQuarterTurns = 0,
-        filterId = "original",
+        appearance = ScannerV2Appearance.original(),
         renderedFingerprint = null,
     )
 }

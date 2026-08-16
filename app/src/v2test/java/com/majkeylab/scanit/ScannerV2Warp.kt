@@ -14,6 +14,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import kotlin.math.roundToInt
 
 private const val SCANNER_V2_BITMAP_BYTES_PER_PIXEL = 4L
 private const val SCANNER_V2_TILE_EDGE = 1024
@@ -67,6 +68,84 @@ internal fun scannerV2WarpPlan(
     )
 }
 
+internal fun scannerV2ThumbnailPlan(
+    sourceWidth: Int,
+    sourceHeight: Int,
+    crop: PageQuad,
+    orientation: ImageExifOrientation,
+    rotationQuarterTurns: Int,
+    maxEdge: Int,
+): ScannerV2WarpPlan {
+    require(maxEdge in 1..512) { "Scanner thumbnail edge is invalid" }
+    val full = scannerV2WarpPlan(
+        sourceWidth,
+        sourceHeight,
+        crop,
+        orientation,
+        rotationQuarterTurns,
+    )
+    val scale = minOf(1.0, maxEdge.toDouble() / maxOf(full.output.width, full.output.height))
+    val output = WarpSize(
+        width = maxOf(1, (full.output.width * scale).roundToInt()),
+        height = maxOf(1, (full.output.height * scale).roundToInt()),
+    )
+    return full.copy(
+        output = output,
+        destinationCrop = scannerV2DestinationCropPoints(output, rotationQuarterTurns),
+        peakBitmapBytes =
+            output.width.toLong() * output.height * SCANNER_V2_BITMAP_BYTES_PER_PIXEL +
+                SCANNER_V2_TILE_EDGE.toLong() * SCANNER_V2_TILE_EDGE * SCANNER_V2_BITMAP_BYTES_PER_PIXEL,
+    )
+}
+
+internal fun renderScannerV2FilterPreviews(
+    source: File,
+    crop: PageQuad,
+    rotationQuarterTurns: Int,
+    maxEdge: Int = 256,
+    isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+): Map<ScannerV2Filter, Bitmap> {
+    val input = source.canonicalFile
+    if (!input.isFile || input.length() !in 1..MAX_SCANNER_V2_PAGE_BYTES) {
+        throw IOException("Scanner preview source is invalid")
+    }
+    val dimensions = readJpegDimensions(input)
+    val plan = scannerV2ThumbnailPlan(
+        dimensions.width,
+        dimensions.height,
+        crop,
+        readScannerV2ExifOrientation(input),
+        rotationQuarterTurns,
+        maxEdge,
+    )
+    val base = renderScannerV2Tiles(input, dimensions, plan, isCancelled)
+    val previews = linkedMapOf<ScannerV2Filter, Bitmap>()
+    try {
+        ScannerV2Filter.entries.forEach { filter ->
+            throwIfScannerV2Cancelled(isCancelled)
+            val preview = base.copy(Bitmap.Config.ARGB_8888, true)
+                ?: throw IOException("Scanner filter preview could not be allocated")
+            try {
+                applyScanAppearance(
+                    preview,
+                    ScannerV2Appearance.defaultFor(filter).asScanAppearance(),
+                    isCancelled,
+                )
+                previews[filter] = preview
+            } catch (failure: Throwable) {
+                preview.recycle()
+                throw failure
+            }
+        }
+        return previews
+    } catch (failure: Throwable) {
+        previews.values.forEach { it.recycle() }
+        throw failure
+    } finally {
+        base.recycle()
+    }
+}
+
 internal fun scannerV2SourceCropPoints(
     sourceWidth: Int,
     sourceHeight: Int,
@@ -102,6 +181,7 @@ internal fun renderScannerV2Page(
     destination: File,
     crop: PageQuad,
     rotationQuarterTurns: Int,
+    appearance: ScannerV2Appearance,
     isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
 ): ScannerV2WarpResult {
     val input = source.canonicalFile
@@ -130,6 +210,7 @@ internal fun renderScannerV2Page(
     try {
         output = renderScannerV2Tiles(input, dimensions, plan, isCancelled)
         val rendered = requireNotNull(output)
+        applyScanAppearance(rendered, appearance.asScanAppearance(), isCancelled)
         publishImageExportAtomically(target, isCancelled) { staging ->
             encodeScannerV2Jpeg(rendered, staging)
             rendered.recycle()

@@ -50,6 +50,39 @@ internal fun reorderScannerV2Pages(
     )
 }
 
+internal fun completeScannerV2PageRender(
+    current: ScannerV2Manifest,
+    pageId: PageId,
+    crop: PageQuad,
+    rotationQuarterTurns: Int,
+    appearance: ScannerV2Appearance,
+    renderFileId: String,
+    renderedFingerprint: OutputFingerprint,
+    updatedAtMillis: Long,
+): ScannerV2Manifest {
+    requireCleanScannerV2Pages(current)
+    check(current.state.stage == ScannerSessionStage.Reviewing) { "Scanner session is not reviewable" }
+    val selected = requireNotNull(current.state.selectedIndex) { "Selected scanner page is missing" }
+    val page = current.pages[selected]
+    require(page.pageId == pageId) { "Scanner appearance page changed" }
+    require(isCanonicalUuid(renderFileId)) { "Scanner render id is invalid" }
+    val pages = current.pages.toMutableList().apply {
+        this[selected] = page.copy(
+            crop = crop,
+            rotationQuarterTurns = rotationQuarterTurns,
+            appearance = appearance,
+            renderedFingerprint = renderedFingerprint,
+            renderFileId = renderFileId,
+        )
+    }
+    return ScannerV2Manifest.create(
+        sessionId = current.sessionId,
+        state = current.state,
+        pages = pages,
+        updatedAtMillis = nextScannerV2PageTimestamp(current, updatedAtMillis),
+    )
+}
+
 private fun requireCleanScannerV2Pages(current: ScannerV2Manifest) {
     check(current.pendingCaptureId == null) { "Scanner capture is pending" }
     check(current.retiredPages.isEmpty()) { "Scanner page cleanup is pending" }

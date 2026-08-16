@@ -14,28 +14,31 @@ internal const val MAX_SCANNER_V2_MANIFEST_BYTES = 64 * 1024
 internal const val SCANNER_V2_MANIFEST_NAME = "session.json"
 internal const val SCANNER_V2_MANIFEST_TEMP_NAME = ".session.json.tmp"
 internal const val SCANNER_V2_SESSION_RETENTION_MILLIS = 24L * 60 * 60 * 1000
-private const val SCANNER_V2_MANIFEST_VERSION = 3
+private const val SCANNER_V2_MANIFEST_VERSION = 5
+private const val SCANNER_V2_APPEARANCE_MANIFEST_VERSION = 4
+private const val SCANNER_V2_LEGACY_MANIFEST_VERSION = 3
 private const val SCANNER_V2_SESSION_PREFIX = "session-"
-private val SAFE_FILTER_ID = Regex("[a-z0-9][a-z0-9._-]{0,79}")
 
 internal data class ScannerV2PageRecord(
     val pageId: PageId,
     val sourceFingerprint: OutputFingerprint,
     val crop: PageQuad,
     val rotationQuarterTurns: Int,
-    val filterId: String,
+    val appearance: ScannerV2Appearance,
     val renderedFingerprint: OutputFingerprint?,
+    val renderFileId: String? = null,
 ) {
     init {
         require(isValidOutputFingerprint(sourceFingerprint.byteLength, sourceFingerprint.sha256)) {
             "Scanner source fingerprint is invalid"
         }
         require(rotationQuarterTurns in 0..3) { "Scanner rotation is invalid" }
-        require(SAFE_FILTER_ID.matches(filterId)) { "Scanner filter id is invalid" }
         require(
             renderedFingerprint == null ||
                 isValidOutputFingerprint(renderedFingerprint.byteLength, renderedFingerprint.sha256),
         ) { "Scanner render fingerprint is invalid" }
+        require(renderFileId == null || isCanonicalUuid(renderFileId)) { "Scanner render id is invalid" }
+        require(renderFileId == null || renderedFingerprint != null) { "Scanner render id has no fingerprint" }
     }
 }
 
@@ -132,7 +135,15 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
     if (bytes.size !in 1..MAX_SCANNER_V2_MANIFEST_BYTES) return null
     return try {
         val value = JSONObject(String(bytes, StandardCharsets.UTF_8))
-        if (!value.hasOnlyKeys(MANIFEST_KEYS) || value.strictInt("version") != SCANNER_V2_MANIFEST_VERSION) {
+        val version = value.strictInt("version") ?: return null
+        if (
+            !value.hasOnlyKeys(MANIFEST_KEYS) ||
+                version !in setOf(
+                    SCANNER_V2_LEGACY_MANIFEST_VERSION,
+                    SCANNER_V2_APPEARANCE_MANIFEST_VERSION,
+                    SCANNER_V2_MANIFEST_VERSION,
+                )
+        ) {
             return null
         }
         val sessionId = value.strictString("sessionId") ?: return null
@@ -147,14 +158,14 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
         if (array.length() > MAX_SCAN_PAGES) return null
         val pages = buildList(array.length()) {
             repeat(array.length()) { index ->
-                add(decodePageRecord(array.opt(index) as? JSONObject ?: return null) ?: return null)
+                add(decodePageRecord(array.opt(index) as? JSONObject ?: return null, version) ?: return null)
             }
         }
         val retiredArray = value.opt("retiredPages") as? JSONArray ?: return null
         if (retiredArray.length() > MAX_SCAN_PAGES) return null
         val retiredPages = buildList(retiredArray.length()) {
             repeat(retiredArray.length()) { index ->
-                add(decodePageRecord(retiredArray.opt(index) as? JSONObject ?: return null) ?: return null)
+                add(decodePageRecord(retiredArray.opt(index) as? JSONObject ?: return null, version) ?: return null)
             }
         }
         val state = ScannerSessionState.restore(
@@ -212,6 +223,23 @@ internal class ScannerV2Store(
         verifyPageFiles(directory, replacement.pages)
         verifyRetiredPageFiles(directory, replacement.retiredPages)
         writeManifest(directory, replacement, expected, move)
+    }
+
+    fun updateSelection(expected: ScannerV2Manifest, replacement: ScannerV2Manifest) {
+        require(expected.sessionId == replacement.sessionId) { "Scanner session identity changed" }
+        require(expected.pages == replacement.pages) { "Scanner page authority changed during selection" }
+        require(expected.retiredPages == replacement.retiredPages) { "Scanner cleanup authority changed during selection" }
+        require(expected.pendingCaptureId == replacement.pendingCaptureId) { "Scanner capture changed during selection" }
+        require(expected.state.generation == replacement.state.generation) { "Scanner generation changed during selection" }
+        require(expected.state.pages == replacement.state.pages) { "Scanner page order changed during selection" }
+        require(expected.state.stage == replacement.state.stage) { "Scanner stage changed during selection" }
+        require(expected.state.pendingReplacementIndex == replacement.state.pendingReplacementIndex) {
+            "Scanner replacement changed during selection"
+        }
+        require(replacement.updatedAtMillis >= expected.updatedAtMillis) { "Scanner timestamp moved backwards" }
+        val directory = requireSessionDirectory(expected.sessionId)
+        if (readManifest(directory) != expected) throw IOException("Scanner session changed before selection")
+        writeManifest(directory, replacement, expected, ::moveAtomically)
     }
 
     fun loadActive(): ScannerV2Manifest? {
@@ -279,7 +307,7 @@ internal class ScannerV2Store(
         manifest.retiredPages.forEach { page ->
             val files = buildList {
                 add(sourceFile(manifest.sessionId, page.pageId))
-                if (page.renderedFingerprint != null) add(renderedFile(manifest.sessionId, page.pageId))
+                if (page.renderedFingerprint != null) add(renderedFile(manifest, page))
             }
             if (files.any { it.exists() && !it.delete() }) return manifest
         }
@@ -309,6 +337,29 @@ internal class ScannerV2Store(
     fun sourceFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "source", "jpg")
 
     fun renderedFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "render", "jpg")
+
+    fun renderedFile(manifest: ScannerV2Manifest, page: ScannerV2PageRecord): File {
+        require(page in manifest.pages || page in manifest.retiredPages) { "Scanner render page is not journaled" }
+        return page.renderFileId?.let { renderCandidateFile(manifest.sessionId, page.pageId, it) }
+            ?: renderedFile(manifest.sessionId, page.pageId)
+    }
+
+    fun renderCandidateFile(sessionId: String, pageId: PageId, renderFileId: String): File {
+        require(isCanonicalUuid(renderFileId)) { "Scanner render id is invalid" }
+        val directory = requireSessionDirectory(sessionId)
+        val file = File(directory, "render-${pageId.value}-$renderFileId.jpg").absoluteFile
+        require(file.parentFile == directory && file.canonicalFile == file) { "Scanner render path escaped its session" }
+        return file
+    }
+
+    fun previewFile(manifest: ScannerV2Manifest, page: ScannerV2PageRecord): File {
+        require(page in manifest.pages) { "Scanner preview page is not active" }
+        return if (page.renderedFingerprint == null) {
+            sourceFile(manifest.sessionId, page.pageId)
+        } else {
+            renderedFile(manifest, page)
+        }
+    }
 
     fun captureFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, ".capture", "jpg")
 
@@ -382,7 +433,7 @@ internal class ScannerV2Store(
         pages.forEach { page ->
             requireFingerprint(File(directory, "source-${page.pageId.value}.jpg"), page.sourceFingerprint)
             page.renderedFingerprint?.let { fingerprint ->
-                requireFingerprint(File(directory, "render-${page.pageId.value}.jpg"), fingerprint)
+                requireFingerprint(File(directory, page.renderFileName()), fingerprint)
             }
         }
     }
@@ -393,7 +444,7 @@ internal class ScannerV2Store(
                 requireFingerprint(source, page.sourceFingerprint)
             }
             page.renderedFingerprint?.let { fingerprint ->
-                File(directory, "render-${page.pageId.value}.jpg").takeIf(File::exists)?.let { rendered ->
+                File(directory, page.renderFileName()).takeIf(File::exists)?.let { rendered ->
                     requireFingerprint(rendered, fingerprint)
                 }
             }
@@ -405,20 +456,23 @@ internal class ScannerV2Store(
             add(SCANNER_V2_MANIFEST_NAME)
             manifest.pages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
-                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add(page.renderFileName())
             }
             manifest.retiredPages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
-                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add(page.renderFileName())
             }
             manifest.pendingCaptureId?.let { pageId ->
                 add(".capture-${pageId.value}.jpg")
                 add("source-${pageId.value}.jpg")
             }
         }
-        manifest.pages.filter { it.renderedFingerprint == null }.forEach { page ->
-            val unpublished = File(directory, "render-${page.pageId.value}.jpg")
-            if (unpublished.exists() && (!unpublished.isFile || unpublished.canonicalFile != unpublished || !unpublished.delete())) {
+        val knownPageIds = (manifest.pages + manifest.retiredPages).mapTo(mutableSetOf()) { it.pageId }
+        val initialChildren = directory.listFiles() ?: throw IOException("Scanner session inventory is unavailable")
+        initialChildren.filter { child ->
+            child.name !in expectedNames && parseScannerV2RenderPageId(child.name) in knownPageIds
+        }.forEach { orphan ->
+            if (!orphan.isFile || orphan.canonicalFile != orphan || !orphan.delete()) {
                 throw IOException("Incomplete scanner render could not be removed")
             }
         }
@@ -445,11 +499,11 @@ internal class ScannerV2Store(
             add(SCANNER_V2_MANIFEST_NAME)
             manifest.pages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
-                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add(page.renderFileName())
             }
             manifest.retiredPages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
-                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add(page.renderFileName())
             }
         }
         val children = directory.listFiles() ?: return false
@@ -475,12 +529,20 @@ private fun ScannerV2PageRecord.toJson(): JSONObject = JSONObject()
         crop.bottomLeft.y,
     )))
     .put("rotationQuarterTurns", rotationQuarterTurns)
-    .put("filterId", filterId)
+    .put("filterId", appearance.filter.wireValue)
+    .put("filterIntensity", appearance.intensity)
+    .put("filterShadows", appearance.shadows)
     .put("renderedLength", renderedFingerprint?.byteLength ?: JSONObject.NULL)
     .put("renderedSha256", renderedFingerprint?.sha256 ?: JSONObject.NULL)
+    .put("renderFileId", renderFileId ?: JSONObject.NULL)
 
-private fun decodePageRecord(value: JSONObject): ScannerV2PageRecord? {
-    if (!value.hasOnlyKeys(PAGE_KEYS)) return null
+private fun decodePageRecord(value: JSONObject, version: Int): ScannerV2PageRecord? {
+    val expectedKeys = when (version) {
+        SCANNER_V2_LEGACY_MANIFEST_VERSION -> PAGE_KEYS_V3
+        SCANNER_V2_APPEARANCE_MANIFEST_VERSION -> PAGE_KEYS_V4
+        else -> PAGE_KEYS_V5
+    }
+    if (!value.hasOnlyKeys(expectedKeys)) return null
     val pageId = runCatching { PageId.parse(value.strictString("id") ?: return null) }.getOrNull() ?: return null
     val source = outputFingerprintOrNull(value.strictLong("sourceLength"), value.strictString("sourceSha256"))
         ?: return null
@@ -500,14 +562,33 @@ private fun decodePageRecord(value: JSONObject): ScannerV2PageRecord? {
     val rendered = if (renderedLength.value == null) null else {
         outputFingerprintOrNull(renderedLength.value, renderedSha.value) ?: return null
     }
+    val filter = ScannerV2Filter.parse(value.strictString("filterId") ?: return null) ?: return null
+    val appearance = if (version == SCANNER_V2_LEGACY_MANIFEST_VERSION) {
+        ScannerV2Appearance.defaultFor(filter)
+    } else {
+        runCatching {
+            ScannerV2Appearance(
+                filter = filter,
+                intensity = value.strictInt("filterIntensity") ?: return null,
+                shadows = value.strictInt("filterShadows") ?: return null,
+            )
+        }.getOrNull() ?: return null
+    }
+    val renderFileId = if (version == SCANNER_V2_MANIFEST_VERSION) {
+        val optional = value.strictOptionalString("renderFileId") ?: return null
+        optional.value
+    } else {
+        null
+    }
     return runCatching {
         ScannerV2PageRecord(
             pageId = pageId,
             sourceFingerprint = source,
             crop = crop,
             rotationQuarterTurns = value.strictInt("rotationQuarterTurns") ?: return null,
-            filterId = value.strictString("filterId") ?: return null,
+            appearance = appearance,
             renderedFingerprint = rendered,
+            renderFileId = renderFileId,
         )
     }.getOrNull()
 }
@@ -571,7 +652,7 @@ private val MANIFEST_KEYS = setOf(
     "retiredPages",
 )
 
-private val PAGE_KEYS = setOf(
+private val PAGE_KEYS_V3 = setOf(
     "id",
     "sourceLength",
     "sourceSha256",
@@ -581,3 +662,20 @@ private val PAGE_KEYS = setOf(
     "renderedLength",
     "renderedSha256",
 )
+
+private val PAGE_KEYS_V4 = PAGE_KEYS_V3 + setOf("filterIntensity", "filterShadows")
+
+private val PAGE_KEYS_V5 = PAGE_KEYS_V4 + setOf("renderFileId")
+
+private fun ScannerV2PageRecord.renderFileName(): String = renderFileId?.let { id ->
+    "render-${pageId.value}-$id.jpg"
+} ?: "render-${pageId.value}.jpg"
+
+private fun parseScannerV2RenderPageId(name: String): PageId? {
+    if (!name.startsWith("render-") || !name.endsWith(".jpg")) return null
+    val body = name.removePrefix("render-").removeSuffix(".jpg")
+    if (body.length == 36) return runCatching { PageId.parse(body) }.getOrNull()
+    if (body.length != 73 || body[36] != '-') return null
+    val pageId = runCatching { PageId.parse(body.substring(0, 36)) }.getOrNull() ?: return null
+    return pageId.takeIf { isCanonicalUuid(body.substring(37)) }
+}

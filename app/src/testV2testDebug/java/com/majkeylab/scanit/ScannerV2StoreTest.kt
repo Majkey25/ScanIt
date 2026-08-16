@@ -30,6 +30,150 @@ class ScannerV2StoreTest {
     }
 
     @Test
+    fun versionThreeManifestMigratesOriginalFilterWithoutLosingAuthority() {
+        val original = manifest(
+            updatedAtMillis = 1234,
+            appearance = ScannerV2Appearance.original(),
+        )
+        val legacy = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
+            put("version", 3)
+            getJSONArray("pages").getJSONObject(0).apply {
+                remove("filterIntensity")
+                remove("filterShadows")
+                remove("renderFileId")
+            }
+        }.toString().toByteArray()
+
+        val migrated = decodeScannerV2Manifest(legacy)
+
+        assertEquals(original, migrated)
+    }
+
+    @Test
+    fun versionFourManifestPreservesAppearanceWithoutInventingRenderIdentity() {
+        val original = manifest(updatedAtMillis = 1234)
+        val versionFour = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
+            put("version", 4)
+            getJSONArray("pages").getJSONObject(0).remove("renderFileId")
+        }.toString().toByteArray()
+
+        val migrated = decodeScannerV2Manifest(versionFour)
+
+        assertEquals(original, migrated)
+    }
+
+    @Test
+    fun previewUsesRenderedFileOnlyAfterItsFingerprintIsPublished() {
+        val store = ScannerV2Store(temporary.newFolder("preview"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val renderedBytes = byteArrayOf(4, 5, 6)
+        val pending = pageRecord(
+            sourceFingerprint = fingerprint(sourceBytes),
+            renderedFingerprint = null,
+        )
+        store.sourceFile(initial.sessionId, pending.pageId).writeBytes(sourceBytes)
+        val pendingManifest = manifest(
+            sessionId = initial.sessionId,
+            sourceFingerprint = pending.sourceFingerprint,
+            renderedFingerprint = null,
+            pageId = pending.pageId,
+        )
+        store.update(initial, pendingManifest)
+
+        assertEquals(
+            store.sourceFile(initial.sessionId, pending.pageId),
+            store.previewFile(pendingManifest, pending),
+        )
+
+        store.renderedFile(initial.sessionId, pending.pageId).writeBytes(renderedBytes)
+        val published = pending.copy(renderedFingerprint = fingerprint(renderedBytes))
+        val publishedManifest = ScannerV2Manifest.create(
+            sessionId = initial.sessionId,
+            state = pendingManifest.state,
+            pages = listOf(published),
+            updatedAtMillis = 2,
+        )
+        store.update(pendingManifest, publishedManifest)
+
+        assertEquals(
+            store.renderedFile(initial.sessionId, pending.pageId),
+            store.previewFile(publishedManifest, published),
+        )
+    }
+
+    @Test
+    fun interruptedAppearanceChangeRemovesOnlyTheImmutableCandidateAndKeepsTheGoodRender() {
+        val store = ScannerV2Store(temporary.newFolder("appearance-recovery"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val renderedBytes = byteArrayOf(4, 5, 6)
+        val current = manifest(
+            sessionId = initial.sessionId,
+            sourceFingerprint = fingerprint(sourceBytes),
+            renderedFingerprint = fingerprint(renderedBytes),
+        )
+        val page = current.pages.single()
+        store.sourceFile(current.sessionId, page.pageId).writeBytes(sourceBytes)
+        val rendered = store.renderedFile(current, page).apply {
+            writeBytes(renderedBytes)
+        }
+        store.update(initial, current)
+        val candidate = store.renderCandidateFile(
+            current.sessionId,
+            page.pageId,
+            UUID.randomUUID().toString(),
+        ).apply { writeBytes(byteArrayOf(7, 8, 9)) }
+
+        assertEquals(current, store.loadActive())
+        assertFalse(candidate.exists())
+        assertTrue(rendered.exists())
+        assertTrue(store.sourceFile(current.sessionId, page.pageId).exists())
+    }
+
+    @Test
+    fun completedAppearanceChangeSwitchesToNewRenderThenRemovesTheOldRender() {
+        val store = ScannerV2Store(temporary.newFolder("appearance-publication"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val oldBytes = byteArrayOf(4, 5, 6)
+        val current = manifest(
+            sessionId = initial.sessionId,
+            sourceFingerprint = fingerprint(sourceBytes),
+            renderedFingerprint = fingerprint(oldBytes),
+        )
+        val page = current.pages.single()
+        store.sourceFile(current.sessionId, page.pageId).writeBytes(sourceBytes)
+        val oldRender = store.renderedFile(current, page).apply { writeBytes(oldBytes) }
+        store.update(initial, current)
+        val newBytes = byteArrayOf(7, 8, 9)
+        val renderFileId = UUID.randomUUID().toString()
+        val newRender = store.renderCandidateFile(current.sessionId, page.pageId, renderFileId).apply {
+            writeBytes(newBytes)
+        }
+        val completed = completeScannerV2PageRender(
+            current = current,
+            pageId = page.pageId,
+            crop = page.crop,
+            rotationQuarterTurns = page.rotationQuarterTurns,
+            appearance = ScannerV2Appearance.defaultFor(ScannerV2Filter.Color),
+            renderFileId = renderFileId,
+            renderedFingerprint = fingerprint(newBytes),
+            updatedAtMillis = 2,
+        )
+
+        store.update(current, completed)
+
+        assertEquals(completed, store.loadActive())
+        assertEquals(newRender, store.previewFile(completed, completed.pages.single()))
+        assertTrue(newRender.exists())
+        assertFalse(oldRender.exists())
+    }
+
+    @Test
     fun pendingCaptureIsStrictAndBoundToCameraStage() {
         val pageId = PageId.parse(UUID.randomUUID().toString())
         val capturing = emptyManifest().withPendingCapture(pageId)
@@ -110,6 +254,75 @@ class ScannerV2StoreTest {
         store.sourceFile(initial.sessionId, wanted.pages.single().pageId).writeBytes(byteArrayOf(9, 9, 9))
         assertThrows(IOException::class.java) {
             store.update(wanted, wanted.withUpdatedAt(10_003))
+        }
+    }
+
+    @Test
+    fun selectionUpdateChangesOnlySelectionWithoutRehashingPageFiles() {
+        val store = ScannerV2Store(temporary.newFolder("selection"))
+        val initial = emptyManifest()
+        store.create(initial)
+        val firstBytes = byteArrayOf(1, 2, 3)
+        val secondBytes = byteArrayOf(4, 5, 6)
+        val first = pageRecord(
+            sourceFingerprint = fingerprint(firstBytes),
+            renderedFingerprint = null,
+        )
+        val second = pageRecord(
+            sourceFingerprint = fingerprint(secondBytes),
+            renderedFingerprint = null,
+        )
+        store.sourceFile(initial.sessionId, first.pageId).writeBytes(firstBytes)
+        store.sourceFile(initial.sessionId, second.pageId).writeBytes(secondBytes)
+        val reviewing = ScannerV2Manifest.create(
+            sessionId = initial.sessionId,
+            state = ScannerSessionState.restore(
+                generation = 2,
+                pages = listOf(ScannerPage(first.pageId), ScannerPage(second.pageId)),
+                selectedIndex = 0,
+                stage = ScannerSessionStage.Reviewing,
+                pendingReplacementIndex = null,
+            ),
+            pages = listOf(first, second),
+            updatedAtMillis = 2,
+        )
+        store.update(initial, reviewing)
+        store.sourceFile(initial.sessionId, first.pageId).writeBytes(byteArrayOf(9, 9, 9))
+        val selectedSecond = ScannerV2Manifest.create(
+            sessionId = reviewing.sessionId,
+            state = ScannerSessionState.restore(
+                generation = reviewing.state.generation,
+                pages = reviewing.state.pages,
+                selectedIndex = 1,
+                stage = reviewing.state.stage,
+                pendingReplacementIndex = reviewing.state.pendingReplacementIndex,
+            ),
+            pages = reviewing.pages,
+            retiredPages = reviewing.retiredPages,
+            pendingCaptureId = reviewing.pendingCaptureId,
+            updatedAtMillis = 3,
+        )
+
+        store.updateSelection(reviewing, selectedSecond)
+
+        assertEquals(
+            selectedSecond,
+            decodeScannerV2Manifest(store.manifestFile(initial.sessionId).readBytes()),
+        )
+        val reordered = ScannerV2Manifest.create(
+            sessionId = selectedSecond.sessionId,
+            state = ScannerSessionState.restore(
+                generation = selectedSecond.state.generation,
+                pages = listOf(ScannerPage(second.pageId), ScannerPage(first.pageId)),
+                selectedIndex = 0,
+                stage = selectedSecond.state.stage,
+                pendingReplacementIndex = selectedSecond.state.pendingReplacementIndex,
+            ),
+            pages = listOf(second, first),
+            updatedAtMillis = 4,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            store.updateSelection(selectedSecond, reordered)
         }
     }
 
@@ -265,9 +478,14 @@ class ScannerV2StoreTest {
         updatedAtMillis: Long = 1,
         sourceFingerprint: OutputFingerprint = OutputFingerprint(3, "a".repeat(64)),
         renderedFingerprint: OutputFingerprint? = OutputFingerprint(2, "b".repeat(64)),
+        appearance: ScannerV2Appearance = ScannerV2Appearance(
+            ScannerV2Filter.Grayscale,
+            intensity = 72,
+            shadows = 18,
+        ),
+        pageId: PageId = PageId.parse(UUID.randomUUID().toString()),
     ): ScannerV2Manifest {
-        val pageId = PageId.parse(UUID.randomUUID().toString())
-        val record = pageRecord(pageId, sourceFingerprint, renderedFingerprint)
+        val record = pageRecord(pageId, sourceFingerprint, renderedFingerprint, appearance)
         return ScannerV2Manifest.create(
             sessionId = sessionId,
             state = ScannerSessionState.restore(
@@ -286,6 +504,11 @@ class ScannerV2StoreTest {
         pageId: PageId = PageId.parse(UUID.randomUUID().toString()),
         sourceFingerprint: OutputFingerprint,
         renderedFingerprint: OutputFingerprint?,
+        appearance: ScannerV2Appearance = ScannerV2Appearance(
+            ScannerV2Filter.Grayscale,
+            intensity = 72,
+            shadows = 18,
+        ),
     ): ScannerV2PageRecord = ScannerV2PageRecord(
         pageId = pageId,
         sourceFingerprint = sourceFingerprint,
@@ -296,7 +519,7 @@ class ScannerV2StoreTest {
             NormalizedPoint(.12, .88),
         ),
         rotationQuarterTurns = 1,
-        filterId = "drawing",
+        appearance = appearance,
         renderedFingerprint = renderedFingerprint,
     )
 
