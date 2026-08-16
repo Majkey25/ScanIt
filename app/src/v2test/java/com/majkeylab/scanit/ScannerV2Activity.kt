@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Size
 import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -12,12 +14,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.camera.compose.CameraXViewfinder
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -100,18 +105,32 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
 
 private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consumed"
 private const val V2_VIEW_MODEL_TOKEN_KEY = "v2_view_model_token"
+private const val V2_ANALYSIS_INTERVAL_MS = 300L
+private const val V2_ANALYSIS_GUIDE_HOLD_MS = 650L
+private val V2_ANALYSIS_SIZE = Size(320, 240)
 
 class ScannerV2Activity : ComponentActivity() {
     private val viewModel: ScannerV2ViewModel by viewModels()
     private val resultViewModel: ScanViewModel by viewModels()
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
+    private val cameraAnalysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var liveDocumentQuad by mutableStateOf<PageQuad?>(null)
     private var cameraPermissionGranted by mutableStateOf(false)
+    @Volatile
     private var cameraBindGeneration = 0L
+    @Volatile
+    private var lastAnalysisStartedAt = 0L
+    @Volatile
+    private var lastAnalysisDetectedAt = 0L
+    @Volatile
+    private var analysisGuideVisible = false
     private var freshLaunchRequested = false
     private var launchDirectiveConsumed = false
     private var launchDirectiveClaimed = false
@@ -291,6 +310,7 @@ class ScannerV2Activity : ComponentActivity() {
                 ScannerV2App(
                     state = state,
                     surfaceRequest = surfaceRequest,
+                    liveDocumentQuad = liveDocumentQuad,
                     cameraPermissionGranted = cameraPermissionGranted,
                     onRequestCameraPermission = {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -318,6 +338,7 @@ class ScannerV2Activity : ComponentActivity() {
 
     override fun onDestroy() {
         unbindCamera()
+        cameraAnalysisExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -347,9 +368,25 @@ class ScannerV2Activity : ComponentActivity() {
                         .setResolutionSelector(resolution)
                         .setTargetRotation(display?.rotation ?: Surface.ROTATION_0)
                         .build()
+                    val analysisResolution = ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                        .setResolutionStrategy(
+                            ResolutionStrategy(
+                                V2_ANALYSIS_SIZE,
+                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                            ),
+                        )
+                        .build()
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setResolutionSelector(analysisResolution)
+                        .build()
+                    analysis.setAnalyzer(cameraAnalysisExecutor) { image ->
+                        analyzeCameraFrame(image, generation)
+                    }
                     viewModel.bindPreview(preview)
                     provider.unbindAll()
-                    provider.bindToLifecycle(this, selector, preview, capture)
+                    provider.bindToLifecycle(this, selector, preview, capture, analysis)
                     cameraProvider = provider
                     imageCapture = capture
                 } catch (_: Exception) {
@@ -363,9 +400,59 @@ class ScannerV2Activity : ComponentActivity() {
     private fun unbindCamera() {
         cameraBindGeneration += 1
         imageCapture = null
+        liveDocumentQuad = null
+        lastAnalysisStartedAt = 0L
+        lastAnalysisDetectedAt = 0L
+        analysisGuideVisible = false
         cameraProvider?.unbindAll()
         cameraProvider = null
         viewModel.clearPreviewSurface()
+    }
+
+    private fun analyzeCameraFrame(image: ImageProxy, generation: Long) {
+        try {
+            if (generation != cameraBindGeneration) return
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastAnalysisStartedAt < V2_ANALYSIS_INTERVAL_MS) return
+            lastAnalysisStartedAt = now
+            val plane = image.planes.firstOrNull() ?: return
+            val detected = try {
+                val frame = copyScannerV2LumaPlane(
+                    width = image.width,
+                    height = image.height,
+                    rowStride = plane.rowStride,
+                    pixelStride = plane.pixelStride,
+                    source = plane.buffer,
+                )
+                detectDocumentQuad(frame)?.let { crop ->
+                    rotateScannerV2AnalysisQuad(crop, image.imageInfo.rotationDegrees)
+                }
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+            if (generation != cameraBindGeneration) return
+            val shouldPublish = when {
+                detected != null -> {
+                    lastAnalysisDetectedAt = now
+                    analysisGuideVisible = true
+                    true
+                }
+                analysisGuideVisible && now - lastAnalysisDetectedAt >= V2_ANALYSIS_GUIDE_HOLD_MS -> {
+                    analysisGuideVisible = false
+                    true
+                }
+                else -> false
+            }
+            if (shouldPublish) {
+                runOnUiThread {
+                    if (generation == cameraBindGeneration && !isDestroyed) {
+                        liveDocumentQuad = detected
+                    }
+                }
+            }
+        } finally {
+            image.close()
+        }
     }
 
     private fun capture() {
@@ -447,6 +534,7 @@ private fun ScannerV2Theme(content: @Composable () -> Unit) {
 private fun ScannerV2App(
     state: ScannerV2UiState,
     surfaceRequest: SurfaceRequest?,
+    liveDocumentQuad: PageQuad?,
     cameraPermissionGranted: Boolean,
     onRequestCameraPermission: () -> Unit,
     onCapture: () -> Unit,
@@ -469,6 +557,7 @@ private fun ScannerV2App(
             ScannerSessionStage.Capturing -> ScannerV2CameraScreen(
                 state = state,
                 surfaceRequest = surfaceRequest,
+                liveDocumentQuad = liveDocumentQuad,
                 permissionGranted = cameraPermissionGranted,
                 onRequestPermission = onRequestCameraPermission,
                 onCapture = onCapture,
@@ -499,6 +588,7 @@ private fun ScannerV2App(
 private fun ScannerV2CameraScreen(
     state: ScannerV2UiState,
     surfaceRequest: SurfaceRequest?,
+    liveDocumentQuad: PageQuad?,
     permissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     onCapture: () -> Unit,
@@ -537,6 +627,12 @@ private fun ScannerV2CameraScreen(
                 )
                 else -> CircularProgressIndicator(color = Color.White)
             }
+            if (surfaceRequest != null && liveDocumentQuad != null) {
+                ScannerV2LiveDocumentGuide(
+                    crop = liveDocumentQuad,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
         state.issue?.let { ScannerV2IssueText(it) }
         if (state.manifest?.pendingCaptureId != null && !state.busy) {
@@ -568,6 +664,38 @@ private fun ScannerV2CameraScreen(
                 Text(stringResource(R.string.v2_capture_button))
             }
         }
+    }
+}
+
+@Composable
+private fun ScannerV2LiveDocumentGuide(crop: PageQuad, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current
+    Canvas(modifier) {
+        fun point(value: NormalizedPoint): Offset = Offset(
+            x = (value.x * size.width).toFloat(),
+            y = (value.y * size.height).toFloat(),
+        )
+        val path = Path().apply {
+            val first = point(crop.topLeft)
+            moveTo(first.x, first.y)
+            val topRight = point(crop.topRight)
+            val bottomRight = point(crop.bottomRight)
+            val bottomLeft = point(crop.bottomLeft)
+            lineTo(topRight.x, topRight.y)
+            lineTo(bottomRight.x, bottomRight.y)
+            lineTo(bottomLeft.x, bottomLeft.y)
+            close()
+        }
+        drawPath(
+            path = path,
+            color = Color.Black.copy(alpha = .58f),
+            style = Stroke(width = with(density) { 4.dp.toPx() }, cap = StrokeCap.Round),
+        )
+        drawPath(
+            path = path,
+            color = Color.White,
+            style = Stroke(width = with(density) { 2.dp.toPx() }, cap = StrokeCap.Round),
+        )
     }
 }
 

@@ -1,5 +1,6 @@
 package com.majkeylab.scanit
 
+import java.nio.ByteBuffer
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -13,14 +14,14 @@ private const val CORNER_BORDER_INSET = 0.04
 internal class LumaFrame(
     val width: Int,
     val height: Int,
-    pixels: ByteArray,
+    ownedPixels: ByteArray,
 ) {
-    private val pixels: ByteArray = pixels.copyOf()
+    private val pixels: ByteArray = ownedPixels
 
     init {
         require(width in MIN_ANALYSIS_EDGE..MAX_ANALYSIS_EDGE) { "Analysis width is invalid" }
         require(height in MIN_ANALYSIS_EDGE..MAX_ANALYSIS_EDGE) { "Analysis height is invalid" }
-        require(width.toLong() * height == pixels.size.toLong()) { "Analysis buffer size is invalid" }
+        require(width.toLong() * height == ownedPixels.size.toLong()) { "Analysis buffer size is invalid" }
     }
 
     fun unsignedPixel(index: Int): Int = pixels[index].toInt() and 0xff
@@ -56,6 +57,42 @@ internal fun detectDocumentQuad(frame: LumaFrame): PageQuad? {
         }
     }
     return bestQuad
+}
+
+internal fun copyScannerV2LumaPlane(
+    width: Int,
+    height: Int,
+    rowStride: Int,
+    pixelStride: Int,
+    source: ByteBuffer,
+): LumaFrame {
+    require(width in MIN_ANALYSIS_EDGE..MAX_ANALYSIS_EDGE) { "Analysis width is invalid" }
+    require(height in MIN_ANALYSIS_EDGE..MAX_ANALYSIS_EDGE) { "Analysis height is invalid" }
+    require(pixelStride > 0) { "Analysis pixel stride is invalid" }
+    require(rowStride >= (width - 1L) * pixelStride + 1L) { "Analysis row stride is invalid" }
+    val lastOffset = (height - 1L) * rowStride + (width - 1L) * pixelStride
+    require(lastOffset < source.remaining()) { "Analysis plane is too short" }
+
+    val input = source.duplicate()
+    val start = input.position()
+    val pixels = ByteArray(width * height)
+    for (y in 0 until height) {
+        val rowOffset = y * rowStride
+        for (x in 0 until width) {
+            pixels[y * width + x] = input.get(start + rowOffset + x * pixelStride)
+        }
+    }
+    return LumaFrame(width, height, pixels)
+}
+
+internal fun rotateScannerV2AnalysisQuad(crop: PageQuad, rotationDegrees: Int): PageQuad {
+    require(
+        rotationDegrees == 0 || rotationDegrees == 90 ||
+            rotationDegrees == 180 || rotationDegrees == 270,
+    ) { "Analysis rotation is invalid" }
+    var rotated = crop
+    repeat(rotationDegrees / 90) { rotated = rotated.rotateClockwise() }
+    return rotated
 }
 
 private data class EdgeComponent(
