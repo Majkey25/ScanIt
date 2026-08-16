@@ -67,9 +67,10 @@ ScanIt was built with AI-assisted coding and design. The maintainer reviews the
 source, release artifacts, and real-device workflows.
 
 <p align="center">
-  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="30%" alt="ScanIt result with PDF sharing, image sharing, printing, and a new-scan action.">
-  <img src="docs/play-store/assets/en-US/phone/04-recent.png" width="30%" alt="Recent scans with a document preview, page count, file size, and actions.">
-  <img src="docs/play-store/assets/en-US/phone/05-visual-mark.png" width="30%" alt="Visual mark editor placing a SAMPLE mark on a scanned page.">
+  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="ScanIt result with rescan, signature, document actions, sharing, printing, and file details.">
+  <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with size, format, and location controls.">
+  <img src="docs/play-store/assets/en-US/phone/06-sign-stamp.png" width="23%" alt="Signature and stamp editor with direct placement controls.">
+  <img src="docs/play-store/assets/en-US/phone/07-actions.png" width="23%" alt="On-device text extraction and QR or barcode actions.">
 </p>
 
 [See all English and Czech screenshots](docs/play-store/assets/).

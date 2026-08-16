@@ -281,41 +281,45 @@ Use the current official [Google Play preview-asset requirements](https://suppor
 
 - App icon: 512 × 512, 32-bit PNG with alpha, at most 1,024 KB.
 - Feature graphic: 1024 × 500, JPEG or 24-bit PNG without alpha.
-- Phone screenshots: prepare six accurate English and six accurate Czech 1080 × 1920 images; Google Play requires at least two and recommends at least four 1080px 9:16 images for app promotion surfaces.
+- Phone screenshots: prepare eight accurate English and eight accurate Czech 1080 × 1920 images; Google Play requires at least two and recommends at least four 1080px 9:16 images for app promotion surfaces.
 - Screenshots must show the real current UI, use `12:12`, omit notifications, carrier identity, and battery percentage, and contain no private documents or third-party copyrighted sheet music.
 - Provide English and Czech alt text for every uploaded graphic.
 
 ### Asset manifest
 
-The files below pass dimension/format checks, but the Result and Recent UI
-changed materially in 1.3.0. Recapture and validate those workflow screenshots
-from the final artifact during Task 8 before uploading them; do not reuse an old
-screen as current UI evidence.
+The files below use real current UI captures from the final artifact. They were
+recaptured after the Result and Recent UI changes and use only the original QA
+practice sheet.
 
 - `assets/icon.png`: 512 × 512 RGBA PNG, no text or badge.
 - `assets/feature-graphic.png`: 1024 × 500 RGB PNG, no alpha.
-- `assets/en-US/phone/01-capture.png` through `06-settings.png`: six 1080 × 1920 RGB PNG screenshots.
-- `assets/cs-CZ/phone/01-capture.png` through `06-settings.png`: six 1080 × 1920 RGB PNG screenshots. Upload `02` through `06`; keep `01` as evidence because the emulator camera scene is less representative than the other five images.
+- `assets/en-US/phone/01-capture.png` through `08-pdf-size.png`: eight 1080 × 1920 RGB PNG screenshots.
+- `assets/cs-CZ/phone/01-capture.png` through `08-pdf-size.png`: eight 1080 × 1920 RGB PNG screenshots.
 
-Upload screenshots in this order: capture, review, result, Recent scans, visual mark, Settings.
+Upload screenshots in this exact order: capture, review, result, File details,
+Recent scans, Sign / stamp, Actions, PDF size.
 
 English alt text:
 
 1. `ScanIt detects the edges of an original document before capture.`
 2. `Review, crop, enhance, and filter scanned pages before saving.`
-3. `ScanIt result with PDF sharing, image sharing, printing, and a new-scan action.`
-4. `Recent scans with a document preview, page count, file size, and actions.`
-5. `Visual mark editor placing a SAMPLE mark on a scanned page.`
-6. `Settings for language, local saving, sharing, and PDF size.`
+3. `ScanIt result with rescan, signature, document actions, sharing, printing, and file details.`
+4. `Expanded PDF and image details with size, format, and location controls.`
+5. `Recent scans with document previews, page counts, file sizes, and one-tap opening.`
+6. `Signature and stamp editor with direct placement controls.`
+7. `On-device text extraction and QR or barcode actions.`
+8. `PDF size choices including original, common limits, and a custom target.`
 
 Czech alt text:
 
 1. `ScanIt rozpoznává okraje původního dokumentu před pořízením skenu.`
 2. `Kontrola, ořez, vylepšení a filtrování naskenovaných stran před uložením.`
-3. `Výsledek ve ScanIt se sdílením PDF a obrázků, tiskem a novým skenem.`
-4. `Nedávné skeny s náhledem dokumentu, počtem stran, velikostí a akcemi.`
-5. `Editor vizuální značky umisťuje značku SAMPLE na naskenovanou stranu.`
-6. `Nastavení jazyka, místního ukládání, sdílení a velikosti PDF.`
+3. `Výsledek ve ScanIt s novým skenem, podpisem, akcemi, sdílením, tiskem a podrobnostmi souborů.`
+4. `Rozbalené podrobnosti PDF a obrázků s ovládáním velikosti, formátu a umístění.`
+5. `Nedávné skeny s náhledy, počtem stran, velikostí a otevřením jedním klepnutím.`
+6. `Editor podpisu a razítka s přímým ovládáním umístění.`
+7. `Rozpoznání textu a QR nebo čárových kódů přímo v zařízení.`
+8. `Volba velikosti PDF včetně původní, běžných limitů a vlastního cíle.`
 
 Do not show a Play badge, price/free claim, ranking, award, download call to
 action, donation, unfinished feature, or device mockup in the feature graphic.
