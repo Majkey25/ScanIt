@@ -1,5 +1,6 @@
 package com.majkeylab.scanit
 
+import android.content.Intent
 import android.content.SharedPreferences
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import java.io.File
@@ -23,6 +24,346 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PureLogicTest {
+    @Test
+    fun fileDetailControlsCoverSaveAndLegacyStates() {
+        val allControls =
+            setOf(
+                FileDetailControl.PdfSize,
+                FileDetailControl.PdfLocation,
+                FileDetailControl.ImageSize,
+                FileDetailControl.ImageFormat,
+                FileDetailControl.ImageLocation,
+            )
+        val pdfControls =
+            setOf(
+                FileDetailControl.PdfSize,
+                FileDetailControl.PdfLocation,
+            )
+
+        assertEquals(allControls, fileDetailControls(fileDetailAvailability()))
+        assertEquals(allControls, fileDetailControls(fileDetailAvailability(savedImages = 2)))
+        assertEquals(pdfControls, fileDetailControls(fileDetailAvailability(imagesChangeable = false)))
+        assertEquals(
+            pdfControls + FileDetailControl.ImageLocation,
+            fileDetailControls(
+                fileDetailAvailability(imagesChangeable = false, imagesRelocatable = true),
+            ),
+        )
+        assertEquals(
+            emptySet<FileDetailControl>(),
+            fileDetailControls(fileDetailAvailability(valid = false)),
+        )
+    }
+
+    @Test
+    fun resultCustomValuesAndFullscreenPageStayBounded() {
+        assertNull(parseCustomImageDimension("319"))
+        assertEquals(320, parseCustomImageDimension("320"))
+        assertEquals(6000, parseCustomImageDimension("6000"))
+        assertNull(parseCustomImageDimension("6001"))
+        assertNull(parseCustomImageDimension(" 320"))
+
+        assertEquals(0, fullscreenPageIndex(-1, 3))
+        assertEquals(2, fullscreenPageIndex(9, 3))
+        assertEquals(0, fullscreenPageIndex(4, 0))
+    }
+
+    @Test
+    fun imageDetailsUseOnlyCompleteSavedOrCachedDimensions() {
+        val cached = listOf(2000 to 3000, 2000 to 3000)
+
+        assertEquals(cached, exactImageDimensions(2, emptyList(), cached))
+        assertEquals(
+            listOf(1600 to 2400, 1600 to 2400),
+            exactImageDimensions(
+                2,
+                listOf(1600 to 2400, 1600 to 2400),
+                cached,
+            ),
+        )
+        assertNull(exactImageDimensions(2, listOf(1600 to 2400, null), cached))
+        assertNull(exactImageDimensions(2, emptyList(), listOf(2000 to 3000)))
+        assertNull(exactImageDimensions(2, emptyList(), listOf(0 to 3000, 2000 to 3000)))
+    }
+
+    @Test
+    fun recentRowContentOpensWhileOverflowRemainsIsolated() {
+        assertEquals(RecentRowAction.Open, recentRowAction(RecentRowTarget.Content))
+        assertEquals(RecentRowAction.ShowMenu, recentRowAction(RecentRowTarget.Overflow))
+    }
+
+    @Test
+    fun appearanceEditAndUnknownOutputWarningFailClosed() {
+        val editable = uiSavedScan()
+        assertTrue(canEditAppearance(editable))
+        assertFalse(canEditAppearance(editable.copy(outputMetadataValid = false)))
+        assertFalse(canEditAppearance(editable.copy(cached = editable.cached.copy(entryId = null))))
+
+        val acknowledgement =
+            UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, OTHER_ENTRY_ID)
+        val warning = editable.copy(unknownOutputCreateAcknowledgement = acknowledgement)
+        assertSame(acknowledgement, confirmedUnknownOutputAcknowledgement(warning, confirmed = true))
+        assertNull(confirmedUnknownOutputAcknowledgement(warning, confirmed = false))
+        assertNull(confirmedUnknownOutputAcknowledgement(editable, confirmed = true))
+    }
+
+    @Test
+    fun unsavedImagesStartWithOriginalExportOptions() {
+        assertEquals(
+            ImageExportOptions(ImageExportFormat.Original, ImageSizePreset.Original),
+            imageExportOptionsForChange(uiSavedScan()),
+        )
+        assertNull(imageExportOptionsForChange(uiSavedScan().copy(outputMetadataValid = false)))
+    }
+
+    @Test
+    fun savedImageOptionsUsePersistedPresetInsteadOfRenderedDimensions() {
+        assertEquals(
+            ImageExportOptions(ImageExportFormat.Jpeg, ImageSizePreset.High),
+            activeImageExportOptions(
+                formats = listOf(ImageExportFormat.Jpeg),
+                treeUris = listOf(null),
+                sizePresets = listOf(ImageSizePreset.High),
+                customMaxDimensions = listOf(null),
+            ),
+        )
+        assertNull(
+            activeImageExportOptions(
+                formats = listOf(ImageExportFormat.Jpeg),
+                treeUris = listOf(null),
+                sizePresets = listOf(null),
+                customMaxDimensions = listOf(null),
+            ),
+        )
+    }
+
+    @Test
+    fun outputChangeGateRejectsDoubleTapAndReusedCacheGeneration() {
+        val gate = OutputChangeGate()
+        val request =
+            gate.begin(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfLocation,
+            )!!
+
+        assertNull(gate.begin(CACHE_ID, ENTRY_ID, OutputChangeKind.PdfLocation))
+        assertTrue(gate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertFalse(gate.isCurrent(request, CACHE_ID, OTHER_ENTRY_ID))
+
+        gate.invalidate()
+
+        assertFalse(gate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        val replacement = gate.begin(CACHE_ID, OTHER_ENTRY_ID, OutputChangeKind.PdfLocation)!!
+        assertTrue(replacement.generation > request.generation)
+    }
+
+    @Test
+    fun outputTreePickerRestoresBeforeClaimAndLaunchesOnlyOnce() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.ImageLocation,
+                generation = 7L,
+            )
+        val encoded = encodeOutputTreePickerRequest(request)
+        val restored = decodeOutputTreePickerRequest(encoded)
+        val operationGate = OutputChangeGate(initialGeneration = 7L, initialCurrent = restored)
+        val pickerGate = OutputTreePickerGate(restored)
+
+        assertEquals(request, restored)
+        assertTrue(pickerGate.claim(request))
+        assertFalse(pickerGate.claim(request))
+        assertTrue(operationGate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertNull(pickerGate.pending)
+    }
+
+    @Test
+    fun outputTreePickerRestoredAfterClaimWaitsForExactCallback() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfLocation,
+                generation = 4L,
+            )
+        val operationGate = OutputChangeGate(initialGeneration = 4L, initialCurrent = request)
+        val pickerGate = OutputTreePickerGate(initialPending = null)
+
+        assertNull(pickerGate.pending)
+        assertTrue(operationGate.isCurrent(request, CACHE_ID, ENTRY_ID))
+        assertFalse(
+            operationGate.isCurrent(
+                request.copy(generation = 3L),
+                CACHE_ID,
+                ENTRY_ID,
+            ),
+        )
+
+        assertTrue(pickerGate.offer(request))
+        assertFalse(pickerGate.offer(request))
+    }
+
+    @Test
+    fun outputTreePickerCodecRejectsNonPickerAndMalformedState() {
+        val immediate =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.PdfSize(PdfSizeTarget.Mb5),
+                generation = 1L,
+            )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputTreePickerRequest(immediate)
+        }
+        assertNull(decodeOutputTreePickerRequest(null))
+        assertNull(decodeOutputTreePickerRequest(""))
+        assertNull(decodeOutputTreePickerRequest("2\t$CACHE_ID\t$ENTRY_ID\tpdf\t1"))
+        assertNull(decodeOutputTreePickerRequest("1\t../outside\t$ENTRY_ID\tpdf\t1"))
+        assertNull(decodeOutputTreePickerRequest("1\t$CACHE_ID\t$ENTRY_ID\timage\t0\tpng\tCustom\t2400"))
+    }
+
+    @Test
+    fun outputTreeGrantRequiresValidatedTreeAndExactReadWriteAccess() {
+        val extraFlags = Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+
+        assertEquals(
+            PDF_TREE_FLAGS,
+            exactOutputTreeGrantFlags("content", isTreeUri = true, PDF_TREE_FLAGS or extraFlags),
+        )
+        assertNull(exactOutputTreeGrantFlags("file", isTreeUri = true, PDF_TREE_FLAGS))
+        assertNull(exactOutputTreeGrantFlags("content", isTreeUri = false, PDF_TREE_FLAGS))
+        assertNull(exactOutputTreeGrantFlags("content", isTreeUri = true, PDF_TREE_FLAGS))
+        assertNull(
+            exactOutputTreeGrantFlags(
+                "content",
+                isTreeUri = true,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            ),
+        )
+    }
+
+    @Test
+    fun outputChangeRefreshRequiresExactIdentityAndValidMetadata() {
+        val request =
+            OutputChangeRequest(
+                CACHE_ID,
+                ENTRY_ID,
+                OutputChangeKind.ImageFormat(ImageExportFormat.Png),
+                generation = 11L,
+            )
+        val exact = savedScan(entryId = ENTRY_ID, outputMetadataValid = true)
+        val stale = savedScan(entryId = OTHER_ENTRY_ID, outputMetadataValid = true)
+        val unreadable = savedScan(entryId = ENTRY_ID, outputMetadataValid = false)
+
+        assertSame(exact, matchingOutputChangeScan(exact, request))
+        assertNull(matchingOutputChangeScan(stale, request))
+        assertNull(matchingOutputChangeScan(unreadable, request))
+        assertSame(unreadable, matchingOutputChangeIdentityScan(unreadable, request))
+        assertNull(matchingOutputChangeIdentityScan(stale, request))
+    }
+
+    @Test
+    fun outputChangeBusyStateBlocksActionsAndConsumesBack() {
+        val result =
+            ScreenState.Result(
+                scan = savedScan(entryId = ENTRY_ID, outputMetadataValid = true),
+                thumbnail = null,
+                outputChangeInProgress = true,
+            )
+
+        assertTrue(result.resultActionsBlocked)
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
+        )
+    }
+
+    @Test
+    fun unknownOutputAcknowledgementRefreshesOnlyExactTerminalSuccess() {
+        assertTrue(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Applied,
+            ),
+        )
+        assertTrue(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Absent,
+            ),
+        )
+        assertFalse(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Stale,
+            ),
+        )
+        assertFalse(
+            unknownOutputAcknowledgementRefreshAllowed(
+                UnknownOutputAcknowledgementResult.Failed,
+            ),
+        )
+    }
+
+    @Test
+    fun imageShareModeUsesPrivateCopiesForRichOutputsAndCachedFilesForLegacy() {
+        val rich =
+            listOf(
+                PreparedImageSource(
+                    page = 1,
+                    uri = "content://media/images/1",
+                    mimeType = "image/png",
+                    byteLength = 42L,
+                    sha256 = "a".repeat(64),
+                ),
+            )
+        val legacy =
+            listOf(
+                PreparedImageSource(
+                    page = 1,
+                    uri = "content://media/images/1",
+                    mimeType = null,
+                    byteLength = null,
+                    sha256 = null,
+                ),
+            )
+
+        assertEquals(ResultImageShareMode.PrivateCopies, resultImageShareMode(rich))
+        assertEquals(ResultImageShareMode.CachedPages, resultImageShareMode(legacy))
+        assertEquals(ResultImageShareMode.Unavailable, resultImageShareMode(rich + legacy))
+        assertEquals(
+            "image/*",
+            activeImageShareMimeType(listOf("image/jpeg", "image/png")),
+        )
+    }
+
+    @Test
+    fun imagePresetsResolveExactLongEdges() {
+        assertEquals(null, resolveImageExport(ImageSizePreset.Original, null).maxDimension)
+        assertEquals(3840, resolveImageExport(ImageSizePreset.High, null).maxDimension)
+        assertEquals(2560, resolveImageExport(ImageSizePreset.Balanced, null).maxDimension)
+        assertEquals(1600, resolveImageExport(ImageSizePreset.Small, null).maxDimension)
+    }
+
+    @Test
+    fun customImageDimensionIsBounded() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.Custom, 319)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.Custom, 6001)
+        }
+        assertEquals(320, resolveImageExport(ImageSizePreset.Custom, 320).maxDimension)
+        assertEquals(6000, resolveImageExport(ImageSizePreset.Custom, 6000).maxDimension)
+    }
+
+    @Test
+    fun imageExportOptionsRejectUnusedCustomDimension() {
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveImageExport(ImageSizePreset.High, 1000)
+        }
+    }
+
     @Test
     fun supportUsesThePublishedBuyMeACoffeePage() {
         assertEquals("https://www.buymeacoffee.com/majkey", SUPPORT_URL)
@@ -1898,6 +2239,43 @@ class PureLogicTest {
             galleryPages = emptyList(),
             savedPdf = null,
             outputMetadataValid = outputMetadataValid,
+        )
+
+    private fun uiSavedScan(): SavedScan {
+        val pages = listOf(File("page-1.jpg"), File("page-2.jpg"))
+        val cached =
+            CachedScan(
+                baseName = CACHE_ID,
+                pages = pages,
+                pdf = File("scan.pdf"),
+                entryId = ENTRY_ID,
+                sourcePages = pages,
+                appearance = ScanAppearance(),
+                appearanceSettings = ScanAppearanceSettings(),
+            )
+        return SavedScan(
+            cached = cached,
+            savedImages = emptyList(),
+            savedPdf = null,
+            outputMetadataValid = true,
+        )
+    }
+
+    private fun fileDetailAvailability(
+        savedImages: Int = 0,
+        valid: Boolean = true,
+        imagesChangeable: Boolean = true,
+        imagesRelocatable: Boolean = imagesChangeable,
+    ): FileDetailAvailability =
+        FileDetailAvailability(
+            outputMetadataValid = valid,
+            hasEntryId = true,
+            canChoosePdfSize = true,
+            pdfAvailable = true,
+            pageCount = 2,
+            savedImageCount = savedImages,
+            canChangeImages = imagesChangeable,
+            canRelocateImages = imagesRelocatable,
         )
 
     private fun inMemoryPreferences(

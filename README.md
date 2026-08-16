@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.2.5"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.0"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt showing the Recent scans dashboard, visual signature editor, and custom PDF size settings."></a>
 </p>
 
-## v1.2.5 update
+## v1.3.0 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -32,14 +32,17 @@ fine-tuned from the collapsed Manual position panel.
 ScanIt now supports Android 13 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
 
-The Result screen now keeps the document preview prominent, groups its sharing
-actions clearly, and presents PDF and image size, status, and location together
-in File details. A document can use its own Original, preset, or custom PDF size
-target without changing the default in Settings. The new Actions panel extracts
-selectable text from all pages or detects QR codes and barcodes on the current
-page using bundled on-device ML Kit models.
+The Result screen now keeps the document preview prominent and opens a
+full-screen zoomable viewer when tapped. File details can change a document's
+PDF size and folder, and can change its image size, format, and folder. Image
+exports support exact Original files, high-quality JPEG, and lossless PNG. A
+Recent scan opens directly when tapped. The new stable Actions panel extracts
+Latin-script text from all pages, exports it through Android's file picker, or
+detects QR codes and barcodes on the current page using on-device ML Kit models
+delivered by Google Play services. The recognition model may download
+before its first use; Actions report that state and can be retried afterward.
 
-[Download ScanIt v1.2.5](https://github.com/Majkey25/ScanIt/releases/tag/v1.2.5)
+[Download ScanIt v1.3.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -78,8 +81,10 @@ source, release artifacts, and real-device workflows.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
 - Manual PDF, image, or combined saving from File details.
-- Per-document PDF target changes from File details without changing the saved default.
-- On-device text extraction across all pages and QR/barcode detection on the current page, with selectable and copyable results.
+- Per-document PDF size and folder changes without changing saved defaults.
+- Per-document image size, format, and folder changes with exact Original, high-quality JPEG, and lossless PNG export.
+- Full-screen zoom and multipage browsing from the Result preview.
+- On-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection with selectable results.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
 - Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
@@ -94,12 +99,15 @@ source, release artifacts, and real-device workflows.
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
 
+Google Play services may download the scanner and recognition modules before
+their first use. ScanIt itself does not request the `INTERNET` permission.
+
 Requirements for the current public code:
 
 - Android 13 or newer (`minSdk 33`, `targetSdk 36`).
 - At least 1.7 GB total device RAM, required by ML Kit Document Scanner.
 - Google Play services for the scanner module.
-- A connection when Google Play services needs to download or update the scanner module.
+- A connection when Google Play services needs to download or update a scanner or recognition module.
 
 ## How it works
 
@@ -123,6 +131,8 @@ Gallery remain until the user deletes them.
 - Google Play services and ML Kit may process diagnostic and usage telemetry; scanned input remains on-device according to Google's ML Kit documentation.
 - ScanIt does not send scanned content to a maintainer-operated server.
 - File sharing uses scoped content URIs with read access granted to the selected receiving app.
+- Saved-output changes are verified before activation and remove only the exact previously tracked output.
+- Copied OCR and barcode results are marked as sensitive; detected payloads never open automatically.
 - Android backup and device transfer are disabled for ScanIt app data.
 - Sharing and printing hand a user-selected document to another app or service under that recipient's terms.
 

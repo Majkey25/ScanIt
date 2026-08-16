@@ -11,6 +11,7 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -34,6 +35,7 @@ private const val DEFAULT_THUMBNAIL_SIZE = 1024
 private const val PDF_MAX_BITMAP_SIDE = 3508
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
+private const val PNG_MIME_TYPE = "image/png"
 private const val MAX_SHARE_CACHE_SCANS = 8
 private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
 private const val DELETE_PENDING_PREFIX = ".pending-delete-"
@@ -52,6 +54,35 @@ internal inline fun <T> tryStorageTransaction(operation: () -> T): T? {
         storageTransactionLock.unlock()
     }
 }
+
+internal fun requireCanonicalOutputTreeUri(tree: Uri): Uri {
+    val authority = tree.authority
+    val rootId =
+        try {
+            DocumentsContract.getTreeDocumentId(tree)
+        } catch (failure: Exception) {
+            throw IOException("SAF output tree is invalid", failure)
+        }
+    val canonical =
+        try {
+            !authority.isNullOrBlank() &&
+                DocumentsContract.isTreeUri(tree) &&
+                DocumentsContract.buildTreeDocumentUri(authority, rootId) == tree
+        } catch (failure: Exception) {
+            throw IOException("SAF output tree is invalid", failure)
+        }
+    if (
+        tree.scheme != ContentResolver.SCHEME_CONTENT ||
+            rootId.isBlank() ||
+            tree.query != null ||
+            tree.fragment != null ||
+            !canonical
+    ) {
+        throw IOException("SAF output tree is invalid")
+    }
+    return tree
+}
+
 private const val PROVISIONAL_CACHE_MARKER = ".provisional"
 private const val ACTIVATION_ROLLBACK_MARKER = ".activation-rollback"
 private val MEDIA_IDENTITY_PROJECTION =
@@ -99,6 +130,201 @@ private fun SavedMediaOutput.toPdfOutput(warning: UiMessage? = null): SavedPdfOu
         byteLength = byteLength,
         sha256 = sha256,
     )
+
+private fun SavedMediaOutput.toPdfOutputRef(): PdfOutputRef =
+    PdfOutputRef(
+        uri = uri.toString(),
+        treeUri = null,
+        displayName = displayName,
+        mimeType = mimeType,
+        ownerPackageName = ownerPackageName,
+        byteLength = byteLength,
+        sha256 = sha256,
+        pending = pending,
+    )
+
+private fun SavedMediaOutput.toImageOutputRef(
+    page: Int,
+    rendered: RenderedImageExport,
+    intent: PersistedImageExportIntent,
+): ImageOutputRef =
+    toImageOutputRef(
+        page,
+        rendered.width,
+        rendered.height,
+        intent.format,
+        intent.sizePreset,
+        intent.customMaxDimension,
+    )
+
+private fun SavedMediaOutput.toImageOutputRef(
+    page: Int,
+    width: Int,
+    height: Int,
+    format: ImageExportFormat,
+    sizePreset: ImageSizePreset?,
+    customMaxDimension: Int?,
+): ImageOutputRef =
+    ImageOutputRef(
+        page = page,
+        uri = uri.toString(),
+        displayName = displayName,
+        mimeType = mimeType,
+        ownerPackageName = ownerPackageName,
+        byteLength = byteLength,
+        sha256 = sha256,
+        pending = pending,
+        width = width,
+        height = height,
+        format = format,
+        sizePreset = sizePreset,
+        customMaxDimension = customMaxDimension,
+    )
+
+private fun PdfOutputRef.toSavedMediaOutput(): SavedMediaOutput =
+    SavedMediaOutput(
+        uri = uri.toUri(),
+        displayName = requireNotNull(displayName),
+        mimeType = requireNotNull(mimeType),
+        ownerPackageName = requireNotNull(ownerPackageName),
+        byteLength = requireNotNull(byteLength),
+        sha256 = requireNotNull(sha256),
+        pending = pending,
+    )
+
+private fun ImageOutputRef.toSavedMediaOutput(): SavedMediaOutput =
+    SavedMediaOutput(
+        uri = uri.toUri(),
+        displayName = requireNotNull(displayName),
+        mimeType = requireNotNull(mimeType),
+        ownerPackageName = requireNotNull(ownerPackageName),
+        byteLength = requireNotNull(byteLength),
+        sha256 = requireNotNull(sha256),
+        pending = pending,
+    )
+
+internal fun mediaPublishResultIsAcceptable(
+    updateCount: Int,
+    observedPending: Boolean,
+    sameIdentity: Boolean,
+): Boolean =
+    updateCount in 0..1 && !observedPending && sameIdentity
+
+internal fun publishedMediaIdentityIsAcceptable(
+    sameUri: Boolean,
+    safeDisplayName: Boolean,
+    sameMimeType: Boolean,
+    sameOwner: Boolean,
+    sameByteLength: Boolean,
+    sameSha256: Boolean,
+): Boolean =
+    sameUri &&
+        safeDisplayName &&
+        sameMimeType &&
+        sameOwner &&
+        sameByteLength &&
+        sameSha256
+
+internal fun pendingMediaReconciliationIdentityIsAcceptable(
+    observedPending: Boolean,
+    sameUri: Boolean,
+    sameDisplayName: Boolean,
+    safeDisplayName: Boolean,
+    sameMimeType: Boolean,
+    sameOwner: Boolean,
+    sameByteLength: Boolean,
+    sameSha256: Boolean,
+): Boolean =
+    publishedMediaIdentityIsAcceptable(
+        sameUri = sameUri,
+        safeDisplayName = if (observedPending) sameDisplayName else safeDisplayName,
+        sameMimeType = sameMimeType,
+        sameOwner = sameOwner,
+        sameByteLength = sameByteLength,
+        sameSha256 = sameSha256,
+    )
+
+internal fun replacementWithScratchCleanupWarning(
+    result: OutputReplacementResult,
+    cleanupFailed: Boolean,
+): OutputReplacementResult {
+    if (!cleanupFailed) return result
+    val warning = UiMessage(R.string.output_scratch_cleanup_failed)
+    return result.copy(
+        scan = result.scan.copy(warnings = (result.scan.warnings + warning).distinct()),
+        warnings = (result.warnings + warning).distinct(),
+    )
+}
+
+private fun OutputMetadata.hasReplacementCleanupPending(): Boolean =
+    stagedPdf != null || stagedImages.isNotEmpty() ||
+        retiredPdf != null || retiredImages.isNotEmpty()
+
+private data class VerifiedSafOutput(
+    val uri: Uri,
+    val treeUri: Uri,
+    val displayName: String,
+    val mimeType: String,
+    val fingerprint: OutputFingerprint,
+) {
+    fun toSavedPdfOutput(warning: UiMessage? = null): SavedPdfOutput =
+        SavedPdfOutput(
+            uri = uri,
+            treeUri = treeUri,
+            warning = warning,
+            displayName = displayName,
+            mimeType = mimeType,
+            byteLength = fingerprint.byteLength,
+            sha256 = fingerprint.sha256,
+        )
+
+    fun toPdfOutputRef(): PdfOutputRef =
+        PdfOutputRef(
+            uri = uri.toString(),
+            treeUri = treeUri.toString(),
+            displayName = displayName,
+            mimeType = mimeType,
+            byteLength = fingerprint.byteLength,
+            sha256 = fingerprint.sha256,
+        )
+
+    fun toImageOutputRef(
+        page: Int,
+        rendered: RenderedImageExport,
+        intent: PersistedImageExportIntent,
+    ): ImageOutputRef =
+        ImageOutputRef(
+            page = page,
+            uri = uri.toString(),
+            treeUri = treeUri.toString(),
+            displayName = displayName,
+            mimeType = mimeType,
+            byteLength = fingerprint.byteLength,
+            sha256 = fingerprint.sha256,
+            width = rendered.width,
+            height = rendered.height,
+            format = intent.format,
+            sizePreset = intent.sizePreset,
+            customMaxDimension = intent.customMaxDimension,
+        )
+}
+
+private data class PersistedImageExportIntent(
+    val format: ImageExportFormat,
+    val sizePreset: ImageSizePreset?,
+    val customMaxDimension: Int?,
+    val treeUri: String?,
+)
+
+private data class StagedImageOutput(
+    val rendered: RenderedImageExport,
+    val intent: PersistedImageExportIntent,
+)
+
+private class SafOutputCreationFailure(
+    val outputCreated: Boolean,
+    cause: Throwable,
+) : IOException("SAF output creation failed", cause)
 
 internal data class FitRect(
     val left: Float,
@@ -242,13 +468,39 @@ private data class ParsedCacheEntry(
     val recent: RecentScan,
     val cached: CachedScan,
     val outputs: OutputMetadata?,
+    val outputMetadataReadResult: OutputMetadataReadResult,
     val provisional: Boolean,
 )
 
-private fun ParsedCacheEntry.hasPendingMediaOwnership(): Boolean =
-    outputs?.let { metadata ->
-        metadata.pdf?.pending == true || metadata.images.any(ImageOutputRef::pending)
-    } == true
+private fun readCacheOutputMetadata(
+    directory: File,
+    cacheId: String,
+    pageCount: Int,
+): OutputMetadataReadResult = readOutputMetadataResult(directory, cacheId, pageCount)
+
+private fun cacheEntryHasUnresolvedDurableState(entry: ParsedCacheEntry): Boolean {
+    if (
+        Files.isRegularFile(
+            File(entry.directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).toPath(),
+            LinkOption.NOFOLLOW_LINKS,
+        )
+    ) {
+        return true
+    }
+    val metadata =
+        when (val result = entry.outputMetadataReadResult) {
+            is OutputMetadataReadResult.Valid -> result.metadata
+            OutputMetadataReadResult.Invalid,
+            OutputMetadataReadResult.Failed,
+            -> return true
+        }
+    return metadata.pdf?.pending == true ||
+        metadata.images.any(ImageOutputRef::pending) ||
+        metadata.stagedPdf != null ||
+        metadata.stagedImages.isNotEmpty() ||
+        metadata.retiredPdf != null ||
+        metadata.retiredImages.isNotEmpty()
+}
 
 internal fun nextDerivedCacheId(
     sourceCacheId: String,
@@ -312,12 +564,19 @@ internal fun listRecentScansInRoot(
     root: File,
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): List<RecentScan> {
     require(maxEntries >= 0) { "Recent scan retention must not be negative" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
     val safeRoot = ensureShareRoot(root)
     maintainPendingDirectories(safeRoot)
-    return pruneRecentEntries(safeRoot, protectedCacheIds, maxEntries).map(ParsedCacheEntry::recent)
+    return pruneRecentEntries(
+        safeRoot,
+        protectedCacheIds,
+        maxEntries,
+        readOutputMetadata,
+    ).map(ParsedCacheEntry::recent)
 }
 
 internal fun recoverPendingRecentRemovalsInRoot(
@@ -351,6 +610,8 @@ private fun publishCacheEntryInRoot(
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     require(maxEntries > 0) { "Recent scan retention must be positive for publishing" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
@@ -370,9 +631,15 @@ private fun publishCacheEntryInRoot(
     var published = false
     try {
         maintainPendingDirectories(safeRoot, work)
-        val entriesToPrune = entriesToPrune(safeRoot, protectedCacheIds, maxEntries - 1)
+        val entriesToPrune =
+            entriesToPrune(
+                safeRoot,
+                protectedCacheIds,
+                maxEntries - 1,
+                readOutputMetadata,
+            )
         val pending =
-            readCacheEntry(safeRoot, work, cacheId)
+            readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
                 ?: throw IOException("Pending cache entry is incomplete")
         ensureOutputMetadata(
             directory = work,
@@ -380,12 +647,12 @@ private fun publishCacheEntryInRoot(
             pageCount = pending.cached.pages.size,
             createdAtEpochMs = System.currentTimeMillis(),
         )
-        readCacheEntry(safeRoot, work, cacheId)
+        readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
             ?: throw IOException("Pending cache metadata is incomplete")
         cleanDisposablePendingDirectories(safeRoot, work)
         moveEntry(work.toPath(), final.toPath())
         published = true
-        val cached = readCacheEntry(safeRoot, final, cacheId)?.cached
+        val cached = readCacheEntry(safeRoot, final, cacheId, readOutputMetadata)?.cached
             ?: throw IOException("Published cache entry is incomplete")
         commitCacheEntryRemovals(safeRoot, cacheId, entriesToPrune, moveEntry)
         return cached
@@ -443,6 +710,8 @@ private fun activateProvisionalCacheEntryInRoot(
     protectedCacheIds: Set<String>,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     require(maxEntries > 0) { "Recent scan retention must be positive for activation" }
     require(protectedCacheIds.all(::isSafeCacheId)) { "Protected cache ID is unsafe" }
@@ -450,7 +719,7 @@ private fun activateProvisionalCacheEntryInRoot(
     maintainPendingDirectories(safeRoot)
     if (!isSafeCacheId(candidateCacheId)) throw IOException("Candidate cache ID is unsafe")
     val candidateDirectory = File(safeRoot, candidateCacheId).absoluteFile
-    val candidate = readCacheEntry(safeRoot, candidateDirectory, candidateCacheId)
+    val candidate = readCacheEntry(safeRoot, candidateDirectory, candidateCacheId, readOutputMetadata)
         ?.takeIf(ParsedCacheEntry::provisional)
         ?: throw IOException("Provisional cache entry is unavailable")
     var activated: CachedScan? = null
@@ -462,6 +731,7 @@ private fun activateProvisionalCacheEntryInRoot(
                 candidate.cached.lineageCacheId,
                 protectedCacheIds,
                 maxEntries - 1,
+                readOutputMetadata,
             )
         commitCacheEntryRemovals(
             root = safeRoot,
@@ -472,7 +742,12 @@ private fun activateProvisionalCacheEntryInRoot(
         ) {
             Files.delete(File(candidateDirectory, PROVISIONAL_CACHE_MARKER).toPath())
             activated =
-                readCacheEntry(safeRoot, candidateDirectory, candidateCacheId)
+                readCacheEntry(
+                    safeRoot,
+                    candidateDirectory,
+                    candidateCacheId,
+                    readOutputMetadata,
+                )
                     ?.takeUnless(ParsedCacheEntry::provisional)
                     ?.cached
                     ?: throw IOException("Activated cache entry is incomplete")
@@ -527,6 +802,8 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     candidateCacheId: String,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): CachedScan {
     val safeRoot = ensureShareRoot(root)
     maintainPendingDirectories(safeRoot)
@@ -536,6 +813,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             safeRoot,
             File(safeRoot, candidateCacheId).absoluteFile,
             candidateCacheId,
+            readOutputMetadata,
     ) ?: throw IOException("Checkpoint cache entry is unavailable")
     if (!candidate.provisional) return candidate.cached
     if (candidate.cached.appearanceSettings == null) {
@@ -551,12 +829,13 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             protectedCacheIds = emptySet(),
             maxEntries = maxEntries,
             moveEntry = moveEntry,
+            readOutputMetadata = readOutputMetadata,
         )
     }
     if (parentCacheId == null || parentEntryId == null) {
         throw IOException("Provisional cache parent generation is incomplete")
     }
-    val parent = readCacheEntries(safeRoot).singleOrNull {
+    val parent = readCacheEntries(safeRoot, readOutputMetadata = readOutputMetadata).singleOrNull {
         it.recent.cacheId == parentCacheId
     }
     val exactParent = parent?.takeIf { it.cached.entryId == parentEntryId }
@@ -565,7 +844,8 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     }
     val retireParent =
         exactParent?.takeIf { entry ->
-            entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true
+            entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true &&
+                !cacheEntryHasUnresolvedDurableState(entry)
         }
     val protectedParent =
         parent?.takeUnless { it === retireParent }?.recent?.cacheId?.let(::setOf).orEmpty()
@@ -576,6 +856,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
         protectedCacheIds = protectedParent,
         maxEntries = maxEntries,
         moveEntry = moveEntry,
+        readOutputMetadata = readOutputMetadata,
     )
 }
 
@@ -585,6 +866,7 @@ private fun activationEntriesToRemove(
     candidateLineageCacheId: String,
     protectedCacheIds: Set<String>,
     activeCapacity: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
     require(activeCapacity >= 0) { "Active cache capacity must not be negative" }
     if (retireCacheId != null && !isSafeCacheId(retireCacheId)) {
@@ -593,7 +875,7 @@ private fun activationEntriesToRemove(
     if (retireCacheId != null && retireCacheId in protectedCacheIds) {
         throw IOException("Retired cache entry cannot also be protected")
     }
-    val entries = readCacheEntries(root)
+    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
     val retired =
         retireCacheId?.let { id ->
             val entry =
@@ -602,12 +884,16 @@ private fun activationEntriesToRemove(
             if (entry.cached.lineageCacheId != candidateLineageCacheId) {
                 throw IOException("Retired cache entry belongs to another lineage")
             }
+            if (cacheEntryHasUnresolvedDurableState(entry)) {
+                throw IOException("Retired cache entry has unresolved durable state")
+            }
             entry
         }
     val remaining = entries.filterNot { it === retired }
     val protectedEntries =
         remaining.filter { entry ->
-            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+            entry.recent.cacheId in protectedCacheIds ||
+                cacheEntryHasUnresolvedDurableState(entry)
         }
     if (protectedEntries.size > activeCapacity) {
         throw IOException("Protected recent scans exceed cache capacity")
@@ -695,25 +981,29 @@ private fun pruneRecentEntries(
     root: File,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entriesToPrune = entriesToPrune(root, protectedCacheIds, maxEntries)
+    val entriesToPrune =
+        entriesToPrune(root, protectedCacheIds, maxEntries, readOutputMetadata)
     entriesToPrune.forEach { entry ->
         if (!deleteRecentScanInRoot(root, entry.recent.cacheId)) {
             throw IOException("Old recent scan could not be deleted")
         }
     }
-    return readCacheEntries(root)
+    return readCacheEntries(root, readOutputMetadata = readOutputMetadata)
 }
 
 private fun entriesToPrune(
     root: File,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entries = readCacheEntries(root)
+    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
     val protectedEntries =
         entries.filter { entry ->
-            entry.recent.cacheId in protectedCacheIds || entry.hasPendingMediaOwnership()
+            entry.recent.cacheId in protectedCacheIds ||
+                cacheEntryHasUnresolvedDurableState(entry)
         }
     if (protectedEntries.size > maxEntries) {
         throw IOException("Protected recent scans exceed cache capacity")
@@ -734,10 +1024,14 @@ private fun moveCacheEntryAtomically(source: Path, target: Path) {
 private fun readCacheEntries(
     root: File,
     includeProvisional: Boolean = false,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ): List<ParsedCacheEntry> {
     val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
     return children
-        .mapNotNull { child -> readCacheEntry(root, child.absoluteFile, child.name) }
+        .mapNotNull { child ->
+            readCacheEntry(root, child.absoluteFile, child.name, readOutputMetadata)
+        }
         .filter { includeProvisional || !it.provisional }
         .sortedWith(
             compareByDescending<ParsedCacheEntry> { it.recent.createdAt }
@@ -770,6 +1064,9 @@ private fun readCacheEntry(
     root: File,
     directory: File,
     cacheId: String,
+    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
+    reconcileLocalPdf: Boolean = true,
 ): ParsedCacheEntry? {
     if (
         !isSafeCacheId(cacheId) ||
@@ -785,6 +1082,7 @@ private fun readCacheEntry(
     val sourcePagesByNumber = mutableMapOf<Int, File>()
     var pdf: File? = null
     var provisional = false
+    var hasLocalPdfReplacement = false
     children.forEach { child ->
         val file = child.absoluteFile
         if (
@@ -796,7 +1094,14 @@ private fun readCacheEntry(
         when (file.name) {
             OUTPUT_METADATA_FILE_NAME,
             OUTPUT_METADATA_TEMP_FILE_NAME,
+            PROVISIONAL_OUTPUT_CREATE_FILE_NAME,
+            PROVISIONAL_OUTPUT_CREATE_TEMP_FILE_NAME,
             -> Unit
+            LOCAL_PDF_REPLACEMENT_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_TEMP_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_OLD_FILE_NAME,
+            LOCAL_PDF_REPLACEMENT_NEW_FILE_NAME,
+            -> hasLocalPdfReplacement = true
             SCAN_APPEARANCE_FILE_NAME -> Unit
             PROVISIONAL_CACHE_MARKER -> {
                 if (file.length() != 0L) return null
@@ -848,9 +1153,20 @@ private fun readCacheEntry(
         return null
     }
     val exactPdf = pdf
+    if (hasLocalPdfReplacement && reconcileLocalPdf) {
+        reconcileLocalPdfReplacement(
+            directory = directory,
+            cacheId = cacheId,
+            pageCount = orderedPages.size,
+            cachedPdf = exactPdf,
+        )
+    }
     val appearanceMetadata = readScanAppearanceMetadata(directory, cacheId)
     if (orderedSourcePages.isNotEmpty() && appearanceMetadata == null) return null
-    val outputs = readOutputMetadata(directory, cacheId, orderedPages.size)
+    val outputMetadataReadResult =
+        readOutputMetadata(directory, cacheId, orderedPages.size)
+    val outputs =
+        (outputMetadataReadResult as? OutputMetadataReadResult.Valid)?.metadata
     val recent =
         RecentScan(
             cacheId = cacheId,
@@ -880,7 +1196,9 @@ private fun readCacheEntry(
                 sourcePages = orderedSourcePages,
                 appearance = appearanceMetadata?.appearance,
                 appearanceSettings = appearanceMetadata?.appearanceSettings,
-                pdfSizeTarget = appearanceMetadata?.pdfSizeTarget ?: PdfSizeTarget.Original,
+                pdfSizeTarget =
+                    outputs?.pdfSizeTarget ?: appearanceMetadata?.pdfSizeTarget
+                        ?: PdfSizeTarget.Original,
                 lineageCacheId = appearanceMetadata?.lineageCacheId ?: cacheId,
                 parentCacheId = appearanceMetadata?.parentCacheId,
                 parentEntryId = appearanceMetadata?.parentEntryId,
@@ -888,6 +1206,7 @@ private fun readCacheEntry(
                     appearanceMetadata?.restoreSettingsOnActivation ?: true,
             ),
         outputs = outputs,
+        outputMetadataReadResult = outputMetadataReadResult,
         provisional = provisional,
     )
 }
@@ -1139,7 +1458,7 @@ private fun isDirectChild(parent: File, child: File): Boolean =
         false
     }
 
-private fun deleteTreeWithoutFollowingLinks(directory: File): Boolean =
+internal fun deleteTreeWithoutFollowingLinks(directory: File): Boolean =
     try {
         Files.walkFileTree(
             directory.toPath(),
@@ -1167,13 +1486,15 @@ internal class RecentScanCache(
     private val root: File,
     private val lock: ReentrantLock = ReentrantLock(),
     private val moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
+    private val readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
+        ::readCacheOutputMetadata,
 ) {
     fun list(
         protectedCacheIds: Set<String> = emptySet(),
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     ): List<RecentScan> =
         lock.withLock {
-            listRecentScansInRoot(root, protectedCacheIds, maxEntries)
+            listRecentScansInRoot(root, protectedCacheIds, maxEntries, readOutputMetadata)
         }
 
     fun open(cacheId: String): CachedScan? =
@@ -1221,6 +1542,7 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 
@@ -1246,6 +1568,7 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 
@@ -1289,6 +1612,7 @@ internal class RecentScanCache(
                 candidateCacheId,
                 maxEntries,
                 moveEntry,
+                readOutputMetadata,
             )
         }
 }
@@ -1352,6 +1676,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = pageUris.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
@@ -1430,6 +1755,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = renderedPages.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached =
@@ -1520,6 +1846,7 @@ internal class ScanStorage(
                     cacheId = baseName,
                     pageCount = renderedPages.size,
                     createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = source.pdfSizeTarget,
                 )
                 CachedScanBuild(
                     cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
@@ -1544,7 +1871,11 @@ internal class ScanStorage(
                         scan.pageCount,
                     )
                 if (metadata?.hasCompleteExactDeleteInventory(context.packageName) == true) {
-                    scan
+                    if (File(shareCacheRoot(), "${scan.cacheId}/$PROVISIONAL_OUTPUT_CREATE_FILE_NAME").exists()) {
+                        scan.copy(hasSavedPdf = false, savedImageCount = 0)
+                    } else {
+                        scan
+                    }
                 } else {
                     scan.copy(hasSavedPdf = false, savedImageCount = 0)
                 }
@@ -1552,11 +1883,12 @@ internal class ScanStorage(
         }
 
     fun openCachedScan(cacheId: String): CachedScan? =
-        recentScanCache.open(cacheId)
+        storageTransactionLock.withLock { recentScanCache.open(cacheId) }
 
     fun openSavedScan(cacheId: String): SavedScan? =
         storageTransactionLock.withLock {
             val cached = recentScanCache.open(cacheId) ?: return@withLock null
+            val warnings = mutableListOf<UiMessage>()
             try {
                 reconcilePendingMediaOutputs(cached)
             } catch (cancellation: CancellationException) {
@@ -1564,7 +1896,7 @@ internal class ScanStorage(
             } catch (_: Exception) {
                 // Keep exact pending ownership for a later retry.
             }
-            val outputs =
+            var outputs =
                 cached.entryId?.let { entryId ->
                     readOutputMetadata(
                         File(shareCacheRoot(), cacheId),
@@ -1572,24 +1904,87 @@ internal class ScanStorage(
                         cached.pages.size,
                     )?.takeIf { it.entryId == entryId }
                 }
-            val deleteMetadata =
-                outputs?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
-            SavedScan(
-                cached = cached,
-                galleryPages = outputs?.images?.filterNot(ImageOutputRef::pending)?.map { it.uri.toUri() }.orEmpty(),
-                savedPdf = outputs?.pdf?.takeUnless(PdfOutputRef::pending)?.uri?.toUri(),
-                savedPdfTree = outputs?.pdf?.takeUnless(PdfOutputRef::pending)?.treeUri?.toUri(),
-                warnings = listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())),
-                outputMetadataValid = outputs != null,
-                savedPdfDeleteVerified =
-                    deleteMetadata?.pdf?.takeUnless(PdfOutputRef::pending) != null,
-                savedImagesDeleteVerified =
-                    deleteMetadata?.images?.any { !it.pending } == true,
+            if (outputs != null) {
+                val provisional = reconcileProvisionalOutputCreate(cached, outputs)
+                warnings += provisional.warnings
+                if (provisional.blocking) {
+                    return@withLock savedScan(
+                        cached,
+                        outputs,
+                        warnings,
+                        mutationBlocked = true,
+                        unknownOutputCreateAcknowledgement = provisional.acknowledgement,
+                    )
+                }
+                try {
+                    val reconciled = replacementFor(cached).reconcile()
+                    outputs = reconciled.metadata
+                    warnings += reconciled.warnings
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    warnings += UiMessage(R.string.shared_output_delete_failed)
+                }
+            }
+            savedScan(
+                cached,
+                outputs,
+                warnings,
+            )
+        }
+
+    fun acknowledgeUnknownOutputCreate(
+        cached: CachedScan,
+        acknowledgement: UnknownOutputCreateAcknowledgement,
+    ): UnknownOutputAcknowledgementResult =
+        storageTransactionLock.withLock {
+            if (
+                acknowledgement.cacheId != cached.baseName ||
+                    acknowledgement.entryId != cached.entryId
+            ) return@withLock UnknownOutputAcknowledgementResult.Stale
+            val metadata =
+                try {
+                    requireCurrentOutputMetadata(cached)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    val currentEntryId =
+                        try {
+                            recentScanCache.open(cached.baseName)?.entryId
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Exception) {
+                            return@withLock UnknownOutputAcknowledgementResult.Failed
+                        }
+                    return@withLock if (currentEntryId != acknowledgement.entryId) {
+                        UnknownOutputAcknowledgementResult.Stale
+                    } else {
+                        UnknownOutputAcknowledgementResult.Failed
+                    }
+                }
+            if (acknowledgement.entryId != metadata.entryId) {
+                return@withLock UnknownOutputAcknowledgementResult.Stale
+            }
+            acknowledgeUnknownProvisionalOutput(
+                directory = File(shareCacheRoot(), cached.baseName),
+                acknowledgement = acknowledgement,
+                pageCount = cached.pages.size,
             )
         }
 
     fun deleteRecentScan(cacheId: String): Boolean =
         storageTransactionLock.withLock {
+            val cached = recentScanCache.open(cacheId) ?: return@withLock false
+            try {
+                requireResolvedProvisionalOutputCreate(cached)
+                if (replacementFor(cached).reconcile().metadata.hasReplacementCleanupPending()) {
+                    return@withLock false
+                }
+            } catch (_: IOException) {
+                return@withLock false
+            } catch (_: SecurityException) {
+                return@withLock false
+            }
             recentScanCache.delete(cacheId)
         }
 
@@ -1598,6 +1993,16 @@ internal class ScanStorage(
             if (request.target != RecentDeleteTarget.RemoveFromRecent) return@withLock false
             val cached = recentScanCache.open(request.cacheId) ?: return@withLock false
             if (cached.entryId != request.entryId) return@withLock false
+            try {
+                requireResolvedProvisionalOutputCreate(cached)
+                if (replacementFor(cached).reconcile().metadata.hasReplacementCleanupPending()) {
+                    return@withLock false
+                }
+            } catch (_: IOException) {
+                return@withLock false
+            } catch (_: SecurityException) {
+                return@withLock false
+            }
             recentScanCache.delete(request.cacheId)
         }
 
@@ -1628,12 +2033,20 @@ internal class ScanStorage(
                     OutputMetadataReadResult.Failed ->
                         return@withLock OutputDeleteOperationResult.Failed
                 }
-            val current =
+            var current =
                 matchingOutputMetadata(
                     decoded,
                     request.cacheId,
                     entryId,
                 ) ?: return@withLock OutputDeleteOperationResult.IdentityMismatch
+            if (reconcileProvisionalOutputCreate(cached, current).blocking) {
+                return@withLock OutputDeleteOperationResult.IdentityMismatch
+            }
+            val replacement = replacementFor(cached).reconcile()
+            if (replacement.metadata.hasReplacementCleanupPending()) {
+                return@withLock OutputDeleteOperationResult.Failed
+            }
+            current = replacement.metadata
             if (!deleteRecentCache && outputDeleteTargetIsAbsent(current, request.target)) {
                 return@withLock OutputDeleteOperationResult.Stale
             }
@@ -1714,7 +2127,9 @@ internal class ScanStorage(
             )
         }
 
-    fun livePdfTreeUris(): Set<String> =
+    fun livePdfTreeUris(): Set<String> = liveOutputTreeUris()
+
+    fun liveOutputTreeUris(): Set<String> =
         storageTransactionLock.withLock {
             val root = ensureShareRoot(shareCacheRoot())
             maintainPendingDirectories(root)
@@ -1722,7 +2137,7 @@ internal class ScanStorage(
                 readCacheEntries(root, includeProvisional = true)
                     .associateBy(ParsedCacheEntry::directory)
             val children = root.listFiles() ?: throw IOException("Share cache could not be listed")
-            completePdfTreeGrantInventory(
+            val metadataTrees = completeOutputTreeGrantInventory(
                 children.map { child ->
                     val directory = child.absoluteFile
                     OutputMetadataInventoryEntry(
@@ -1733,7 +2148,27 @@ internal class ScanStorage(
                             },
                     )
                 },
-            ) ?: throw IOException("PDF tree grant inventory is incomplete")
+            ) ?: throw IOException("Output tree grant inventory is incomplete")
+            val markerTrees =
+                entries.values.mapNotNull { entry ->
+                    val metadata = entry.outputs
+                        ?: throw IOException("Output tree grant inventory is incomplete")
+                    when (
+                        val marker = readProvisionalOutputCreate(
+                            entry.directory,
+                            entry.recent.cacheId,
+                            metadata.entryId,
+                            entry.recent.pageCount,
+                        )
+                    ) {
+                        ProvisionalOutputCreateReadResult.Absent -> null
+                        is ProvisionalOutputCreateReadResult.Valid -> marker.marker.treeUri
+                        ProvisionalOutputCreateReadResult.Invalid,
+                        ProvisionalOutputCreateReadResult.Failed,
+                        -> throw IOException("Provisional output marker inventory is incomplete")
+                    }
+                }
+            metadataTrees + markerTrees
         }
 
     fun nextDerivedCacheId(sourceCacheId: String, suffix: String): String =
@@ -1790,6 +2225,10 @@ internal class ScanStorage(
     fun deleteCachedScan(cached: CachedScan): Boolean =
         storageTransactionLock.withLock {
             try {
+                requireResolvedProvisionalOutputCreate(cached)
+                if (replacementFor(cached).reconcile().metadata.hasReplacementCleanupPending()) {
+                    return@withLock false
+                }
                 val entryId = cached.entryId ?: return@withLock false
                 recentScanCache.deleteExact(cached.baseName, entryId)
             } catch (_: IOException) {
@@ -1797,6 +2236,557 @@ internal class ScanStorage(
             } catch (_: SecurityException) {
                 false
             }
+        }
+
+    fun replacePdfOutput(cached: CachedScan, treeUri: String?): OutputReplacementResult =
+        storageTransactionLock.withLock {
+            requireReadableFile(cached.pdf)
+            requireResolvedProvisionalOutputCreate(cached)
+            val replacement = replacementFor(cached)
+            val reconciled = upgradeImagesForV3(cached, replacement.reconcile())
+            replacePdfOutputLocked(cached, cached.pdf, treeUri, reconciled)
+        }
+
+    private fun replacePdfOutputLocked(
+        cached: CachedScan,
+        sourcePdf: File,
+        treeUri: String?,
+        current: OutputReplacementJournalResult,
+        pdfSizeTarget: PdfSizeTarget? = null,
+        reconcileLocalPdf: Boolean = true,
+    ): OutputReplacementResult {
+        requireReadableFile(sourcePdf)
+        val fingerprint = fingerprintFile(sourcePdf)
+        if (
+            pdfReplacementIsUnchanged(current.metadata.pdf, treeUri, fingerprint) &&
+                verifyExistingPdf(requireNotNull(current.metadata.pdf), fingerprint)
+        ) {
+            val activated =
+                if (pdfSizeTarget == null) {
+                    current.metadata
+                } else {
+                    current.metadata.copy(
+                        pdfSizeTarget = pdfSizeTarget,
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            val metadata =
+                if (activated == current.metadata) {
+                    current.metadata
+                } else {
+                    rewriteCachedOutputMetadata(cached, reconcileLocalPdf) { observed ->
+                        exactReplacementMetadataUpdate(observed, current.metadata, activated)
+                    }
+                }
+            val scan = savedScan(cached, metadata, current.warnings)
+            return OutputReplacementResult(scan, current.warnings)
+        }
+        val displayName = scanPdfFileName(cached.baseName)
+        var marker =
+            newProvisionalOutputCreate(
+                cached,
+                ProvisionalOutputKind.Pdf,
+                page = null,
+                provider =
+                    if (treeUri == null) ProvisionalOutputProvider.MediaStore
+                    else ProvisionalOutputProvider.Saf,
+                displayName = displayName,
+                mimeType = PDF_MIME_TYPE,
+                treeUri = treeUri,
+            )
+        val result =
+            replacementFor(cached, reconcileLocalPdf).replacePdf(
+                create = {
+                    if (treeUri == null) {
+                        savePdfToDownloads(
+                            sourcePdf,
+                            displayName,
+                            DEFAULT_ALBUM_NAME,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toPdfOutputRef()
+                    } else {
+                        createSafOutput(
+                            source = sourcePdf,
+                            displayName = displayName,
+                            mimeType = PDF_MIME_TYPE,
+                            treeUriValue = treeUri,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toPdfOutputRef()
+                    }
+                },
+                onStaged = { clearProvisionalOutputCreate(cached, marker) },
+                publish = { output ->
+                    if (!output.pending) {
+                        output
+                    } else {
+                        publishPendingFile(
+                            output.toSavedMediaOutput(),
+                            MediaOutputCollection.Downloads,
+                        ).toPdfOutputRef()
+                    }
+                },
+                activePdfSizeTarget = pdfSizeTarget,
+            )
+        val warnings = (current.warnings + result.warnings).distinct()
+        return OutputReplacementResult(savedScan(cached, result.metadata, warnings), warnings)
+    }
+
+    fun replacePdfSize(
+        cached: CachedScan,
+        target: PdfSizeTarget,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        val appearance = cached.appearance ?: throw IOException("Scan appearance is unavailable")
+        if (
+            cached.sourcePages.isEmpty() ||
+                cached.sourcePages.size != cached.pages.size ||
+                cached.appearanceSettings == null
+        ) {
+            throw IOException("Scan appearance sources are incomplete")
+        }
+        storageTransactionLock.withLock { requireCurrentOutputMetadata(cached) }
+        val workDirectory = createOutputStagingDirectory()
+        val candidate = File(workDirectory, "replacement.pdf")
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        var localJournal: LocalPdfReplacementJournal? = null
+        try {
+            val build =
+                buildScanPdfFromPages(
+                    output = candidate,
+                    sourcePages = cached.sourcePages,
+                    renderedPages = cached.pages,
+                    appearance = appearance,
+                    target = target,
+                    isCancelled = isCancelled,
+                )
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                localJournal =
+                    prepareLocalPdfReplacement(
+                        directory = File(shareCacheRoot(), cached.baseName),
+                        cacheId = cached.baseName,
+                        entryId = current.metadata.entryId,
+                        pageCount = cached.pages.size,
+                        cachedPdf = cached.pdf,
+                        candidatePdf = candidate,
+                        oldTarget = cached.pdfSizeTarget,
+                        newTarget = target,
+                        isCancelled = isCancelled,
+                    )
+                localJournal = publishLocalPdfReplacement(
+                    directory = File(shareCacheRoot(), cached.baseName),
+                    expected = checkNotNull(localJournal),
+                    cachedPdf = cached.pdf,
+                    isCancelled = isCancelled,
+                )
+                val result =
+                    if (current.metadata.pdf == null) {
+                        val updated =
+                            current.metadata.copy(
+                                pdfSizeTarget = target,
+                                version = OUTPUT_METADATA_VERSION,
+                            )
+                        val stored =
+                            rewriteCachedOutputMetadata(cached, reconcileLocalPdf = false) { observed ->
+                                exactReplacementMetadataUpdate(observed, current.metadata, updated)
+                            }
+                        OutputReplacementResult(
+                            savedScan(cached, stored, current.warnings),
+                            current.warnings,
+                        )
+                    } else {
+                        replacePdfOutputLocked(
+                            cached = cached,
+                            sourcePdf = cached.pdf,
+                            treeUri = current.metadata.pdf.treeUri,
+                            current = current,
+                            pdfSizeTarget = target,
+                            reconcileLocalPdf = false,
+                        )
+                    }
+                localJournal =
+                    markLocalPdfReplacementOutputsCommitted(
+                        directory = File(shareCacheRoot(), cached.baseName),
+                        expected = checkNotNull(localJournal),
+                        pageCount = cached.pages.size,
+                    )
+                reconcileLocalPdfReplacement(
+                    directory = File(shareCacheRoot(), cached.baseName),
+                    cacheId = cached.baseName,
+                    pageCount = cached.pages.size,
+                    cachedPdf = cached.pdf,
+                )
+                val warnings =
+                    (result.warnings + listOfNotNull(pdfSizeTargetWarning(target, build.bytes)))
+                        .distinct()
+                result.copy(
+                    scan =
+                        result.scan.copy(
+                            cached = cached.copy(pdfSizeTarget = target),
+                            warnings = (result.scan.warnings + warnings).distinct(),
+                        ),
+                    warnings = warnings,
+                )
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            if (localJournal != null) {
+                try {
+                    storageTransactionLock.withLock {
+                        reconcileLocalPdfReplacement(
+                            directory = File(shareCacheRoot(), cached.baseName),
+                            cacheId = cached.baseName,
+                            pageCount = cached.pages.size,
+                            cachedPdf = cached.pdf,
+                        )
+                    }
+                } catch (rollbackFailure: Throwable) {
+                    if (rollbackFailure !== failure) failure.addSuppressed(rollbackFailure)
+                }
+            }
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("PDF output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("PDF output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    fun relocateImageOutputs(
+        cached: CachedScan,
+        treeUri: String,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        requireCanonicalOutputTreeUri(treeUri.toUri())
+        require(cached.pages.isNotEmpty()) { "Scan has no pages" }
+        val workDirectory = createOutputStagingDirectory()
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        try {
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                val active = existingCompleteImagesForSave(current.metadata, cached.pages.size)
+                val staged =
+                    if (active == null) {
+                        cached.pages.mapIndexed { index, page ->
+                            val destination = File(workDirectory, "page-${index + 1}.jpg")
+                            val options =
+                                ImageExportOptions(
+                                    ImageExportFormat.Original,
+                                    ImageSizePreset.Original,
+                                    treeUri = treeUri,
+                                )
+                            StagedImageOutput(
+                                renderImageExport(
+                                    page,
+                                    destination,
+                                    resolveImageExport(options),
+                                    isCancelled,
+                                ),
+                                PersistedImageExportIntent(
+                                    format = options.format,
+                                    sizePreset = options.sizePreset,
+                                    customMaxDimension = options.customMaxDimension,
+                                    treeUri = treeUri,
+                                ),
+                            )
+                        }
+                    } else {
+                        active.map { output ->
+                            if (isCancelled()) throw CancellationException("Image move cancelled")
+                            val fingerprint = output.outputFingerprint()
+                                ?: throw IOException("Saved image fingerprint is unavailable")
+                            val mimeType = output.mimeType
+                                ?: throw IOException("Saved image MIME type is unavailable")
+                            val extension =
+                                when (mimeType) {
+                                    JPEG_MIME_TYPE -> "jpg"
+                                    PNG_MIME_TYPE -> "png"
+                                    else -> throw IOException("Saved image MIME type is unsupported")
+                                }
+                            val destination =
+                                File(workDirectory, "page-${output.page}.$extension")
+                            val input = resolver.openInputStream(output.uri.toUri())
+                                ?: throw IOException("Saved image could not be opened")
+                            copyExactOutput(input, destination, fingerprint, isCancelled)
+                            val format = output.format
+                                ?: throw IOException("Saved image format is unavailable")
+                            StagedImageOutput(
+                                RenderedImageExport(
+                                    file = destination,
+                                    mimeType = mimeType,
+                                    extension = extension,
+                                    width = requireNotNull(output.width),
+                                    height = requireNotNull(output.height),
+                                    exactSourceCopy = true,
+                                ),
+                                PersistedImageExportIntent(
+                                    format = format,
+                                    sizePreset = output.sizePreset,
+                                    customMaxDimension = output.customMaxDimension,
+                                    treeUri = treeUri,
+                                ),
+                            )
+                        }
+                    }
+                replaceStagedImageOutputs(cached, current, staged)
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("Image output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("Image output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    fun replaceImageOutputs(
+        cached: CachedScan,
+        options: ImageExportOptions,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): OutputReplacementResult {
+        val resolved = resolveImageExport(options)
+        require(cached.pages.isNotEmpty()) { "Scan has no pages" }
+        val workDirectory = createOutputStagingDirectory()
+        var operationFailure: Throwable? = null
+        var cleanupFailed = false
+        var replacementResult: OutputReplacementResult? = null
+        try {
+            val rendered =
+                cached.pages.mapIndexed { index, source ->
+                    val page = index + 1
+                    val requestedExtension =
+                        when (resolved.format) {
+                            ImageExportFormat.Png -> "png"
+                            ImageExportFormat.Original,
+                            ImageExportFormat.Jpeg,
+                            -> "jpg"
+                        }
+                    val output = renderImageExport(
+                        source = source,
+                        destination =
+                            File(
+                                workDirectory,
+                                "${cached.baseName}_${page.toString().padStart(2, '0')}.$requestedExtension",
+                            ),
+                        options = resolved,
+                        isCancelled = isCancelled,
+                    )
+                    StagedImageOutput(
+                        output,
+                        PersistedImageExportIntent(
+                            format = options.format,
+                            sizePreset = options.sizePreset,
+                            customMaxDimension = options.customMaxDimension,
+                            treeUri = resolved.treeUri,
+                        ),
+                    )
+                }
+            replacementResult = storageTransactionLock.withLock {
+                requireResolvedProvisionalOutputCreate(cached)
+                var current = replacementFor(cached).reconcile()
+                current = upgradeImagesForV3(cached, current)
+                replaceStagedImageOutputs(cached, current, rendered)
+            }
+        } catch (failure: Throwable) {
+            operationFailure = failure
+            throw failure
+        } finally {
+            val cleanupFailure =
+                try {
+                    IOException("Image output staging could not be cleaned")
+                        .takeIf {
+                            workDirectory.exists() &&
+                                !deleteTreeWithoutFollowingLinks(workDirectory)
+                        }
+                } catch (failure: Exception) {
+                    IOException("Image output staging could not be cleaned", failure)
+                }
+            if (cleanupFailure != null) {
+                if (operationFailure == null) cleanupFailed = true
+                else operationFailure.addSuppressed(cleanupFailure)
+            }
+        }
+        return replacementWithScratchCleanupWarning(
+            checkNotNull(replacementResult),
+            cleanupFailed,
+        )
+    }
+
+    private fun replaceStagedImageOutputs(
+        cached: CachedScan,
+        current: OutputReplacementJournalResult,
+        staged: List<StagedImageOutput>,
+    ): OutputReplacementResult {
+        require(staged.isNotEmpty()) { "Image replacement is empty" }
+        val treeUris = staged.map { it.intent.treeUri }.distinct()
+        if (treeUris.size != 1) throw IOException("Image destinations do not match")
+        val treeUri = treeUris.single()
+        if (
+            current.metadata.images.size == staged.size &&
+                current.metadata.images.zip(staged).all { (saved, replacement) ->
+                    val output = replacement.rendered
+                    val intent = replacement.intent
+                    imageReplacementIsUnchanged(
+                        current = saved,
+                        treeUri = treeUri,
+                        mimeType = output.mimeType,
+                        width = output.width,
+                        height = output.height,
+                        format = intent.format,
+                        sizePreset = intent.sizePreset,
+                        customMaxDimension = intent.customMaxDimension,
+                        fingerprint = fingerprintFile(output.file),
+                    ) && verifyExistingImage(saved)
+                }
+        ) {
+            val scan = savedScan(cached, current.metadata, current.warnings)
+            return OutputReplacementResult(scan, current.warnings)
+        }
+        val replacement = replacementFor(cached)
+        val markers = mutableMapOf<String, ProvisionalOutputCreate>()
+        val result =
+            replacement.replaceImages(
+                pageCount = staged.size,
+                create = { page ->
+                    val source = staged[page - 1]
+                    val output = source.rendered
+                    val displayName =
+                        "${cached.baseName}_${page.toString().padStart(2, '0')}.${output.extension}"
+                    var marker =
+                        newProvisionalOutputCreate(
+                            cached,
+                            ProvisionalOutputKind.Image,
+                            page,
+                            if (treeUri == null) ProvisionalOutputProvider.MediaStore
+                            else ProvisionalOutputProvider.Saf,
+                            displayName,
+                            output.mimeType,
+                            treeUri,
+                        )
+                    if (treeUri == null) {
+                        val values =
+                            pendingValues(
+                                displayName,
+                                output.mimeType,
+                                "${Environment.DIRECTORY_PICTURES}/${normalizeAlbumName(DEFAULT_ALBUM_NAME)}",
+                            )
+                        insertPendingFile(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            values,
+                            output.file,
+                            MediaOutputCollection.Images,
+                            output.mimeType,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toImageOutputRef(page, output, source.intent)
+                    } else {
+                        createSafOutput(
+                            source = output.file,
+                            displayName = displayName,
+                            mimeType = output.mimeType,
+                            treeUriValue = treeUri,
+                            expectedWidth = output.width,
+                            expectedHeight = output.height,
+                            beforeCreate = { writeProvisionalOutputCreate(cached, marker) },
+                            onCreated = {
+                                marker = updateProvisionalOutputCreate(cached, marker, it)
+                            },
+                        ).toImageOutputRef(page, output, source.intent)
+                    }.also { markers[it.uri] = marker }
+                },
+                onStaged = { output ->
+                    val marker = markers.remove(output.uri)
+                        ?: throw IOException("Provisional image marker is unavailable")
+                    clearProvisionalOutputCreate(cached, marker)
+                },
+                publish = { output ->
+                    if (!output.pending) {
+                        output
+                    } else {
+                        publishPendingFile(
+                            output.toSavedMediaOutput(),
+                            MediaOutputCollection.Images,
+                        ).toImageOutputRef(
+                            page = output.page,
+                            width = requireNotNull(output.width),
+                            height = requireNotNull(output.height),
+                            format = requireNotNull(output.format),
+                            sizePreset = output.sizePreset,
+                            customMaxDimension = output.customMaxDimension,
+                        )
+                    }
+                },
+            )
+        val warnings = (current.warnings + result.warnings).distinct()
+        return OutputReplacementResult(savedScan(cached, result.metadata, warnings), warnings)
+    }
+
+    fun reconcileRetiredOutputs(cached: CachedScan): OutputReplacementResult =
+        storageTransactionLock.withLock {
+            val metadata = requireCurrentOutputMetadata(cached)
+            val provisional = reconcileProvisionalOutputCreate(cached, metadata)
+            if (provisional.blocking) {
+                return@withLock OutputReplacementResult(
+                    savedScan(
+                        cached,
+                        metadata,
+                        provisional.warnings,
+                        mutationBlocked = true,
+                        unknownOutputCreateAcknowledgement = provisional.acknowledgement,
+                    ),
+                    provisional.warnings,
+                )
+            }
+            val result = replacementFor(cached).reconcile()
+            val scan = savedScan(cached, result.metadata, result.warnings)
+            OutputReplacementResult(scan, result.warnings)
         }
 
     fun saveImages(
@@ -1810,8 +2800,9 @@ internal class ScanStorage(
             var metadataCommitted = false
             try {
                 reconcilePendingMediaOutputs(cached)
+                val initial = requireCurrentOutputMetadata(cached)
                 existingCompleteImagesForSave(
-                    requireCurrentOutputMetadata(cached),
+                    initial,
                     cached.pages.size,
                 )?.let { existing ->
                     return@withLock existing.map { it.uri.toUri() }
@@ -1833,10 +2824,17 @@ internal class ScanStorage(
                             JPEG_MIME_TYPE,
                         )
                 }
+                val dimensions =
+                    if (initial.version == OUTPUT_METADATA_VERSION) {
+                        saved.map { readImageDimensions(it.uri) }
+                    } else {
+                        emptyList()
+                    }
                 rewriteCachedOutputMetadata(cached) { metadata ->
                     metadata.copy(
                         images =
                             saved.mapIndexed { index, output ->
+                                val size = dimensions.getOrNull(index)
                                 ImageOutputRef(
                                     page = index + 1,
                                     uri = output.uri.toString(),
@@ -1846,6 +2844,10 @@ internal class ScanStorage(
                                     byteLength = output.byteLength,
                                     sha256 = output.sha256,
                                     pending = true,
+                                    width = size?.first,
+                                    height = size?.second,
+                                    format = ImageExportFormat.Jpeg.takeIf { size != null },
+                                    sizePreset = ImageSizePreset.Original.takeIf { size != null },
                                 )
                             },
                     )
@@ -1856,8 +2858,25 @@ internal class ScanStorage(
                         publishPendingFile(it, MediaOutputCollection.Images)
                     }
                 rewriteCachedOutputMetadata(cached) { metadata ->
+                    if (metadata.images.size != published.size) {
+                        throw IOException("Published image metadata count changed")
+                    }
                     metadata.copy(
-                        images = metadata.images.map { it.copy(pending = false) },
+                        images =
+                            metadata.images.zip(published).map { (staged, observed) ->
+                                mergePublishedImageIdentity(
+                                    staged,
+                                    staged.copy(
+                                        uri = observed.uri.toString(),
+                                        displayName = observed.displayName,
+                                        mimeType = observed.mimeType,
+                                        ownerPackageName = observed.ownerPackageName,
+                                        byteLength = observed.byteLength,
+                                        sha256 = observed.sha256,
+                                        pending = observed.pending,
+                                    ),
+                                )
+                            },
                     )
                 }
                 published.map(SavedMediaOutput::uri)
@@ -1951,12 +2970,16 @@ internal class ScanStorage(
                 if (media == null) {
                     output
                 } else {
-                    val published =
+                    val publishedMedia =
                         publishPendingFile(media, MediaOutputCollection.Downloads)
-                            .toPdfOutput(output.warning)
+                    val published = publishedMedia.toPdfOutput(output.warning)
                     createdOutput = published
                     rewriteCachedOutputMetadata(cached) { metadata ->
-                        metadata.copy(pdf = metadata.pdf?.copy(pending = false))
+                        val staged = metadata.pdf
+                            ?: throw IOException("Pending PDF metadata is unavailable")
+                        metadata.copy(
+                            pdf = mergePublishedPdfIdentity(staged, publishedMedia.toPdfOutputRef()),
+                        )
                     }
                     published
                 }
@@ -2027,9 +3050,10 @@ internal class ScanStorage(
 
     private fun rewriteCachedOutputMetadata(
         cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
         update: (OutputMetadata) -> OutputMetadata,
     ): OutputMetadata {
-        val current = requireCurrentOutputMetadata(cached)
+        val current = requireCurrentOutputMetadata(cached, reconcileLocalPdf)
         return rewriteOutputMetadata(
             directory = File(shareCacheRoot(), cached.baseName),
             expectedCacheId = cached.baseName,
@@ -2037,6 +3061,370 @@ internal class ScanStorage(
             pageCount = cached.pages.size,
             update = update,
         )
+    }
+
+    private fun replacementFor(
+        cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
+    ): DurableOutputReplacement =
+        DurableOutputReplacement(
+            readMetadata = { requireCurrentOutputMetadata(cached, reconcileLocalPdf) },
+            writeMetadata = { expected, updated ->
+                rewriteCachedOutputMetadata(cached, reconcileLocalPdf) { current ->
+                    exactReplacementMetadataUpdate(current, expected, updated)
+                }
+            },
+            deletePdf = outputDeleter::deletePdf,
+            deleteImage = { outputDeleter.deleteImage(cached, it) },
+            reconcileStagedPdf = ::reconcileStagedPdf,
+            reconcileStagedImage = ::reconcileStagedImage,
+        )
+
+    private fun reconcileStagedPdf(reference: PdfOutputRef): PdfOutputRef {
+        if (reference.treeUri != null || !reference.pending) return reference
+        val observed = reconcilePublishedMediaOutput(
+            uri = reference.uri,
+            displayName = reference.displayName,
+            mimeType = reference.mimeType,
+            ownerPackageName = reference.ownerPackageName,
+            fingerprint = reference.outputFingerprint(),
+            collection = MediaOutputCollection.Downloads,
+        ) ?: return reference
+        return mergePublishedPdfIdentity(reference, observed.toPdfOutputRef())
+    }
+
+    private fun reconcileStagedImage(reference: ImageOutputRef): ImageOutputRef {
+        if (reference.treeUri != null || !reference.pending) return reference
+        val observed = reconcilePublishedMediaOutput(
+            uri = reference.uri,
+            displayName = reference.displayName,
+            mimeType = reference.mimeType,
+            ownerPackageName = reference.ownerPackageName,
+            fingerprint = reference.outputFingerprint(),
+            collection = MediaOutputCollection.Images,
+        ) ?: return reference
+        return mergePublishedImageIdentity(
+            reference,
+            reference.copy(
+                displayName = observed.displayName,
+                mimeType = observed.mimeType,
+                ownerPackageName = observed.ownerPackageName,
+                byteLength = observed.byteLength,
+                sha256 = observed.sha256,
+                pending = false,
+            ),
+        )
+    }
+
+    private fun reconcilePublishedMediaOutput(
+        uri: String,
+        displayName: String?,
+        mimeType: String?,
+        ownerPackageName: String?,
+        fingerprint: OutputFingerprint?,
+        collection: MediaOutputCollection,
+    ): SavedMediaOutput? {
+        val expected = fingerprint ?: return null
+        if (
+            !isProviderDisplayName(displayName) ||
+                mimeType == null ||
+                ownerPackageName != context.packageName
+        ) {
+            return null
+        }
+        return try {
+            val observed = readSavedMediaOutput(uri.toUri(), collection, mimeType, expected)
+            observed.takeIf {
+                !it.pending &&
+                    pendingMediaReconciliationIdentityIsAcceptable(
+                        observedPending = false,
+                        sameUri = it.uri.toString() == uri,
+                        sameDisplayName = it.displayName == displayName,
+                        safeDisplayName = isProviderDisplayName(it.displayName),
+                        sameMimeType = it.mimeType == mimeType,
+                        sameOwner = it.ownerPackageName == ownerPackageName,
+                        sameByteLength = it.byteLength == expected.byteLength,
+                        sameSha256 = it.sha256 == expected.sha256,
+                    )
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun savedScan(
+        cached: CachedScan,
+        metadata: OutputMetadata?,
+        warnings: List<UiMessage>,
+        mutationBlocked: Boolean = false,
+        unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
+    ): SavedScan {
+        val activePdf = metadata?.pdf?.takeUnless(PdfOutputRef::pending)
+        val activeImages = metadata?.images?.filterNot(ImageOutputRef::pending).orEmpty()
+        val exact = metadata?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
+        return SavedScan(
+            cached = cached,
+            savedImages =
+                activeImages.map { image ->
+                    SavedImageOutput(
+                        page = image.page,
+                        uri = image.uri.toUri(),
+                        treeUri = image.treeUri?.toUri(),
+                        displayName = image.displayName,
+                        mimeType = image.mimeType,
+                        ownerPackageName = image.ownerPackageName,
+                        byteLength = image.byteLength,
+                        sha256 = image.sha256,
+                        width = image.width,
+                        height = image.height,
+                        format = image.format,
+                        sizePreset = image.sizePreset,
+                        customMaxDimension = image.customMaxDimension,
+                    )
+                },
+            savedPdf = activePdf?.uri?.toUri(),
+            savedPdfTree = activePdf?.treeUri?.toUri(),
+            warnings =
+                (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
+                    .distinct(),
+            outputMetadataValid = metadata != null && !mutationBlocked,
+            savedPdfDeleteVerified = !mutationBlocked && exact?.pdf == activePdf && activePdf != null,
+            savedImagesDeleteVerified =
+                !mutationBlocked && activeImages.isNotEmpty() &&
+                    exact?.images == activeImages,
+            unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
+        )
+    }
+
+    private fun requireResolvedProvisionalOutputCreate(cached: CachedScan) {
+        val metadata = requireCurrentOutputMetadata(cached)
+        if (reconcileProvisionalOutputCreate(cached, metadata).blocking) {
+            throw IOException("Provisional output cleanup is required")
+        }
+    }
+
+    private fun reconcileProvisionalOutputCreate(
+        cached: CachedScan,
+        metadata: OutputMetadata,
+    ): ProvisionalOutputCreateReconciliation {
+        val directory = File(shareCacheRoot(), cached.baseName)
+        return when (
+            val read = readProvisionalOutputCreate(
+                directory,
+                cached.baseName,
+                metadata.entryId,
+                cached.pages.size,
+            )
+        ) {
+            ProvisionalOutputCreateReadResult.Absent -> ProvisionalOutputCreateReconciliation(false)
+            ProvisionalOutputCreateReadResult.Invalid,
+            ProvisionalOutputCreateReadResult.Failed,
+            -> ProvisionalOutputCreateReconciliation(
+                true,
+                listOf(UiMessage(R.string.output_create_cleanup_required)),
+                acknowledgement =
+                    readUnknownOutputCreateAcknowledgement(
+                        directory,
+                        cached.baseName,
+                        metadata.entryId,
+                    ),
+            )
+            is ProvisionalOutputCreateReadResult.Valid ->
+                reconcileProvisionalOutputCreate(
+                    marker = read.marker,
+                    metadata = metadata,
+                    delete = outputDeleter::deleteProvisional,
+                    clear = {
+                        clearProvisionalOutputCreate(
+                            directory,
+                            read.marker,
+                            cached.pages.size,
+                        )
+                    },
+                )
+        }
+    }
+
+    private fun newProvisionalOutputCreate(
+        cached: CachedScan,
+        kind: ProvisionalOutputKind,
+        page: Int?,
+        provider: ProvisionalOutputProvider,
+        displayName: String,
+        mimeType: String,
+        treeUri: String?,
+    ): ProvisionalOutputCreate =
+        ProvisionalOutputCreate(
+            operationId = UUID.randomUUID().toString(),
+            cacheId = cached.baseName,
+            entryId = cached.entryId
+                ?: throw IOException("Cached scan output metadata is unavailable"),
+            kind = kind,
+            page = page,
+            provider = provider,
+            displayName = displayName,
+            mimeType = mimeType,
+            treeUri = treeUri,
+            returnedUri = null,
+        )
+
+    private fun writeProvisionalOutputCreate(
+        cached: CachedScan,
+        marker: ProvisionalOutputCreate,
+    ) {
+        writeProvisionalOutputCreate(
+            File(shareCacheRoot(), cached.baseName),
+            marker,
+            cached.pages.size,
+        )
+    }
+
+    private fun updateProvisionalOutputCreate(
+        cached: CachedScan,
+        marker: ProvisionalOutputCreate,
+        uri: Uri,
+    ): ProvisionalOutputCreate =
+        updateProvisionalOutputCreateUri(
+            File(shareCacheRoot(), cached.baseName),
+            marker,
+            uri.toString(),
+            cached.pages.size,
+        )
+
+    private fun clearProvisionalOutputCreate(
+        cached: CachedScan,
+        marker: ProvisionalOutputCreate,
+    ) {
+        clearProvisionalOutputCreate(
+            File(shareCacheRoot(), cached.baseName),
+            marker,
+            cached.pages.size,
+        )
+    }
+
+    private fun upgradeImagesForV3(
+        cached: CachedScan,
+        reconciled: OutputReplacementJournalResult,
+    ): OutputReplacementJournalResult {
+        val metadata = reconciled.metadata
+        if (metadata.version == OUTPUT_METADATA_VERSION || metadata.images.isEmpty()) {
+            return reconciled
+        }
+        val upgraded =
+            metadata.images.map { image ->
+                if (image.treeUri != null) {
+                    throw IOException("Legacy SAF image identity is unsupported")
+                }
+                val fingerprint = fingerprintFile(cached.pages[image.page - 1])
+                val observed =
+                    readSavedMediaOutput(
+                        image.uri.toUri(),
+                        MediaOutputCollection.Images,
+                        JPEG_MIME_TYPE,
+                        fingerprint,
+                    )
+                if (observed.pending) throw IOException("Saved image is still pending")
+                val dimensions = readImageDimensions(observed.uri)
+                upgradeLegacyImageReference(
+                    reference = image,
+                    observedUri = observed.uri.toString(),
+                    observedDisplayName = observed.displayName,
+                    observedMimeType = observed.mimeType,
+                    observedOwnerPackageName = observed.ownerPackageName,
+                    expectedOwnerPackageName = context.packageName,
+                    fingerprint = fingerprint,
+                    width = dimensions.first,
+                    height = dimensions.second,
+                ) ?: throw IOException("Saved image provider identity changed")
+            }
+        val stored =
+            rewriteCachedOutputMetadata(cached) { current ->
+                if (current != metadata) {
+                    throw IOException("Output metadata changed during image upgrade")
+                }
+                current.copy(images = upgraded, version = OUTPUT_METADATA_VERSION)
+            }
+        return reconciled.copy(metadata = stored)
+    }
+
+    private fun verifyExistingPdf(
+        reference: PdfOutputRef,
+        fingerprint: OutputFingerprint,
+    ): Boolean =
+        try {
+            if (reference.treeUri == null) {
+                val observed =
+                    readSavedMediaOutput(
+                        reference.uri.toUri(),
+                        MediaOutputCollection.Downloads,
+                        PDF_MIME_TYPE,
+                        fingerprint,
+                    )
+                !observed.pending &&
+                    observed.displayName == reference.displayName &&
+                    observed.ownerPackageName == reference.ownerPackageName
+            } else {
+                val tree = reference.treeUri.toUri()
+                val document = reference.uri.toUri()
+                val row = readSafOutputIdentity(tree, document, PDF_MIME_TYPE)
+                row.displayName == reference.displayName &&
+                    fingerprintUri(document, fingerprint.byteLength) == fingerprint
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            false
+        }
+
+    private fun verifyExistingImage(reference: ImageOutputRef): Boolean =
+        try {
+            val fingerprint = reference.outputFingerprint() ?: return false
+            val mimeType = reference.mimeType ?: return false
+            val uri = reference.uri.toUri()
+            if (reference.treeUri == null) {
+                val observed =
+                    readSavedMediaOutput(
+                        uri,
+                        MediaOutputCollection.Images,
+                        mimeType,
+                        fingerprint,
+                    )
+                if (
+                    observed.pending ||
+                        observed.displayName != reference.displayName ||
+                        observed.ownerPackageName != reference.ownerPackageName
+                ) {
+                    return false
+                }
+            } else {
+                val row = readSafOutputIdentity(reference.treeUri.toUri(), uri, mimeType)
+                if (
+                    row.displayName != reference.displayName ||
+                        fingerprintUri(uri, fingerprint.byteLength) != fingerprint
+                ) {
+                    return false
+                }
+            }
+            readImageDimensions(uri) ==
+                (requireNotNull(reference.width) to requireNotNull(reference.height))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            false
+        }
+
+    private fun createOutputStagingDirectory(): File {
+        val cacheRoot = context.cacheDir.canonicalFile
+        val root = File(cacheRoot, "output-staging").absoluteFile
+        if (root.canonicalFile != root || root.parentFile != cacheRoot) {
+            throw IOException("Image output staging path is unsafe")
+        }
+        if (!root.isDirectory && !root.mkdir()) {
+            throw IOException("Image output staging directory could not be created")
+        }
+        return Files.createTempDirectory(root.toPath(), "replace-").toFile()
     }
 
     private fun reconcilePendingMediaOutputs(cached: CachedScan) {
@@ -2137,18 +3525,40 @@ internal class ScanStorage(
                 expected,
             )
         if (
-            observed.displayName != displayName ||
-                observed.ownerPackageName != ownerPackageName
+            !pendingMediaReconciliationIdentityIsAcceptable(
+                observedPending = observed.pending,
+                sameUri = observed.uri.toString() == uri,
+                sameDisplayName = observed.displayName == displayName,
+                safeDisplayName = isProviderDisplayName(observed.displayName),
+                sameMimeType = observed.mimeType == mimeType,
+                sameOwner = observed.ownerPackageName == ownerPackageName,
+                sameByteLength = observed.byteLength == expected.byteLength,
+                sameSha256 = observed.sha256 == expected.sha256,
+            )
         ) {
             return null
         }
         return publishPendingFile(observed, collection).takeUnless(SavedMediaOutput::pending)
     }
 
-    private fun requireCurrentOutputMetadata(cached: CachedScan): OutputMetadata {
+    private fun requireCurrentOutputMetadata(
+        cached: CachedScan,
+        reconcileLocalPdf: Boolean = true,
+    ): OutputMetadata {
         val entryId = cached.entryId ?: throw IOException("Cached scan output metadata is unavailable")
         val root = shareCacheRoot()
-        val current = openCachedScanInRoot(root, cached.baseName)
+        val current =
+            if (reconcileLocalPdf) {
+                openCachedScanInRoot(root, cached.baseName)
+            } else {
+                val directory = File(root, cached.baseName).absoluteFile
+                readCacheEntry(
+                    root,
+                    directory,
+                    cached.baseName,
+                    reconcileLocalPdf = false,
+                )?.cached
+            }
             ?: throw IOException("Cached scan is unavailable")
         if (
             current.entryId != entryId ||
@@ -2157,7 +3567,6 @@ internal class ScanStorage(
                 current.sourcePages != cached.sourcePages ||
                 current.appearance != cached.appearance ||
                 current.appearanceSettings != cached.appearanceSettings ||
-                current.pdfSizeTarget != cached.pdfSizeTarget ||
                 current.lineageCacheId != cached.lineageCacheId ||
                 current.parentCacheId != cached.parentCacheId ||
                 current.parentEntryId != cached.parentEntryId ||
@@ -2185,6 +3594,8 @@ internal class ScanStorage(
         source: File,
         displayName: String,
         album: String,
+        beforeCreate: () -> Unit = {},
+        onCreated: (Uri) -> Unit = {},
     ): SavedMediaOutput {
         val values =
             pendingValues(
@@ -2198,76 +3609,103 @@ internal class ScanStorage(
             source,
             MediaOutputCollection.Downloads,
             PDF_MIME_TYPE,
+            beforeCreate,
+            onCreated,
         )
     }
 
-    private fun savePdfToTree(
+    private fun createSafOutput(
         source: File,
         displayName: String,
+        mimeType: String,
         treeUriValue: String,
-    ): Pair<SavedPdfOutput?, Boolean> {
-        var createdDocument: Uri? = null
+        expectedWidth: Int? = null,
+        expectedHeight: Int? = null,
+        beforeCreate: () -> Unit = {},
+        onCreated: (Uri) -> Unit = {},
+    ): VerifiedSafOutput {
+        requireReadableFile(source)
+        if (!isProviderDisplayName(displayName)) {
+            throw IOException("SAF output name is unsafe")
+        }
+        val tree = requireCanonicalOutputTreeUri(treeUriValue.toUri())
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        if (
+            resolver.persistedUriPermissions.none {
+                    it.uri == tree && it.isReadPermission && it.isWritePermission
+                }
+        ) {
+            throw IOException("SAF output tree permission is unavailable")
+        }
+        val sourceFingerprint = fingerprintFile(source)
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+        var created = false
         try {
-            val sourceFingerprint = fingerprintFile(source)
-            val treeUri = treeUriValue.toUri()
-            if (
-                !DocumentsContract.isTreeUri(treeUri) ||
-                    resolver.persistedUriPermissions.none {
-                        it.uri == treeUri && it.isReadPermission && it.isWritePermission
-                    }
-            ) {
-                return null to false
-            }
-            val parent =
-                DocumentsContract.buildDocumentUriUsingTree(
-                    treeUri,
-                    DocumentsContract.getTreeDocumentId(treeUri),
-                )
             val document =
-                DocumentsContract.createDocument(
-                    resolver,
-                    parent,
-                    PDF_MIME_TYPE,
-                    displayName,
+                createProviderOutputWithMarker(
+                    beforeCreate = beforeCreate,
+                    create = {
+                        DocumentsContract.createDocument(resolver, parent, mimeType, displayName)
+                            ?.also { created = true }
+                    },
+                    onCreated = onCreated,
                 )
-                    ?: return null to false
-            createdDocument = document
-            if (!isCreatedSafChild(treeUri, document)) return null to true
+            if (!isCreatedSafChild(tree, document)) {
+                throw IOException("Created SAF output is outside its selected tree")
+            }
             copyFileToUri(source, document)
             if (fingerprintFile(source) != sourceFingerprint) {
                 throw IOException("Source file changed while it was copied")
             }
-            val actualName = readSafPdfDisplayName(treeUri, document)
+            val row = readSafOutputIdentity(tree, document, mimeType)
+            if (row.displayName != displayName) {
+                throw IOException("SAF provider changed the requested output name")
+            }
             val fingerprint = fingerprintUri(document, sourceFingerprint.byteLength)
             if (!savedOutputMatchesSource(sourceFingerprint, fingerprint)) {
-                throw IOException("Saved PDF differs from its source")
+                throw IOException("Saved SAF output differs from its source")
             }
-            return SavedPdfOutput(
+            if (expectedWidth != null || expectedHeight != null) {
+                if (expectedWidth == null || expectedHeight == null) {
+                    throw IOException("Expected SAF image dimensions are incomplete")
+                }
+                val dimensions = readImageDimensions(document)
+                if (dimensions != (expectedWidth to expectedHeight)) {
+                    throw IOException("Saved SAF image dimensions changed")
+                }
+            }
+            return VerifiedSafOutput(
                 uri = document,
-                treeUri = treeUri,
-                warning = null,
-                displayName = actualName,
-                mimeType = PDF_MIME_TYPE,
-                byteLength = fingerprint.byteLength,
-                sha256 = fingerprint.sha256,
-            ) to false
+                treeUri = tree,
+                displayName = row.displayName,
+                mimeType = row.mimeType,
+                fingerprint = fingerprint,
+            )
         } catch (cancellation: CancellationException) {
-            if (createdDocument != null) {
+            if (created) {
                 cancellation.addSuppressed(
-                    IOException("Unverified SAF document was left for safe manual cleanup"),
+                    IOException("An unverified SAF output may require manual cleanup"),
                 )
             }
             throw cancellation
         } catch (failure: Exception) {
-            return null to (createdDocument != null)
+            if (created) {
+                failure.addSuppressed(
+                    IOException("An unverified SAF output may require manual cleanup"),
+                )
+            }
+            throw SafOutputCreationFailure(created, failure)
         }
     }
 
-    private fun readSafPdfDisplayName(tree: Uri, document: Uri): String {
+    private fun readSafOutputIdentity(
+        tree: Uri,
+        document: Uri,
+        expectedMimeType: String,
+    ): SafDocumentRow {
         if (!isCreatedSafChild(tree, document)) {
-            throw IOException("Created SAF document identity is unsafe")
+            throw IOException("Created SAF output identity is unsafe")
         }
-        val rootId = DocumentsContract.getTreeDocumentId(tree)
         val documentId = DocumentsContract.getDocumentId(document)
         val cursor =
             resolver.query(
@@ -2276,41 +3714,89 @@ internal class ScanStorage(
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                     DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_FLAGS,
                 ),
                 null,
                 null,
                 null,
-            ) ?: throw IOException("Created SAF document identity is unavailable")
+            ) ?: throw IOException("Created SAF output identity is unavailable")
         return cursor.use {
-            if (!it.moveToFirst()) throw IOException("Created SAF document is unavailable")
+            if (!it.moveToFirst()) throw IOException("Created SAF output is unavailable")
             val idIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
             val nameIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            val flagsIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
             if (
-                idIndex < 0 ||
-                    nameIndex < 0 ||
-                    mimeIndex < 0 ||
-                    it.isNull(idIndex) ||
-                    it.isNull(nameIndex) ||
-                    it.isNull(mimeIndex)
+                idIndex < 0 || nameIndex < 0 || mimeIndex < 0 || flagsIndex < 0 ||
+                    it.isNull(idIndex) || it.isNull(nameIndex) || it.isNull(mimeIndex) ||
+                    it.isNull(flagsIndex)
             ) {
-                throw IOException("Created SAF document identity is incomplete")
+                throw IOException("Created SAF output identity is incomplete")
             }
-            val actualName = it.getString(nameIndex)
+            val row =
+                SafDocumentRow(
+                    documentId = it.getString(idIndex),
+                    displayName = it.getString(nameIndex),
+                    mimeType = it.getString(mimeIndex),
+                    flags = it.getInt(flagsIndex),
+                )
             if (
-                it.getString(idIndex) != documentId ||
-                    it.getString(mimeIndex) != PDF_MIME_TYPE ||
-                    !isProviderDisplayName(actualName) ||
+                !isExactSafDocument(
+                    row,
+                    expectedDocumentId = documentId,
+                    expectedDisplayName = row.displayName,
+                    expectedMimeType = expectedMimeType,
+                ) ||
                     it.moveToNext()
             ) {
-                throw IOException("Created SAF document identity changed")
+                throw IOException("Created SAF output identity changed")
             }
-            actualName
+            row
         }
     }
 
-    private fun isCreatedSafChild(tree: Uri, document: Uri): Boolean =
+    private fun readImageDimensions(uri: Uri): Pair<Int, Int> {
+        val input = resolver.openInputStream(uri)
+            ?: throw IOException("Saved image could not be reopened")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        input.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (
+            bounds.outWidth <= 0 || bounds.outHeight <= 0 ||
+                bounds.outWidth.toLong() * bounds.outHeight > MAX_IMAGE_EXPORT_PIXELS
+        ) {
+            throw IOException("Saved image dimensions are invalid")
+        }
+        val orientationInput = resolver.openInputStream(uri)
+            ?: throw IOException("Saved image orientation could not be reopened")
+        val orientation =
+            orientationInput.use {
+                imageExifOrientation(
+                    ExifInterface(it).getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL,
+                    ),
+                )
+            }
+        val dimensions = orientedImageExportDimensions(bounds.outWidth, bounds.outHeight, orientation)
+        return dimensions.width to dimensions.height
+    }
+
+    private fun savePdfToTree(
+        source: File,
+        displayName: String,
+        treeUriValue: String,
+    ): Pair<SavedPdfOutput?, Boolean> =
         try {
+            createSafOutput(source, displayName, PDF_MIME_TYPE, treeUriValue)
+                .toSavedPdfOutput() to false
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            null to ((failure as? SafOutputCreationFailure)?.outputCreated == true)
+        }
+
+    private fun isCreatedSafChild(tree: Uri, document: Uri): Boolean =
+        guardedSafChildCheck {
             val rootId = DocumentsContract.getTreeDocumentId(tree)
             val documentId = DocumentsContract.getDocumentId(document)
             val rootDocument = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
@@ -2327,8 +3813,6 @@ internal class ScanStorage(
                         document.fragment == null &&
                         DocumentsContract.buildDocumentUriUsingTree(tree, documentId) == document,
             ) && DocumentsContract.isChildDocument(resolver, rootDocument, document)
-        } catch (_: Exception) {
-            false
         }
 
     private fun pendingValues(displayName: String, mimeType: String, relativePath: String) =
@@ -2345,12 +3829,20 @@ internal class ScanStorage(
         source: File,
         expectedCollection: MediaOutputCollection,
         expectedMimeType: String,
+        beforeCreate: () -> Unit = {},
+        onCreated: (Uri) -> Unit = {},
     ): SavedMediaOutput {
         requireReadableFile(source)
+        val expectedDisplayName = values.getAsString(MediaStore.MediaColumns.DISPLAY_NAME)
+            ?.takeIf(::isProviderDisplayName)
+            ?: throw IOException("MediaStore output name is unavailable")
         val sourceFingerprint = fingerprintFile(source)
         val destination =
-            resolver.insert(collection, values)
-                ?: throw IOException("MediaStore row could not be created")
+            createProviderOutputWithMarker(
+                beforeCreate = beforeCreate,
+                create = { resolver.insert(collection, values) },
+                onCreated = onCreated,
+            )
         var verifiedOutput: SavedMediaOutput? = null
         return pendingMediaWrite(
             rollback = { failure ->
@@ -2383,6 +3875,9 @@ internal class ScanStorage(
                 )
             if (!pendingOutput.pending) {
                 throw IOException("MediaStore row was published before ownership was recorded")
+            }
+            if (pendingOutput.displayName != expectedDisplayName) {
+                throw IOException("MediaStore provider changed the requested output name")
             }
             verifiedOutput = pendingOutput
             pendingOutput
@@ -2421,27 +3916,26 @@ internal class ScanStorage(
                     ),
                 ),
             )
-        if (published != 1) {
-            val observed =
-                readSavedMediaOutput(
-                    output.uri,
-                    expectedCollection,
-                    output.mimeType,
-                    fingerprint,
-                )
-            if (!observed.pending && sameMediaOutput(observed, output)) return observed
+        if (published > 1 || published < 0) {
+            throw IOException("MediaStore row publication affected multiple rows")
+        }
+        val observed =
+            readSavedMediaOutput(
+                output.uri,
+                expectedCollection,
+                output.mimeType,
+                fingerprint,
+            )
+        if (
+            !mediaPublishResultIsAcceptable(
+                published,
+                observed.pending,
+                samePublishedMediaOutput(output, observed),
+            )
+        ) {
             throw IOException("MediaStore row could not be published")
         }
-        return readSavedMediaOutput(
-            output.uri,
-            expectedCollection,
-            output.mimeType,
-            fingerprint,
-        ).also {
-            if (it.pending || !sameMediaOutput(it, output)) {
-                throw IOException("Published MediaStore row identity changed")
-            }
-        }
+        return observed
     }
 
     private fun sameMediaOutput(left: SavedMediaOutput, right: SavedMediaOutput): Boolean =
@@ -2451,6 +3945,19 @@ internal class ScanStorage(
             left.ownerPackageName == right.ownerPackageName &&
             left.byteLength == right.byteLength &&
             left.sha256 == right.sha256
+
+    private fun samePublishedMediaOutput(
+        expected: SavedMediaOutput,
+        observed: SavedMediaOutput,
+    ): Boolean =
+        publishedMediaIdentityIsAcceptable(
+            sameUri = expected.uri == observed.uri,
+            safeDisplayName = isProviderDisplayName(observed.displayName),
+            sameMimeType = expected.mimeType == observed.mimeType,
+            sameOwner = expected.ownerPackageName == observed.ownerPackageName,
+            sameByteLength = expected.byteLength == observed.byteLength,
+            sameSha256 = expected.sha256 == observed.sha256,
+        )
 
     private fun readSavedMediaOutput(
         uri: Uri,

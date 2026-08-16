@@ -19,7 +19,8 @@ internal const val OUTPUT_METADATA_FILE_NAME = "outputs.json"
 internal const val OUTPUT_METADATA_TEMP_FILE_NAME = ".outputs.json.tmp"
 internal const val MAX_OUTPUT_METADATA_BYTES = 64 * 1024
 
-private const val OUTPUT_METADATA_VERSION = 2
+internal const val OUTPUT_METADATA_VERSION = 3
+private const val OUTPUT_METADATA_VERSION_2 = 2
 private const val OUTPUT_METADATA_LEGACY_VERSION = 1
 private const val MAX_CACHE_ID_LENGTH = 128
 private const val MAX_CONTENT_URI_LENGTH = 4096
@@ -44,6 +45,12 @@ internal data class ImageOutputRef(
     val byteLength: Long? = null,
     val sha256: String? = null,
     val pending: Boolean = false,
+    val treeUri: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val format: ImageExportFormat? = null,
+    val sizePreset: ImageSizePreset? = null,
+    val customMaxDimension: Int? = null,
 )
 
 internal data class OutputMetadata(
@@ -53,7 +60,19 @@ internal data class OutputMetadata(
     val pdf: PdfOutputRef? = null,
     val images: List<ImageOutputRef> = emptyList(),
     val removeRecentPending: Boolean = false,
+    val stagedPdf: PdfOutputRef? = null,
+    val stagedImages: List<ImageOutputRef> = emptyList(),
+    val retiredPdf: PdfOutputRef? = null,
+    val retiredImages: List<ImageOutputRef> = emptyList(),
+    val pdfSizeTarget: PdfSizeTarget? = null,
+    val version: Int = OUTPUT_METADATA_VERSION_2,
 )
+
+internal fun OutputMetadata.outputTreeUris(): Set<String> =
+    buildSet {
+        listOfNotNull(pdf, stagedPdf, retiredPdf).mapNotNullTo(this) { it.treeUri }
+        listOf(images, stagedImages, retiredImages).flatten().mapNotNullTo(this) { it.treeUri }
+    }
 
 internal sealed interface OutputMetadataReadResult {
     data class Valid(val metadata: OutputMetadata) : OutputMetadataReadResult
@@ -69,40 +88,63 @@ internal fun encodeOutputMetadata(metadata: OutputMetadata, pageCount: Int): Byt
     }
     val json =
         JSONObject()
-            .put("version", OUTPUT_METADATA_VERSION)
+            .put("version", metadata.version)
             .put("entryId", metadata.entryId)
             .put("cacheId", metadata.cacheId)
             .put("createdAtEpochMs", metadata.createdAtEpochMs)
-    metadata.pdf?.let { pdf ->
-        val value = JSONObject().put("uri", pdf.uri)
-        pdf.treeUri?.let { value.put("treeUri", it) }
-        pdf.displayName?.let { value.put("displayName", it) }
-        pdf.mimeType?.let { value.put("mimeType", it) }
-        pdf.ownerPackageName?.let { value.put("ownerPackageName", it) }
-        pdf.byteLength?.let { value.put("byteLength", it) }
-        pdf.sha256?.let { value.put("sha256", it) }
-        if (pdf.pending) value.put("pending", true)
-        json.put("pdf", value)
-    }
-    val images = JSONArray()
-    metadata.images.forEach { image ->
-        val value = JSONObject().put("page", image.page).put("uri", image.uri)
-        image.displayName?.let { value.put("displayName", it) }
-        image.mimeType?.let { value.put("mimeType", it) }
-        image.ownerPackageName?.let { value.put("ownerPackageName", it) }
-        image.byteLength?.let { value.put("byteLength", it) }
-        image.sha256?.let { value.put("sha256", it) }
-        if (image.pending) value.put("pending", true)
-        images.put(value)
-    }
-    json.put("images", images)
+    metadata.pdf?.let { json.put("pdf", it.toJson()) }
+    json.put("images", metadata.images.toJson())
     if (metadata.removeRecentPending) json.put("removeRecentPending", true)
+    if (metadata.version == OUTPUT_METADATA_VERSION) {
+        metadata.pdfSizeTarget?.let { json.put("pdfSizeTarget", it.wireValue) }
+        metadata.stagedPdf?.let { json.put("stagedPdf", it.toJson()) }
+        if (metadata.stagedImages.isNotEmpty()) {
+            json.put("stagedImages", metadata.stagedImages.toJson())
+        }
+        metadata.retiredPdf?.let { json.put("retiredPdf", it.toJson()) }
+        if (metadata.retiredImages.isNotEmpty()) {
+            json.put("retiredImages", metadata.retiredImages.toJson())
+        }
+    }
     return json.toString().toByteArray(StandardCharsets.UTF_8).also { bytes ->
         if (bytes.size > MAX_OUTPUT_METADATA_BYTES) {
             throw IllegalArgumentException("Output metadata is too large")
         }
     }
 }
+
+private fun PdfOutputRef.toJson(): JSONObject =
+    JSONObject().put("uri", uri).also { value ->
+        treeUri?.let { value.put("treeUri", it) }
+        displayName?.let { value.put("displayName", it) }
+        mimeType?.let { value.put("mimeType", it) }
+        ownerPackageName?.let { value.put("ownerPackageName", it) }
+        byteLength?.let { value.put("byteLength", it) }
+        sha256?.let { value.put("sha256", it) }
+        if (pending) value.put("pending", true)
+    }
+
+private fun List<ImageOutputRef>.toJson(): JSONArray =
+    JSONArray().also { values ->
+        forEach { image ->
+            values.put(
+                JSONObject().put("page", image.page).put("uri", image.uri).also { value ->
+                    image.treeUri?.let { value.put("treeUri", it) }
+                    image.displayName?.let { value.put("displayName", it) }
+                    image.mimeType?.let { value.put("mimeType", it) }
+                    image.ownerPackageName?.let { value.put("ownerPackageName", it) }
+                    image.byteLength?.let { value.put("byteLength", it) }
+                    image.sha256?.let { value.put("sha256", it) }
+                    if (image.pending) value.put("pending", true)
+                    image.width?.let { value.put("width", it) }
+                    image.height?.let { value.put("height", it) }
+                    image.format?.let { value.put("format", it.wireValue) }
+                    image.sizePreset?.let { value.put("sizePreset", it.name) }
+                    image.customMaxDimension?.let { value.put("customMaxDimension", it) }
+                },
+            )
+        }
+    }
 
 internal fun decodeOutputMetadata(
     bytes: ByteArray,
@@ -112,96 +154,24 @@ internal fun decodeOutputMetadata(
     if (bytes.isEmpty() || bytes.size > MAX_OUTPUT_METADATA_BYTES) return null
     return try {
         val json = JSONObject(String(bytes, StandardCharsets.UTF_8))
-        val version = json.strictInt("version")
-        if (
-            !json.hasOnlyKeys(ROOT_KEYS, REQUIRED_ROOT_KEYS) ||
-                version !in setOf(OUTPUT_METADATA_LEGACY_VERSION, OUTPUT_METADATA_VERSION)
-        ) {
-            return null
-        }
+        val version = json.strictInt("version") ?: return null
+        val rootKeys = if (version == OUTPUT_METADATA_VERSION) ROOT_KEYS_V3 else ROOT_KEYS_V2
+        if (version !in SUPPORTED_OUTPUT_METADATA_VERSIONS ||
+            !json.hasOnlyKeys(rootKeys, REQUIRED_ROOT_KEYS)
+        ) return null
         val pdf =
             if (json.has("pdf")) {
                 val value = json.opt("pdf") as? JSONObject ?: return null
-                if (!value.hasOnlyKeys(PDF_KEYS, REQUIRED_PDF_KEYS)) return null
-                if (version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")) return null
-                PdfOutputRef(
-                    uri = value.strictString("uri") ?: return null,
-                    treeUri = if (value.has("treeUri")) value.strictString("treeUri") ?: return null else null,
-                    displayName =
-                        if (value.has("displayName")) {
-                            value.strictString("displayName") ?: return null
-                        } else {
-                            null
-                        },
-                    mimeType =
-                        if (value.has("mimeType")) value.strictString("mimeType") ?: return null else null,
-                    ownerPackageName =
-                        if (value.has("ownerPackageName")) {
-                            value.strictString("ownerPackageName") ?: return null
-                        } else {
-                            null
-                        },
-                    byteLength =
-                        if (value.has("byteLength")) value.strictLong("byteLength") ?: return null else null,
-                    sha256 =
-                        if (value.has("sha256")) value.strictString("sha256") ?: return null else null,
-                    pending =
-                        if (value.has("pending")) value.strictBoolean("pending") ?: return null else false,
-                )
+                decodePdfOutputRef(value, version) ?: return null
             } else {
                 null
             }
         val imageValues = json.opt("images") as? JSONArray ?: return null
-        val images =
-            buildList {
-                repeat(imageValues.length()) { index ->
-                    val value = imageValues.opt(index) as? JSONObject ?: return null
-                    if (!value.hasOnlyKeys(IMAGE_KEYS, REQUIRED_IMAGE_KEYS)) return null
-                    if (version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")) return null
-                    add(
-                        ImageOutputRef(
-                            page = value.strictInt("page") ?: return null,
-                            uri = value.strictString("uri") ?: return null,
-                            displayName =
-                                if (value.has("displayName")) {
-                                    value.strictString("displayName") ?: return null
-                                } else {
-                                    null
-                                },
-                            mimeType =
-                                if (value.has("mimeType")) {
-                                    value.strictString("mimeType") ?: return null
-                                } else {
-                                    null
-                                },
-                            ownerPackageName =
-                                if (value.has("ownerPackageName")) {
-                                    value.strictString("ownerPackageName") ?: return null
-                                } else {
-                                    null
-                                },
-                            byteLength =
-                                if (value.has("byteLength")) {
-                                    value.strictLong("byteLength") ?: return null
-                                } else {
-                                    null
-                                },
-                            sha256 =
-                                if (value.has("sha256")) {
-                                    value.strictString("sha256") ?: return null
-                                } else {
-                                    null
-                                },
-                            pending =
-                                if (value.has("pending")) {
-                                    value.strictBoolean("pending") ?: return null
-                                } else {
-                                    false
-                                },
-                        ),
-                    )
-                }
-            }
+        val images = decodeImageOutputRefs(imageValues, version) ?: return null
+        val stagedPdf = json.optionalPdfOutputRef("stagedPdf", version) ?: return null
+        val stagedImages = json.optionalImageOutputRefs("stagedImages", version) ?: return null
+        val retiredPdf = json.optionalPdfOutputRef("retiredPdf", version) ?: return null
+        val retiredImages = json.optionalImageOutputRefs("retiredImages", version) ?: return null
         val metadata =
             OutputMetadata(
                 entryId = json.strictString("entryId") ?: return null,
@@ -215,12 +185,110 @@ internal fun decodeOutputMetadata(
                     } else {
                         false
                     },
+                stagedPdf = stagedPdf.value,
+                stagedImages = stagedImages.value ?: return null,
+                retiredPdf = retiredPdf.value,
+                retiredImages = retiredImages.value ?: return null,
+                pdfSizeTarget =
+                    if (json.has("pdfSizeTarget")) {
+                        decodePdfSizeTarget(json.strictString("pdfSizeTarget") ?: return null)
+                            ?: return null
+                    } else {
+                        null
+                    },
+                version = version,
             )
         metadata.takeIf { isValidOutputMetadata(it, expectedCacheId, pageCount) }
     } catch (_: Exception) {
         null
     }
 }
+
+private data class DecodedOptional<T>(val value: T?)
+
+private fun JSONObject.optionalPdfOutputRef(
+    key: String,
+    version: Int,
+): DecodedOptional<PdfOutputRef>? {
+    if (!has(key)) return DecodedOptional(null)
+    val value = opt(key) as? JSONObject ?: return null
+    return DecodedOptional(decodePdfOutputRef(value, version) ?: return null)
+}
+
+private fun JSONObject.optionalImageOutputRefs(
+    key: String,
+    version: Int,
+): DecodedOptional<List<ImageOutputRef>>? {
+    if (!has(key)) return DecodedOptional(emptyList())
+    val values = opt(key) as? JSONArray ?: return null
+    return DecodedOptional(decodeImageOutputRefs(values, version) ?: return null)
+}
+
+private fun decodePdfOutputRef(
+    value: JSONObject,
+    version: Int,
+): PdfOutputRef? {
+    if (!value.hasOnlyKeys(PDF_KEYS, REQUIRED_PDF_KEYS) ||
+        version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")
+    ) return null
+    return PdfOutputRef(
+        uri = value.strictString("uri") ?: return null,
+        treeUri = (value.optionalString("treeUri") ?: return null).value,
+        displayName = (value.optionalString("displayName") ?: return null).value,
+        mimeType = (value.optionalString("mimeType") ?: return null).value,
+        ownerPackageName = (value.optionalString("ownerPackageName") ?: return null).value,
+        byteLength = (value.optionalLong("byteLength") ?: return null).value,
+        sha256 = (value.optionalString("sha256") ?: return null).value,
+        pending = value.optionalBoolean("pending") ?: return null,
+    )
+}
+
+private fun decodeImageOutputRefs(
+    values: JSONArray,
+    version: Int,
+): List<ImageOutputRef>? =
+    buildList {
+        repeat(values.length()) { index ->
+            val value = values.opt(index) as? JSONObject ?: return null
+            val keys = if (version == OUTPUT_METADATA_VERSION) IMAGE_KEYS_V3 else IMAGE_KEYS_V2
+            if (!value.hasOnlyKeys(keys, REQUIRED_IMAGE_KEYS) ||
+                version == OUTPUT_METADATA_LEGACY_VERSION && value.has("pending")
+            ) return null
+            add(
+                ImageOutputRef(
+                    page = value.strictInt("page") ?: return null,
+                    uri = value.strictString("uri") ?: return null,
+                    displayName = (value.optionalString("displayName") ?: return null).value,
+                    mimeType = (value.optionalString("mimeType") ?: return null).value,
+                    ownerPackageName =
+                        (value.optionalString("ownerPackageName") ?: return null).value,
+                    byteLength = (value.optionalLong("byteLength") ?: return null).value,
+                    sha256 = (value.optionalString("sha256") ?: return null).value,
+                    pending = value.optionalBoolean("pending") ?: return null,
+                    treeUri = (value.optionalString("treeUri") ?: return null).value,
+                    width = (value.optionalInt("width") ?: return null).value,
+                    height = (value.optionalInt("height") ?: return null).value,
+                    format =
+                        if (value.has("format")) {
+                            val wireValue = value.strictString("format") ?: return null
+                            ImageExportFormat.entries.firstOrNull { it.wireValue == wireValue }
+                                ?: return null
+                        } else {
+                            null
+                        },
+                    sizePreset =
+                        if (value.has("sizePreset")) {
+                            val name = value.strictString("sizePreset") ?: return null
+                            ImageSizePreset.entries.firstOrNull { it.name == name } ?: return null
+                        } else {
+                            null
+                        },
+                    customMaxDimension =
+                        (value.optionalInt("customMaxDimension") ?: return null).value,
+                ),
+            )
+        }
+    }
 
 internal fun readOutputMetadata(
     directory: File,
@@ -261,12 +329,24 @@ internal fun initializeOutputMetadata(
     pageCount: Int,
     createdAtEpochMs: Long,
     entryId: String = UUID.randomUUID().toString(),
+    pdfSizeTarget: PdfSizeTarget? = null,
 ): OutputMetadata {
     val file = File(directory, OUTPUT_METADATA_FILE_NAME)
     if (Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
         throw IOException("Output metadata already exists")
     }
-    return OutputMetadata(entryId, cacheId, createdAtEpochMs).also {
+    return OutputMetadata(
+        entryId = entryId,
+        cacheId = cacheId,
+        createdAtEpochMs = createdAtEpochMs,
+        pdfSizeTarget = pdfSizeTarget,
+        version =
+            if (pdfSizeTarget == null) {
+                OUTPUT_METADATA_VERSION_2
+            } else {
+                OUTPUT_METADATA_VERSION
+            },
+    ).also {
         writeOutputMetadata(directory, it, pageCount)
     }
 }
@@ -299,7 +379,11 @@ internal fun rewriteOutputMetadata(
     if (current.entryId != expectedEntryId) {
         throw IOException("Output metadata belongs to another cache generation")
     }
-    val updated = update(current)
+    val requested = update(current)
+    val updated =
+        if (current.version == OUTPUT_METADATA_LEGACY_VERSION &&
+            requested.version == OUTPUT_METADATA_LEGACY_VERSION
+        ) requested.copy(version = OUTPUT_METADATA_VERSION_2) else requested
     if (
         updated.entryId != current.entryId ||
             updated.cacheId != current.cacheId ||
@@ -397,53 +481,110 @@ private fun isValidOutputMetadata(
     pageCount: Int,
 ): Boolean {
     if (
-        pageCount <= 0 ||
+        pageCount !in 1..MAX_SCAN_PAGES ||
+            metadata.version !in SUPPORTED_OUTPUT_METADATA_VERSIONS ||
             metadata.cacheId != expectedCacheId ||
             metadata.cacheId.length > MAX_CACHE_ID_LENGTH ||
             !isSafeCacheId(metadata.cacheId) ||
             metadata.createdAtEpochMs < 0L ||
             !isCanonicalUuid(metadata.entryId) ||
-            metadata.images.size > pageCount ||
-            metadata.images != metadata.images.sortedBy(ImageOutputRef::page) ||
-            metadata.images.map(ImageOutputRef::page).distinct().size != metadata.images.size
+            !metadata.images.hasValidPageOrder(pageCount, pageCount)
     ) {
         return false
     }
+    if (metadata.version != OUTPUT_METADATA_VERSION && metadata.hasV3Data()) return false
+    if (metadata.version == OUTPUT_METADATA_LEGACY_VERSION &&
+        (metadata.pdf?.pending == true || metadata.images.any(ImageOutputRef::pending))
+    ) return false
+    if (metadata.version == OUTPUT_METADATA_VERSION &&
+        (!metadata.stagedImages.hasValidPageOrder(pageCount, MAX_SCAN_PAGES) ||
+            !metadata.retiredImages.hasValidPageOrder(pageCount, MAX_SCAN_PAGES))
+    ) return false
+
+    val pdfs = listOfNotNull(metadata.pdf, metadata.stagedPdf, metadata.retiredPdf)
+    val imageLists = listOf(metadata.images, metadata.stagedImages, metadata.retiredImages)
+    if (pdfs.any { !it.isValid(metadata.version) } ||
+        imageLists.flatten().any { !it.isValid(metadata.version) }
+    ) return false
+    val uris = pdfs.map(PdfOutputRef::uri) + imageLists.flatten().map(ImageOutputRef::uri)
+    if (uris.size != uris.distinct().size) {
+        return false
+    }
+    return true
+}
+
+private fun OutputMetadata.hasV3Data(): Boolean =
+    stagedPdf != null ||
+        stagedImages.isNotEmpty() ||
+        retiredPdf != null ||
+        retiredImages.isNotEmpty() ||
+        pdfSizeTarget != null ||
+        images.any(ImageOutputRef::hasV3Data)
+
+private fun ImageOutputRef.hasV3Data(): Boolean =
+    treeUri != null || width != null || height != null || format != null ||
+        sizePreset != null || customMaxDimension != null
+
+private fun List<ImageOutputRef>.hasValidPageOrder(
+    pageCount: Int,
+    maximumSize: Int,
+): Boolean =
+    size <= maximumSize &&
+        all { it.page in 1..pageCount } &&
+        this == sortedBy(ImageOutputRef::page) &&
+        map(ImageOutputRef::page).distinct().size == size
+
+private fun PdfOutputRef.isValid(version: Int): Boolean {
+    if (!isContentUri(uri) ||
+        treeUri != null && !isContentUri(treeUri) ||
+        pending && treeUri != null ||
+        !isValidOutputFingerprint(byteLength, sha256)
+    ) return false
+    if (version == OUTPUT_METADATA_VERSION) return hasExactIdentity()
+    if (pending && !hasPendingMediaIdentity(PDF_MIME_TYPE)) return false
+    return if (treeUri == null) {
+        isValidMediaIdentity(displayName, mimeType, ownerPackageName, PDF_MIME_TYPE)
+    } else {
+        isProviderDisplayName(displayName) &&
+            mimeType == PDF_MIME_TYPE &&
+            ownerPackageName == null
+    }
+}
+
+private fun PdfOutputRef.hasExactIdentity(): Boolean =
+    outputFingerprint() != null &&
+        isProviderDisplayName(displayName) &&
+        mimeType == PDF_MIME_TYPE &&
+        if (treeUri == null) isValidOwnerPackageName(ownerPackageName) else ownerPackageName == null
+
+private fun ImageOutputRef.isValid(version: Int): Boolean {
+    if (!isContentUri(uri) ||
+        treeUri != null && !isContentUri(treeUri) ||
+        pending && treeUri != null ||
+        !isValidOutputFingerprint(byteLength, sha256)
+    ) return false
+    if (version != OUTPUT_METADATA_VERSION) {
+        return (!pending || hasPendingMediaIdentity(JPEG_MIME_TYPE)) &&
+            isValidMediaIdentity(displayName, mimeType, ownerPackageName, JPEG_MIME_TYPE)
+    }
+    val actualFormat = format ?: return false
+    val actualWidth = width ?: return false
+    val actualHeight = height ?: return false
+    val actualMimeType = mimeType ?: return false
+    if (actualWidth <= 0 ||
+        actualHeight <= 0 ||
+        actualWidth.toLong() * actualHeight > MAX_IMAGE_EXPORT_PIXELS ||
+        actualMimeType !in IMAGE_MIME_TYPES ||
+        actualFormat.mimeType?.let { it != actualMimeType } == true ||
+        outputFingerprint() == null ||
+        !isProviderDisplayName(displayName)
+    ) return false
     if (
-        metadata.pdf?.let { pdf ->
-            !isContentUri(pdf.uri) ||
-                (pdf.treeUri != null && !isContentUri(pdf.treeUri)) ||
-                (pdf.pending && pdf.treeUri != null) ||
-                (pdf.pending && !pdf.hasPendingMediaIdentity(PDF_MIME_TYPE)) ||
-                !isValidOutputFingerprint(pdf.byteLength, pdf.sha256) ||
-                if (pdf.treeUri == null) {
-                    !isValidMediaIdentity(
-                        pdf.displayName,
-                        pdf.mimeType,
-                        pdf.ownerPackageName,
-                        PDF_MIME_TYPE,
-                    )
-                } else {
-                    !isProviderDisplayName(pdf.displayName) ||
-                        pdf.mimeType != PDF_MIME_TYPE ||
-                        pdf.ownerPackageName != null
-                }
-        } == true
-    ) {
-        return false
-    }
-    return metadata.images.all { image ->
-        image.page in 1..pageCount &&
-            isContentUri(image.uri) &&
-            (!image.pending || image.hasPendingMediaIdentity(JPEG_MIME_TYPE)) &&
-            isValidOutputFingerprint(image.byteLength, image.sha256) &&
-            isValidMediaIdentity(
-                image.displayName,
-                image.mimeType,
-                image.ownerPackageName,
-                JPEG_MIME_TYPE,
-            )
-    }
+        sizePreset == ImageSizePreset.Custom &&
+            customMaxDimension !in MIN_IMAGE_EXPORT_DIMENSION..MAX_IMAGE_EXPORT_DIMENSION ||
+        sizePreset != ImageSizePreset.Custom && customMaxDimension != null
+    ) return false
+    return if (treeUri == null) isValidOwnerPackageName(ownerPackageName) else ownerPackageName == null
 }
 
 private fun PdfOutputRef.hasPendingMediaIdentity(requiredMimeType: String): Boolean =
@@ -465,7 +606,7 @@ internal fun isCanonicalUuid(value: String): Boolean =
         false
     }
 
-private fun isContentUri(value: String): Boolean {
+internal fun isContentUri(value: String): Boolean {
     if (value.length !in 1..MAX_CONTENT_URI_LENGTH) return false
     return try {
         val uri = URI(value)
@@ -478,6 +619,49 @@ private fun isContentUri(value: String): Boolean {
 internal fun isProviderDisplayName(value: String?): Boolean =
     value != null && value.length in 1..255 && value.none(Char::isISOControl)
 
+internal fun upgradeLegacyImageReference(
+    reference: ImageOutputRef,
+    observedUri: String,
+    observedDisplayName: String,
+    observedMimeType: String,
+    observedOwnerPackageName: String,
+    expectedOwnerPackageName: String,
+    fingerprint: OutputFingerprint,
+    width: Int,
+    height: Int,
+): ImageOutputRef? {
+    if (
+        reference.uri != observedUri ||
+            reference.treeUri != null ||
+            reference.pending ||
+            !isProviderDisplayName(observedDisplayName) ||
+            !observedDisplayName.lowercase(Locale.ROOT).endsWith(".jpg") ||
+            observedMimeType != JPEG_MIME_TYPE ||
+            observedOwnerPackageName != expectedOwnerPackageName ||
+            !isValidOwnerPackageName(expectedOwnerPackageName) ||
+            reference.displayName?.let { it != observedDisplayName } == true ||
+            reference.mimeType?.let { it != observedMimeType } == true ||
+            reference.ownerPackageName?.let { it != observedOwnerPackageName } == true ||
+            reference.byteLength?.let { it != fingerprint.byteLength } == true ||
+            reference.sha256?.let { it != fingerprint.sha256 } == true ||
+            width <= 0 ||
+            height <= 0 ||
+            width.toLong() * height > MAX_IMAGE_EXPORT_PIXELS
+    ) return null
+    return reference.copy(
+        displayName = observedDisplayName,
+        mimeType = observedMimeType,
+        ownerPackageName = observedOwnerPackageName,
+        byteLength = fingerprint.byteLength,
+        sha256 = fingerprint.sha256,
+        pending = false,
+        width = width,
+        height = height,
+        format = ImageExportFormat.Jpeg,
+        sizePreset = ImageSizePreset.Original,
+    )
+}
+
 private fun isValidMediaIdentity(
     displayName: String?,
     mimeType: String?,
@@ -488,9 +672,11 @@ private fun isValidMediaIdentity(
     if (values.all { it == null }) return true
     return isProviderDisplayName(displayName) &&
         mimeType == requiredMimeType &&
-        (ownerPackageName == null ||
-            ownerPackageName.length in 1..255 && ownerPackageName.none(Char::isISOControl))
+        (ownerPackageName == null || isValidOwnerPackageName(ownerPackageName))
 }
+
+private fun isValidOwnerPackageName(value: String?): Boolean =
+    value != null && value.isNotBlank() && value.length <= 255 && value.none(Char::isISOControl)
 
 private fun JSONObject.hasOnlyKeys(
     allowed: Set<String>,
@@ -520,7 +706,21 @@ private fun JSONObject.strictLong(key: String): Long? =
 
 private fun JSONObject.strictBoolean(key: String): Boolean? = opt(key) as? Boolean
 
-private val ROOT_KEYS =
+private fun JSONObject.optionalString(key: String): DecodedOptional<String>? =
+    if (!has(key)) DecodedOptional(null) else strictString(key)?.let(::DecodedOptional)
+
+private fun JSONObject.optionalInt(key: String): DecodedOptional<Int>? =
+    if (!has(key)) DecodedOptional(null) else strictInt(key)?.let(::DecodedOptional)
+
+private fun JSONObject.optionalLong(key: String): DecodedOptional<Long>? =
+    if (!has(key)) DecodedOptional(null) else strictLong(key)?.let(::DecodedOptional)
+
+private fun JSONObject.optionalBoolean(key: String): Boolean? =
+    if (!has(key)) false else strictBoolean(key)
+
+private val SUPPORTED_OUTPUT_METADATA_VERSIONS =
+    setOf(OUTPUT_METADATA_LEGACY_VERSION, OUTPUT_METADATA_VERSION_2, OUTPUT_METADATA_VERSION)
+private val ROOT_KEYS_V2 =
     setOf(
         "version",
         "entryId",
@@ -530,7 +730,16 @@ private val ROOT_KEYS =
         "images",
         "removeRecentPending",
     )
-private val REQUIRED_ROOT_KEYS = ROOT_KEYS - setOf("pdf", "removeRecentPending")
+private val ROOT_KEYS_V3 =
+    ROOT_KEYS_V2 +
+        setOf(
+            "stagedPdf",
+            "stagedImages",
+            "retiredPdf",
+            "retiredImages",
+            "pdfSizeTarget",
+        )
+private val REQUIRED_ROOT_KEYS = ROOT_KEYS_V2 - setOf("pdf", "removeRecentPending")
 private val PDF_KEYS =
     setOf(
         "uri",
@@ -543,7 +752,7 @@ private val PDF_KEYS =
         "pending",
     )
 private val REQUIRED_PDF_KEYS = setOf("uri")
-private val IMAGE_KEYS =
+private val IMAGE_KEYS_V2 =
     setOf(
         "page",
         "uri",
@@ -554,6 +763,18 @@ private val IMAGE_KEYS =
         "sha256",
         "pending",
     )
+private val IMAGE_KEYS_V3 =
+    IMAGE_KEYS_V2 +
+        setOf(
+            "treeUri",
+            "width",
+            "height",
+            "format",
+            "sizePreset",
+            "customMaxDimension",
+        )
 private val REQUIRED_IMAGE_KEYS = setOf("page", "uri")
 private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
+private const val PNG_MIME_TYPE = "image/png"
+private val IMAGE_MIME_TYPES = setOf(JPEG_MIME_TYPE, PNG_MIME_TYPE)

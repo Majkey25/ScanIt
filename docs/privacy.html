@@ -23,7 +23,7 @@
 
   <main id="main" class="policy">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective and last updated: 2026-08-09</p>
+    <p class="updated">Effective and last updated: 2026-08-15</p>
 
     <p>This policy describes the public ScanIt Android app and this ScanIt website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
 
@@ -38,7 +38,7 @@
     <p>Pages and PDFs are copied to ScanIt's app-private cache. The cache is bounded to at most eight scan directories and supplies the Result and Recent scans screens. Android may clear it. Removing an item from Recent removes that temporary working copy. When ScanIt can verify an exact saved output that it created, the confirmation dialog can also delete the selected PDF, Gallery images, or both.</p>
 
     <h3>Durable saved files</h3>
-    <p>According to your settings and actions, ScanIt can save images to Gallery and PDFs to Downloads or a folder selected through Android's folder picker. They remain until you delete them through ScanIt, Gallery, Files, or the selected-folder provider. Optional settings can delete the matching saved PDF or images after you choose a sharing app; both options are off by default. Uninstalling ScanIt does not remove saved files outside app-private storage.</p>
+    <p>According to your settings and actions, ScanIt can save images to Gallery or a folder selected through Android's folder picker and PDFs to Downloads or a selected folder. They remain until you delete them through ScanIt, Gallery, Files, or the selected-folder provider. Optional settings can delete the matching saved PDF or images after you choose a sharing app. PDF deletion is enabled on a fresh install and image deletion is disabled; both settings can be changed. Uninstalling ScanIt does not remove saved files outside app-private storage.</p>
 
     <h3>Settings, backup, and deletion</h3>
     <p>Settings are stored locally in app-private storage. Android backup and device-to-device transfer are disabled for ScanIt app data. Uninstalling the app removes its private settings and cache. It does not remove files saved outside the app-private area.</p>
@@ -46,7 +46,7 @@
     <h2>Google ML Kit Document Scanner</h2>
     <p>The scanner UI, models, and related resources are supplied through Google Play services. Google says document-scanner input and output are processed on-device and are not sent to Google servers. Google Play services may contact Google to download or update the scanner module, models, bug fixes, or compatibility information.</p>
 
-    <p>Optional text extraction and QR/barcode detection use bundled ML Kit models and run on-device. ScanIt does not upload document content or detected results to a maintainer-operated service. Google states that ML Kit collects device and app information, device or installation identifiers, performance metrics, API configuration, input/output size, feature version, event types, and error codes for diagnostics and usage analytics. Google states that this telemetry is encrypted in transit using HTTPS and is not transferred to third parties. ScanIt cannot disable or delete telemetry processed by Google Play services.</p>
+    <p>Optional text extraction and QR/barcode detection use ML Kit recognition models delivered by Google Play services and run on-device. A model may download before first use. ScanIt does not upload document content or detected results to a maintainer-operated service. Extracted text is written only to a document destination you select, and copied recognition results are placed on Android's clipboard with the sensitive-content flag. Google states that ML Kit collects device and app information, device or installation identifiers, performance metrics, API configuration, input/output size, feature version, event types, and error codes for diagnostics and usage analytics. Google states that this telemetry is encrypted in transit using HTTPS and is not transferred to third parties. ScanIt cannot disable or delete telemetry processed by Google Play services.</p>
 
     <p>See Google's current <a href="https://developers.google.com/ml-kit/terms">ML Kit Terms and Privacy information</a>, <a href="https://developers.google.com/ml-kit/android-data-disclosure">Android data disclosure</a>, and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 

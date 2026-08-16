@@ -5,16 +5,17 @@ Android release includes third-party components under their own licenses and
 terms.
 
 The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
-`1.2.5` on 2026-08-15. Its direct runtime dependencies are:
+`1.3.0` on 2026-08-15. Its direct runtime dependencies are:
 
 - Kotlin standard library 2.4.10.
 - AndroidX Activity Compose 1.13.0.
 - AndroidX Core KTX 1.18.0.
+- AndroidX ExifInterface 1.4.2.
 - AndroidX Compose Material 3 1.4.0 and Compose 1.11.4 modules selected by the Compose BOM 2026.06.01.
 - AndroidX Lifecycle ViewModel KTX 2.10.0.
 - Google Play services ML Kit Document Scanner 16.0.0 and its runtime dependencies.
-- Google ML Kit Text Recognition 16.0.1 and its runtime dependencies.
-- Google ML Kit Barcode Scanning 17.3.0 and its runtime dependencies.
+- Google Play services ML Kit Text Recognition 19.0.1 and its runtime dependencies.
+- Google Play services ML Kit Barcode Scanning 18.3.1 and its runtime dependencies.
 
 ## Apache License 2.0 components
 
@@ -36,10 +37,11 @@ the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms). Its
 scanner UI, models, and related resources are delivered through Google Play
 services. The public ScanIt build does not claim ownership of them.
 
-`com.google.mlkit:text-recognition:16.0.1` and
-`com.google.mlkit:barcode-scanning:17.3.0` bundle on-device models used by
-ScanIt's local text-extraction and QR/barcode Actions. These results remain on
-the device unless the user copies or shares them.
+`com.google.android.gms:play-services-mlkit-text-recognition:19.0.1` and
+`com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1` use
+on-device models delivered through Google Play services for ScanIt's local
+text-extraction and QR/barcode Actions. A model may download before first use.
+Results remain on the device unless the user copies or shares them.
 
 See also:
 

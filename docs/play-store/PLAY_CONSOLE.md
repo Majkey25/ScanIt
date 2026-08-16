@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `13` |
-| Version name | `1.2.5` |
+| Version code | `14` |
+| Version name | `1.3.0` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -55,12 +55,15 @@ the Play developer account.
 > Features:
 > - automatic document detection and capture
 > - crop, perspective correction, rotation, filters, shadow removal, and cleanup
-> - single-page and multi-page PDF and JPEG output
+> - single-page and multi-page PDF, original-image, high-quality JPEG, and lossless PNG output
 > - page thumbnails for browsing multi-page results
+> - a full-screen zoomable preview opened from the Result image
 > - Google review filters including Auto, Color, Grayscale, Black and white, and Shadows
 > - measured Original, 5 MB, 10 MB, 20 MB, and custom 1–500 MB PDF size goals
-> - per-document PDF size changes from File details without changing the saved default
-> - on-device text extraction across all pages and QR/barcode detection on the current page
+> - per-document PDF size and folder changes from File details without changing saved defaults
+> - per-document image size, format, and folder changes from File details
+> - image size options for Original, 3840 px, 2560 px, 1600 px, or custom 320–6000 px
+> - on-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
 > - PDF saving to Downloads or a folder you choose
@@ -75,7 +78,7 @@ the Play developer account.
 >
 > Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, ScanIt keeps the smallest readable result and shows its actual size.
 >
-> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner module and process limited diagnostic and usage telemetry.
+> The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner or recognition modules before first use and process limited diagnostic and usage telemetry.
 
 ## Czech listing
 
@@ -98,12 +101,15 @@ the Play developer account.
 > Funkce:
 > - automatická detekce a zachycení dokumentu
 > - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
-> - jednostránkový i vícestránkový výstup do PDF a JPEG
+> - jednostránkový i vícestránkový výstup do PDF, původních obrázků, kvalitního JPEG nebo bezeztrátového PNG
 > - náhledy stránek pro procházení vícestránkových výsledků
+> - celoobrazovkový náhled s přiblížením otevřený klepnutím na obrázek výsledku
 > - filtry Google pro Auto, Barvy, Odstíny šedi, Černobíle a Stíny
 > - měřené cíle velikosti PDF: Původní, 5 MB, 10 MB, 20 MB nebo vlastní cíl 1–500 MB
-> - změna cílové velikosti konkrétního PDF v detailech souboru bez změny uloženého výchozího nastavení
-> - místní rozpoznání textu ze všech stran a QR nebo čárových kódů na aktuální straně
+> - změna velikosti a složky konkrétního PDF v detailech souboru bez změny uložených výchozích nastavení
+> - změna velikosti, formátu a složky obrázků v detailech souboru
+> - velikost obrázku Původní, 3840 px, 2560 px, 1600 px nebo vlastní 320–6000 px
+> - místní rozpoznání latinského textu ze všech stran, výslovný export textu a rozpoznání QR nebo čárových kódů na aktuální straně
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
 > - ukládání PDF do Stažených souborů nebo zvolené složky
@@ -118,11 +124,36 @@ the Play developer account.
 >
 > Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, ScanIt ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
 >
-> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou stáhnout modul skeneru a zpracovávat omezené diagnostické a provozní údaje.
+> Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
+
+## Release notes — version 14 / 1.3.0
+
+Each block is below Google Play's 500-character per-language limit.
+
+### English (United States)
+
+> File details can now change PDF size and folder plus image size, format, and folder. Export exact Original images, high-quality JPEG, or lossless PNG. Tap a Result for full-screen zoom. Actions extract and export Latin-script text or detect QR/barcodes on-device; Google Play services may download the model before first use. Output replacement and clipboard handling are hardened.
+
+### Čeština
+
+> V detailech souboru lze změnit velikost a složku PDF i velikost, formát a složku obrázků. Exportujte přesný originál, kvalitní JPEG nebo bezeztrátové PNG. Klepnutím otevřete celoobrazovkový náhled. Akce místně rozpoznají text nebo načtou QR a čárové kódy; před prvním použitím mohou služby Google Play stáhnout model. Ukládání a kopírování bylo zabezpečeno.
+
+### Deutsch
+
+> In den Dateidetails lassen sich PDF-Größe und Ordner sowie Bildgröße, Format und Ordner ändern. Exportiere das exakte Original, hochwertiges JPEG oder verlustfreies PNG. Tippe für die Vollbild-Zoomansicht. Aktionen erkennen Text oder QR-/Barcodes lokal; Google Play-Dienste können das Modell vor der ersten Nutzung laden. Speicherung und Zwischenablage wurden abgesichert.
+
+### Español
+
+> Detalles del archivo permite cambiar el tamaño y la carpeta del PDF, además del tamaño, formato y carpeta de las imágenes. Exporta el original exacto, JPEG de alta calidad o PNG sin pérdida. Toca para ampliar a pantalla completa. Las acciones detectan texto o códigos QR y de barras en el dispositivo; Google Play puede descargar el modelo antes del primer uso. Se reforzó el guardado y copiado.
+
+### 简体中文
+
+> 文件详情现在可更改 PDF 的大小和文件夹，以及图片大小、格式和文件夹。可导出完全保留的原图、高质量 JPEG 或无损 PNG。点击结果可全屏缩放。本地操作可提取文字或识别二维码和条形码；首次使用前，Google Play 服务可能会下载模型。文件替换和剪贴板处理均已加强。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
-processing, donations, or any unfinished feature.
+processing, or any unfinished feature. The existing support link is optional
+and does not unlock app features.
 
 ## App Content worksheet
 
@@ -149,7 +180,7 @@ Reviewer note:
 
 - Does the app contain ads? **No**.
 - Advertising SDK present? **No**.
-- Donation or payment prompt in the app or Play listing? **No**.
+- Donation or payment prompt in the app or Play listing? **Yes: Settings contains an optional external Buy Me a Coffee support link. It does not unlock digital content or app features.**
 
 ### Target audience and content
 
@@ -198,8 +229,11 @@ again before submission.
 
 ### Data types to declare
 
-Conservative mapping for
-`com.google.android.gms:play-services-mlkit-document-scanner:16.0.0`:
+Conservative mapping for the resolved ML Kit runtime dependencies:
+
+- `com.google.android.gms:play-services-mlkit-document-scanner:16.0.0`
+- `com.google.android.gms:play-services-mlkit-text-recognition:19.0.1`
+- `com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1`
 
 | Play data type | Collected | Shared | Required | Ephemeral | Purpose |
 |---|---:|---:|---:|---:|---|
@@ -217,7 +251,7 @@ does not state that all metrics are processed only in memory.
 
 ### Data types not declared as collected by ScanIt
 
-- Scanned pages, imported document images, generated PDFs, and file names: processed and stored on-device; explicit user-directed sharing to another app is not developer collection.
+- Scanned pages, imported document images, generated PDFs, file names, and extracted text or code results: processed and stored on-device; explicit user-directed export or sharing to another app is not developer collection.
 - Email subject/message defaults and folder choices: local app settings only.
 - Contacts, location, payment information, health data, financial information, messages, audio, calendar, and browsing history: not accessed by ScanIt.
 
@@ -225,7 +259,7 @@ does not state that all metrics are processed only in memory.
 
 - App-private working copies: at most eight scan directories; Android may clear them; removing a Recent item removes its temporary working copy; uninstall removes the remaining app-private cache.
 - App settings: retained locally until changed, cleared, or the app is uninstalled; Android backup and transfer are disabled.
-- Gallery, Downloads, and selected-folder files: retained until the user deletes them through ScanIt or the corresponding storage provider. Optional default-off settings can delete the matching saved format after a sharing app is selected. Uninstall does not delete saved files outside app-private storage.
+- Gallery, Downloads, and selected-folder files: retained until the user deletes them through ScanIt or the corresponding storage provider. On a fresh install, PDF deletion after choosing a sharing app is enabled and image deletion is disabled; both settings are configurable. Uninstall does not delete saved files outside app-private storage.
 - External share/print destination: retention is controlled by the app or service selected by the user.
 - Google ML Kit telemetry: retention and deletion are controlled by Google under Google's policies, not by ScanIt.
 
@@ -251,7 +285,12 @@ Use the current official [Google Play preview-asset requirements](https://suppor
 - Screenshots must show the real current UI, use `12:12`, omit notifications, carrier identity, and battery percentage, and contain no private documents or third-party copyrighted sheet music.
 - Provide English and Czech alt text for every uploaded graphic.
 
-### Validated asset manifest
+### Asset manifest
+
+The files below pass dimension/format checks, but the Result and Recent UI
+changed materially in 1.3.0. Recapture and validate those workflow screenshots
+from the final artifact during Task 8 before uploading them; do not reuse an old
+screen as current UI evidence.
 
 - `assets/icon.png`: 512 × 512 RGBA PNG, no text or badge.
 - `assets/feature-graphic.png`: 1024 × 500 RGB PNG, no alpha.
@@ -283,13 +322,13 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 13, version `1.2.5`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 14, version `1.3.0`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
 - [x] In-app Privacy Policy link opens the Pages URL above.
 - [x] Pages root, Privacy, and Terms URLs return successfully over HTTPS.
-- [x] Listing text matches the device-tested feature set.
+- [ ] Listing text and refreshed screenshots match the final device-tested feature set.
 - [x] English and Czech short descriptions remain within 80 characters.
 - [x] Data Safety answers are rechecked against the exact runtime graph and current official guidance.
 - [x] Developer identity and public contact fields use verified Play account data.

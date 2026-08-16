@@ -1,6 +1,8 @@
 package com.majkeylab.scanit
 
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -11,11 +13,586 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RecentScanTest {
+    @Test
+    fun provisionalCreateMarkerIsBoundedAtomicAndAmbiguousRecoveryBlocksMutation() =
+        withShareRoot { root ->
+            val marker = provisionalCreate(returnedUri = null)
+
+            writeProvisionalOutputCreate(root, marker, pageCount = 2)
+
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Valid(marker),
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            var deleted = false
+            var cleared = false
+            val recovery =
+                reconcileProvisionalOutputCreate(
+                    marker = marker,
+                    metadata = metadata(),
+                    delete = {
+                        deleted = true
+                        OutputDeleteStatus.Deleted
+                    },
+                    clear = { cleared = true },
+                )
+
+            assertTrue(recovery.blocking)
+            assertEquals(R.string.output_create_cleanup_required, recovery.warnings.single().resourceId)
+            assertFalse(deleted)
+            assertFalse(cleared)
+            assertTrue(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).isFile)
+        }
+
+    @Test
+    fun nullOrThrowingProviderCreateRetainsExactAcknowledgableMarker() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+
+            assertThrows(IOException::class.java) {
+                createProviderOutputWithMarker<String>(
+                    beforeCreate = { writeProvisionalOutputCreate(root, marker, pageCount = 2) },
+                    create = { null },
+                    onCreated = {},
+                )
+            }
+            assertEquals(
+                UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId),
+                readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID),
+            )
+            clearProvisionalOutputCreate(root, marker, pageCount = 2)
+
+            assertThrows(IOException::class.java) {
+                createProviderOutputWithMarker<String>(
+                    beforeCreate = { writeProvisionalOutputCreate(root, marker, pageCount = 2) },
+                    create = { throw IOException("provider failed before return") },
+                    onCreated = {},
+                )
+            }
+            assertEquals(
+                UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId),
+                readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID),
+            )
+        }
+
+    @Test
+    fun unknownOutputAcknowledgementIsExactIdempotentAndNeverDeletesProviderData() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+            val exact = UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId)
+            writeProvisionalOutputCreate(root, marker, pageCount = 2)
+
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Stale,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact.copy(entryId = "123e4567-e89b-12d3-a456-426614174088"),
+                    pageCount = 2,
+                ),
+            )
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Stale,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact.copy(operationId = "123e4567-e89b-12d3-a456-426614174077"),
+                    pageCount = 2,
+                ),
+            )
+            assertTrue(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).isFile)
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Applied,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Absent,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertFalse(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).exists())
+        }
+
+    @Test
+    fun invalidUnknownMarkerWithExactEnvelopeCanBeAcknowledgedButClearFailureStaysBlocking() =
+        withShareRoot { root ->
+            val marker = provisionalCreate()
+            val exact = UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, marker.operationId)
+            writeProvisionalOutputCreate(root, marker, pageCount = 2)
+            val file = File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            file.writeText(
+                file.readText().replace(
+                    "\"page\":1",
+                    "\"page\":\"invalid\"",
+                ),
+            )
+
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            assertEquals(exact, readUnknownOutputCreateAcknowledgement(root, CACHE_ID, ENTRY_ID))
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Failed,
+                acknowledgeUnknownProvisionalOutput(
+                    root,
+                    exact,
+                    pageCount = 2,
+                    deleteMarker = { throw IOException("disk") },
+                ),
+            )
+            assertTrue(file.isFile)
+            assertEquals(
+                UnknownOutputAcknowledgementResult.Applied,
+                acknowledgeUnknownProvisionalOutput(root, exact, pageCount = 2),
+            )
+            assertFalse(file.exists())
+        }
+
+    @Test
+    fun reconciliationClearFailureRetainsBlockingWarningInsteadOfClosingCoreScan() {
+        val marker = provisionalCreate("content://media/external/images/media/9")
+        val result =
+            reconcileProvisionalOutputCreate(
+                marker = marker,
+                metadata = metadata(),
+                delete = { OutputDeleteStatus.Absent },
+                clear = { throw IOException("disk") },
+            )
+
+        assertTrue(result.blocking)
+        assertEquals(R.string.output_create_cleanup_required, result.warnings.single().resourceId)
+    }
+
+    @Test
+    fun invalidUnknownOutputMarkerDoesNotHideTheCoreCachedScan() =
+        withShareRoot { root ->
+            val directory = createEntry(root, CACHE_ID)
+            initializeOutputMetadata(directory, CACHE_ID, 1, 1L, ENTRY_ID)
+            val marker = provisionalCreate()
+            writeProvisionalOutputCreate(directory, marker, pageCount = 1)
+            val file = File(directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            file.writeText(file.readText().replace("\"returnedUri\":null", "\"returnedUri\":7"))
+
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(directory, CACHE_ID, ENTRY_ID, pageCount = 1),
+            )
+            assertEquals(CACHE_ID, requireNotNull(RecentScanCache(root).open(CACHE_ID)).baseName)
+        }
+
+    @Test
+    fun exactOrStagedProvisionalCreateRecoveryClearsOnlyAfterResolution() {
+        val exact = provisionalCreate(returnedUri = "content://media/external/images/media/9")
+        var deletes = 0
+        var clears = 0
+
+        val deleted =
+            reconcileProvisionalOutputCreate(
+                marker = exact,
+                metadata = metadata(),
+                delete = {
+                    deletes++
+                    OutputDeleteStatus.Absent
+                },
+                clear = { clears++ },
+            )
+        assertFalse(deleted.blocking)
+        assertEquals(1, deletes)
+        assertEquals(1, clears)
+
+        val staged =
+            exactImage(1, requireNotNull(exact.returnedUri), pending = true)
+                .copy(displayName = exact.displayName)
+        val journaled =
+            reconcileProvisionalOutputCreate(
+                marker = exact,
+                metadata = metadata().copy(stagedImages = listOf(staged), version = OUTPUT_METADATA_VERSION),
+                delete = {
+                    deletes++
+                    OutputDeleteStatus.Failed
+                },
+                clear = { clears++ },
+            )
+        assertFalse(journaled.blocking)
+        assertEquals(1, deletes)
+        assertEquals(2, clears)
+    }
+
+    @Test
+    fun provisionalCreateUriUpdateIsExactCasAndInvalidMarkerIsRetained() =
+        withShareRoot { root ->
+            val ambiguous = provisionalCreate(returnedUri = null)
+            writeProvisionalOutputCreate(root, ambiguous, pageCount = 2)
+            val exact =
+                updateProvisionalOutputCreateUri(
+                    root,
+                    ambiguous,
+                    "content://media/external/images/media/9",
+                    pageCount = 2,
+                )
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Valid(exact),
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            assertThrows(IOException::class.java) {
+                updateProvisionalOutputCreateUri(
+                    root,
+                    ambiguous,
+                    "content://media/external/images/media/10",
+                    pageCount = 2,
+                )
+            }
+            clearProvisionalOutputCreate(root, exact, pageCount = 2)
+
+            val marker = File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            marker.writeText("{}")
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            assertTrue(marker.isFile)
+        }
+
+    @Test
+    fun provisionalCreateCodecRejectsUnsafeUriWrongGenerationExtraFieldsAndOversize() =
+        withShareRoot { root ->
+            assertThrows(IOException::class.java) {
+                writeProvisionalOutputCreate(File(root, "."), provisionalCreate(), pageCount = 2)
+            }
+            assertThrows(IOException::class.java) {
+                writeProvisionalOutputCreate(
+                    root,
+                    provisionalCreate(returnedUri = "https://provider/image/9"),
+                    pageCount = 2,
+                )
+            }
+            assertFalse(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).exists())
+
+            val first = provisionalCreate()
+            writeProvisionalOutputCreate(root, first, pageCount = 2)
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(
+                    root,
+                    CACHE_ID,
+                    "123e4567-e89b-12d3-a456-426614174088",
+                    pageCount = 2,
+                ),
+            )
+            assertThrows(IOException::class.java) {
+                writeProvisionalOutputCreate(
+                    root,
+                    provisionalCreate(operationId = "123e4567-e89b-12d3-a456-426614174077").copy(page = 2),
+                    pageCount = 2,
+                )
+            }
+            val file = File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Valid(first),
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, 2),
+            )
+            file.writeText(file.readText().replace("\"version\":1", "\"version\":2"))
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            file.writeText(file.readText().replace("\"version\":2", "\"version\":1").dropLast(1) + ",\"extra\":true}")
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            file.writeBytes(ByteArray(8 * 1024 + 1))
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Invalid,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+            assertTrue(file.isFile)
+        }
+
+    @Test
+    fun provisionalCreateRecoveryRetainsFailureThenConvergesOnExactRetry() =
+        withShareRoot { root ->
+            val exact = provisionalCreate("content://media/external/images/media/9")
+            writeProvisionalOutputCreate(root, exact, pageCount = 2)
+            var attempt = 0
+
+            fun recover() =
+                reconcileProvisionalOutputCreate(
+                    exact,
+                    metadata(),
+                    delete = {
+                        attempt++
+                        if (attempt == 1) OutputDeleteStatus.Failed else OutputDeleteStatus.Absent
+                    },
+                    clear = { clearProvisionalOutputCreate(root, exact, pageCount = 2) },
+                )
+
+            assertTrue(recover().blocking)
+            assertTrue(File(root, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).isFile)
+            assertFalse(recover().blocking)
+            assertEquals(
+                ProvisionalOutputCreateReadResult.Absent,
+                readProvisionalOutputCreate(root, CACHE_ID, ENTRY_ID, pageCount = 2),
+            )
+        }
+
+    @Test
+    fun preparedImageShareUsesVerifiedBoundedPrivateCopiesAndExplicitCleanup() =
+        withShareRoot { root ->
+            val jpeg = byteArrayOf(1, 2, 3)
+            val png = byteArrayOf(4, 5, 6, 7)
+            val contents =
+                mapOf(
+                    "content://provider/image/1" to jpeg,
+                    "content://provider/image/2" to png,
+                )
+            val outputs =
+                listOf(
+                    savedImage(1, "content://provider/image/1", "image/jpeg", jpeg),
+                    savedImage(2, "content://provider/image/2", "image/png", png),
+                )
+
+            val prepared =
+                prepareImageShareCopies(
+                    shareRoot = root,
+                    outputs = outputs,
+                    open = { uri -> ByteArrayInputStream(requireNotNull(contents[uri])) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174099",
+                )
+
+            assertEquals("image/*", prepared.mimeType)
+            assertEquals(listOf("page-01.jpg", "page-02.png"), prepared.files.map(File::getName))
+            assertEquals(jpeg.toList(), prepared.files[0].readBytes().toList())
+            assertEquals(png.toList(), prepared.files[1].readBytes().toList())
+            assertTrue(prepared.files.all { it.canonicalFile.parentFile == prepared.directory })
+            assertTrue(cleanupPreparedImageShare(prepared))
+            assertFalse(prepared.directory.exists())
+        }
+
+    @Test
+    fun preparedImageShareSurvivesDurableSourceDeletion() =
+        withShareRoot { root ->
+            val bytes = byteArrayOf(8, 6, 7, 5, 3, 0, 9)
+            val durable = File(root, "durable.jpg").apply { writeBytes(bytes) }
+            val prepared =
+                prepareImageShareCopies(
+                    shareRoot = File(root, "private").apply { assertTrue(mkdir()) },
+                    outputs =
+                        listOf(
+                            savedImage(
+                                1,
+                                "content://provider/image/1",
+                                "image/jpeg",
+                                bytes,
+                            ),
+                        ),
+                    open = { FileInputStream(durable) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174094",
+                )
+
+            assertTrue(durable.delete())
+            assertEquals(bytes.toList(), prepared.files.single().readBytes().toList())
+            assertTrue(cleanupPreparedImageShare(prepared))
+        }
+
+    @Test
+    fun preparedImageShareValidationRejectsFilesOutsideItsPrivateDirectory() =
+        withShareRoot { root ->
+            val directory =
+                File(root, "${PREPARED_IMAGE_SHARE_PREFIX}123e4567-e89b-12d3-a456-426614174096")
+            assertTrue(directory.mkdir())
+            val outside = File(root, "outside.jpg").apply { writeBytes(byteArrayOf(1)) }
+
+            assertThrows(IOException::class.java) {
+                validatePreparedImageShare(
+                    PreparedImageShare(root, directory, listOf(outside), "image/jpeg"),
+                )
+            }
+        }
+
+    @Test
+    fun preparedImageShareValidationRejectsNonCanonicalPayloadDirectoryName() =
+        withShareRoot { root ->
+            val directory = File(root, "${PREPARED_IMAGE_SHARE_PREFIX}not-a-uuid")
+            assertTrue(directory.mkdir())
+            File(directory, ".lease").writeText("1")
+            val page = File(directory, "page-01.jpg").apply { writeBytes(byteArrayOf(1)) }
+
+            assertThrows(IOException::class.java) {
+                validatePreparedImageShare(
+                    PreparedImageShare(root, directory, listOf(page), "image/jpeg"),
+                )
+            }
+            assertFalse(
+                cleanupPreparedImageShare(
+                    PreparedImageShare(root, directory, listOf(page), "image/jpeg"),
+                ),
+            )
+            assertTrue(directory.isDirectory)
+        }
+
+    @Test
+    fun preparedImageShareRejectsUnboundedOrCancelledCopiesAndCleansScratch() =
+        withShareRoot { root ->
+            val oversized =
+                savedImage(
+                    page = 1,
+                    uri = "content://provider/image/large",
+                    mimeType = "image/jpeg",
+                    bytes = byteArrayOf(1),
+                    declaredLength = MAX_PREPARED_IMAGE_SHARE_BYTES + 1,
+                )
+            assertThrows(IOException::class.java) {
+                prepareImageShareCopies(
+                    shareRoot = root,
+                    outputs = listOf(oversized),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174098",
+                )
+            }
+
+            val cancellation = java.util.concurrent.CancellationException("cancelled")
+            assertSame(
+                cancellation,
+                assertThrows(java.util.concurrent.CancellationException::class.java) {
+                    prepareImageShareCopies(
+                        shareRoot = root,
+                        outputs = listOf(savedImage(1, "content://provider/image/1", "image/jpeg", byteArrayOf(1))),
+                        open = { ByteArrayInputStream(byteArrayOf(1)) },
+                        isCancelled = { throw cancellation },
+                        operationId = "123e4567-e89b-12d3-a456-426614174097",
+                    )
+                },
+            )
+            assertTrue(root.listFiles().orEmpty().none { it.name.startsWith(PREPARED_IMAGE_SHARE_PREFIX) })
+        }
+
+    @Test
+    fun preparedImageShareAllows64FreshPayloadsAndReclaimsOnlyAfter24Hours() =
+        withShareRoot { root ->
+            val output = savedImage(1, "content://provider/image/1", "image/jpeg", byteArrayOf(1))
+            repeat(8) { index ->
+                prepareImageShareCopies(
+                    root,
+                    listOf(output),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-${(426614174000L + index).toString().padStart(12, '0')}",
+                )
+            }
+            val ninth =
+                prepareImageShareCopies(
+                    root,
+                    listOf(output),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174099",
+                )
+            assertTrue(ninth.directory.isDirectory)
+            assertEquals(9, root.listFiles().orEmpty().count(File::isDirectory))
+            (8..62).forEach { index ->
+                prepareImageShareCopies(
+                    root,
+                    listOf(output),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-${(426614174000L + index).toString().padStart(12, '0')}",
+                )
+            }
+            assertThrows(IOException::class.java) {
+                prepareImageShareCopies(
+                    root,
+                    listOf(output),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174098",
+                )
+            }
+            assertEquals(64, root.listFiles().orEmpty().count(File::isDirectory))
+
+            val expired = requireNotNull(root.listFiles()).first()
+            val twentyFourHours = 24L * 60L * 60L * 1000L
+            assertTrue(expired.setLastModified(System.currentTimeMillis() - twentyFourHours - 1L))
+            val prepared =
+                prepareImageShareCopies(
+                    root,
+                    listOf(output),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174098",
+                )
+            assertFalse(expired.exists())
+            assertTrue(prepared.directory.isDirectory)
+            assertEquals(64, root.listFiles().orEmpty().count(File::isDirectory))
+        }
+
+    @Test
+    fun preparedImageShareFailsClosedOnMaliciousPrefixedEntry() =
+        withShareRoot { root ->
+            val malicious = File(root, "${PREPARED_IMAGE_SHARE_PREFIX}malicious")
+            malicious.writeBytes(byteArrayOf(1))
+
+            assertThrows(IOException::class.java) {
+                prepareImageShareCopies(
+                    root,
+                    listOf(savedImage(1, "content://provider/image/1", "image/jpeg", byteArrayOf(1))),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174095",
+                )
+            }
+            assertTrue(malicious.isFile)
+        }
+
+    @Test
+    fun preparedImageShareRootEnforcesAggregateReservedBytesWithoutDeletingPayloads() =
+        withShareRoot { root ->
+            repeat(2) { index ->
+                val directory =
+                    File(
+                        root,
+                        "${PREPARED_IMAGE_SHARE_PREFIX}123e4567-e89b-12d3-a456-42661417409$index",
+                    )
+                assertTrue(directory.mkdir())
+                File(directory, ".lease").writeText(MAX_PREPARED_IMAGE_SHARE_BYTES.toString())
+            }
+
+            assertThrows(IOException::class.java) {
+                prepareImageShareCopies(
+                    root,
+                    listOf(savedImage(1, "content://provider/image/1", "image/jpeg", byteArrayOf(1))),
+                    open = { ByteArrayInputStream(byteArrayOf(1)) },
+                    operationId = "123e4567-e89b-12d3-a456-426614174095",
+                )
+            }
+            assertEquals(2, root.listFiles().orEmpty().count(File::isDirectory))
+        }
+
+    @Test
+    fun replacementMetadataUpdateRequiresTheExactCacheGeneration() {
+        val current =
+            OutputMetadata(
+                entryId = "123e4567-e89b-12d3-a456-426614174000",
+                cacheId = "Scan_exact_generation",
+                createdAtEpochMs = 1L,
+            )
+        val updated = current.copy(version = OUTPUT_METADATA_VERSION)
+
+        assertEquals(updated, exactReplacementMetadataUpdate(current, current, updated))
+        assertThrows(IOException::class.java) {
+            exactReplacementMetadataUpdate(
+                current.copy(entryId = "00000000-0000-0000-0000-000000000002"),
+                current,
+                updated,
+            )
+        }
+        assertThrows(IOException::class.java) {
+            exactReplacementMetadataUpdate(
+                current.copy(cacheId = "Scan_reused_cache_id"),
+                current,
+                updated,
+            )
+        }
+    }
+
     @Test
     fun sourcePageFileNamesAreStableAndRejectInvalidInput() {
         val id = "Scan_2026-08-09_10-20-30"
@@ -346,7 +923,7 @@ class RecentScanTest {
     @Test
     fun pruningKeepsProtectedEntryAndNewestUnprotectedEntries() = withShareRoot { root ->
         (1..10).forEach { index ->
-            createEntry(root, "Scan_$index").apply { assertTrue(setLastModified(index.toLong())) }
+            createManagedEntry(root, "Scan_$index", index.toLong())
         }
 
         val visible =
@@ -482,8 +1059,7 @@ class RecentScanTest {
             val oldIds =
                 (1..8).map { index ->
                     "Scan_old_$index".also { id ->
-                        createEntry(root, id).apply {
-                            assertTrue(setLastModified(index.toLong()))
+                        createManagedEntry(root, id, index.toLong()).apply {
                             if (index == 1) {
                                 writeLegacyAppearanceMetadata(this, lineageId)
                             }
@@ -658,7 +1234,7 @@ class RecentScanTest {
             val oldIds =
                 (1..8).map { index ->
                     "Scan_old_$index".also { id ->
-                        createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                        createManagedEntry(root, id, index.toLong())
                     }
                 }
             val candidateId = "Scan_initial"
@@ -714,7 +1290,7 @@ class RecentScanTest {
         }
         assertTrue(ownedDirectory.setLastModified(1L))
         val disposableId = "Scan_disposable"
-        createEntry(root, disposableId).apply { assertTrue(setLastModified(2L)) }
+        createManagedEntry(root, disposableId, 2L)
         val candidateId = "Scan_initial"
         val pending =
             createEntry(root, ".pending-initial", fileBaseName = candidateId).apply {
@@ -942,8 +1518,8 @@ class RecentScanTest {
             writeBytes(byteArrayOf(1, 2, 3))
         }
         try {
-            createEntry(root, "Scan_old").apply { assertTrue(setLastModified(1L)) }
-            createEntry(root, "Scan_new").apply { assertTrue(setLastModified(2L)) }
+            createManagedEntry(root, "Scan_old", 1L)
+            createManagedEntry(root, "Scan_new", 2L)
 
             listRecentScansInRoot(root, maxEntries = 1)
 
@@ -976,7 +1552,7 @@ class RecentScanTest {
             )
         }
         assertTrue(pendingDirectory.setLastModified(1L))
-        createEntry(root, "Scan_newer").apply { assertTrue(setLastModified(2L)) }
+        createManagedEntry(root, "Scan_newer", 2L)
 
         val listed = listRecentScansInRoot(root, maxEntries = 1)
 
@@ -985,10 +1561,135 @@ class RecentScanTest {
     }
 
     @Test
+    fun ninthPublishKeepsEveryUnresolvedDurableState() {
+        val states =
+            listOf(
+                "staged_pdf" to DurableState.StagedPdf,
+                "staged_images" to DurableState.StagedImages,
+                "retired_pdf" to DurableState.RetiredPdf,
+                "retired_images" to DurableState.RetiredImages,
+                "pending_pdf" to DurableState.PendingPdf,
+                "pending_images" to DurableState.PendingImages,
+                "marker" to DurableState.Marker,
+                "missing" to DurableState.Missing,
+                "invalid" to DurableState.Invalid,
+                "oversize" to DurableState.Oversize,
+                "read_failure" to DurableState.ReadFailure,
+            )
+        states.forEachIndexed { stateIndex, (label, state) ->
+            withShareRoot { root ->
+                val protectedId = "Scan_protected_$label"
+                val protected = createManagedEntry(root, protectedId, 1L)
+                applyDurableState(protected, protectedId, state)
+                assertTrue(protected.setLastModified(1L))
+                (2..8).forEach { index ->
+                    createManagedEntry(root, "Scan_clean_$index", index.toLong())
+                }
+                val candidateId = "Scan_candidate_$stateIndex"
+                val pending = createEntry(root, ".pending-$stateIndex", fileBaseName = candidateId)
+                val cache =
+                    RecentScanCache(
+                        root,
+                        readOutputMetadata = failingMetadataReader(protectedId, state),
+                    )
+
+                cache.publish(pending, File(root, candidateId), maxEntries = 8)
+
+                assertTrue("$label was pruned", protected.isDirectory)
+                assertTrue(File(root, candidateId).isDirectory)
+                assertEquals(
+                    8,
+                    root.listFiles()!!.count { it.isDirectory && !it.name.startsWith('.') },
+                )
+            }
+        }
+    }
+
+    @Test
+    fun checkpointActivationKeepsParentWithEveryUnresolvedDurableState() {
+        val states =
+            listOf(
+                DurableState.StagedPdf,
+                DurableState.StagedImages,
+                DurableState.RetiredPdf,
+                DurableState.RetiredImages,
+                DurableState.PendingPdf,
+                DurableState.PendingImages,
+                DurableState.Marker,
+                DurableState.Missing,
+                DurableState.Invalid,
+                DurableState.Oversize,
+                DurableState.ReadFailure,
+            )
+        states.forEachIndexed { index, state ->
+            withShareRoot { root ->
+                val lineageId = "Scan_lineage_$index"
+                val parentId = "Scan_parent_$index"
+                val parentEntryId = "00000000-0000-0000-0000-${(index + 1).toString().padStart(12, '0')}"
+                val parent =
+                    createEntry(root, parentId, sourcePageCount = 1).apply {
+                        initializeOutputMetadata(this, parentId, 1, 1L, parentEntryId)
+                        writeLegacyAppearanceMetadata(this, lineageId)
+                    }
+                applyDurableState(parent, parentId, state)
+                val candidateId = "Scan_candidate_$index"
+                val pending =
+                    createEntry(
+                        root,
+                        ".pending-candidate-$index",
+                        sourcePageCount = 1,
+                        fileBaseName = candidateId,
+                    ).apply {
+                        writeScanAppearanceMetadata(
+                            this,
+                            ScanAppearanceSettings(),
+                            lineageCacheId = lineageId,
+                            parentCacheId = parentId,
+                            parentEntryId = parentEntryId,
+                        )
+                    }
+                val cache =
+                    RecentScanCache(
+                        root,
+                        readOutputMetadata = failingMetadataReader(parentId, state),
+                    )
+                cache.publishProvisional(pending, File(root, candidateId))
+
+                val activated = cache.activateCheckpointProvisional(candidateId)
+
+                assertEquals(candidateId, activated.baseName)
+                assertFalse(cache.isProvisional(candidateId))
+                assertTrue("$state parent was removed", parent.isDirectory)
+            }
+        }
+    }
+
+    @Test
+    fun automaticPruneKeepsResolvedActiveRefPolicyUnchanged() = withShareRoot { root ->
+        val resolvedId = "Scan_resolved"
+        val resolved = createManagedEntry(root, resolvedId, 1L)
+        rewriteOutputMetadata(
+            resolved,
+            resolvedId,
+            checkNotNull(readOutputMetadata(resolved, resolvedId, 1)).entryId,
+            1,
+        ) {
+            it.copy(pdf = exactPdf("content://media/external/downloads/1"))
+        }
+        assertTrue(resolved.setLastModified(1L))
+        createManagedEntry(root, "Scan_newer", 2L)
+
+        val listed = listRecentScansInRoot(root, maxEntries = 1)
+
+        assertEquals(listOf("Scan_newer"), listed.map(RecentScan::cacheId))
+        assertFalse(resolved.exists())
+    }
+
+    @Test
     fun pruneFailureRestoresOldHistoryAndRollsBackPublishedEntry() = withShareRoot { root ->
         val oldIds = (1..3).map { index ->
             "Scan_old_$index".also { id ->
-                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                createManagedEntry(root, id, index.toLong())
             }
         }
         val finalId = "Scan_new"
@@ -1096,7 +1797,7 @@ class RecentScanTest {
     fun failedRollbackRemainsRecoverableAndMaintenanceRestoresOldEntry() = withShareRoot { root ->
         val oldIds = (1..3).map { index ->
             "Scan_old_$index".also { id ->
-                createEntry(root, id).apply { assertTrue(setLastModified(index.toLong())) }
+                createManagedEntry(root, id, index.toLong())
             }
         }
         val finalId = "Scan_new"
@@ -1348,6 +2049,123 @@ class RecentScanTest {
             }
         }
 
+    private enum class DurableState {
+        StagedPdf,
+        StagedImages,
+        RetiredPdf,
+        RetiredImages,
+        PendingPdf,
+        PendingImages,
+        Marker,
+        Missing,
+        Invalid,
+        Oversize,
+        ReadFailure,
+    }
+
+    private fun createManagedEntry(root: File, cacheId: String, createdAt: Long): File =
+        createEntry(root, cacheId).apply {
+            initializeOutputMetadata(this, cacheId, 1, createdAt)
+            assertTrue(setLastModified(createdAt))
+        }
+
+    private fun applyDurableState(directory: File, cacheId: String, state: DurableState) {
+        val metadata = readOutputMetadata(directory, cacheId, 1)
+        when (state) {
+            DurableState.StagedPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        stagedPdf = exactPdf("content://media/external/downloads/staged"),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.StagedImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        stagedImages =
+                            listOf(exactImage(1, "content://media/external/images/media/11", false)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.RetiredPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        retiredPdf = exactPdf("content://media/external/downloads/retired"),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.RetiredImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        retiredImages =
+                            listOf(exactImage(1, "content://media/external/images/media/12", false)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.PendingPdf ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        pdf = exactPdf("content://media/external/downloads/pending", pending = true),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.PendingImages ->
+                rewriteOutputMetadata(directory, cacheId, checkNotNull(metadata).entryId, 1) {
+                    it.copy(
+                        images =
+                            listOf(exactImage(1, "content://media/external/images/media/13", true)),
+                        version = OUTPUT_METADATA_VERSION,
+                    )
+                }
+            DurableState.Marker ->
+                writeProvisionalOutputCreate(
+                    directory,
+                    ProvisionalOutputCreate(
+                        operationId = "123e4567-e89b-12d3-a456-426614174096",
+                        cacheId = cacheId,
+                        entryId = checkNotNull(metadata).entryId,
+                        kind = ProvisionalOutputKind.Image,
+                        page = 1,
+                        provider = ProvisionalOutputProvider.MediaStore,
+                        displayName = "page-01.jpg",
+                        mimeType = "image/jpeg",
+                        treeUri = null,
+                        returnedUri = null,
+                    ),
+                    pageCount = 1,
+                )
+            DurableState.Missing -> assertTrue(File(directory, OUTPUT_METADATA_FILE_NAME).delete())
+            DurableState.Invalid -> File(directory, OUTPUT_METADATA_FILE_NAME).writeText("{}")
+            DurableState.Oversize ->
+                File(directory, OUTPUT_METADATA_FILE_NAME)
+                    .writeBytes(ByteArray(MAX_OUTPUT_METADATA_BYTES + 1) { 1 })
+            DurableState.ReadFailure -> Unit
+        }
+    }
+
+    private fun failingMetadataReader(
+        cacheId: String,
+        state: DurableState,
+    ): (File, String, Int) -> OutputMetadataReadResult = { directory, actualCacheId, pageCount ->
+        if (state == DurableState.ReadFailure && actualCacheId == cacheId) {
+            OutputMetadataReadResult.Failed
+        } else {
+            readOutputMetadataResult(directory, actualCacheId, pageCount)
+        }
+    }
+
+    private fun exactPdf(uri: String, pending: Boolean = false) =
+        PdfOutputRef(
+            uri = uri,
+            treeUri = null,
+            displayName = "scan.pdf",
+            mimeType = "application/pdf",
+            ownerPackageName = "com.majkeylab.scanit.internal",
+            byteLength = 1L,
+            sha256 = "00".repeat(32),
+            pending = pending,
+        )
+
     private fun writeLegacyAppearanceMetadata(
         directory: File,
         lineageCacheId: String,
@@ -1364,6 +2182,62 @@ class RecentScanTest {
         )
     }
 
+    private fun provisionalCreate(
+        returnedUri: String? = null,
+        operationId: String = "123e4567-e89b-12d3-a456-426614174096",
+    ) =
+        ProvisionalOutputCreate(
+            operationId = operationId,
+            cacheId = CACHE_ID,
+            entryId = ENTRY_ID,
+            kind = ProvisionalOutputKind.Image,
+            page = 1,
+            provider = ProvisionalOutputProvider.MediaStore,
+            displayName = "page-01.jpg",
+            mimeType = "image/jpeg",
+            treeUri = null,
+            returnedUri = returnedUri,
+        )
+
+    private fun metadata() =
+        OutputMetadata(
+            entryId = ENTRY_ID,
+            cacheId = CACHE_ID,
+            createdAtEpochMs = 1L,
+        )
+
+    private fun exactImage(page: Int, uri: String, pending: Boolean) =
+        ImageOutputRef(
+            page = page,
+            uri = uri,
+            displayName = "page-01.jpg",
+            mimeType = "image/jpeg",
+            ownerPackageName = "com.majkeylab.scanit.internal",
+            byteLength = 1L,
+            sha256 = "00".repeat(32),
+            pending = pending,
+            width = 1,
+            height = 1,
+            format = ImageExportFormat.Jpeg,
+        )
+
+    private fun savedImage(
+        page: Int,
+        uri: String,
+        mimeType: String,
+        bytes: ByteArray,
+        declaredLength: Long = bytes.size.toLong(),
+    ): PreparedImageSource {
+        val fingerprint = readOutputFingerprint(ByteArrayInputStream(bytes), bytes.size.toLong())
+        return PreparedImageSource(
+            page = page,
+            uri = uri,
+            mimeType = mimeType,
+            byteLength = declaredLength,
+            sha256 = fingerprint.sha256,
+        )
+    }
+
     private fun withShareRoot(block: (File) -> Unit) {
         val root = Files.createTempDirectory("recent-scans").toFile()
         try {
@@ -1371,6 +2245,11 @@ class RecentScanTest {
         } finally {
             assertTrue(root.deleteRecursively())
         }
+    }
+
+    private companion object {
+        const val CACHE_ID = "Scan_marker"
+        const val ENTRY_ID = "123e4567-e89b-12d3-a456-426614174000"
     }
 
 }
