@@ -78,6 +78,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -664,16 +665,17 @@ private fun ResultScreen(
         stackResultActions(configuration.fontScale, availableWidthDp)
     val pagerState =
         rememberPagerState(initialPage = selectedPageIndex) { pageCount }
+    val currentSelectedPageIndex by rememberUpdatedState(selectedPageIndex)
     LaunchedEffect(selectedPageIndex) {
         if (pagerState.currentPage != selectedPageIndex) {
             pagerState.scrollToPage(selectedPageIndex)
         }
     }
-    LaunchedEffect(pagerState, actionsEnabled, selectedPageIndex) {
+    LaunchedEffect(pagerState, actionsEnabled) {
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                if (actionsEnabled && page != selectedPageIndex) onSelectPage(page)
+                if (actionsEnabled && page != currentSelectedPageIndex) onSelectPage(page)
             }
     }
     val onResultEntryAction: (ResultEntryAction) -> Unit = { action ->
