@@ -14,7 +14,7 @@ internal const val MAX_SCANNER_V2_MANIFEST_BYTES = 64 * 1024
 internal const val SCANNER_V2_MANIFEST_NAME = "session.json"
 internal const val SCANNER_V2_MANIFEST_TEMP_NAME = ".session.json.tmp"
 internal const val SCANNER_V2_SESSION_RETENTION_MILLIS = 24L * 60 * 60 * 1000
-private const val SCANNER_V2_MANIFEST_VERSION = 1
+private const val SCANNER_V2_MANIFEST_VERSION = 3
 private const val SCANNER_V2_SESSION_PREFIX = "session-"
 private val SAFE_FILTER_ID = Regex("[a-z0-9][a-z0-9._-]{0,79}")
 
@@ -44,12 +44,28 @@ internal data class ScannerV2Manifest private constructor(
     val sessionId: String,
     val state: ScannerSessionState,
     val pages: List<ScannerV2PageRecord>,
+    val retiredPages: List<ScannerV2PageRecord>,
+    val pendingCaptureId: PageId?,
     val updatedAtMillis: Long,
 ) {
     fun withUpdatedAt(updatedAtMillis: Long): ScannerV2Manifest = create(
         sessionId = sessionId,
         state = state,
         pages = pages,
+        retiredPages = retiredPages,
+        pendingCaptureId = pendingCaptureId,
+        updatedAtMillis = updatedAtMillis,
+    )
+
+    fun withPendingCapture(
+        pageId: PageId?,
+        updatedAtMillis: Long = this.updatedAtMillis,
+    ): ScannerV2Manifest = create(
+        sessionId = sessionId,
+        state = state,
+        pages = pages,
+        retiredPages = retiredPages,
+        pendingCaptureId = pageId,
         updatedAtMillis = updatedAtMillis,
     )
 
@@ -58,18 +74,32 @@ internal data class ScannerV2Manifest private constructor(
             sessionId: String,
             state: ScannerSessionState,
             pages: List<ScannerV2PageRecord>,
+            retiredPages: List<ScannerV2PageRecord> = emptyList(),
+            pendingCaptureId: PageId? = null,
             updatedAtMillis: Long,
         ): ScannerV2Manifest {
             require(isCanonicalUuid(sessionId)) { "Scanner session id is invalid" }
             require(updatedAtMillis > 0) { "Scanner session timestamp is invalid" }
             require(pages.size <= MAX_SCAN_PAGES) { "Scanner page limit exceeded" }
+            require(retiredPages.size <= MAX_SCAN_PAGES) { "Scanner retired page limit exceeded" }
             require(pages.map { it.pageId } == state.pages.map { it.id }) {
                 "Scanner page records do not match session order"
+            }
+            require((pages + retiredPages).map { it.pageId }.toSet().size == pages.size + retiredPages.size) {
+                "Scanner active and retired pages overlap"
+            }
+            require(pendingCaptureId == null || state.stage == ScannerSessionStage.Capturing) {
+                "Pending capture requires the camera stage"
+            }
+            require(pendingCaptureId == null || pages.none { it.pageId == pendingCaptureId }) {
+                "Pending capture duplicates a saved page"
             }
             return ScannerV2Manifest(
                 sessionId = sessionId,
                 state = state,
                 pages = pages.toList(),
+                retiredPages = retiredPages.toList(),
+                pendingCaptureId = pendingCaptureId,
                 updatedAtMillis = updatedAtMillis,
             )
         }
@@ -80,6 +110,8 @@ internal fun encodeScannerV2Manifest(manifest: ScannerV2Manifest): ByteArray {
     val state = manifest.state
     val pages = JSONArray()
     manifest.pages.forEach { record -> pages.put(record.toJson()) }
+    val retiredPages = JSONArray()
+    manifest.retiredPages.forEach { record -> retiredPages.put(record.toJson()) }
     return JSONObject()
         .put("version", SCANNER_V2_MANIFEST_VERSION)
         .put("sessionId", manifest.sessionId)
@@ -87,8 +119,10 @@ internal fun encodeScannerV2Manifest(manifest: ScannerV2Manifest): ByteArray {
         .put("stage", state.stage.name)
         .put("selectedIndex", state.selectedIndex ?: JSONObject.NULL)
         .put("pendingReplacementIndex", state.pendingReplacementIndex ?: JSONObject.NULL)
+        .put("pendingCaptureId", manifest.pendingCaptureId?.value ?: JSONObject.NULL)
         .put("updatedAtMillis", manifest.updatedAtMillis)
         .put("pages", pages)
+        .put("retiredPages", retiredPages)
         .toString()
         .toByteArray(StandardCharsets.UTF_8)
         .also { require(it.size in 1..MAX_SCANNER_V2_MANIFEST_BYTES) { "Scanner manifest is too large" } }
@@ -106,12 +140,21 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
         val stage = value.strictEnum<ScannerSessionStage>("stage") ?: return null
         val selectedIndex = value.strictOptionalInt("selectedIndex") ?: return null
         val pendingReplacement = value.strictOptionalInt("pendingReplacementIndex") ?: return null
+        val pendingCaptureRaw = value.strictOptionalString("pendingCaptureId") ?: return null
+        val pendingCaptureId = pendingCaptureRaw.value?.let { PageId.parse(it) }
         val updatedAt = value.strictLong("updatedAtMillis") ?: return null
         val array = value.opt("pages") as? JSONArray ?: return null
         if (array.length() > MAX_SCAN_PAGES) return null
         val pages = buildList(array.length()) {
             repeat(array.length()) { index ->
                 add(decodePageRecord(array.opt(index) as? JSONObject ?: return null) ?: return null)
+            }
+        }
+        val retiredArray = value.opt("retiredPages") as? JSONArray ?: return null
+        if (retiredArray.length() > MAX_SCAN_PAGES) return null
+        val retiredPages = buildList(retiredArray.length()) {
+            repeat(retiredArray.length()) { index ->
+                add(decodePageRecord(retiredArray.opt(index) as? JSONObject ?: return null) ?: return null)
             }
         }
         val state = ScannerSessionState.restore(
@@ -121,7 +164,7 @@ internal fun decodeScannerV2Manifest(bytes: ByteArray): ScannerV2Manifest? {
             stage = stage,
             pendingReplacementIndex = pendingReplacement.value,
         )
-        ScannerV2Manifest.create(sessionId, state, pages, updatedAt)
+        ScannerV2Manifest.create(sessionId, state, pages, retiredPages, pendingCaptureId, updatedAt)
     } catch (_: Exception) {
         null
     }
@@ -166,6 +209,7 @@ internal class ScannerV2Store(
         val current = readManifest(directory)
         if (current != expected) throw IOException("Scanner session changed before update")
         verifyPageFiles(directory, replacement.pages)
+        verifyRetiredPageFiles(directory, replacement.retiredPages)
         writeManifest(directory, replacement, expected, move)
     }
 
@@ -174,7 +218,9 @@ internal class ScannerV2Store(
         if (directories.size > 1) throw IOException("Multiple scanner sessions require manual recovery")
         val directory = directories.singleOrNull() ?: return null
         val manifest = readManifest(requireSessionDirectory(directory.name.removePrefix(SCANNER_V2_SESSION_PREFIX)))
+        reconcilePageInventory(directory, manifest)
         verifyPageFiles(directory, manifest.pages)
+        verifyRetiredPageFiles(directory, manifest.retiredPages)
         return manifest
     }
 
@@ -206,6 +252,48 @@ internal class ScannerV2Store(
         return removed
     }
 
+    fun deleteCancelled(manifest: ScannerV2Manifest): Boolean {
+        require(manifest.state.stage == ScannerSessionStage.Cancelled) {
+            "Only a cancelled scanner session can be deleted"
+        }
+        val directory = requireSessionDirectory(manifest.sessionId)
+        if (readManifest(directory) != manifest) throw IOException("Scanner session changed before deletion")
+        return deleteExactSession(directory, manifest)
+    }
+
+    fun deletePendingCaptureFiles(manifest: ScannerV2Manifest): Boolean {
+        val pageId = requireNotNull(manifest.pendingCaptureId) { "Scanner capture is not pending" }
+        val directory = requireSessionDirectory(manifest.sessionId)
+        if (readManifest(directory) != manifest) throw IOException("Scanner session changed before capture cleanup")
+        val files = listOf(captureFile(manifest.sessionId, pageId), sourceFile(manifest.sessionId, pageId))
+        if (files.any { it.exists() && (!it.isFile || it.canonicalFile != it) }) return false
+        return files.all { !it.exists() || it.delete() }
+    }
+
+    fun reconcileRetiredPages(manifest: ScannerV2Manifest): ScannerV2Manifest {
+        if (manifest.retiredPages.isEmpty()) return manifest
+        val directory = requireSessionDirectory(manifest.sessionId)
+        if (readManifest(directory) != manifest) throw IOException("Scanner session changed before page cleanup")
+        verifyRetiredPageFiles(directory, manifest.retiredPages)
+        manifest.retiredPages.forEach { page ->
+            val files = buildList {
+                add(sourceFile(manifest.sessionId, page.pageId))
+                if (page.renderedFingerprint != null) add(renderedFile(manifest.sessionId, page.pageId))
+            }
+            if (files.any { it.exists() && !it.delete() }) return manifest
+        }
+        val cleaned = ScannerV2Manifest.create(
+            sessionId = manifest.sessionId,
+            state = manifest.state,
+            pages = manifest.pages,
+            retiredPages = emptyList(),
+            pendingCaptureId = manifest.pendingCaptureId,
+            updatedAtMillis = manifest.updatedAtMillis,
+        )
+        update(manifest, cleaned)
+        return cleaned
+    }
+
     fun sessionDirectory(sessionId: String): File {
         require(isCanonicalUuid(sessionId)) { "Scanner session id is invalid" }
         val directory = File(root, "$SCANNER_V2_SESSION_PREFIX$sessionId").absoluteFile
@@ -220,6 +308,8 @@ internal class ScannerV2Store(
     fun sourceFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "source", "jpg")
 
     fun renderedFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, "render", "jpg")
+
+    fun captureFile(sessionId: String, pageId: PageId): File = pageFile(sessionId, pageId, ".capture", "jpg")
 
     private fun pageFile(sessionId: String, pageId: PageId, prefix: String, extension: String): File {
         val directory = requireSessionDirectory(sessionId)
@@ -296,6 +386,47 @@ internal class ScannerV2Store(
         }
     }
 
+    private fun verifyRetiredPageFiles(directory: File, pages: List<ScannerV2PageRecord>) {
+        pages.forEach { page ->
+            File(directory, "source-${page.pageId.value}.jpg").takeIf(File::exists)?.let { source ->
+                requireFingerprint(source, page.sourceFingerprint)
+            }
+            page.renderedFingerprint?.let { fingerprint ->
+                File(directory, "render-${page.pageId.value}.jpg").takeIf(File::exists)?.let { rendered ->
+                    requireFingerprint(rendered, fingerprint)
+                }
+            }
+        }
+    }
+
+    private fun reconcilePageInventory(directory: File, manifest: ScannerV2Manifest) {
+        val expectedNames = buildSet {
+            add(SCANNER_V2_MANIFEST_NAME)
+            manifest.pages.forEach { page ->
+                add("source-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+            }
+            manifest.retiredPages.forEach { page ->
+                add("source-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+            }
+            manifest.pendingCaptureId?.let { pageId ->
+                add(".capture-${pageId.value}.jpg")
+                add("source-${pageId.value}.jpg")
+            }
+        }
+        manifest.pages.filter { it.renderedFingerprint == null }.forEach { page ->
+            val unpublished = File(directory, "render-${page.pageId.value}.jpg")
+            if (unpublished.exists() && (!unpublished.isFile || unpublished.canonicalFile != unpublished || !unpublished.delete())) {
+                throw IOException("Incomplete scanner render could not be removed")
+            }
+        }
+        val children = directory.listFiles() ?: throw IOException("Scanner session inventory is unavailable")
+        if (children.any { it.name !in expectedNames || !it.isFile || it.canonicalFile != it }) {
+            throw IOException("Scanner session contains an unknown file")
+        }
+    }
+
     private fun requireFingerprint(file: File, expected: OutputFingerprint) {
         if (!file.isFile || file.canonicalFile != file || file.parentFile?.parentFile != root) {
             throw IOException("Scanner page file is unavailable")
@@ -312,6 +443,10 @@ internal class ScannerV2Store(
         val expectedNames = buildSet {
             add(SCANNER_V2_MANIFEST_NAME)
             manifest.pages.forEach { page ->
+                add("source-${page.pageId.value}.jpg")
+                if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
+            }
+            manifest.retiredPages.forEach { page ->
                 add("source-${page.pageId.value}.jpg")
                 if (page.renderedFingerprint != null) add("render-${page.pageId.value}.jpg")
             }
@@ -429,8 +564,10 @@ private val MANIFEST_KEYS = setOf(
     "stage",
     "selectedIndex",
     "pendingReplacementIndex",
+    "pendingCaptureId",
     "updatedAtMillis",
     "pages",
+    "retiredPages",
 )
 
 private val PAGE_KEYS = setOf(

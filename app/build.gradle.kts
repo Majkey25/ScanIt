@@ -121,6 +121,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
+    "v2testImplementation"("androidx.camera:camera-camera2:1.6.1")
+    "v2testImplementation"("androidx.camera:camera-compose:1.6.1")
+    "v2testImplementation"("androidx.camera:camera-lifecycle:1.6.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
 }

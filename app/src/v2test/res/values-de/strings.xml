@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScanIt v2 Test</string>
+    <string name="v2_cancel">Abbrechen</string>
+    <string name="v2_capture_title">Scannen</string>
+    <string name="v2_allow_camera">Kamera erlauben</string>
+    <string name="v2_capture_button">Scannen</string>
+    <string name="v2_discard_interrupted_capture">Unterbrochenes Foto verwerfen</string>
+    <string name="v2_review_title">Prüfen</string>
+    <string name="v2_crop_title">Ecken anpassen</string>
+    <string name="v2_page_count">%1$d von %2$d</string>
+    <string name="v2_rotate">Drehen</string>
+    <string name="v2_keep_page">Seite übernehmen</string>
+    <string name="v2_add_page">Seite hinzufügen</string>
+    <string name="v2_retake">Neu aufnehmen</string>
+    <string name="v2_delete">Löschen</string>
+    <string name="v2_move_left">Nach links</string>
+    <string name="v2_move_right">Nach rechts</string>
+    <string name="v2_finish">Weiter</string>
+    <string name="v2_page_preview">Vorschau der gescannten Seite</string>
+    <string name="v2_ready_title">Scanner-v2-Seiten sind bereit</string>
+    <string name="v2_ready_pages">Lokal gerenderte Seiten: %1$d</string>
+    <string name="v2_error_session">Die Scanner-Sitzung konnte nicht sicher wiederhergestellt werden.</string>
+    <string name="v2_error_capture">Das Foto konnte nicht gespeichert werden. Erneut versuchen.</string>
+    <string name="v2_error_capture_recovery">Das unterbrochene Foto muss vor dem nächsten Scan verworfen werden.</string>
+    <string name="v2_error_render">Die Seite konnte nicht gerendert werden. Das Quellfoto bleibt erhalten.</string>
+    <string name="v2_error_camera">Die Kamera ist nicht verfügbar.</string>
+</resources>

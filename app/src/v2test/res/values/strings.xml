@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ScanIt v2 Test</string>
+    <string name="v2_cancel">Cancel</string>
+    <string name="v2_capture_title">Scan</string>
+    <string name="v2_allow_camera">Allow camera</string>
+    <string name="v2_capture_button">Scan</string>
+    <string name="v2_discard_interrupted_capture">Discard interrupted photo</string>
+    <string name="v2_review_title">Review</string>
+    <string name="v2_crop_title">Adjust corners</string>
+    <string name="v2_page_count">%1$d of %2$d</string>
+    <string name="v2_rotate">Rotate</string>
+    <string name="v2_keep_page">Keep page</string>
+    <string name="v2_add_page">Add page</string>
+    <string name="v2_retake">Retake</string>
+    <string name="v2_delete">Delete</string>
+    <string name="v2_move_left">Move left</string>
+    <string name="v2_move_right">Move right</string>
+    <string name="v2_finish">Continue</string>
+    <string name="v2_page_preview">Scanned page preview</string>
+    <string name="v2_ready_title">Scanner v2 pages are ready</string>
+    <string name="v2_ready_pages">%1$d pages rendered locally</string>
+    <string name="v2_error_session">The scanner session could not be recovered safely.</string>
+    <string name="v2_error_capture">The photo could not be saved. Try again.</string>
+    <string name="v2_error_capture_recovery">An interrupted photo needs to be discarded before scanning again.</string>
+    <string name="v2_error_render">The page could not be rendered. Your source photo is preserved.</string>
+    <string name="v2_error_camera">The camera is unavailable.</string>
 </resources>

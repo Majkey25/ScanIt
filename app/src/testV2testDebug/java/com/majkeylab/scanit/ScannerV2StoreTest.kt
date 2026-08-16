@@ -29,6 +29,28 @@ class ScannerV2StoreTest {
     }
 
     @Test
+    fun pendingCaptureIsStrictAndBoundToCameraStage() {
+        val pageId = PageId.parse(UUID.randomUUID().toString())
+        val capturing = emptyManifest().withPendingCapture(pageId)
+
+        assertEquals(capturing, decodeScannerV2Manifest(encodeScannerV2Manifest(capturing)))
+        assertTrue(ScannerV2Store(temporary.newFolder("pending" )).run {
+            create(capturing)
+            captureFile(capturing.sessionId, pageId).name == ".capture-${pageId.value}.jpg"
+        })
+        val reviewing = manifest()
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2Manifest.create(
+                sessionId = reviewing.sessionId,
+                state = reviewing.state,
+                pages = reviewing.pages,
+                pendingCaptureId = pageId,
+                updatedAtMillis = 1,
+            )
+        }
+    }
+
+    @Test
     fun malformedExtraMissingOversizeAndUnsafeValuesAreRejected() {
         val encoded = encodeScannerV2Manifest(manifest())
         val extra = JSONObject(String(encoded, Charsets.UTF_8)).put("extra", true).toString().toByteArray()
@@ -104,6 +126,82 @@ class ScannerV2StoreTest {
     }
 
     @Test
+    fun loadRemovesOnlyExactUnpublishedRenderAndBlocksUnknownFiles() {
+        val root = temporary.newFolder("scanner-v2")
+        val store = ScannerV2Store(root)
+        val sourceBytes = byteArrayOf(1, 2, 3)
+        val manifest = manifest(sourceFingerprint = fingerprint(sourceBytes), renderedFingerprint = null)
+        val initial = emptyManifest(sessionId = manifest.sessionId)
+        val directory = store.create(initial)
+        store.sourceFile(manifest.sessionId, manifest.pages.single().pageId).writeBytes(sourceBytes)
+        store.update(initial, manifest)
+        val unpublished = store.renderedFile(manifest.sessionId, manifest.pages.single().pageId)
+        unpublished.writeBytes(byteArrayOf(4, 5, 6))
+
+        assertEquals(manifest, store.loadActive())
+        assertFalse(unpublished.exists())
+
+        directory.resolve("unknown.backup").writeText("keep")
+        assertThrows(IOException::class.java) { store.loadActive() }
+        assertTrue(directory.resolve("unknown.backup").exists())
+    }
+
+    @Test
+    fun pendingCaptureCleanupDeletesOnlyExactOperationFiles() {
+        val root = temporary.newFolder("scanner-v2")
+        val store = ScannerV2Store(root)
+        val pageId = PageId.parse(UUID.randomUUID().toString())
+        val initial = emptyManifest()
+        store.create(initial)
+        val pending = initial.withPendingCapture(pageId, updatedAtMillis = 2)
+        store.update(initial, pending)
+        val capture = store.captureFile(initial.sessionId, pageId).apply { writeBytes(byteArrayOf(1)) }
+        val source = store.sourceFile(initial.sessionId, pageId).apply { writeBytes(byteArrayOf(2)) }
+
+        assertEquals(pending, store.loadActive())
+        assertTrue(store.deletePendingCaptureFiles(pending))
+        assertFalse(capture.exists())
+        assertFalse(source.exists())
+        assertEquals(pending, store.loadActive())
+    }
+
+    @Test
+    fun retiredPageFilesRemainJournaledUntilExactCleanup() {
+        val root = temporary.newFolder("scanner-v2")
+        val store = ScannerV2Store(root)
+        val initial = emptyManifest()
+        store.create(initial)
+        val activeSource = byteArrayOf(1, 2, 3)
+        val retiredSource = byteArrayOf(4, 5, 6)
+        val active = pageRecord(sourceFingerprint = fingerprint(activeSource), renderedFingerprint = null)
+        val retired = pageRecord(sourceFingerprint = fingerprint(retiredSource), renderedFingerprint = null)
+        store.sourceFile(initial.sessionId, active.pageId).writeBytes(activeSource)
+        store.sourceFile(initial.sessionId, retired.pageId).writeBytes(retiredSource)
+        val journaled = ScannerV2Manifest.create(
+            sessionId = initial.sessionId,
+            state = ScannerSessionState.restore(
+                generation = 2,
+                pages = listOf(ScannerPage(active.pageId)),
+                selectedIndex = 0,
+                stage = ScannerSessionStage.Reviewing,
+                pendingReplacementIndex = null,
+            ),
+            pages = listOf(active),
+            retiredPages = listOf(retired),
+            updatedAtMillis = 2,
+        )
+        store.update(initial, journaled)
+
+        assertEquals(journaled, store.loadActive())
+        val cleaned = store.reconcileRetiredPages(journaled)
+
+        assertTrue(cleaned.retiredPages.isEmpty())
+        assertFalse(store.sourceFile(initial.sessionId, retired.pageId).exists())
+        assertTrue(store.sourceFile(initial.sessionId, active.pageId).exists())
+        assertEquals(cleaned, store.loadActive())
+    }
+
+    @Test
     fun cleanupDeletesOnlyExpiredCancelledExactSessions() {
         var now = 10_000L
         val root = temporary.newFolder("scanner-v2")
@@ -154,19 +252,7 @@ class ScannerV2StoreTest {
         renderedFingerprint: OutputFingerprint? = OutputFingerprint(2, "b".repeat(64)),
     ): ScannerV2Manifest {
         val pageId = PageId.parse(UUID.randomUUID().toString())
-        val record = ScannerV2PageRecord(
-            pageId = pageId,
-            sourceFingerprint = sourceFingerprint,
-            crop = PageQuad.create(
-                NormalizedPoint(.1, .1),
-                NormalizedPoint(.9, .12),
-                NormalizedPoint(.88, .9),
-                NormalizedPoint(.12, .88),
-            ),
-            rotationQuarterTurns = 1,
-            filterId = "drawing",
-            renderedFingerprint = renderedFingerprint,
-        )
+        val record = pageRecord(pageId, sourceFingerprint, renderedFingerprint)
         return ScannerV2Manifest.create(
             sessionId = sessionId,
             state = ScannerSessionState.restore(
@@ -180,6 +266,24 @@ class ScannerV2StoreTest {
             updatedAtMillis = updatedAtMillis,
         )
     }
+
+    private fun pageRecord(
+        pageId: PageId = PageId.parse(UUID.randomUUID().toString()),
+        sourceFingerprint: OutputFingerprint,
+        renderedFingerprint: OutputFingerprint?,
+    ): ScannerV2PageRecord = ScannerV2PageRecord(
+        pageId = pageId,
+        sourceFingerprint = sourceFingerprint,
+        crop = PageQuad.create(
+            NormalizedPoint(.1, .1),
+            NormalizedPoint(.9, .12),
+            NormalizedPoint(.88, .9),
+            NormalizedPoint(.12, .88),
+        ),
+        rotationQuarterTurns = 1,
+        filterId = "drawing",
+        renderedFingerprint = renderedFingerprint,
+    )
 
     private fun fingerprint(bytes: ByteArray): OutputFingerprint =
         ByteArrayInputStream(bytes).use { readOutputFingerprint(it, bytes.size.toLong()) }

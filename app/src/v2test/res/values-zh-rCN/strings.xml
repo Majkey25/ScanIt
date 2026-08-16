@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScanIt v2 测试版</string>
+    <string name="v2_cancel">取消</string>
+    <string name="v2_capture_title">扫描</string>
+    <string name="v2_allow_camera">允许使用相机</string>
+    <string name="v2_capture_button">扫描</string>
+    <string name="v2_discard_interrupted_capture">丢弃中断的照片</string>
+    <string name="v2_review_title">检查</string>
+    <string name="v2_crop_title">调整边角</string>
+    <string name="v2_page_count">第 %1$d 页，共 %2$d 页</string>
+    <string name="v2_rotate">旋转</string>
+    <string name="v2_keep_page">保留页面</string>
+    <string name="v2_add_page">添加页面</string>
+    <string name="v2_retake">重新拍摄</string>
+    <string name="v2_delete">删除</string>
+    <string name="v2_move_left">向左移动</string>
+    <string name="v2_move_right">向右移动</string>
+    <string name="v2_finish">继续</string>
+    <string name="v2_page_preview">扫描页面预览</string>
+    <string name="v2_ready_title">扫描仪 v2 页面已就绪</string>
+    <string name="v2_ready_pages">本地已处理页面数：%1$d</string>
+    <string name="v2_error_session">无法安全恢复扫描会话。</string>
+    <string name="v2_error_capture">无法保存照片，请重试。</string>
+    <string name="v2_error_capture_recovery">再次扫描前必须丢弃中断的照片。</string>
+    <string name="v2_error_render">无法处理页面，原始照片已保留。</string>
+    <string name="v2_error_camera">相机不可用。</string>
+</resources>

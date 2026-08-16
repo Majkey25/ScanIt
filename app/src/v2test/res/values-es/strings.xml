@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScanIt v2 Test</string>
+    <string name="v2_cancel">Cancelar</string>
+    <string name="v2_capture_title">Escanear</string>
+    <string name="v2_allow_camera">Permitir cámara</string>
+    <string name="v2_capture_button">Escanear</string>
+    <string name="v2_discard_interrupted_capture">Descartar foto interrumpida</string>
+    <string name="v2_review_title">Revisar</string>
+    <string name="v2_crop_title">Ajustar esquinas</string>
+    <string name="v2_page_count">%1$d de %2$d</string>
+    <string name="v2_rotate">Girar</string>
+    <string name="v2_keep_page">Conservar página</string>
+    <string name="v2_add_page">Añadir página</string>
+    <string name="v2_retake">Repetir foto</string>
+    <string name="v2_delete">Eliminar</string>
+    <string name="v2_move_left">Mover a la izquierda</string>
+    <string name="v2_move_right">Mover a la derecha</string>
+    <string name="v2_finish">Continuar</string>
+    <string name="v2_page_preview">Vista previa de la página escaneada</string>
+    <string name="v2_ready_title">Las páginas del escáner v2 están listas</string>
+    <string name="v2_ready_pages">Páginas procesadas localmente: %1$d</string>
+    <string name="v2_error_session">La sesión del escáner no se pudo recuperar de forma segura.</string>
+    <string name="v2_error_capture">No se pudo guardar la foto. Inténtalo de nuevo.</string>
+    <string name="v2_error_capture_recovery">Debes descartar la foto interrumpida antes de volver a escanear.</string>
+    <string name="v2_error_render">No se pudo procesar la página. La foto original se ha conservado.</string>
+    <string name="v2_error_camera">La cámara no está disponible.</string>
+</resources>

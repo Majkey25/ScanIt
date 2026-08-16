@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ScanIt v2 Test</string>
+    <string name="v2_cancel">Zrušit</string>
+    <string name="v2_capture_title">Skenovat</string>
+    <string name="v2_allow_camera">Povolit fotoaparát</string>
+    <string name="v2_capture_button">Skenovat</string>
+    <string name="v2_discard_interrupted_capture">Zahodit přerušenou fotografii</string>
+    <string name="v2_review_title">Kontrola</string>
+    <string name="v2_crop_title">Upravit rohy</string>
+    <string name="v2_page_count">%1$d z %2$d</string>
+    <string name="v2_rotate">Otočit</string>
+    <string name="v2_keep_page">Ponechat stránku</string>
+    <string name="v2_add_page">Přidat stránku</string>
+    <string name="v2_retake">Vyfotit znovu</string>
+    <string name="v2_delete">Smazat</string>
+    <string name="v2_move_left">Posunout doleva</string>
+    <string name="v2_move_right">Posunout doprava</string>
+    <string name="v2_finish">Pokračovat</string>
+    <string name="v2_page_preview">Náhled naskenované stránky</string>
+    <string name="v2_ready_title">Stránky skeneru v2 jsou připravené</string>
+    <string name="v2_ready_pages">Místně vykresleno stránek: %1$d</string>
+    <string name="v2_error_session">Relaci skeneru se nepodařilo bezpečně obnovit.</string>
+    <string name="v2_error_capture">Fotografii se nepodařilo uložit. Zkuste to znovu.</string>
+    <string name="v2_error_capture_recovery">Před dalším skenováním je nutné zahodit přerušenou fotografii.</string>
+    <string name="v2_error_render">Stránku se nepodařilo vykreslit. Zdrojová fotografie zůstala zachována.</string>
+    <string name="v2_error_camera">Fotoaparát není dostupný.</string>
+</resources>
