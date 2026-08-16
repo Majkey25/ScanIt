@@ -174,13 +174,14 @@ internal class ScannerV2Store(
     root: File,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) {
-    private val root = root.absoluteFile.also { directory ->
-        if (!directory.exists() && !directory.mkdirs()) {
+    private val root = root.absoluteFile.let { requested ->
+        if (!requested.exists() && !requested.mkdirs()) {
             throw IOException("Scanner session root could not be created")
         }
-        if (!directory.isDirectory || directory.canonicalFile != directory) {
+        if (!requested.isDirectory || Files.isSymbolicLink(requested.toPath())) {
             throw IOException("Scanner session root is invalid")
         }
+        requested.canonicalFile
     }
 
     fun create(manifest: ScannerV2Manifest): File {

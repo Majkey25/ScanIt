@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 import java.nio.file.Path
 import java.util.UUID
@@ -123,6 +124,20 @@ class ScannerV2StoreTest {
 
         assertEquals(root.canonicalFile, source.parentFile?.parentFile?.canonicalFile)
         assertThrows(IllegalArgumentException::class.java) { store.manifestFile("../escape") }
+    }
+
+    @Test
+    fun safeRootAliasIsCanonicalizedBeforeSessionChecks() {
+        val applicationFiles = temporary.newFolder("application-files")
+        val canonicalRoot = applicationFiles.resolve("scanner-v2-sessions").apply { mkdir() }
+        val aliasedRoot = File(applicationFiles, ".${File.separator}scanner-v2-sessions")
+
+        val store = ScannerV2Store(aliasedRoot)
+        val manifest = emptyManifest()
+        val session = store.create(manifest)
+
+        assertEquals(canonicalRoot.canonicalFile, session.parentFile)
+        assertEquals(manifest, store.loadActive())
     }
 
     @Test
