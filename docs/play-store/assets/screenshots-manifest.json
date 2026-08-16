@@ -25,8 +25,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1671762,
-    "sha256": "D2BFE6C142B409994A5C288430249F527C0B3F34A0E8E4F3BE07AEFF711F150F",
+    "bytes": 336979,
+    "sha256": "578904DECDCF1B15835604E45E17A531D99154983420E0748F47487F542D9125",
     "altText": "ScanIt result screen with clear buttons for rescanning, signing, document actions, and sharing."
   },
   {
@@ -35,9 +35,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1658149,
-    "sha256": "4884836C2448A00E97E431251968D97FD0671FE3D1711BA14278FAEE8B6DC4C2",
-    "altText": "File details with PDF size and location controls plus image size, format, and location controls."
+    "bytes": 208500,
+    "sha256": "599565C974FFDC372F28873B8E4FD6C60E77E789417E7E07881CC96C03EB8706",
+    "altText": "File details with inline PDF and image renaming plus size, format, and location controls."
   },
   {
     "locale": "en-US",
@@ -55,8 +55,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1836632,
-    "sha256": "4BE1FCA7A53685ABC3DBE49436BB173AD830A67B4D4839D5A00E06E9B4BE01DF",
+    "bytes": 399064,
+    "sha256": "6AFF1715CC35C573E261285C2162CFD9D311ED1D87165FA52ADA84067F355A00",
     "altText": "Signature and stamp editor with direct placement, pinch resize, rotation, drawing, import, and paper scan controls."
   },
   {
@@ -67,7 +67,7 @@
     "mode": "RGB",
     "bytes": 259866,
     "sha256": "1CB0D2025E038DD3D49823D0E276316896258155CEA22FEA3594C0760DBB79A3",
-    "altText": "On-device document actions for extracting Latin-script text and detecting QR codes or barcodes."
+    "altText": "On-device document actions for extracting text and detecting QR codes or barcodes."
   },
   {
     "locale": "en-US",
@@ -75,9 +75,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1723470,
-    "sha256": "3720E31B0002BEEF27344D6FC4B38AB4A758615156FC5E047E1E4B6B987A7E58",
-    "altText": "Settings with Original, 200 KB, 500 KB, and 1 MB PDF targets plus custom targets from 1 KB to 500 MB."
+    "bytes": 196414,
+    "sha256": "E698E692D1A50977EFF8F7FFF0678F24F88D585BFB3AE21669EF70666A9E2975",
+    "altText": "Current-file PDF size options for Original, 200 KB, 500 KB, 1 MB, larger measured targets, and Custom."
   },
   {
     "locale": "cs-CZ",
@@ -105,8 +105,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1739531,
-    "sha256": "3B7506B3A1FFDCDCB87FDBDE52425AE347F17D4153276A3440355FAECF6B0043",
+    "bytes": 351173,
+    "sha256": "E83BA7FF03A36CACB4F08809F2B42339889C3CB4FA003F58F8A01924348E6747",
     "altText": "Výsledek skenu s jasnými tlačítky pro nový sken, podpis, akce dokumentu a sdílení."
   },
   {
@@ -115,9 +115,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1691442,
-    "sha256": "63172C3ABAF77D49CBD4C924AFB8923554A3943A79C61AC531054242A5E04D1A",
-    "altText": "Podrobnosti souborů s ovládáním velikosti a umístění PDF a velikosti, formátu a umístění obrázků."
+    "bytes": 234948,
+    "sha256": "565BCFC5A829072C9ED9663FD0D5A3C57D1EAC8E70B5026D7237EE14BB0BA76D",
+    "altText": "Podrobnosti souborů s přejmenováním PDF i obrázků a ovládáním velikosti, formátu a umístění."
   },
   {
     "locale": "cs-CZ",
@@ -135,9 +135,9 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1897845,
-    "sha256": "FEF1CCC84299BBD0A0FC30996D43A321EA96804D87E72FB78713EA024815D6AA",
-    "altText": "Editor podpisu a razítka s přímým umístěním, změnou velikosti, otočením, kreslením, importem a skenováním papíru."
+    "bytes": 415057,
+    "sha256": "B0A5E972BD9C8BE3E670A4E89553AFB143B1ABB99A466B7CF1B8C87654762AD1",
+    "altText": "Editor podpisu a razítka s přímým umístěním, změnou velikosti, otočením, kreslením a importem."
   },
   {
     "locale": "cs-CZ",
@@ -147,7 +147,7 @@
     "mode": "RGB",
     "bytes": 276544,
     "sha256": "6A6A5EBB2FD72219799ABA25000EDE6BA59634453907C3D565A9A3D6A14FC701",
-    "altText": "Akce dokumentu v zařízení pro extrakci textu v latince a detekci QR nebo čárových kódů."
+    "altText": "Akce dokumentu v zařízení pro extrakci textu a detekci QR nebo čárových kódů."
   },
   {
     "locale": "cs-CZ",
@@ -155,8 +155,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 1802477,
-    "sha256": "06A20B2ADDC1BC351F5BD8F2BFF22E7681E0ECF0F9B0F141D69BAF1C1E758104",
-    "altText": "Nastavení s původní, 200 KB, 500 KB a 1 MB cílovou velikostí PDF a vlastním rozsahem od 1 KB do 500 MB."
+    "bytes": 208734,
+    "sha256": "182952199FCD7F3A6CBB5CA9A3A2450632964AC9C593FB785A9704372F8EB9D2",
+    "altText": "Volby velikosti aktuálního PDF: Původní, 200 KB, 500 KB, 1 MB, větší měřené cíle a Vlastní."
   }
 ]

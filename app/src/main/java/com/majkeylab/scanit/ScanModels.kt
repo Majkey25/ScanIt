@@ -14,6 +14,7 @@ internal const val MAX_SCAN_PAGES = 20
 internal const val MIN_IMAGE_EXPORT_DIMENSION = 320
 internal const val MAX_IMAGE_EXPORT_DIMENSION = 6000
 internal const val MAX_IMAGE_EXPORT_PIXELS = 12_000_000L
+internal const val MAX_OUTPUT_BASE_NAME_LENGTH = 96
 
 internal enum class ImageExportFormat(val wireValue: String, val mimeType: String?) {
     Original("original", null),
@@ -50,6 +51,14 @@ internal sealed interface OutputChangeKind {
 
     data object PdfLocation : OutputChangeKind
 
+    data class PdfName(val baseName: String) : OutputChangeKind {
+        init {
+            require(normalizeOutputBaseName(baseName) == baseName) {
+                "PDF output name is invalid"
+            }
+        }
+    }
+
     data class ImageSize(
         val preset: ImageSizePreset,
         val customMaxDimension: Int? = null,
@@ -58,6 +67,14 @@ internal sealed interface OutputChangeKind {
     data class ImageFormat(val format: ImageExportFormat) : OutputChangeKind
 
     data object ImageLocation : OutputChangeKind
+
+    data class ImageName(val baseName: String) : OutputChangeKind {
+        init {
+            require(normalizeOutputBaseName(baseName) == baseName) {
+                "Image output name is invalid"
+            }
+        }
+    }
 
     data class UnknownOutputCreate(val operationId: String) : OutputChangeKind {
         init {
@@ -249,12 +266,73 @@ private fun validateOutputChangeKind(kind: OutputChangeKind) {
     when (kind) {
         is OutputChangeKind.PdfSize -> Unit
         OutputChangeKind.PdfLocation -> Unit
+        is OutputChangeKind.PdfName -> Unit
         is OutputChangeKind.ImageSize ->
             resolveImageExport(kind.preset, kind.customMaxDimension)
         is OutputChangeKind.ImageFormat -> Unit
         OutputChangeKind.ImageLocation -> Unit
+        is OutputChangeKind.ImageName -> Unit
         is OutputChangeKind.UnknownOutputCreate -> Unit
     }
+}
+
+internal fun normalizeOutputBaseName(value: String): String? {
+    var candidate = value.trim()
+    val extension =
+        listOf(".jpeg", ".jpg", ".png", ".pdf").firstOrNull {
+            candidate.endsWith(it, ignoreCase = true)
+        }
+    if (extension != null) candidate = candidate.dropLast(extension.length).trimEnd()
+    if (
+        candidate.length !in 1..MAX_OUTPUT_BASE_NAME_LENGTH ||
+            candidate == "." ||
+            candidate == ".." ||
+            candidate.endsWith('.') ||
+            candidate.any { it.isISOControl() || it in "<>:\"/\\|?*" }
+    ) {
+        return null
+    }
+    return candidate
+}
+
+internal fun pdfOutputDisplayName(baseName: String): String {
+    require(normalizeOutputBaseName(baseName) == baseName) { "PDF output name is invalid" }
+    return "$baseName.pdf"
+}
+
+internal fun imageOutputDisplayName(
+    baseName: String,
+    page: Int,
+    extension: String,
+): String {
+    require(normalizeOutputBaseName(baseName) == baseName) { "Image output name is invalid" }
+    require(page in 1..MAX_SCAN_PAGES) { "Image page is invalid" }
+    require(extension == "jpg" || extension == "png") { "Image extension is invalid" }
+    return "${baseName}_${page.toString().padStart(2, '0')}.$extension"
+}
+
+internal fun imageOutputBaseName(displayNames: List<Pair<Int, String?>>): String? {
+    if (displayNames.isEmpty()) return null
+    val baseNames =
+        displayNames.map { (page, displayName) ->
+            if (page !in 1..MAX_SCAN_PAGES || displayName == null) return null
+            val extension =
+                listOf(".jpeg", ".jpg", ".png").firstOrNull {
+                    displayName.endsWith(it, ignoreCase = true)
+                } ?: return null
+            var stem = displayName.dropLast(extension.length)
+            val collisionStart = stem.lastIndexOf(" (")
+            if (collisionStart >= 0 && stem.endsWith(')')) {
+                val collision = stem.substring(collisionStart + 2, stem.length - 1)
+                if (collision.isNotEmpty() && collision.all(Char::isDigit)) {
+                    stem = stem.substring(0, collisionStart)
+                }
+            }
+            val pageSuffix = "_${page.toString().padStart(2, '0')}"
+            if (!stem.endsWith(pageSuffix)) return null
+            normalizeOutputBaseName(stem.dropLast(pageSuffix.length)) ?: return null
+        }
+    return baseNames.distinct().singleOrNull()
 }
 
 internal fun resolveImageExport(
@@ -570,6 +648,7 @@ internal data class SavedScan(
     val savedImages: List<SavedImageOutput>,
     val savedPdf: Uri?,
     val savedPdfTree: Uri? = null,
+    val savedPdfDisplayName: String? = null,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,
@@ -645,8 +724,10 @@ internal fun canChoosePdfSize(scan: SavedScan): Boolean {
 }
 
 internal enum class FileDetailControl {
+    PdfName,
     PdfSize,
     PdfLocation,
+    ImageName,
     ImageSize,
     ImageFormat,
     ImageLocation,
@@ -661,6 +742,8 @@ internal data class FileDetailAvailability(
     val savedImageCount: Int,
     val canChangeImages: Boolean,
     val canRelocateImages: Boolean,
+    val canRenamePdf: Boolean = false,
+    val canRenameImages: Boolean = false,
 )
 
 internal fun fileDetailControls(scan: SavedScan): Set<FileDetailControl> =
@@ -674,6 +757,14 @@ internal fun fileDetailControls(scan: SavedScan): Set<FileDetailControl> =
             savedImageCount = scan.savedImages.size,
             canChangeImages = imageExportOptionsForChange(scan) != null,
             canRelocateImages = canRelocateImageOutputs(scan),
+            canRenamePdf =
+                scan.savedPdf != null &&
+                    normalizeOutputBaseName(scan.savedPdfDisplayName.orEmpty()) != null,
+            canRenameImages =
+                scan.savedImages.size == scan.cached.pages.size &&
+                    imageOutputBaseName(
+                        scan.savedImages.map { it.page to it.displayName },
+                    ) != null,
         ),
     )
 
@@ -683,8 +774,10 @@ internal fun fileDetailControls(availability: FileDetailAvailability): Set<FileD
         return emptySet()
     }
     return buildSet {
+        if (availability.canRenamePdf) add(FileDetailControl.PdfName)
         if (availability.canChoosePdfSize) add(FileDetailControl.PdfSize)
         if (availability.pdfAvailable) add(FileDetailControl.PdfLocation)
+        if (availability.canRenameImages) add(FileDetailControl.ImageName)
         if (availability.canChangeImages) {
             add(FileDetailControl.ImageSize)
             add(FileDetailControl.ImageFormat)
@@ -1123,6 +1216,7 @@ internal fun restoredRoute(savedRoute: String?, cacheId: String?): RestoredRoute
 internal data class InitialNavigation(
     val route: RestoredRoute,
     val cacheId: String?,
+    val clearCheckpointBeforeLaunch: Boolean = false,
 )
 
 internal fun initialNavigation(
@@ -1132,7 +1226,11 @@ internal fun initialNavigation(
 ): InitialNavigation {
     val durableCacheId = activeResultCacheId?.takeIf(::isSafeActiveResultCacheId)
     if (durableCacheId != null) {
-        return InitialNavigation(RestoredRoute.Result, durableCacheId)
+        return InitialNavigation(
+            route = RestoredRoute.Scanner,
+            cacheId = null,
+            clearCheckpointBeforeLaunch = true,
+        )
     }
     val route = restoredRoute(savedRoute, savedCacheId)
     return InitialNavigation(

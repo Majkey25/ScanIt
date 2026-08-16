@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `17` |
-| Version name | `1.3.3` |
+| Version code | `18` |
+| Version name | `1.3.4` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 17 / 1.3.3
+## Release notes — version 18 / 1.3.4
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Result actions are now compact 48 dp buttons with smaller icons and spacing while preserving accessible touch targets. The refreshed Result screenshot matches the final layout. PDF targets still include 200 KB, 500 KB, 1 MB, and custom values from 1 KB to 500 MB.
+> Rename saved PDFs and image sets directly in File details. Renaming preserves the exact file bytes and safely retires the previous saved output. Actions now uses the shorter “Extract text” label, the Custom PDF size option no longer shows an ellipsis, and a fresh app launch opens the scanner instead of the previous Result.
 
 ### Čeština
 
-> Akce výsledku jsou nyní kompaktní tlačítka 48 dp s menšími ikonami a rozestupy, ale zachovávají přístupnou dotykovou plochu. Aktualizovaný snímek odpovídá finálnímu vzhledu. Cíle PDF nadále zahrnují 200 KB, 500 KB, 1 MB a vlastní hodnoty 1 KB–500 MB.
+> Uložená PDF i sady obrázků lze přejmenovat přímo v detailech souboru. Přejmenování zachová přesné bajty a bezpečně odstraní starý výstup. Akce mají kratší název „Extrahovat text“, Vlastní už nemá tři tečky a po novém spuštění se otevře skener.
 
 ### Deutsch
 
-> Die Ergebnisaktionen sind jetzt kompakte 48-dp-Schaltflächen mit kleineren Symbolen und Abständen bei zugänglichen Berührungszielen. Der aktualisierte Screenshot zeigt das finale Layout. PDF-Ziele umfassen weiterhin 200 KB, 500 KB, 1 MB und eigene Werte von 1 KB bis 500 MB.
+> Gespeicherte PDFs und Bildsätze lassen sich direkt in den Dateidetails umbenennen. Die Bytes bleiben unverändert und die alte Ausgabe wird sicher entfernt. Aktionen heißt kürzer „Text extrahieren“, Benutzerdefiniert hat keine Auslassungspunkte mehr und ein Neustart öffnet den Scanner.
 
 ### Español
 
-> Las acciones del resultado ahora son botones compactos de 48 dp con iconos y espacios menores, manteniendo objetivos táctiles accesibles. La captura actualizada refleja el diseño final. Los objetivos PDF siguen incluyendo 200 KB, 500 KB, 1 MB y valores personalizados de 1 KB a 500 MB.
+> Ahora puedes renombrar PDF e imágenes desde Detalles del archivo sin cambiar sus bytes. La salida anterior se retira de forma segura. Acciones usa «Extraer texto», Personalizado ya no muestra puntos suspensivos y al iniciar de nuevo se abre el escáner.
 
 ### 简体中文
 
-> 结果操作现采用紧凑的 48 dp 按钮、更小的图标和间距，同时保留易用的触控区域。更新后的截图与最终界面一致。PDF 目标仍支持 200 KB、500 KB、1 MB，以及 1 KB–500 MB 自定义值。
+> 现在可在文件详情中直接重命名 PDF 和图像组，同时保持文件字节不变并安全移除旧输出。“操作”改为更短的“提取文本”，“自定义”不再显示省略号；重新启动应用时会直接打开扫描器。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 17, version `1.3.3`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 18, version `1.3.4`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

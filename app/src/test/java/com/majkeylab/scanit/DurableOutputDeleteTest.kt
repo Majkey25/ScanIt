@@ -864,6 +864,14 @@ class DurableOutputDeleteTest {
                 OutputFingerprint(pdfFingerprint.byteLength, "03".repeat(32)),
             ),
         )
+        assertFalse(
+            pdfReplacementIsUnchanged(
+                pdf,
+                null,
+                pdfFingerprint,
+                desiredDisplayName = "Renamed.pdf",
+            ),
+        )
 
         val image = exactImage(1, "content://media/external/images/media/1")
         assertTrue(
@@ -875,6 +883,18 @@ class DurableOutputDeleteTest {
                 height = 20,
                 format = ImageExportFormat.Jpeg,
                 fingerprint = requireNotNull(image.outputFingerprint()),
+            ),
+        )
+        assertFalse(
+            imageReplacementIsUnchanged(
+                image,
+                treeUri = null,
+                mimeType = "image/jpeg",
+                width = 10,
+                height = 20,
+                format = ImageExportFormat.Jpeg,
+                fingerprint = requireNotNull(image.outputFingerprint()),
+                desiredDisplayName = "Renamed_01.jpg",
             ),
         )
         assertFalse(

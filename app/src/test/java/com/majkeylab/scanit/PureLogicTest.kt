@@ -41,7 +41,7 @@ class PureLogicTest {
 
     @Test
     fun fileDetailControlsCoverSaveAndLegacyStates() {
-        val allControls =
+        val baseControls =
             setOf(
                 FileDetailControl.PdfSize,
                 FileDetailControl.PdfLocation,
@@ -55,8 +55,11 @@ class PureLogicTest {
                 FileDetailControl.PdfLocation,
             )
 
-        assertEquals(allControls, fileDetailControls(fileDetailAvailability()))
-        assertEquals(allControls, fileDetailControls(fileDetailAvailability(savedImages = 2)))
+        assertEquals(baseControls, fileDetailControls(fileDetailAvailability()))
+        assertEquals(
+            baseControls + FileDetailControl.PdfName + FileDetailControl.ImageName,
+            fileDetailControls(fileDetailAvailability(savedImages = 2, outputsRenameable = true)),
+        )
         assertEquals(pdfControls, fileDetailControls(fileDetailAvailability(imagesChangeable = false)))
         assertEquals(
             pdfControls + FileDetailControl.ImageLocation,
@@ -68,6 +71,50 @@ class PureLogicTest {
             emptySet<FileDetailControl>(),
             fileDetailControls(fileDetailAvailability(valid = false)),
         )
+    }
+
+    @Test
+    fun outputNamesAreNormalizedWithoutChangingTheirDocumentIdentity() {
+        assertEquals("Practice sheet", normalizeOutputBaseName("  Practice sheet.pdf  "))
+        assertEquals("Výkres 7", normalizeOutputBaseName("Výkres 7.PNG"))
+        assertEquals("Practice sheet.pdf", pdfOutputDisplayName("Practice sheet"))
+        assertEquals("Practice sheet_02.png", imageOutputDisplayName("Practice sheet", 2, "png"))
+        assertEquals(
+            "Practice sheet",
+            imageOutputBaseName(
+                listOf(
+                    1 to "Practice sheet_01 (1).jpg",
+                    2 to "Practice sheet_02 (1).jpg",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun outputNamesRejectPathsControlsAndEmptyValues() {
+        listOf(
+            "",
+            "   ",
+            ".pdf",
+            "..",
+            "folder/name",
+            "folder\\name",
+            "bad\u0000name",
+            "x".repeat(97),
+        ).forEach { assertNull(normalizeOutputBaseName(it)) }
+        assertNull(imageOutputBaseName(listOf(1 to "One_01.jpg", 2 to "Two_02.jpg")))
+        assertNull(imageOutputBaseName(listOf(1 to null)))
+    }
+
+    @Test
+    fun outputNameRequestsValidateBeforeStartingIo() {
+        val pdf = OutputChangeKind.PdfName("Practice sheet")
+        val images = OutputChangeKind.ImageName("Practice sheet")
+        assertEquals("Practice sheet", pdf.baseName)
+        assertEquals("Practice sheet", images.baseName)
+        assertThrows(IllegalArgumentException::class.java) {
+            OutputChangeRequest(CACHE_ID, ENTRY_ID, OutputChangeKind.PdfName("../bad"), 1L)
+        }
     }
 
     @Test
@@ -1894,9 +1941,13 @@ class PureLogicTest {
     }
 
     @Test
-    fun durableActiveResultCheckpointPrecedesSavedRoute() {
+    fun durableActiveResultCheckpointStartsAColdLaunchInScanner() {
         assertEquals(
-            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            InitialNavigation(
+                route = RestoredRoute.Scanner,
+                cacheId = null,
+                clearCheckpointBeforeLaunch = true,
+            ),
             initialNavigation(
                 savedRoute = "result",
                 savedCacheId = "Scan_saved",
@@ -1904,7 +1955,11 @@ class PureLogicTest {
             ),
         )
         assertEquals(
-            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            InitialNavigation(
+                route = RestoredRoute.Scanner,
+                cacheId = null,
+                clearCheckpointBeforeLaunch = true,
+            ),
             initialNavigation(
                 savedRoute = "recent",
                 savedCacheId = null,
@@ -1912,7 +1967,11 @@ class PureLogicTest {
             ),
         )
         assertEquals(
-            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            InitialNavigation(
+                route = RestoredRoute.Scanner,
+                cacheId = null,
+                clearCheckpointBeforeLaunch = true,
+            ),
             initialNavigation("scanner", null, "Scan_durable"),
         )
     }
@@ -1930,9 +1989,13 @@ class PureLogicTest {
     }
 
     @Test
-    fun coldNavigationUsesOnlyValidDurableActiveResultCheckpoint() {
+    fun coldNavigationIgnoresMalformedOrAbsentCheckpoints() {
         assertEquals(
-            InitialNavigation(RestoredRoute.Result, "Scan_durable"),
+            InitialNavigation(
+                route = RestoredRoute.Scanner,
+                cacheId = null,
+                clearCheckpointBeforeLaunch = true,
+            ),
             initialNavigation(null, null, "Scan_durable"),
         )
         assertEquals(
@@ -2290,6 +2353,7 @@ class PureLogicTest {
         valid: Boolean = true,
         imagesChangeable: Boolean = true,
         imagesRelocatable: Boolean = imagesChangeable,
+        outputsRenameable: Boolean = false,
     ): FileDetailAvailability =
         FileDetailAvailability(
             outputMetadataValid = valid,
@@ -2300,6 +2364,8 @@ class PureLogicTest {
             savedImageCount = savedImages,
             canChangeImages = imagesChangeable,
             canRelocateImages = imagesRelocatable,
+            canRenamePdf = outputsRenameable,
+            canRenameImages = outputsRenameable,
         )
 
     private fun inMemoryPreferences(

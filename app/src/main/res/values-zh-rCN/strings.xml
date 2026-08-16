@@ -173,7 +173,7 @@
     <string name="pdf_size_5_mb">5 MB</string>
     <string name="pdf_size_10_mb">10 MB</string>
     <string name="pdf_size_20_mb">20 MB</string>
-    <string name="pdf_size_custom">自定义…</string>
+    <string name="pdf_size_custom">自定义</string>
     <string name="pdf_size_custom_value_kb">%1$d KB</string>
     <string name="pdf_size_custom_value_mb">%1$d MB</string>
     <string name="pdf_size_custom_title">自定义 PDF 大小</string>
@@ -248,7 +248,7 @@
     <string name="document_actions">文档操作</string>
     <string name="document_actions_on_device">文档内容和操作结果保留在此设备上。</string>
     <string name="document_actions_model_hint">首次使用前，Google Play 服务可能会下载识别模型。</string>
-    <string name="extract_text">提取拉丁文字</string>
+    <string name="extract_text">提取文字</string>
     <string name="all_pages">所有页面</string>
     <string name="detect_codes">识别二维码和条形码</string>
     <string name="selected_page">所选页面</string>
@@ -275,4 +275,8 @@
     <string name="copy">复制</string>
     <string name="copied_to_clipboard">已复制到剪贴板</string>
     <string name="close">关闭</string>
+    <string name="rename_file">重命名文件</string>
+    <string name="file_name">文件名</string>
+    <string name="save_file_name">保存文件名</string>
+    <string name="invalid_file_name">名称不能包含 / \ : * ? &quot; &lt; &gt; 或 |。</string>
 </resources>
