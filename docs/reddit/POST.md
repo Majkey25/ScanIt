@@ -56,13 +56,16 @@ Please do not send private documents in bug reports.
 
 ## Gallery order
 
-1. `../images/scanit-v1.1-update.png`
-2. `../play-store/assets/en-US/phone/04-recent.png`
-3. `../play-store/assets/en-US/phone/05-visual-mark.png`
-4. `../play-store/assets/en-US/phone/06-settings.png`
-5. `../play-store/assets/en-US/phone/03-result.png`
-6. `../play-store/assets/en-US/phone/01-capture.png`
+1. `../play-store/assets/en-US/phone/01-capture.png`
+2. `../play-store/assets/en-US/phone/02-review.png`
+3. `../play-store/assets/en-US/phone/03-result.png`
+4. `../play-store/assets/en-US/phone/04-file-details.png`
+5. `../play-store/assets/en-US/phone/05-recent.png`
+6. `../play-store/assets/en-US/phone/06-sign-stamp.png`
+7. `../play-store/assets/en-US/phone/07-actions.png`
+8. `../play-store/assets/en-US/phone/08-pdf-size.png`
 
-All phone panels are real UI captures. The update cover uses a generated
-monochrome background plate, with no generated UI or device frame. Do not add a
-private document, personal signature, price claim, ranking, or Google branding.
+All phone panels use real current UI captures and an original QA document. The
+marketing frame adds only restrained headings around the unchanged app UI. Do
+not add a private document, personal signature, price claim, ranking, or Google
+branding.
