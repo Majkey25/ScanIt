@@ -776,15 +776,15 @@ private fun ResultScreen(
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         OutlinedButton(
                             onClick = {
                                 onResultEntryAction(ResultEntryAction.Rescan)
                             },
                             enabled = actionsEnabled,
-                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 5.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_camera,
@@ -796,8 +796,8 @@ private fun ResultScreen(
                                 onResultEntryAction(ResultEntryAction.SignOrStamp)
                             },
                             enabled = actionsEnabled && result.canAddVisualMark,
-                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 5.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_signature,
@@ -809,8 +809,8 @@ private fun ResultScreen(
                                 onResultEntryAction(ResultEntryAction.Actions)
                             },
                             enabled = actionsEnabled,
-                            modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 5.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_actions,
@@ -1541,9 +1541,9 @@ private fun ResultActionButtonContent(
         Icon(
             painter = painterResource(iconRes),
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(18.dp),
         )
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(1.dp))
         Text(
             text = stringResource(textRes),
             maxLines = 2,
