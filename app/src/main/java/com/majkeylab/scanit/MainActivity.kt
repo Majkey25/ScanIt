@@ -148,7 +148,6 @@ class MainActivity : ComponentActivity() {
                 onChangeImageFormat = viewModel::changeCurrentImageFormat,
                 onChangeImageLocation = viewModel::requestImageLocationChange,
                 onAcknowledgeUnknownOutput = viewModel::acknowledgeUnknownOutputCreate,
-                onOpenAppearanceEditor = viewModel::openAppearanceEditor,
                 onCloseAppearanceEditor = viewModel::closeAppearanceEditor,
                 onApplyAppearance = viewModel::applyCurrentAppearance,
                 onRunDocumentAction = viewModel::runDocumentAction,

@@ -5,6 +5,7 @@
     <string name="preview_unavailable">Vista previa no disponible</string>
     <string name="scan_preview">Vista previa del documento escaneado</string>
     <string name="page_position">Página %1$d de %2$d</string>
+    <string name="page_position_short">%1$d de %2$d</string>
     <plurals name="page_count">
         <item quantity="one">%1$d página</item>
         <item quantity="many">%1$d páginas</item>
@@ -29,7 +30,7 @@
     <string name="file_details_summary">%1$s · %2$s</string>
     <string name="expand_file_details">Mostrar detalles del archivo</string>
     <string name="collapse_file_details">Ocultar detalles del archivo</string>
-    <string name="edit_scan">Editar</string>
+    <string name="rescan">Escanear de nuevo</string>
     <string name="edit_filters_hint">Elige un filtro para todo el documento. El recorte y la perspectiva permanecen en la revisión de Google que aparece durante el escaneo.</string>
     <string name="open_fullscreen_preview">Abrir vista previa a pantalla completa, %1$s</string>
     <string name="close_fullscreen_preview">Cerrar vista previa a pantalla completa</string>

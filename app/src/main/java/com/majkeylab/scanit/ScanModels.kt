@@ -724,21 +724,30 @@ internal enum class RecentRowAction {
     ShowMenu,
 }
 
+internal enum class ResultEntryAction {
+    Rescan,
+    SignOrStamp,
+    Actions,
+}
+
+internal enum class ResultActionDestination {
+    Scanner,
+    MarkEditor,
+    DocumentActions,
+}
+
+internal fun resultActionDestination(action: ResultEntryAction): ResultActionDestination =
+    when (action) {
+        ResultEntryAction.Rescan -> ResultActionDestination.Scanner
+        ResultEntryAction.SignOrStamp -> ResultActionDestination.MarkEditor
+        ResultEntryAction.Actions -> ResultActionDestination.DocumentActions
+    }
+
 internal fun recentRowAction(target: RecentRowTarget): RecentRowAction =
     when (target) {
         RecentRowTarget.Content -> RecentRowAction.Open
         RecentRowTarget.Overflow -> RecentRowAction.ShowMenu
     }
-
-internal fun canEditAppearance(scan: SavedScan): Boolean {
-    val cached = scan.cached
-    return scan.outputMetadataValid &&
-        cached.entryId != null &&
-        cached.pages.isNotEmpty() &&
-        cached.sourcePages.size == cached.pages.size &&
-        cached.appearance != null &&
-        cached.appearanceSettings != null
-}
 
 internal fun confirmedUnknownOutputAcknowledgement(
     scan: SavedScan,

@@ -5,7 +5,7 @@ Android release includes third-party components under their own licenses and
 terms.
 
 The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
-`1.3.0` on 2026-08-15. Its direct runtime dependencies are:
+`1.3.1` on 2026-08-16. Its direct runtime dependencies are:
 
 - Kotlin standard library 2.4.10.
 - AndroidX Activity Compose 1.13.0.

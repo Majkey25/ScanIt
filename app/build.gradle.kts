@@ -19,8 +19,8 @@ android {
         applicationId = "com.majkeylab.scanit"
         minSdk = 33
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.3.0"
+        versionCode = 15
+        versionName = "1.3.1"
     }
 
     signingConfigs {

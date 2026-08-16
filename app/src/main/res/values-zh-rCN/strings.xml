@@ -5,6 +5,7 @@
     <string name="preview_unavailable">预览不可用</string>
     <string name="scan_preview">扫描文档预览</string>
     <string name="page_position">第 %1$d 页，共 %2$d 页</string>
+    <string name="page_position_short">%1$d / %2$d</string>
     <plurals name="page_count">
         <item quantity="other">%1$d 页</item>
     </plurals>
@@ -27,7 +28,7 @@
     <string name="file_details_summary">%1$s · %2$s</string>
     <string name="expand_file_details">显示文件详情</string>
     <string name="collapse_file_details">隐藏文件详情</string>
-    <string name="edit_scan">编辑</string>
+    <string name="rescan">重新扫描</string>
     <string name="edit_filters_hint">为整个文档选择滤镜。裁剪和透视调整仍在扫描时显示的 Google 检查界面中完成。</string>
     <string name="open_fullscreen_preview">打开全屏预览，%1$s</string>
     <string name="close_fullscreen_preview">关闭全屏预览</string>

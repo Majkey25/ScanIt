@@ -5,6 +5,12 @@ internal fun resolvedPageIndex(selectedIndex: Int, pageCount: Int): Int {
     return selectedIndex.coerceIn(0, pageCount - 1)
 }
 
+internal fun resultPageStatus(currentIndex: Int, pageCount: Int): Pair<Int, Int> =
+    resolvedPageIndex(currentIndex, pageCount) + 1 to pageCount
+
+internal fun stackResultActions(fontScale: Float, availableWidthDp: Int): Boolean =
+    availableWidthDp < 320 || (availableWidthDp < 360 && fontScale >= 1.3f)
+
 internal fun restoredResultPageIndex(
     savedCacheId: String?,
     targetCacheId: String,
