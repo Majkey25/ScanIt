@@ -15,6 +15,8 @@ internal const val MIN_IMAGE_EXPORT_DIMENSION = 320
 internal const val MAX_IMAGE_EXPORT_DIMENSION = 6000
 internal const val MAX_IMAGE_EXPORT_PIXELS = 12_000_000L
 internal const val MAX_OUTPUT_BASE_NAME_LENGTH = 96
+private val STORAGE_VOLUME_NAME = Regex("[A-Za-z0-9_-]+")
+private val SUPPORTED_OUTPUT_EXTENSIONS = listOf(".jpeg", ".jpg", ".png", ".pdf")
 
 internal enum class ImageExportFormat(val wireValue: String, val mimeType: String?) {
     Original("original", null),
@@ -335,6 +337,71 @@ internal fun imageOutputBaseName(displayNames: List<Pair<Int, String?>>): String
     return baseNames.distinct().singleOrNull()
 }
 
+internal fun outputFileExtension(displayName: String?): String? {
+    val value = displayName ?: return null
+    val extension =
+        SUPPORTED_OUTPUT_EXTENSIONS.firstOrNull { value.endsWith(it, ignoreCase = true) }
+            ?: return null
+    return value.takeLast(extension.length)
+}
+
+internal fun mediaStoreDirectoryPath(volume: String, relativePath: String): String? {
+    if (!volume.matches(STORAGE_VOLUME_NAME)) return null
+    val path = normalizedStorageSubdirectory(relativePath) ?: return null
+    val root =
+        if (volume == "external" || volume == "external_primary") {
+            "/storage/emulated/0"
+        } else {
+            "/storage/$volume"
+        }
+    return if (path.isEmpty()) root else "$root/$path"
+}
+
+internal fun externalStorageDirectoryPath(documentId: String): String? {
+    val separator = documentId.indexOf(':')
+    if (separator <= 0 || documentId.indexOf(':', separator + 1) >= 0) return null
+    val volume = documentId.substring(0, separator)
+    val path = normalizedStorageSubdirectory(documentId.substring(separator + 1)) ?: return null
+    val root =
+        if (volume.equals("primary", ignoreCase = true)) {
+            "/storage/emulated/0"
+        } else {
+            if (!volume.matches(STORAGE_VOLUME_NAME)) return null
+            "/storage/$volume"
+        }
+    return if (path.isEmpty()) root else "$root/$path"
+}
+
+internal fun outputLocationPath(directory: String, displayName: String?): String? {
+    val name = displayName ?: return null
+    if (!isProviderDisplayName(name) || '/' in name || '\\' in name) return null
+    return "${directory.trimEnd('/')}/$name"
+}
+
+internal fun imageOutputLocationLabel(locations: List<String>): String? {
+    val unique = locations.distinct()
+    if (unique.isEmpty()) return null
+    if (unique.size == 1) return unique.single()
+    val parents = unique.mapNotNull { it.substringBeforeLast('/', missingDelimiterValue = "").ifEmpty { null } }
+    if (
+        unique.all { it.startsWith('/') } &&
+            parents.size == unique.size &&
+            parents.distinct().size == 1
+    ) {
+        return parents.first()
+    }
+    return unique.joinToString(separator = "\n", limit = 3, truncated = "…")
+}
+
+private fun normalizedStorageSubdirectory(value: String): String? {
+    if (value.any { it.isISOControl() || it == '\\' }) return null
+    val trimmed = value.trim('/')
+    if (trimmed.isEmpty()) return ""
+    val parts = trimmed.split('/')
+    if (parts.any { it.isEmpty() || it == "." || it == ".." }) return null
+    return parts.joinToString("/")
+}
+
 internal fun resolveImageExport(
     sizePreset: ImageSizePreset,
     customMaxDimension: Int?,
@@ -641,6 +708,7 @@ internal data class SavedImageOutput(
     val format: ImageExportFormat?,
     val sizePreset: ImageSizePreset? = null,
     val customMaxDimension: Int? = null,
+    val location: String? = null,
 )
 
 internal data class SavedScan(
@@ -649,6 +717,7 @@ internal data class SavedScan(
     val savedPdf: Uri?,
     val savedPdfTree: Uri? = null,
     val savedPdfDisplayName: String? = null,
+    val savedPdfLocation: String? = null,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,

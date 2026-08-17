@@ -15,8 +15,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 497536,
-    "sha256": "95983216414641BCBADA3B05F4CD8353CEBF803B1967AEAF61C1F0EF2CFEED53",
+    "bytes": 592550,
+    "sha256": "1B741BC1919A220099A97C982D9C0558EC3BF042893B11D764E495E0F856F602",
     "altText": "Review, crop, rotate, and filter a scanned music practice sheet."
   },
   {
@@ -35,8 +35,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 208500,
-    "sha256": "599565C974FFDC372F28873B8E4FD6C60E77E789417E7E07881CC96C03EB8706",
+    "bytes": 249762,
+    "sha256": "944C7CC9831C919F19879268D0C6D4D45B18579E09A5369DACAAEAEDFE51DA9D",
     "altText": "File details with inline PDF and image renaming plus size, format, and location controls."
   },
   {
