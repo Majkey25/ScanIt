@@ -65,8 +65,8 @@
     "width": 1080,
     "height": 1920,
     "mode": "RGB",
-    "bytes": 259866,
-    "sha256": "1CB0D2025E038DD3D49823D0E276316896258155CEA22FEA3594C0760DBB79A3",
+    "bytes": 246747,
+    "sha256": "42FBDD874B4B19BC272ABD086368A76072434434A3EC756AE9B40FB9B80B0021",
     "altText": "On-device document actions for extracting text and detecting QR codes or barcodes."
   },
   {
