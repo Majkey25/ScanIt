@@ -865,6 +865,7 @@ private fun ResultScreen(
                         saveInProgress = result.outputSaveInProgress,
                         outputChangeInProgress = result.outputChangeInProgress,
                         onSaveNow = { showSaveDialog = true },
+                        onSavePdfNow = { onSaveNow(SaveNowTarget.Pdf) },
                         onChangePdfSize = { showPdfSizeDialog = true },
                         onChangePdfLocation = onChangePdfLocation,
                         onChangeImageSize = { showImageSizeDialog = true },
@@ -1676,6 +1677,7 @@ private fun FileDetails(
     saveInProgress: Boolean,
     outputChangeInProgress: Boolean,
     onSaveNow: () -> Unit,
+    onSavePdfNow: () -> Unit,
     onChangePdfSize: () -> Unit,
     onChangePdfLocation: () -> Unit,
     onChangeImageSize: () -> Unit,
@@ -1695,12 +1697,20 @@ private fun FileDetails(
     val stackFileDetailControls =
         availableWidthDp < 360 || configuration.fontScale >= 1.3f
     val pdfLocation =
-        scan.savedPdfLocation
-            ?: scan.savedPdf?.toString()
-            ?: stringResource(R.string.file_not_saved)
+        when {
+            scan.savedPdfDeleted -> ""
+            scan.savedPdf == null -> stringResource(R.string.file_not_saved)
+            else ->
+                displayOutputLocationPath(scan.savedPdfLocation)
+                    ?: stringResource(R.string.not_available)
+        }
     val pdfStatus =
         stringResource(
-            if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
+            when {
+                scan.savedPdfDeleted -> R.string.file_deleted
+                scan.savedPdf == null -> R.string.file_temporary
+                else -> R.string.file_saved
+            },
         )
     val imagesLocation = imageLocationLabel(scan)
     val pdfDisplayName = scan.savedPdfDisplayName ?: scan.cached.pdf.name
@@ -1794,9 +1804,16 @@ private fun FileDetails(
                 label = stringResource(R.string.target_size),
                 value = pdfSizeTargetLabel(scan.cached.pdfSizeTarget),
             )
-            FileDetailRow(
+            FileDetailStatusRow(
                 label = stringResource(R.string.status),
                 value = pdfStatus,
+                actionLabel = stringResource(R.string.save).takeIf { scan.savedPdfDeleted },
+                actionEnabled =
+                    scan.savedPdfDeleted &&
+                        SaveNowTarget.Pdf in saveTargets &&
+                        !saveInProgress &&
+                        !outputChangeInProgress,
+                onAction = onSavePdfNow,
             )
             FileDetailRow(
                 label = stringResource(R.string.location),
@@ -2133,11 +2150,49 @@ private fun FileDetailRow(
 }
 
 @Composable
+private fun FileDetailStatusRow(
+    label: String,
+    value: String,
+    actionLabel: String?,
+    actionEnabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Row(
+            modifier = Modifier.weight(1.2f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            if (actionLabel != null) {
+                TextButton(
+                    onClick = onAction,
+                    enabled = actionEnabled,
+                    modifier = Modifier.heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun imageLocationLabel(scan: SavedScan): String {
     if (scan.savedImages.isEmpty()) return stringResource(R.string.file_not_saved)
-    return requireNotNull(
-        imageOutputLocationLabel(scan.savedImages.map { it.location ?: it.uri.toString() }),
-    )
+    val locations = scan.savedImages.mapNotNull { displayOutputLocationPath(it.location) }
+    return imageOutputLocationLabel(locations) ?: stringResource(R.string.not_available)
 }
 
 @Composable

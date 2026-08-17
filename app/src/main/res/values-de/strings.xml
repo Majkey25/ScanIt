@@ -36,6 +36,7 @@
     <string name="fullscreen_preview_hint">Mit zwei Fingern zoomen, zum Verschieben ziehen oder zum Zurücksetzen doppeltippen.</string>
     <string name="file_saved">Gespeichert</string>
     <string name="file_temporary">Temporär</string>
+    <string name="file_deleted">Gelöscht</string>
     <string name="file_not_saved">Nicht gespeichert</string>
     <string name="pdf_document">PDF</string>
     <string name="images">Bilder</string>
