@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.PersistableBundle
-import android.provider.MediaStore
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -21,9 +20,10 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,7 +90,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -865,6 +868,8 @@ private fun ResultScreen(
                         saveInProgress = result.outputSaveInProgress,
                         outputChangeInProgress = result.outputChangeInProgress,
                         onSaveNow = { showSaveDialog = true },
+                        onSavePdfNow = { onSaveNow(SaveNowTarget.Pdf) },
+                        onSaveImagesNow = { onSaveNow(SaveNowTarget.Images) },
                         onChangePdfSize = { showPdfSizeDialog = true },
                         onChangePdfLocation = onChangePdfLocation,
                         onChangeImageSize = { showImageSizeDialog = true },
@@ -1676,6 +1681,8 @@ private fun FileDetails(
     saveInProgress: Boolean,
     outputChangeInProgress: Boolean,
     onSaveNow: () -> Unit,
+    onSavePdfNow: () -> Unit,
+    onSaveImagesNow: () -> Unit,
     onChangePdfSize: () -> Unit,
     onChangePdfLocation: () -> Unit,
     onChangeImageSize: () -> Unit,
@@ -1696,22 +1703,30 @@ private fun FileDetails(
         availableWidthDp < 360 || configuration.fontScale >= 1.3f
     val pdfLocation =
         when {
+            scan.savedPdfDeleted -> ""
             scan.savedPdf == null -> stringResource(R.string.file_not_saved)
-            scan.savedPdf.authority == MediaStore.AUTHORITY -> stringResource(R.string.downloads)
-            else -> stringResource(R.string.selected_folder)
+            else ->
+                displayOutputLocationPath(scan.savedPdfLocation)
+                    ?: stringResource(R.string.not_available)
         }
     val pdfStatus =
         stringResource(
-            if (scan.savedPdf == null) R.string.file_temporary else R.string.file_saved,
+            when {
+                scan.savedPdfDeleted -> R.string.file_deleted
+                scan.savedPdf == null -> R.string.file_temporary
+                else -> R.string.file_saved
+            },
         )
-    val imagesLocation = imageLocationLabel(scan)
+    val imagesLocation = if (scan.savedImagesDeleted) "" else imageLocationLabel(scan)
     val pdfDisplayName = scan.savedPdfDisplayName ?: scan.cached.pdf.name
     val pdfBaseName = normalizeOutputBaseName(pdfDisplayName)
     val imageBaseName =
         imageOutputBaseName(scan.savedImages.map { it.page to it.displayName })
             ?: scan.cached.baseName
+    val imageDisplayName = scan.savedImages.firstOrNull()?.displayName ?: imageBaseName
     val imageStatus =
         when {
+            scan.savedImagesDeleted -> stringResource(R.string.file_deleted)
             scan.galleryPages.isEmpty() -> stringResource(R.string.file_temporary)
             scan.galleryPages.size == scan.cached.pages.size -> stringResource(R.string.file_saved)
             else ->
@@ -1776,6 +1791,7 @@ private fun FileDetails(
             title = stringResource(R.string.pdf_document),
             displayName = pdfDisplayName,
             editBaseName = pdfBaseName,
+            editSuffix = outputFileExtension(pdfDisplayName) ?: ".pdf",
             renameEnabled =
                 FileDetailControl.PdfName in controls &&
                     !saveInProgress &&
@@ -1794,9 +1810,16 @@ private fun FileDetails(
                 label = stringResource(R.string.target_size),
                 value = pdfSizeTargetLabel(scan.cached.pdfSizeTarget),
             )
-            FileDetailRow(
+            FileDetailStatusRow(
                 label = stringResource(R.string.status),
                 value = pdfStatus,
+                actionLabel = stringResource(R.string.save).takeIf { scan.savedPdfDeleted },
+                actionEnabled =
+                    scan.savedPdfDeleted &&
+                        SaveNowTarget.Pdf in saveTargets &&
+                        !saveInProgress &&
+                        !outputChangeInProgress,
+                onAction = onSavePdfNow,
             )
             FileDetailRow(
                 label = stringResource(R.string.location),
@@ -1848,8 +1871,9 @@ private fun FileDetails(
         FileDetailSection(
             iconRes = R.drawable.ic_image,
             title = stringResource(R.string.images),
-            displayName = imageBaseName,
+            displayName = imageDisplayName,
             editBaseName = imageBaseName,
+            editSuffix = outputFileExtension(imageDisplayName).orEmpty(),
             renameEnabled =
                 FileDetailControl.ImageName in controls &&
                     !saveInProgress &&
@@ -1872,9 +1896,16 @@ private fun FileDetails(
                         savedImageBytes(scan),
                     ),
             )
-            FileDetailRow(
+            FileDetailStatusRow(
                 label = stringResource(R.string.status),
                 value = imageStatus,
+                actionLabel = stringResource(R.string.save).takeIf { scan.savedImagesDeleted },
+                actionEnabled =
+                    scan.savedImagesDeleted &&
+                        SaveNowTarget.Images in saveTargets &&
+                        !saveInProgress &&
+                        !outputChangeInProgress,
+                onAction = onSaveImagesNow,
             )
             FileDetailRow(
                 label = stringResource(R.string.location),
@@ -1989,13 +2020,18 @@ private fun FileDetailSection(
     title: String,
     displayName: String,
     editBaseName: String?,
+    editSuffix: String,
     renameEnabled: Boolean,
     onRename: (String) -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var editing by rememberSaveable(title, displayName) { mutableStateOf(false) }
     var draft by rememberSaveable(title, displayName) { mutableStateOf(editBaseName.orEmpty()) }
+    val nameFocusRequester = remember { FocusRequester() }
     val normalizedDraft = normalizeOutputBaseName(draft)
+    LaunchedEffect(editing) {
+        if (editing) nameFocusRequester.requestFocus()
+    }
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface,
@@ -2018,7 +2054,32 @@ private fun FileDetailSection(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleSmall)
-                    if (!editing) {
+                    if (editing) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            BasicTextField(
+                                value = draft,
+                                onValueChange = {
+                                    if (it.length <= MAX_OUTPUT_BASE_NAME_LENGTH) draft = it
+                                },
+                                enabled = renameEnabled,
+                                singleLine = true,
+                                textStyle =
+                                    MaterialTheme.typography.bodySmall.copy(
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.weight(1f).focusRequester(nameFocusRequester),
+                            )
+                            Text(
+                                editSuffix,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
                         Text(
                             displayName,
                             style = MaterialTheme.typography.bodySmall,
@@ -2041,23 +2102,7 @@ private fun FileDetailSection(
                             contentDescription = stringResource(R.string.rename_file),
                         )
                     }
-                }
-            }
-            if (editing) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { if (it.length <= MAX_OUTPUT_BASE_NAME_LENGTH + 5) draft = it },
-                        enabled = renameEnabled,
-                        singleLine = true,
-                        isError = draft.isNotBlank() && normalizedDraft == null,
-                        label = { Text(stringResource(R.string.file_name)) },
-                        modifier = Modifier.weight(1f),
-                    )
+                } else if (editing) {
                     IconButton(
                         onClick = {
                             onRename(requireNotNull(normalizedDraft))
@@ -2077,6 +2122,8 @@ private fun FileDetailSection(
                         )
                     }
                 }
+            }
+            if (editing) {
                 if (draft.isNotBlank() && normalizedDraft == null) {
                     Text(
                         stringResource(R.string.invalid_file_name),
@@ -2116,14 +2163,49 @@ private fun FileDetailRow(
 }
 
 @Composable
+private fun FileDetailStatusRow(
+    label: String,
+    value: String,
+    actionLabel: String?,
+    actionEnabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Row(
+            modifier = Modifier.weight(1.2f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(value, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            if (actionLabel != null) {
+                TextButton(
+                    onClick = onAction,
+                    enabled = actionEnabled,
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun imageLocationLabel(scan: SavedScan): String {
     if (scan.savedImages.isEmpty()) return stringResource(R.string.file_not_saved)
-    val trees = scan.savedImages.map(SavedImageOutput::treeUri).distinct()
-    return when {
-        trees == listOf(null) -> stringResource(R.string.gallery)
-        trees.size == 1 -> stringResource(R.string.selected_folder)
-        else -> stringResource(R.string.multiple_locations)
-    }
+    val locations = scan.savedImages.mapNotNull { displayOutputLocationPath(it.location) }
+    return imageOutputLocationLabel(locations) ?: stringResource(R.string.not_available)
 }
 
 @Composable

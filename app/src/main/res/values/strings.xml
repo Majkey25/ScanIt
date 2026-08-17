@@ -36,6 +36,7 @@
     <string name="fullscreen_preview_hint">Pinch to zoom, drag to pan, or double-tap to reset.</string>
     <string name="file_saved">Saved</string>
     <string name="file_temporary">Temporary</string>
+    <string name="file_deleted">Deleted</string>
     <string name="file_not_saved">Not saved</string>
     <string name="pdf_document">PDF</string>
     <string name="images">Images</string>

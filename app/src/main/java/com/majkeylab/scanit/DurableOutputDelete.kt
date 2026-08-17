@@ -270,6 +270,15 @@ private inline fun providerDeleteResult(operation: () -> OutputDeleteStatus): Ou
         OutputDeleteStatus.Failed
     }
 
+private inline fun providerQueryResult(operation: () -> ExactItemQuery): ExactItemQuery =
+    try {
+        operation()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) {
+        ExactItemQuery.Failed
+    }
+
 internal fun isExactSafDocument(
     row: SafDocumentRow,
     expectedDocumentId: String,
@@ -424,6 +433,59 @@ internal fun reconcileOutputTreeGrants(
 
 internal class ExactOutputDeleter(private val context: Context) {
     private val resolver = context.contentResolver
+
+    fun queryPdf(reference: PdfOutputRef): ExactItemQuery =
+        providerQueryResult {
+            reference.outputFingerprint() ?: return@providerQueryResult ExactItemQuery.Failed
+            if (reference.treeUri != null) {
+                if (reference.ownerPackageName != null || reference.mimeType != PDF_MIME_TYPE) {
+                    return@providerQueryResult ExactItemQuery.IdentityMismatch
+                }
+                return@providerQueryResult querySafOutput(
+                    uriValue = reference.uri,
+                    treeUriValue = reference.treeUri,
+                    displayName = reference.displayName,
+                    mimeType = reference.mimeType,
+                )
+            }
+            val identity =
+                expectedMediaIdentity(
+                    reference.displayName,
+                    reference.mimeType,
+                    reference.ownerPackageName,
+                    PDF_MIME_TYPE,
+                ) ?: return@providerQueryResult ExactItemQuery.IdentityMismatch
+            queryMediaOutput(reference.uri, MediaOutputCollection.Downloads, identity)
+        }
+
+    fun queryImage(cached: CachedScan, reference: ImageOutputRef): ExactItemQuery =
+        providerQueryResult {
+            if (reference.page !in 1..cached.pages.size) {
+                return@providerQueryResult ExactItemQuery.IdentityMismatch
+            }
+            reference.outputFingerprint() ?: return@providerQueryResult ExactItemQuery.Failed
+            val mimeType = reference.mimeType?.takeIf { it in IMAGE_MIME_TYPES }
+                ?: return@providerQueryResult ExactItemQuery.IdentityMismatch
+            if (reference.treeUri != null) {
+                if (reference.ownerPackageName != null) {
+                    return@providerQueryResult ExactItemQuery.IdentityMismatch
+                }
+                return@providerQueryResult querySafOutput(
+                    uriValue = reference.uri,
+                    treeUriValue = reference.treeUri,
+                    displayName = reference.displayName,
+                    mimeType = mimeType,
+                )
+            }
+            val identity =
+                expectedMediaIdentity(
+                    reference.displayName,
+                    mimeType,
+                    reference.ownerPackageName,
+                    mimeType,
+                ) ?: return@providerQueryResult ExactItemQuery.IdentityMismatch
+            queryMediaOutput(reference.uri, MediaOutputCollection.Images, identity)
+        }
 
     fun deletePdf(reference: PdfOutputRef): OutputDeleteStatus =
         reference.outputFingerprint()?.let { fingerprint ->
@@ -713,6 +775,34 @@ internal class ExactOutputDeleter(private val context: Context) {
         )
     }
 
+    private fun queryMediaOutput(
+        uriValue: String,
+        collection: MediaOutputCollection,
+        expectedIdentity: MediaItemRow,
+    ): ExactItemQuery {
+        val address = parseMediaItemAddress(uriValue) ?: return ExactItemQuery.IdentityMismatch
+        if (address.collection != collection) return ExactItemQuery.IdentityMismatch
+        val uri = Uri.parse(uriValue)
+        val canonical =
+            when (collection) {
+                MediaOutputCollection.Images ->
+                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
+                MediaOutputCollection.Downloads ->
+                    MediaStore.Downloads.getContentUri(address.volume, address.id)
+            }
+        if (canonical != uri) return ExactItemQuery.IdentityMismatch
+        val owner = expectedIdentity.ownerPackageName ?: return ExactItemQuery.IdentityMismatch
+        return queryMediaItem(
+            uri,
+            ExpectedMediaItem(
+                address.id,
+                expectedIdentity.displayName,
+                expectedIdentity.mimeType,
+                owner,
+            ),
+        )
+    }
+
     private fun queryMediaItem(uri: Uri, expected: ExpectedMediaItem): ExactItemQuery {
         val cursor =
             resolver.query(
@@ -804,6 +894,60 @@ internal class ExactOutputDeleter(private val context: Context) {
             throw cancellation
         } catch (_: Exception) {
             OutputDeleteStatus.Failed
+        }
+    }
+
+    private fun querySafOutput(
+        uriValue: String,
+        treeUriValue: String,
+        displayName: String?,
+        mimeType: String?,
+    ): ExactItemQuery {
+        val exactDisplayName = displayName ?: return ExactItemQuery.IdentityMismatch
+        val exactMimeType = mimeType ?: return ExactItemQuery.IdentityMismatch
+        if (exactMimeType != PDF_MIME_TYPE && exactMimeType !in IMAGE_MIME_TYPES) {
+            return ExactItemQuery.IdentityMismatch
+        }
+        val tree = exactContentUri(treeUriValue) ?: return ExactItemQuery.IdentityMismatch
+        val document = exactContentUri(uriValue) ?: return ExactItemQuery.IdentityMismatch
+        if (tree.authority != document.authority) return ExactItemQuery.IdentityMismatch
+        if (
+            !DocumentsContract.isTreeUri(tree) ||
+                !DocumentsContract.isDocumentUri(context, document) ||
+                resolver.persistedUriPermissions.none {
+                    it.uri == tree && it.isReadPermission && it.isWritePermission
+                }
+        ) return ExactItemQuery.IdentityMismatch
+        val rootId = DocumentsContract.getTreeDocumentId(tree)
+        val documentId = DocumentsContract.getDocumentId(document)
+        val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+        if (
+            rootId == documentId ||
+                DocumentsContract.getTreeDocumentId(document) != rootId ||
+                DocumentsContract.buildTreeDocumentUri(tree.authority!!, rootId) != tree ||
+                DocumentsContract.buildDocumentUriUsingTree(tree, documentId) != document ||
+                context.checkUriPermission(
+                    document,
+                    Process.myPid(),
+                    Process.myUid(),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                ) != PackageManager.PERMISSION_GRANTED
+        ) return ExactItemQuery.IdentityMismatch
+        return when (querySafDocument(document, documentId, exactDisplayName, exactMimeType)) {
+            ExactItemQuery.Absent ->
+                if (
+                    confirmSafDocumentAbsent(
+                        root,
+                        rootId,
+                        document,
+                        documentId,
+                        exactDisplayName,
+                        exactMimeType,
+                    ) == OutputDeleteStatus.Absent
+                ) ExactItemQuery.Absent else ExactItemQuery.Failed
+            ExactItemQuery.Exact -> ExactItemQuery.Exact
+            ExactItemQuery.IdentityMismatch -> ExactItemQuery.IdentityMismatch
+            ExactItemQuery.Failed -> ExactItemQuery.Failed
         }
     }
 

@@ -19,8 +19,8 @@ android {
         applicationId = "com.majkeylab.scanit"
         minSdk = 33
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.3.4"
+        versionCode = 22
+        versionName = "1.3.8"
         resValue("string", "edit_scan", "Edit scan")
     }
 

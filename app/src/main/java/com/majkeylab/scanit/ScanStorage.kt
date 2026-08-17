@@ -93,6 +93,7 @@ private val MEDIA_IDENTITY_PROJECTION =
         MediaStore.MediaColumns.OWNER_PACKAGE_NAME,
         MediaStore.MediaColumns.IS_PENDING,
     )
+private val MEDIA_LOCATION_PROJECTION = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
 
 internal fun <T> pendingMediaWrite(
     rollback: (Exception) -> Boolean,
@@ -2919,7 +2920,23 @@ internal class ScanStorage(
                     initial,
                     cached.pages.size,
                 )?.let { existing ->
-                    return@withLock existing.map { it.uri.toUri() }
+                    when (
+                        imageOutputPresence(
+                            existing.map { outputDeleter.queryImage(cached, it) },
+                        )
+                    ) {
+                        ImageOutputPresence.Present ->
+                            return@withLock existing.map { it.uri.toUri() }
+                        ImageOutputPresence.Deleted ->
+                            rewriteCachedOutputMetadata(cached) { metadata ->
+                                if (metadata.images != existing) {
+                                    throw IOException("Saved image authority changed")
+                                }
+                                metadata.copy(images = emptyList())
+                            }
+                        ImageOutputPresence.Uncertain ->
+                            throw IOException("Saved image identity could not be verified")
+                    }
                 }
                 cached.pages.forEachIndexed { index, source ->
                     val page = index + 1
@@ -3032,16 +3049,29 @@ internal class ScanStorage(
                     if (existing.pending) {
                         throw IOException("Saved PDF publication is still pending")
                     }
-                    return@withLock SavedPdfOutput(
-                        uri = existing.uri.toUri(),
-                        treeUri = existing.treeUri?.toUri(),
-                        warning = null,
-                        displayName = existing.displayName,
-                        mimeType = existing.mimeType,
-                        ownerPackageName = existing.ownerPackageName,
-                        byteLength = existing.byteLength,
-                        sha256 = existing.sha256,
-                    )
+                    when (outputDeleter.queryPdf(existing)) {
+                        ExactItemQuery.Exact ->
+                            return@withLock SavedPdfOutput(
+                                uri = existing.uri.toUri(),
+                                treeUri = existing.treeUri?.toUri(),
+                                warning = null,
+                                displayName = existing.displayName,
+                                mimeType = existing.mimeType,
+                                ownerPackageName = existing.ownerPackageName,
+                                byteLength = existing.byteLength,
+                                sha256 = existing.sha256,
+                            )
+                        ExactItemQuery.Absent ->
+                            rewriteCachedOutputMetadata(cached) { metadata ->
+                                if (metadata.pdf != existing) {
+                                    throw IOException("Saved PDF authority changed")
+                                }
+                                metadata.copy(pdf = null)
+                            }
+                        ExactItemQuery.IdentityMismatch,
+                        ExactItemQuery.Failed,
+                        -> throw IOException("Saved PDF identity could not be verified")
+                    }
                 }
                 val output =
                     if (pdfTreeUri != null) {
@@ -3276,12 +3306,17 @@ internal class ScanStorage(
         unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
     ): SavedScan {
         val activePdf = metadata?.pdf?.takeUnless(PdfOutputRef::pending)
+        val visiblePdf = visiblePdfOutput(activePdf, outputDeleter::queryPdf)
         val activeImages = metadata?.images?.filterNot(ImageOutputRef::pending).orEmpty()
+        val imagePresence =
+            imageOutputPresence(activeImages.map { outputDeleter.queryImage(cached, it) })
+        val visibleImages =
+            if (imagePresence == ImageOutputPresence.Deleted) emptyList() else activeImages
         val exact = metadata?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
         return SavedScan(
             cached = cached,
             savedImages =
-                activeImages.map { image ->
+                visibleImages.map { image ->
                     SavedImageOutput(
                         page = image.page,
                         uri = image.uri.toUri(),
@@ -3296,22 +3331,83 @@ internal class ScanStorage(
                         format = image.format,
                         sizePreset = image.sizePreset,
                         customMaxDimension = image.customMaxDimension,
+                        location =
+                            savedOutputLocation(
+                                treeUri = image.treeUri,
+                                uri = image.uri,
+                                displayName = image.displayName,
+                                collection = MediaOutputCollection.Images,
+                            ),
                     )
                 },
-            savedPdf = activePdf?.uri?.toUri(),
-            savedPdfTree = activePdf?.treeUri?.toUri(),
+            savedPdf = visiblePdf.reference?.uri?.toUri(),
+            savedPdfTree = visiblePdf.reference?.treeUri?.toUri(),
             savedPdfDisplayName = activePdf?.displayName,
+            savedPdfLocation =
+                visiblePdf.reference?.let {
+                    savedOutputLocation(
+                        treeUri = it.treeUri,
+                        uri = it.uri,
+                        displayName = it.displayName,
+                        collection = MediaOutputCollection.Downloads,
+                    )
+                },
+            savedPdfDeleted = visiblePdf.deleted,
+            savedImagesDeleted = imagePresence == ImageOutputPresence.Deleted,
             warnings =
                 (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
                     .distinct(),
             outputMetadataValid = metadata != null && !mutationBlocked,
-            savedPdfDeleteVerified = !mutationBlocked && exact?.pdf == activePdf && activePdf != null,
+            savedPdfDeleteVerified =
+                !mutationBlocked && exact?.pdf == visiblePdf.reference && visiblePdf.reference != null,
             savedImagesDeleteVerified =
-                !mutationBlocked && activeImages.isNotEmpty() &&
-                    exact?.images == activeImages,
+                !mutationBlocked && visibleImages.isNotEmpty() &&
+                    exact?.images == visibleImages,
             unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
         )
     }
+
+    private fun savedOutputLocation(
+        treeUri: String?,
+        uri: String,
+        displayName: String?,
+        collection: MediaOutputCollection,
+    ): String? {
+        if (treeUri != null) {
+            val tree = treeUri.toUri()
+            if (tree.authority == "com.android.externalstorage.documents") {
+                val directory =
+                    try {
+                        externalStorageDirectoryPath(DocumentsContract.getTreeDocumentId(tree))
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                directory?.let { outputLocationPath(it, displayName) }?.let { return it }
+            }
+            return null
+        }
+        val address = parseMediaItemAddress(uri)
+        if (address?.collection != collection) return null
+        val relativePath = readMediaRelativePath(uri.toUri()) ?: return null
+        val directory = mediaStoreDirectoryPath(address.volume, relativePath) ?: return null
+        return outputLocationPath(directory, displayName)
+    }
+
+    private fun readMediaRelativePath(uri: Uri): String? =
+        try {
+            resolver.query(uri, MEDIA_LOCATION_PROJECTION, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                if (index < 0 || cursor.isNull(index)) return@use null
+                cursor.getString(index).takeUnless { cursor.moveToNext() }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
 
     private fun requireResolvedProvisionalOutputCreate(cached: CachedScan) {
         val metadata = requireCurrentOutputMetadata(cached)

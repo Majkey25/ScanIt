@@ -38,6 +38,7 @@
     <string name="fullscreen_preview_hint">Stažením prstů měňte přiblížení, tažením posouvejte a dvojitým klepnutím obnovte zobrazení.</string>
     <string name="file_saved">Uloženo</string>
     <string name="file_temporary">Dočasné</string>
+    <string name="file_deleted">Smazáno</string>
     <string name="file_not_saved">Neuloženo</string>
     <string name="pdf_document">PDF</string>
     <string name="images">Obrázky</string>
