@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `20` |
-| Version name | `1.3.6` |
+| Version code | `21` |
+| Version name | `1.3.7` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 20 / 1.3.6
+## Release notes — version 21 / 1.3.7
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> File details now shows readable storage paths instead of technical provider addresses. If a saved PDF was deleted outside the app, ScanIt clearly marks it as Deleted and offers a direct Save action to recreate it.
+> File details now shows only the containing folder in Location. The PDF or image name stays in its separate editable field, keeping saved-file information clear and compact.
 
 ### Čeština
 
-> Detaily souboru nyní ukazují čitelné cesty místo technických adres poskytovatele. Pokud bylo uložené PDF smazáno mimo aplikaci, ScanIt ho označí jako Smazáno a nabídne přímé tlačítko Uložit pro jeho obnovení.
+> Detaily souboru nyní v poli Umístění ukazují jen cílovou složku. Název PDF nebo obrázku zůstává v samostatném upravitelném poli, takže jsou informace přehlednější.
 
 ### Deutsch
 
-> Die Dateidetails zeigen jetzt lesbare Speicherpfade statt technischer Anbieteradressen. Wird eine gespeicherte PDF außerhalb der App gelöscht, markiert ScanIt sie als Gelöscht und bietet eine direkte Speichern-Aktion zum Wiederherstellen an.
+> Die Dateidetails zeigen unter Speicherort nur noch den Zielordner. Der Name der PDF- oder Bilddatei bleibt im separaten bearbeitbaren Feld, sodass die Ansicht kompakt bleibt.
 
 ### Español
 
-> Detalles del archivo ahora muestra rutas de almacenamiento legibles en vez de direcciones técnicas. Si un PDF guardado se elimina fuera de la app, ScanIt lo marca como Eliminado y ofrece una acción Guardar directa para recrearlo.
+> Detalles del archivo ahora muestra solo la carpeta de destino en Ubicación. El nombre del PDF o de la imagen permanece en su campo editable separado para una vista más clara.
 
 ### 简体中文
 
-> 文件详情现在显示易读的存储路径，不再显示技术性提供程序地址。如果已保存的 PDF 在应用外被删除，ScanIt 会将其标记为已删除，并提供直接的保存操作来重新创建文件。
+> 文件详情中的位置现在仅显示目标文件夹。PDF 或图片名称仍保留在单独的可编辑字段中，使保存信息更清晰、更紧凑。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 20, version `1.3.6`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 21, version `1.3.7`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
