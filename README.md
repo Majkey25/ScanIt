@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.6"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.6 showing the Result screen, file controls, and visual signature editor."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.6"><img src="docs/images/scanit-current-overview.png" width="100%" alt="Current ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
 ## v1.3.6 update
@@ -52,8 +52,20 @@ the previously viewed Result; completed scans remain available from Recent.
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
-  <img src="docs/images/scanit-v1.1-phones.png" width="100%" alt="Current ScanIt screens showing document capture, Result, File details, and the visual signature editor.">
+  <img src="docs/play-store/assets/en-US/phone/01-capture.png" width="23%" alt="ScanIt automatic document capture with edge detection.">
+  <img src="docs/play-store/assets/en-US/phone/02-review.png" width="23%" alt="Google scan review with crop, enhancement, filters, rotation, and page controls.">
+  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="ScanIt result with rescan, signature, document actions, sharing, printing, and file details.">
+  <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with inline renaming, size, format, and location controls.">
 </p>
+
+<p align="center">
+  <img src="docs/play-store/assets/en-US/phone/05-recent.png" width="23%" alt="Recent scans dashboard with previews and direct opening.">
+  <img src="docs/play-store/assets/en-US/phone/06-sign-stamp.png" width="23%" alt="Signature and stamp editor with direct drag, pinch, and rotation controls.">
+  <img src="docs/play-store/assets/en-US/phone/07-actions.png" width="23%" alt="On-device text extraction and QR or barcode document actions.">
+  <img src="docs/play-store/assets/en-US/phone/08-pdf-size.png" width="23%" alt="Measured PDF size choices from 200 KB through custom targets.">
+</p>
+
+[See all English and Czech screenshots](docs/play-store/assets/).
 
 ## Why ScanIt exists
 
@@ -67,15 +79,6 @@ compact language picker in Settings.
 
 ScanIt was built with AI-assisted coding and design. The maintainer reviews the
 source, release artifacts, and real-device workflows.
-
-<p align="center">
-  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="ScanIt result with rescan, signature, document actions, sharing, printing, and file details.">
-  <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with inline renaming, size, format, and location controls.">
-  <img src="docs/play-store/assets/en-US/phone/06-sign-stamp.png" width="23%" alt="Signature and stamp editor with direct placement controls.">
-  <img src="docs/play-store/assets/en-US/phone/07-actions.png" width="23%" alt="On-device text extraction and QR or barcode actions.">
-</p>
-
-[See all English and Czech screenshots](docs/play-store/assets/).
 
 ## Features
 
