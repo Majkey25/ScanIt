@@ -91,6 +91,71 @@ class PureLogicTest {
     }
 
     @Test
+    fun fileNamePresentationKeepsTheCurrentExtensionOutsideTheEditableStem() {
+        assertEquals(".pdf", outputFileExtension("Practice sheet.pdf"))
+        assertEquals(".png", outputFileExtension("Practice sheet_01.png"))
+        assertEquals(".jpg", outputFileExtension("Practice sheet_01 (1).jpg"))
+        assertEquals(".JPG", outputFileExtension("Practice sheet_01.JPG"))
+        assertNull(outputFileExtension("Practice sheet"))
+        assertNull(outputFileExtension("Practice sheet.exe"))
+    }
+
+    @Test
+    fun savedOutputLocationsUseFullStoragePaths() {
+        assertEquals(
+            "/storage/emulated/0/Download/Scan to PDF",
+            mediaStoreDirectoryPath("external_primary", "Download/Scan to PDF/"),
+        )
+        assertEquals(
+            "/storage/emulated/0/Download/Scan to PDF/Practice sheet.pdf",
+            outputLocationPath(
+                "/storage/emulated/0/Download/Scan to PDF",
+                "Practice sheet.pdf",
+            ),
+        )
+        assertEquals(
+            "/storage/emulated/0/Pictures/Scan to PDF",
+            mediaStoreDirectoryPath("external", "Pictures/Scan to PDF"),
+        )
+        assertEquals(
+            "/storage/ABCD-1234/Documents/Scans",
+            mediaStoreDirectoryPath("ABCD-1234", "Documents/Scans/"),
+        )
+        assertEquals(
+            "/storage/emulated/0/Documents/Scans",
+            externalStorageDirectoryPath("primary:Documents/Scans"),
+        )
+        assertEquals(
+            "/storage/ABCD-1234/Scans",
+            externalStorageDirectoryPath("ABCD-1234:Scans"),
+        )
+        assertNull(mediaStoreDirectoryPath("bad/volume", "Download/Scans"))
+        assertNull(mediaStoreDirectoryPath("external_primary", "../Scans"))
+        assertNull(externalStorageDirectoryPath("cloud-root"))
+        assertNull(outputLocationPath("/storage/emulated/0/Download", "../bad.pdf"))
+        assertEquals(
+            "/storage/emulated/0/Pictures/Scan to PDF",
+            imageOutputLocationLabel(
+                listOf(
+                    "/storage/emulated/0/Pictures/Scan to PDF/Page_01.jpg",
+                    "/storage/emulated/0/Pictures/Scan to PDF/Page_02.jpg",
+                ),
+            ),
+        )
+        assertEquals(
+            "content://provider/one\ncontent://provider/two\ncontent://provider/three\n…",
+            imageOutputLocationLabel(
+                listOf(
+                    "content://provider/one",
+                    "content://provider/two",
+                    "content://provider/three",
+                    "content://provider/four",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun outputNamesRejectPathsControlsAndEmptyValues() {
         listOf(
             "",

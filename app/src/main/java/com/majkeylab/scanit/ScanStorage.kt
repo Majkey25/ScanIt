@@ -93,6 +93,7 @@ private val MEDIA_IDENTITY_PROJECTION =
         MediaStore.MediaColumns.OWNER_PACKAGE_NAME,
         MediaStore.MediaColumns.IS_PENDING,
     )
+private val MEDIA_LOCATION_PROJECTION = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
 
 internal fun <T> pendingMediaWrite(
     rollback: (Exception) -> Boolean,
@@ -3285,11 +3286,27 @@ internal class ScanStorage(
                         format = image.format,
                         sizePreset = image.sizePreset,
                         customMaxDimension = image.customMaxDimension,
+                        location =
+                            savedOutputLocation(
+                                treeUri = image.treeUri,
+                                uri = image.uri,
+                                displayName = image.displayName,
+                                collection = MediaOutputCollection.Images,
+                            ),
                     )
                 },
             savedPdf = activePdf?.uri?.toUri(),
             savedPdfTree = activePdf?.treeUri?.toUri(),
             savedPdfDisplayName = activePdf?.displayName,
+            savedPdfLocation =
+                activePdf?.let {
+                    savedOutputLocation(
+                        treeUri = it.treeUri,
+                        uri = it.uri,
+                        displayName = it.displayName,
+                        collection = MediaOutputCollection.Downloads,
+                    )
+                },
             warnings =
                 (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
                     .distinct(),
@@ -3301,6 +3318,48 @@ internal class ScanStorage(
             unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
         )
     }
+
+    private fun savedOutputLocation(
+        treeUri: String?,
+        uri: String,
+        displayName: String?,
+        collection: MediaOutputCollection,
+    ): String {
+        if (treeUri != null) {
+            val tree = treeUri.toUri()
+            if (tree.authority == "com.android.externalstorage.documents") {
+                val directory =
+                    try {
+                        externalStorageDirectoryPath(DocumentsContract.getTreeDocumentId(tree))
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                directory?.let { outputLocationPath(it, displayName) }?.let { return it }
+            }
+            return uri
+        }
+        val address = parseMediaItemAddress(uri)
+        if (address?.collection != collection) return uri
+        val relativePath = readMediaRelativePath(uri.toUri()) ?: return uri
+        val directory = mediaStoreDirectoryPath(address.volume, relativePath) ?: return uri
+        return outputLocationPath(directory, displayName) ?: uri
+    }
+
+    private fun readMediaRelativePath(uri: Uri): String? =
+        try {
+            resolver.query(uri, MEDIA_LOCATION_PROJECTION, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                if (index < 0 || cursor.isNull(index)) return@use null
+                cursor.getString(index).takeUnless { cursor.moveToNext() }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        }
 
     private fun requireResolvedProvisionalOutputCreate(cached: CachedScan) {
         val metadata = requireCurrentOutputMetadata(cached)

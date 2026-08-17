@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `18` |
-| Version name | `1.3.4` |
+| Version code | `19` |
+| Version name | `1.3.5` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 18 / 1.3.4
+## Release notes — version 19 / 1.3.5
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Rename saved PDFs and image sets directly in File details. Renaming preserves the exact file bytes and safely retires the previous saved output. Actions now uses the shorter “Extract text” label, the Custom PDF size option no longer shows an ellipsis, and a fresh app launch opens the scanner instead of the previous Result.
+> Rename saved PDFs and image sets in a compact inline editor with a fixed visible extension. File details now shows each output's full resolved location instead of a vague folder label. The Review every page and File details screenshots now match the released English interface.
 
 ### Čeština
 
-> Uložená PDF i sady obrázků lze přejmenovat přímo v detailech souboru. Přejmenování zachová přesné bajty a bezpečně odstraní starý výstup. Akce mají kratší název „Extrahovat text“, Vlastní už nemá tři tečky a po novém spuštění se otevře skener.
+> Uložená PDF i sady obrázků lze přejmenovat v kompaktním editoru s pevně zobrazenou příponou. Detaily souboru nyní ukazují úplnou cestu k výstupu místo neurčitého názvu složky. Aktualizované snímky odpovídají vydané anglické verzi.
 
 ### Deutsch
 
-> Gespeicherte PDFs und Bildsätze lassen sich direkt in den Dateidetails umbenennen. Die Bytes bleiben unverändert und die alte Ausgabe wird sicher entfernt. Aktionen heißt kürzer „Text extrahieren“, Benutzerdefiniert hat keine Auslassungspunkte mehr und ein Neustart öffnet den Scanner.
+> PDFs und Bildsätze lassen sich in einem kompakten Editor mit fest sichtbarer Dateiendung umbenennen. Die Dateidetails zeigen jetzt den vollständigen Ausgabeort statt einer ungenauen Ordnerbezeichnung. Die aktualisierten Screenshots entsprechen der veröffentlichten englischen Oberfläche.
 
 ### Español
 
-> Ahora puedes renombrar PDF e imágenes desde Detalles del archivo sin cambiar sus bytes. La salida anterior se retira de forma segura. Acciones usa «Extraer texto», Personalizado ya no muestra puntos suspensivos y al iniciar de nuevo se abre el escáner.
+> Ahora puedes renombrar PDF e imágenes con un editor compacto y una extensión visible que no se puede modificar. Detalles del archivo muestra la ubicación completa de cada salida en vez de una carpeta imprecisa. Las capturas actualizadas coinciden con la interfaz publicada en inglés.
 
 ### 简体中文
 
-> 现在可在文件详情中直接重命名 PDF 和图像组，同时保持文件字节不变并安全移除旧输出。“操作”改为更短的“提取文本”，“自定义”不再显示省略号；重新启动应用时会直接打开扫描器。
+> 现在可通过紧凑的行内编辑器重命名 PDF 和图像组，文件扩展名始终可见且不可修改。文件详情会显示完整输出位置，不再使用模糊的文件夹名称。更新后的截图与已发布的英文界面一致。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 18, version `1.3.4`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 19, version `1.3.5`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
