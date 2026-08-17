@@ -381,10 +381,12 @@ internal fun outputLocationPath(directory: String, displayName: String?): String
 internal fun displayOutputLocationPath(value: String?): String? {
     val path = value?.replace('\\', '/')?.trimEnd('/') ?: return null
     if (path.isBlank() || path.startsWith("content://", ignoreCase = true)) return null
+    val directory = path.substringBeforeLast('/', missingDelimiterValue = "")
+    if (directory.isBlank()) return null
     val internalRoot = "/storage/emulated/0"
-    if (path == internalRoot) return "Internal storage"
-    if (path.startsWith("$internalRoot/")) {
-        val relative = path.removePrefix("$internalRoot/")
+    if (directory == internalRoot) return "Internal storage"
+    if (directory.startsWith("$internalRoot/")) {
+        val relative = directory.removePrefix("$internalRoot/")
         val readable =
             if (relative == "Download" || relative.startsWith("Download/")) {
                 "Downloads${relative.removePrefix("Download")}"
@@ -393,11 +395,11 @@ internal fun displayOutputLocationPath(value: String?): String? {
             }
         return "Internal storage/$readable"
     }
-    if (path.startsWith("/storage/")) {
-        val relative = path.removePrefix("/storage/").substringAfter('/', missingDelimiterValue = "")
+    if (directory.startsWith("/storage/")) {
+        val relative = directory.removePrefix("/storage/").substringAfter('/', missingDelimiterValue = "")
         return if (relative.isBlank()) "External storage" else "External storage/$relative"
     }
-    return path
+    return directory
 }
 
 internal data class VisiblePdfOutput(

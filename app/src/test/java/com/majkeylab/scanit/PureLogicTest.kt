@@ -158,15 +158,21 @@ class PureLogicTest {
     @Test
     fun fileDetailsShowReadableStoragePathsAndNeverProviderUris() {
         assertEquals(
-            "Internal storage/Downloads/Scan to PDF/Practice sheet.pdf",
+            "Internal storage/Downloads/Scan to PDF",
             displayOutputLocationPath(
                 "/storage/emulated/0/Download/Scan to PDF/Practice sheet.pdf",
             ),
         )
         assertEquals(
-            "External storage/Documents/Scans/Practice sheet.pdf",
+            "External storage/Documents/Scans",
             displayOutputLocationPath(
                 "/storage/ABCD-1234/Documents/Scans/Practice sheet.pdf",
+            ),
+        )
+        assertEquals(
+            "Internal storage/Pictures/Scan to PDF",
+            displayOutputLocationPath(
+                "/storage/emulated/0/Pictures/Scan to PDF/Page 01.png",
             ),
         )
         assertNull(displayOutputLocationPath("content://media/external/downloads/15911"))
