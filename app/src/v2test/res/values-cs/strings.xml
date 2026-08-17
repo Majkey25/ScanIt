@@ -62,4 +62,7 @@
     <string name="v2_error_render">Stránku se nepodařilo vykreslit. Zdrojová fotografie zůstala zachována.</string>
     <string name="v2_error_finish">Sken se nepodařilo otevřít. Zkontrolujte ho a zkuste znovu Pokračovat.</string>
     <string name="v2_error_camera">Fotoaparát není dostupný.</string>
+    <string name="v2_quality_blurry">Stránka může být rozmazaná. Před uložením zkontrolujte detaily.</string>
+    <string name="v2_quality_too_dark">Stránka je příliš tmavá. Pokud chybí detaily, vyfoťte ji znovu v lepším světle.</string>
+    <string name="v2_quality_overexposed">Stránka je přesvětlená. Pokud chybí detaily, vyfoťte ji znovu bez odlesků.</string>
 </resources>

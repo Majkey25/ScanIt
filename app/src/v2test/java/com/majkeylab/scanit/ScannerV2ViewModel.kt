@@ -38,6 +38,7 @@ internal data class ScannerV2UiState(
     val preview: Bitmap? = null,
     val busy: Boolean = true,
     val issue: ScannerV2Issue? = null,
+    val captureQualityIssues: Set<ScannerV2CaptureQualityIssue> = emptySet(),
     val cropEditing: Boolean = false,
     val filterPreviews: Map<ScannerV2Filter, Bitmap> = emptyMap(),
     val pageThumbnails: Map<PageId, ScannerV2PageThumbnail> = emptyMap(),
@@ -300,6 +301,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             preview = renderedPreview,
                             busy = false,
                             issue = null,
+                            captureQualityIssues = emptySet(),
                             cropEditing = false,
                             filterPreviews = filterPreviews,
                             pageThumbnails = loadPageThumbnails(replacement),
@@ -335,6 +337,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             preview = null,
                             busy = false,
                             issue = null,
+                            captureQualityIssues = emptySet(),
                             cropEditing = false,
                             filterPreviews = emptyMap(),
                         )
@@ -416,10 +419,16 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         val page = current.pages[selected]
                         check(page.renderedFingerprint != null) { "Scanner page render is not published" }
                         val preview = decodeScannerV2Preview(store.sourceFile(current.sessionId, page.pageId))
+                        val qualityIssues = analyzeScannerV2Preview(
+                            preview,
+                            suggestedCrop = page.crop,
+                            preferSuggestedCrop = true,
+                        ).qualityIssues
                         mutableState.value = ScannerV2UiState(
                             manifest = current,
                             preview = preview,
                             busy = false,
+                            captureQualityIssues = qualityIssues,
                             cropEditing = true,
                             pageThumbnails = mutableState.value.pageThumbnails,
                         )
@@ -469,6 +478,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             preview = null,
                             busy = false,
                             issue = null,
+                            captureQualityIssues = emptySet(),
                             cropEditing = false,
                             filterPreviews = emptyMap(),
                         )
@@ -830,9 +840,14 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         validateScannerV2Source(source)
         val preview = decodeScannerV2Preview(source)
         try {
+            val analysis = analyzeScannerV2Preview(
+                preview,
+                suggestedCrop = ticket.suggestedCrop,
+                preferSuggestedCrop = ticket.preferSuggestedCrop,
+            )
             val crop = resolveScannerV2CaptureCrop(
                 ticket.suggestedCrop,
-                detectScannerV2Crop(preview),
+                analysis.crop,
                 ticket.preferSuggestedCrop,
             )
             val fingerprint = source.inputStream().use { readOutputFingerprint(it, source.length()) }
@@ -864,6 +879,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                     preview = preview,
                     busy = false,
                     issue = ScannerV2Issue.SessionUnavailable,
+                    captureQualityIssues = analysis.qualityIssues,
                 )
                 return@withContext
             }
@@ -872,6 +888,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 preview = preview,
                 busy = false,
                 issue = if (cleaned.retiredPages.isEmpty()) null else ScannerV2Issue.SessionUnavailable,
+                captureQualityIssues = analysis.qualityIssues,
                 pageThumbnails = loadPageThumbnails(cleaned),
             )
         } catch (failure: Throwable) {
@@ -898,6 +915,15 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         val index = requireNotNull(manifest.state.selectedIndex)
         val record = manifest.pages[index]
         val preview = decodeScannerV2Preview(store.previewFile(manifest, record))
+        val qualityIssues = if (record.renderedFingerprint == null) {
+            analyzeScannerV2Preview(
+                preview,
+                suggestedCrop = record.crop,
+                preferSuggestedCrop = true,
+            ).qualityIssues
+        } else {
+            emptySet()
+        }
         val filterPreviews = if (record.renderedFingerprint == null) {
             emptyMap()
         } else {
@@ -911,6 +937,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             manifest = manifest,
             preview = preview,
             busy = false,
+            captureQualityIssues = qualityIssues,
             filterPreviews = filterPreviews,
             pageThumbnails = loadPageThumbnails(manifest),
         )

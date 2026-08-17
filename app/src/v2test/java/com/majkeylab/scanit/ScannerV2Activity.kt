@@ -1039,6 +1039,9 @@ private fun ScannerV2ReviewScreen(
                     Text(stringResource(R.string.v2_use_whole_image))
                 }
             }
+            if (!rendered) {
+                state.captureQualityIssues.firstOrNull()?.let { ScannerV2QualityWarning(it) }
+            }
             state.issue?.let { ScannerV2IssueText(it) }
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -1745,4 +1748,24 @@ private fun ScannerV2IssueText(issue: ScannerV2Issue) {
         ScannerV2Issue.CameraUnavailable -> R.string.v2_error_camera
     }
     Text(stringResource(message), color = MaterialTheme.colorScheme.error)
+}
+
+@Composable
+private fun ScannerV2QualityWarning(issue: ScannerV2CaptureQualityIssue) {
+    val message = when (issue) {
+        ScannerV2CaptureQualityIssue.Blurry -> R.string.v2_quality_blurry
+        ScannerV2CaptureQualityIssue.TooDark -> R.string.v2_quality_too_dark
+        ScannerV2CaptureQualityIssue.Overexposed -> R.string.v2_quality_overexposed
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            stringResource(message),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

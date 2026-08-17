@@ -62,4 +62,7 @@
     <string name="v2_error_render">The page could not be rendered. Your source photo is preserved.</string>
     <string name="v2_error_finish">The scan could not be opened. Review it and try Continue again.</string>
     <string name="v2_error_camera">The camera is unavailable.</string>
+    <string name="v2_quality_blurry">This page may be blurry. Check the details before keeping it.</string>
+    <string name="v2_quality_too_dark">This page looks too dark. Retake it in better light if details are missing.</string>
+    <string name="v2_quality_overexposed">This page looks overexposed. Retake it without glare if details are missing.</string>
 </resources>

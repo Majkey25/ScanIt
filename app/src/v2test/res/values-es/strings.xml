@@ -62,4 +62,7 @@
     <string name="v2_error_render">No se pudo procesar la página. La foto original se ha conservado.</string>
     <string name="v2_error_finish">No se pudo abrir el escaneo. Revísalo y pulsa Continuar de nuevo.</string>
     <string name="v2_error_camera">La cámara no está disponible.</string>
+    <string name="v2_quality_blurry">Esta página puede estar borrosa. Revisa los detalles antes de conservarla.</string>
+    <string name="v2_quality_too_dark">Esta página está demasiado oscura. Vuelve a capturarla con mejor luz si faltan detalles.</string>
+    <string name="v2_quality_overexposed">Esta página está sobreexpuesta. Vuelve a capturarla sin reflejos si faltan detalles.</string>
 </resources>

@@ -62,4 +62,7 @@
     <string name="v2_error_render">无法处理页面，原始照片已保留。</string>
     <string name="v2_error_finish">无法打开扫描件。请检查后再次点按继续。</string>
     <string name="v2_error_camera">相机不可用。</string>
+    <string name="v2_quality_blurry">此页面可能模糊。保留前请检查细节。</string>
+    <string name="v2_quality_too_dark">此页面过暗。如有细节缺失，请在更好的光线下重新拍摄。</string>
+    <string name="v2_quality_overexposed">此页面曝光过度。如有细节缺失，请避免反光并重新拍摄。</string>
 </resources>

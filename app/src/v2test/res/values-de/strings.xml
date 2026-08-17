@@ -62,4 +62,7 @@
     <string name="v2_error_render">Die Seite konnte nicht gerendert werden. Das Quellfoto bleibt erhalten.</string>
     <string name="v2_error_finish">Der Scan konnte nicht geöffnet werden. Prüfen Sie ihn und tippen Sie erneut auf Weiter.</string>
     <string name="v2_error_camera">Die Kamera ist nicht verfügbar.</string>
+    <string name="v2_quality_blurry">Diese Seite könnte unscharf sein. Prüfen Sie die Details, bevor Sie sie übernehmen.</string>
+    <string name="v2_quality_too_dark">Diese Seite ist zu dunkel. Nehmen Sie sie bei besserem Licht erneut auf, falls Details fehlen.</string>
+    <string name="v2_quality_overexposed">Diese Seite ist überbelichtet. Nehmen Sie sie ohne Spiegelungen erneut auf, falls Details fehlen.</string>
 </resources>

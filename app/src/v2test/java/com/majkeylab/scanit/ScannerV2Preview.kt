@@ -136,7 +136,16 @@ private fun decodeScannerV2Preview(source: File, maxEdge: Int, maxPixels: Long):
     }
 }
 
-internal fun detectScannerV2Crop(preview: Bitmap): PageQuad? {
+internal data class ScannerV2PreviewAnalysis(
+    val crop: PageQuad?,
+    val qualityIssues: Set<ScannerV2CaptureQualityIssue>,
+)
+
+internal fun analyzeScannerV2Preview(
+    preview: Bitmap,
+    suggestedCrop: PageQuad? = null,
+    preferSuggestedCrop: Boolean = false,
+): ScannerV2PreviewAnalysis {
     val scale = minOf(1.0, SCANNER_V2_DETECTOR_MAX_EDGE.toDouble() / max(preview.width, preview.height))
     val width = (preview.width * scale).roundToInt().coerceAtLeast(32)
     val height = (preview.height * scale).roundToInt().coerceAtLeast(32)
@@ -148,7 +157,13 @@ internal fun detectScannerV2Crop(preview: Bitmap): PageQuad? {
             val color = argb[index]
             ((Color.red(color) * 77 + Color.green(color) * 150 + Color.blue(color) * 29) shr 8).toByte()
         }
-        return detectDocumentQuad(LumaFrame(analysis.width, analysis.height, luma))
+        val frame = LumaFrame(analysis.width, analysis.height, luma)
+        val detectedCrop = detectDocumentQuad(frame)
+        val qualityCrop = resolveScannerV2CaptureCrop(suggestedCrop, detectedCrop, preferSuggestedCrop)
+        return ScannerV2PreviewAnalysis(
+            crop = detectedCrop,
+            qualityIssues = analyzeScannerV2CaptureQuality(frame, qualityCrop),
+        )
     } finally {
         if (analysis !== preview) analysis.recycle()
     }
