@@ -149,6 +149,8 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                             pageId,
                             current.state.generation,
                             destination,
+                            suggestedCrop = PageQuad.fullFrame(),
+                            preferSuggestedCrop = true,
                         )
                         mutableState.value = mutableState.value.copy(
                             manifest = reserved,
