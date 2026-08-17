@@ -135,6 +135,8 @@ private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consum
 private const val V2_VIEW_MODEL_TOKEN_KEY = "v2_view_model_token"
 private const val V2_ANALYSIS_INTERVAL_MS = 100L
 private const val V2_ANALYSIS_GUIDE_HOLD_MS = 250L
+private const val V2_PREFERENCES = "scanner_v2"
+private const val V2_CAPTURE_MODE_KEY = "capture_mode"
 private val V2_ANALYSIS_SIZE = Size(320, 240)
 
 class ScannerV2Activity : ComponentActivity() {
@@ -142,6 +144,9 @@ class ScannerV2Activity : ComponentActivity() {
     private val resultViewModel: ScanViewModel by viewModels()
     private val customFilterStore by lazy(LazyThreadSafetyMode.NONE) {
         ScannerV2CustomFilterStore(applicationContext)
+    }
+    private val scannerPreferences by lazy(LazyThreadSafetyMode.NONE) {
+        getSharedPreferences(V2_PREFERENCES, MODE_PRIVATE)
     }
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
@@ -160,6 +165,8 @@ class ScannerV2Activity : ComponentActivity() {
     private var lastAnalysisDetectedAt = 0L
     @Volatile
     private var analysisGuideVisible = false
+    @Volatile
+    private var captureMode = ScannerV2CaptureMode.Auto
     private var freshLaunchRequested = false
     private var launchDirectiveConsumed = false
     private var launchDirectiveClaimed = false
@@ -186,12 +193,14 @@ class ScannerV2Activity : ComponentActivity() {
             this,
             Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
+        captureMode = parseScannerV2CaptureMode(scannerPreferences.getString(V2_CAPTURE_MODE_KEY, null))
         setContent {
             var customFilters by remember {
                 mutableStateOf<List<ScannerV2CustomFilter>>(emptyList())
             }
             var customFiltersLoaded by remember { mutableStateOf(false) }
             var customFiltersUnreadable by remember { mutableStateOf(false) }
+            var captureModeState by remember { mutableStateOf(captureMode) }
             LaunchedEffect(Unit) {
                 when (val loaded = withContext(Dispatchers.IO) { customFilterStore.load() }) {
                     is ScannerV2CustomFilterLoadResult.Loaded -> {
@@ -359,11 +368,19 @@ class ScannerV2Activity : ComponentActivity() {
                     surfaceRequest = surfaceRequest,
                     liveDocumentQuad = liveDocumentQuad,
                     liveDocumentReady = liveDocumentReady,
+                    captureMode = captureModeState,
                     cameraPermissionGranted = cameraPermissionGranted,
                     onRequestCameraPermission = {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
                     onCapture = ::capture,
+                    onCaptureModeChange = { mode ->
+                        captureMode = mode
+                        captureModeState = mode
+                        autoCaptureGate.reset()
+                        liveDocumentReady = false
+                        scannerPreferences.edit().putString(V2_CAPTURE_MODE_KEY, mode.name).apply()
+                    },
                     onImportImage = {
                         imageImportLauncher.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
                     },
@@ -547,7 +564,7 @@ class ScannerV2Activity : ComponentActivity() {
                 if (generation == cameraBindGeneration && !isDestroyed) {
                     liveDocumentQuad = publishedGuide
                     liveDocumentReady = detected != null && decision.ready
-                    if (decision.shouldCapture) capture()
+                    if (shouldScannerV2AutoCapture(captureMode, decision)) capture()
                 }
             }
         } finally {
@@ -647,9 +664,11 @@ private fun ScannerV2App(
     surfaceRequest: SurfaceRequest?,
     liveDocumentQuad: PageQuad?,
     liveDocumentReady: Boolean,
+    captureMode: ScannerV2CaptureMode,
     cameraPermissionGranted: Boolean,
     onRequestCameraPermission: () -> Unit,
     onCapture: () -> Unit,
+    onCaptureModeChange: (ScannerV2CaptureMode) -> Unit,
     onImportImage: () -> Unit,
     onCancelCamera: () -> Unit,
     onDiscardInterruptedCapture: () -> Unit,
@@ -677,9 +696,11 @@ private fun ScannerV2App(
                 surfaceRequest = surfaceRequest,
                 liveDocumentQuad = liveDocumentQuad,
                 liveDocumentReady = liveDocumentReady,
+                captureMode = captureMode,
                 permissionGranted = cameraPermissionGranted,
                 onRequestPermission = onRequestCameraPermission,
                 onCapture = onCapture,
+                onCaptureModeChange = onCaptureModeChange,
                 onImportImage = onImportImage,
                 onCancel = onCancelCamera,
                 onDiscardInterruptedCapture = onDiscardInterruptedCapture,
@@ -715,9 +736,11 @@ private fun ScannerV2CameraScreen(
     surfaceRequest: SurfaceRequest?,
     liveDocumentQuad: PageQuad?,
     liveDocumentReady: Boolean,
+    captureMode: ScannerV2CaptureMode,
     permissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     onCapture: () -> Unit,
+    onCaptureModeChange: (ScannerV2CaptureMode) -> Unit,
     onImportImage: () -> Unit,
     onCancel: () -> Unit,
     onDiscardInterruptedCapture: () -> Unit,
@@ -730,10 +753,18 @@ private fun ScannerV2CameraScreen(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.v2_cancel)) }
             Spacer(Modifier.weight(1f))
-            Text(
-                stringResource(R.string.v2_capture_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = captureMode == ScannerV2CaptureMode.Manual,
+                    onClick = { onCaptureModeChange(ScannerV2CaptureMode.Manual) },
+                    label = { Text(stringResource(R.string.v2_capture_manual)) },
+                )
+                FilterChip(
+                    selected = captureMode == ScannerV2CaptureMode.Auto,
+                    onClick = { onCaptureModeChange(ScannerV2CaptureMode.Auto) },
+                    label = { Text(stringResource(R.string.v2_capture_auto)) },
+                )
+            }
             Spacer(Modifier.weight(1f))
             Text("${state.manifest?.pages?.size ?: 0}/$MAX_SCAN_PAGES")
         }

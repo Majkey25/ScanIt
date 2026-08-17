@@ -8,6 +8,19 @@ private const val MAX_AUTO_CAPTURE_CLUSTER_MOVEMENT = 0.12
 private const val AUTO_CAPTURE_SMOOTHING_WEIGHT = 0.45
 private const val MAX_AUTO_CAPTURE_MISSED_FRAMES = 2
 
+internal enum class ScannerV2CaptureMode {
+    Auto,
+    Manual,
+}
+
+internal fun parseScannerV2CaptureMode(raw: String?): ScannerV2CaptureMode =
+    ScannerV2CaptureMode.entries.firstOrNull { it.name == raw } ?: ScannerV2CaptureMode.Auto
+
+internal fun shouldScannerV2AutoCapture(
+    mode: ScannerV2CaptureMode,
+    decision: ScannerV2AutoCaptureDecision,
+): Boolean = mode == ScannerV2CaptureMode.Auto && decision.shouldCapture
+
 internal fun isSupportedScannerV2CaptureSize(width: Int, height: Int): Boolean =
     width in 1..MAX_IMAGE_EXPORT_DIMENSION &&
         height in 1..MAX_IMAGE_EXPORT_DIMENSION &&

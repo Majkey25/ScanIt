@@ -73,6 +73,17 @@ class ScannerV2CaptureTest {
     }
 
     @Test
+    fun captureModeDefaultsSafelyAndOnlyAutoModeTriggers() {
+        val decision = ScannerV2AutoCaptureDecision(documentQuad(), ready = true, shouldCapture = true)
+
+        assertEquals(ScannerV2CaptureMode.Auto, parseScannerV2CaptureMode(null))
+        assertEquals(ScannerV2CaptureMode.Auto, parseScannerV2CaptureMode("unknown"))
+        assertEquals(ScannerV2CaptureMode.Manual, parseScannerV2CaptureMode("Manual"))
+        assertTrue(shouldScannerV2AutoCapture(ScannerV2CaptureMode.Auto, decision))
+        assertFalse(shouldScannerV2AutoCapture(ScannerV2CaptureMode.Manual, decision))
+    }
+
+    @Test
     fun isolatedFalseEdgeDoesNotResetConsensusButLostDocumentDoes() {
         val gate = ScannerV2AutoCaptureGate(requiredStableFrames = 3)
         val quad = documentQuad()

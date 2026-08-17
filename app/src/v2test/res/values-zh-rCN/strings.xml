@@ -3,9 +3,10 @@
     <string name="edit_scan">编辑扫描</string>
     <string name="app_name">ScanIt v2 测试版</string>
     <string name="v2_cancel">取消</string>
-    <string name="v2_capture_title">扫描</string>
     <string name="v2_allow_camera">允许使用相机</string>
     <string name="v2_capture_button">扫描</string>
+    <string name="v2_capture_manual">手动</string>
+    <string name="v2_capture_auto">自动拍摄</string>
     <string name="v2_document_detected">已检测到文档</string>
     <string name="v2_document_ready">文档已稳定，正在拍摄。</string>
     <string name="v2_import_image">导入图片</string>

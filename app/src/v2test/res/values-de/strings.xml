@@ -3,9 +3,10 @@
     <string name="edit_scan">Scan bearbeiten</string>
     <string name="app_name">ScanIt v2 Test</string>
     <string name="v2_cancel">Abbrechen</string>
-    <string name="v2_capture_title">Scannen</string>
     <string name="v2_allow_camera">Kamera erlauben</string>
     <string name="v2_capture_button">Scannen</string>
+    <string name="v2_capture_manual">Manuell</string>
+    <string name="v2_capture_auto">Automatisch</string>
     <string name="v2_document_detected">Dokument erkannt</string>
     <string name="v2_document_ready">Dokument ist stabil. Aufnahme läuft.</string>
     <string name="v2_import_image">Bild importieren</string>

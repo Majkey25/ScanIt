@@ -3,9 +3,10 @@
     <string name="edit_scan">Upravit sken</string>
     <string name="app_name">ScanIt v2 Test</string>
     <string name="v2_cancel">Zrušit</string>
-    <string name="v2_capture_title">Skenovat</string>
     <string name="v2_allow_camera">Povolit fotoaparát</string>
     <string name="v2_capture_button">Skenovat</string>
+    <string name="v2_capture_manual">Ručně</string>
+    <string name="v2_capture_auto">Automaticky</string>
     <string name="v2_document_detected">Dokument rozpoznán</string>
     <string name="v2_document_ready">Dokument je stabilní. Pořizuji snímek.</string>
     <string name="v2_import_image">Importovat obrázek</string>
