@@ -195,6 +195,7 @@ class ScannerV2StoreTest {
         )
         val legacy = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
             put("version", 3)
+            remove("pendingCaptureUseFullFrame")
             remove("resultCacheId")
             remove("editSourceCacheId")
             remove("editSourceEntryId")
@@ -215,6 +216,7 @@ class ScannerV2StoreTest {
         val original = manifest(updatedAtMillis = 1234)
         val versionFour = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
             put("version", 4)
+            remove("pendingCaptureUseFullFrame")
             remove("resultCacheId")
             remove("editSourceCacheId")
             remove("editSourceEntryId")
@@ -231,6 +233,7 @@ class ScannerV2StoreTest {
         val original = manifest(updatedAtMillis = 1234)
         val versionFive = JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
             put("version", 5)
+            remove("pendingCaptureUseFullFrame")
             remove("resultCacheId")
             remove("editSourceCacheId")
             remove("editSourceEntryId")
@@ -255,6 +258,7 @@ class ScannerV2StoreTest {
         val versionSix =
             JSONObject(String(encodeScannerV2Manifest(original), Charsets.UTF_8)).apply {
                 put("version", 6)
+                remove("pendingCaptureUseFullFrame")
                 remove("editSourceCacheId")
                 remove("editSourceEntryId")
             }.toString().toByteArray()
@@ -380,8 +384,11 @@ class ScannerV2StoreTest {
     fun pendingCaptureIsStrictAndBoundToCameraStage() {
         val pageId = PageId.parse(UUID.randomUUID().toString())
         val capturing = emptyManifest().withPendingCapture(pageId)
+        val importing = emptyManifest().withPendingCapture(pageId, useFullFrame = true)
 
         assertEquals(capturing, decodeScannerV2Manifest(encodeScannerV2Manifest(capturing)))
+        assertTrue(importing.pendingCaptureUseFullFrame)
+        assertEquals(importing, decodeScannerV2Manifest(encodeScannerV2Manifest(importing)))
         assertTrue(ScannerV2Store(temporary.newFolder("pending" )).run {
             create(capturing)
             captureFile(capturing.sessionId, pageId).name == ".capture-${pageId.value}.jpg"
@@ -396,6 +403,44 @@ class ScannerV2StoreTest {
                 updatedAtMillis = 1,
             )
         }
+        assertThrows(IllegalArgumentException::class.java) {
+            ScannerV2Manifest.create(
+                sessionId = capturing.sessionId,
+                state = capturing.state,
+                pages = capturing.pages,
+                pendingCaptureUseFullFrame = true,
+                updatedAtMillis = 1,
+            )
+        }
+    }
+
+    @Test
+    fun versionSevenPendingCaptureMigratesAsCameraCapture() {
+        val pageId = PageId.parse(UUID.randomUUID().toString())
+        val initial = emptyManifest()
+        val editSource = ScannerV2EditSource(
+            cacheId = "Scan_20260816_120000",
+            entryId = UUID.randomUUID().toString(),
+        )
+        val current = ScannerV2Manifest.create(
+            sessionId = initial.sessionId,
+            state = initial.state,
+            pages = initial.pages,
+            pendingCaptureId = pageId,
+            pendingCaptureUseFullFrame = true,
+            editSource = editSource,
+            updatedAtMillis = initial.updatedAtMillis,
+        )
+        val versionSeven = JSONObject(String(encodeScannerV2Manifest(current), Charsets.UTF_8)).apply {
+            put("version", 7)
+            remove("pendingCaptureUseFullFrame")
+        }.toString().toByteArray()
+
+        val migrated = requireNotNull(decodeScannerV2Manifest(versionSeven))
+
+        assertEquals(pageId, migrated.pendingCaptureId)
+        assertFalse(migrated.pendingCaptureUseFullFrame)
+        assertEquals(editSource, migrated.editSource)
     }
 
     @Test

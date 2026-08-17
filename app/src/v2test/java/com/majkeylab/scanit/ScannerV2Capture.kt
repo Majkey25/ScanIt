@@ -137,6 +137,7 @@ internal fun reserveScannerV2Capture(
     current: ScannerV2Manifest,
     pageId: PageId,
     updatedAtMillis: Long,
+    useFullFrame: Boolean = false,
 ): ScannerV2Manifest {
     check(current.state.stage == ScannerSessionStage.Capturing) { "Scanner is not ready to capture" }
     check(current.pendingCaptureId == null) { "Scanner capture is already pending" }
@@ -148,6 +149,7 @@ internal fun reserveScannerV2Capture(
         pages = current.pages,
         retiredPages = current.retiredPages,
         pendingCaptureId = pageId,
+        pendingCaptureUseFullFrame = useFullFrame,
         editSource = current.editSource,
         updatedAtMillis = nextScannerV2Timestamp(current, updatedAtMillis),
     )

@@ -142,7 +142,12 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                         val pageId = PageId.parse(UUID.randomUUID().toString())
                         val destination = store.captureFile(current.sessionId, pageId)
                         if (destination.exists()) throw IOException("Scanner import destination already exists")
-                        val reserved = reserveScannerV2Capture(current, pageId, nextTimestamp(current))
+                        val reserved = reserveScannerV2Capture(
+                            current,
+                            pageId,
+                            nextTimestamp(current),
+                            useFullFrame = true,
+                        )
                         store.update(current, reserved)
                         val ticket = ScannerV2CaptureTicket(
                             current.sessionId,
@@ -775,6 +780,8 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                     pageId,
                     manifest.state.generation,
                     capture,
+                    suggestedCrop = PageQuad.fullFrame().takeIf { manifest.pendingCaptureUseFullFrame },
+                    preferSuggestedCrop = manifest.pendingCaptureUseFullFrame,
                 ),
             )
         } catch (failure: Exception) {
