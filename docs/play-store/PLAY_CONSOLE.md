@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `21` |
-| Version name | `1.3.7` |
+| Version code | `22` |
+| Version name | `1.3.8` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 21 / 1.3.7
+## Release notes — version 22 / 1.3.8
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> File details now shows only the containing folder in Location. The PDF or image name stays in its separate editable field, keeping saved-file information clear and compact.
+> File details now keeps Deleted rows aligned and detects saved images removed outside the app. Missing PDFs and images each offer Save to recreate the file safely.
 
 ### Čeština
 
-> Detaily souboru nyní v poli Umístění ukazují jen cílovou složku. Název PDF nebo obrázku zůstává v samostatném upravitelném poli, takže jsou informace přehlednější.
+> Detaily souboru nyní drží řádky Smazáno zarovnané a rozpoznají obrázky odstraněné mimo aplikaci. Chybějící PDF i obrázky lze bezpečně znovu vytvořit tlačítkem Uložit.
 
 ### Deutsch
 
-> Die Dateidetails zeigen unter Speicherort nur noch den Zielordner. Der Name der PDF- oder Bilddatei bleibt im separaten bearbeitbaren Feld, sodass die Ansicht kompakt bleibt.
+> Die Dateidetails halten Gelöscht-Zeilen ausgerichtet und erkennen extern entfernte Bilder. Fehlende PDFs und Bilder können jeweils sicher mit Speichern neu erstellt werden.
 
 ### Español
 
-> Detalles del archivo ahora muestra solo la carpeta de destino en Ubicación. El nombre del PDF o de la imagen permanece en su campo editable separado para una vista más clara.
+> Detalles del archivo mantiene alineadas las filas Eliminado y detecta imágenes borradas fuera de la app. PDF e imágenes ausentes se pueden recrear de forma segura con Guardar.
 
 ### 简体中文
 
-> 文件详情中的位置现在仅显示目标文件夹。PDF 或图片名称仍保留在单独的可编辑字段中，使保存信息更清晰、更紧凑。
+> 文件详情现在会保持“已删除”状态行对齐，并检测在应用外删除的图片。缺失的 PDF 和图片都可通过“保存”安全地重新创建。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 21, version `1.3.7`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 22, version `1.3.8`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

@@ -205,6 +205,26 @@ class PureLogicTest {
     }
 
     @Test
+    fun imagesAreDeletedOnlyWhenEverySavedPageIsConfirmedAbsent() {
+        assertEquals(
+            ImageOutputPresence.Present,
+            imageOutputPresence(listOf(ExactItemQuery.Exact, ExactItemQuery.Exact)),
+        )
+        assertEquals(
+            ImageOutputPresence.Deleted,
+            imageOutputPresence(listOf(ExactItemQuery.Absent, ExactItemQuery.Absent)),
+        )
+        listOf(
+            emptyList(),
+            listOf(ExactItemQuery.Exact, ExactItemQuery.Absent),
+            listOf(ExactItemQuery.IdentityMismatch),
+            listOf(ExactItemQuery.Failed),
+        ).forEach { results ->
+            assertEquals(ImageOutputPresence.Uncertain, imageOutputPresence(results))
+        }
+    }
+
+    @Test
     fun outputNamesRejectPathsControlsAndEmptyValues() {
         listOf(
             "",

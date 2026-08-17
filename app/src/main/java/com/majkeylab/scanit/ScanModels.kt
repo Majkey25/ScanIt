@@ -417,6 +417,21 @@ internal fun visiblePdfOutput(
         else -> VisiblePdfOutput(reference, false)
     }
 
+internal enum class ImageOutputPresence {
+    Present,
+    Deleted,
+    Uncertain,
+}
+
+internal fun imageOutputPresence(results: List<ExactItemQuery>): ImageOutputPresence =
+    when {
+        results.isNotEmpty() && results.all { it == ExactItemQuery.Exact } ->
+            ImageOutputPresence.Present
+        results.isNotEmpty() && results.all { it == ExactItemQuery.Absent } ->
+            ImageOutputPresence.Deleted
+        else -> ImageOutputPresence.Uncertain
+    }
+
 internal fun imageOutputLocationLabel(locations: List<String>): String? {
     val unique = locations.distinct()
     if (unique.isEmpty()) return null
@@ -758,6 +773,7 @@ internal data class SavedScan(
     val savedPdfDisplayName: String? = null,
     val savedPdfLocation: String? = null,
     val savedPdfDeleted: Boolean = false,
+    val savedImagesDeleted: Boolean = false,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,

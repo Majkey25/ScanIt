@@ -866,6 +866,7 @@ private fun ResultScreen(
                         outputChangeInProgress = result.outputChangeInProgress,
                         onSaveNow = { showSaveDialog = true },
                         onSavePdfNow = { onSaveNow(SaveNowTarget.Pdf) },
+                        onSaveImagesNow = { onSaveNow(SaveNowTarget.Images) },
                         onChangePdfSize = { showPdfSizeDialog = true },
                         onChangePdfLocation = onChangePdfLocation,
                         onChangeImageSize = { showImageSizeDialog = true },
@@ -1678,6 +1679,7 @@ private fun FileDetails(
     outputChangeInProgress: Boolean,
     onSaveNow: () -> Unit,
     onSavePdfNow: () -> Unit,
+    onSaveImagesNow: () -> Unit,
     onChangePdfSize: () -> Unit,
     onChangePdfLocation: () -> Unit,
     onChangeImageSize: () -> Unit,
@@ -1712,7 +1714,7 @@ private fun FileDetails(
                 else -> R.string.file_saved
             },
         )
-    val imagesLocation = imageLocationLabel(scan)
+    val imagesLocation = if (scan.savedImagesDeleted) "" else imageLocationLabel(scan)
     val pdfDisplayName = scan.savedPdfDisplayName ?: scan.cached.pdf.name
     val pdfBaseName = normalizeOutputBaseName(pdfDisplayName)
     val imageBaseName =
@@ -1721,6 +1723,7 @@ private fun FileDetails(
     val imageDisplayName = scan.savedImages.firstOrNull()?.displayName ?: imageBaseName
     val imageStatus =
         when {
+            scan.savedImagesDeleted -> stringResource(R.string.file_deleted)
             scan.galleryPages.isEmpty() -> stringResource(R.string.file_temporary)
             scan.galleryPages.size == scan.cached.pages.size -> stringResource(R.string.file_saved)
             else ->
@@ -1890,9 +1893,16 @@ private fun FileDetails(
                         savedImageBytes(scan),
                     ),
             )
-            FileDetailRow(
+            FileDetailStatusRow(
                 label = stringResource(R.string.status),
                 value = imageStatus,
+                actionLabel = stringResource(R.string.save).takeIf { scan.savedImagesDeleted },
+                actionEnabled =
+                    scan.savedImagesDeleted &&
+                        SaveNowTarget.Images in saveTargets &&
+                        !saveInProgress &&
+                        !outputChangeInProgress,
+                onAction = onSaveImagesNow,
             )
             FileDetailRow(
                 label = stringResource(R.string.location),
@@ -2158,7 +2168,7 @@ private fun FileDetailStatusRow(
     onAction: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2178,7 +2188,7 @@ private fun FileDetailStatusRow(
                 TextButton(
                     onClick = onAction,
                     enabled = actionEnabled,
-                    modifier = Modifier.heightIn(min = 40.dp),
+                    modifier = Modifier.height(40.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
                 ) {
                     Text(actionLabel)

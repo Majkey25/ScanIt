@@ -2909,7 +2909,23 @@ internal class ScanStorage(
                     initial,
                     cached.pages.size,
                 )?.let { existing ->
-                    return@withLock existing.map { it.uri.toUri() }
+                    when (
+                        imageOutputPresence(
+                            existing.map { outputDeleter.queryImage(cached, it) },
+                        )
+                    ) {
+                        ImageOutputPresence.Present ->
+                            return@withLock existing.map { it.uri.toUri() }
+                        ImageOutputPresence.Deleted ->
+                            rewriteCachedOutputMetadata(cached) { metadata ->
+                                if (metadata.images != existing) {
+                                    throw IOException("Saved image authority changed")
+                                }
+                                metadata.copy(images = emptyList())
+                            }
+                        ImageOutputPresence.Uncertain ->
+                            throw IOException("Saved image identity could not be verified")
+                    }
                 }
                 cached.pages.forEachIndexed { index, source ->
                     val page = index + 1
@@ -3281,11 +3297,15 @@ internal class ScanStorage(
         val activePdf = metadata?.pdf?.takeUnless(PdfOutputRef::pending)
         val visiblePdf = visiblePdfOutput(activePdf, outputDeleter::queryPdf)
         val activeImages = metadata?.images?.filterNot(ImageOutputRef::pending).orEmpty()
+        val imagePresence =
+            imageOutputPresence(activeImages.map { outputDeleter.queryImage(cached, it) })
+        val visibleImages =
+            if (imagePresence == ImageOutputPresence.Deleted) emptyList() else activeImages
         val exact = metadata?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
         return SavedScan(
             cached = cached,
             savedImages =
-                activeImages.map { image ->
+                visibleImages.map { image ->
                     SavedImageOutput(
                         page = image.page,
                         uri = image.uri.toUri(),
@@ -3322,6 +3342,7 @@ internal class ScanStorage(
                     )
                 },
             savedPdfDeleted = visiblePdf.deleted,
+            savedImagesDeleted = imagePresence == ImageOutputPresence.Deleted,
             warnings =
                 (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
                     .distinct(),
@@ -3329,8 +3350,8 @@ internal class ScanStorage(
             savedPdfDeleteVerified =
                 !mutationBlocked && exact?.pdf == visiblePdf.reference && visiblePdf.reference != null,
             savedImagesDeleteVerified =
-                !mutationBlocked && activeImages.isNotEmpty() &&
-                    exact?.images == activeImages,
+                !mutationBlocked && visibleImages.isNotEmpty() &&
+                    exact?.images == visibleImages,
             unknownOutputCreateAcknowledgement = unknownOutputCreateAcknowledgement,
         )
     }

@@ -458,6 +458,35 @@ internal class ExactOutputDeleter(private val context: Context) {
             queryMediaOutput(reference.uri, MediaOutputCollection.Downloads, identity)
         }
 
+    fun queryImage(cached: CachedScan, reference: ImageOutputRef): ExactItemQuery =
+        providerQueryResult {
+            if (reference.page !in 1..cached.pages.size) {
+                return@providerQueryResult ExactItemQuery.IdentityMismatch
+            }
+            reference.outputFingerprint() ?: return@providerQueryResult ExactItemQuery.Failed
+            val mimeType = reference.mimeType?.takeIf { it in IMAGE_MIME_TYPES }
+                ?: return@providerQueryResult ExactItemQuery.IdentityMismatch
+            if (reference.treeUri != null) {
+                if (reference.ownerPackageName != null) {
+                    return@providerQueryResult ExactItemQuery.IdentityMismatch
+                }
+                return@providerQueryResult querySafOutput(
+                    uriValue = reference.uri,
+                    treeUriValue = reference.treeUri,
+                    displayName = reference.displayName,
+                    mimeType = mimeType,
+                )
+            }
+            val identity =
+                expectedMediaIdentity(
+                    reference.displayName,
+                    mimeType,
+                    reference.ownerPackageName,
+                    mimeType,
+                ) ?: return@providerQueryResult ExactItemQuery.IdentityMismatch
+            queryMediaOutput(reference.uri, MediaOutputCollection.Images, identity)
+        }
+
     fun deletePdf(reference: PdfOutputRef): OutputDeleteStatus =
         reference.outputFingerprint()?.let { fingerprint ->
             if (reference.treeUri != null) {
@@ -876,7 +905,9 @@ internal class ExactOutputDeleter(private val context: Context) {
     ): ExactItemQuery {
         val exactDisplayName = displayName ?: return ExactItemQuery.IdentityMismatch
         val exactMimeType = mimeType ?: return ExactItemQuery.IdentityMismatch
-        if (exactMimeType != PDF_MIME_TYPE) return ExactItemQuery.IdentityMismatch
+        if (exactMimeType != PDF_MIME_TYPE && exactMimeType !in IMAGE_MIME_TYPES) {
+            return ExactItemQuery.IdentityMismatch
+        }
         val tree = exactContentUri(treeUriValue) ?: return ExactItemQuery.IdentityMismatch
         val document = exactContentUri(uriValue) ?: return ExactItemQuery.IdentityMismatch
         if (tree.authority != document.authority) return ExactItemQuery.IdentityMismatch
