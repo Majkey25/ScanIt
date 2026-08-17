@@ -156,6 +156,49 @@ class PureLogicTest {
     }
 
     @Test
+    fun fileDetailsShowReadableStoragePathsAndNeverProviderUris() {
+        assertEquals(
+            "Internal storage/Downloads/Scan to PDF/Practice sheet.pdf",
+            displayOutputLocationPath(
+                "/storage/emulated/0/Download/Scan to PDF/Practice sheet.pdf",
+            ),
+        )
+        assertEquals(
+            "External storage/Documents/Scans/Practice sheet.pdf",
+            displayOutputLocationPath(
+                "/storage/ABCD-1234/Documents/Scans/Practice sheet.pdf",
+            ),
+        )
+        assertNull(displayOutputLocationPath("content://media/external/downloads/15911"))
+        assertNull(displayOutputLocationPath(null))
+    }
+
+    @Test
+    fun missingPdfIsShownAsDeletedOnlyAfterProviderConfirmsAbsence() {
+        val reference =
+            PdfOutputRef(
+                uri = "content://media/external/downloads/15911",
+                treeUri = null,
+                displayName = "Practice sheet.pdf",
+                mimeType = "application/pdf",
+                ownerPackageName = "com.majkeylab.scanit",
+                byteLength = 123L,
+                sha256 = "01".repeat(32),
+            )
+
+        val deleted = visiblePdfOutput(reference) { ExactItemQuery.Absent }
+        assertNull(deleted.reference)
+        assertTrue(deleted.deleted)
+
+        listOf(ExactItemQuery.Exact, ExactItemQuery.IdentityMismatch, ExactItemQuery.Failed)
+            .forEach { status ->
+                val retained = visiblePdfOutput(reference) { status }
+                assertEquals(reference, retained.reference)
+                assertFalse(retained.deleted)
+            }
+    }
+
+    @Test
     fun outputNamesRejectPathsControlsAndEmptyValues() {
         listOf(
             "",

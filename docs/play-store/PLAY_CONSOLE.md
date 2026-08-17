@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `19` |
-| Version name | `1.3.5` |
+| Version code | `20` |
+| Version name | `1.3.6` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -126,29 +126,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 19 / 1.3.5
+## Release notes — version 20 / 1.3.6
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Rename saved PDFs and image sets in a compact inline editor with a fixed visible extension. File details now shows each output's full resolved location instead of a vague folder label. The Review every page and File details screenshots now match the released English interface.
+> File details now shows readable storage paths instead of technical provider addresses. If a saved PDF was deleted outside the app, ScanIt clearly marks it as Deleted and offers a direct Save action to recreate it.
 
 ### Čeština
 
-> Uložená PDF i sady obrázků lze přejmenovat v kompaktním editoru s pevně zobrazenou příponou. Detaily souboru nyní ukazují úplnou cestu k výstupu místo neurčitého názvu složky. Aktualizované snímky odpovídají vydané anglické verzi.
+> Detaily souboru nyní ukazují čitelné cesty místo technických adres poskytovatele. Pokud bylo uložené PDF smazáno mimo aplikaci, ScanIt ho označí jako Smazáno a nabídne přímé tlačítko Uložit pro jeho obnovení.
 
 ### Deutsch
 
-> PDFs und Bildsätze lassen sich in einem kompakten Editor mit fest sichtbarer Dateiendung umbenennen. Die Dateidetails zeigen jetzt den vollständigen Ausgabeort statt einer ungenauen Ordnerbezeichnung. Die aktualisierten Screenshots entsprechen der veröffentlichten englischen Oberfläche.
+> Die Dateidetails zeigen jetzt lesbare Speicherpfade statt technischer Anbieteradressen. Wird eine gespeicherte PDF außerhalb der App gelöscht, markiert ScanIt sie als Gelöscht und bietet eine direkte Speichern-Aktion zum Wiederherstellen an.
 
 ### Español
 
-> Ahora puedes renombrar PDF e imágenes con un editor compacto y una extensión visible que no se puede modificar. Detalles del archivo muestra la ubicación completa de cada salida en vez de una carpeta imprecisa. Las capturas actualizadas coinciden con la interfaz publicada en inglés.
+> Detalles del archivo ahora muestra rutas de almacenamiento legibles en vez de direcciones técnicas. Si un PDF guardado se elimina fuera de la app, ScanIt lo marca como Eliminado y ofrece una acción Guardar directa para recrearlo.
 
 ### 简体中文
 
-> 现在可通过紧凑的行内编辑器重命名 PDF 和图像组，文件扩展名始终可见且不可修改。文件详情会显示完整输出位置，不再使用模糊的文件夹名称。更新后的截图与已发布的英文界面一致。
+> 文件详情现在显示易读的存储路径，不再显示技术性提供程序地址。如果已保存的 PDF 在应用外被删除，ScanIt 会将其标记为已删除，并提供直接的保存操作来重新创建文件。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -326,7 +326,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 19, version `1.3.5`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 20, version `1.3.6`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

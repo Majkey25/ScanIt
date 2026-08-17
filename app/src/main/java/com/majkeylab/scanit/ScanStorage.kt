@@ -3022,16 +3022,29 @@ internal class ScanStorage(
                     if (existing.pending) {
                         throw IOException("Saved PDF publication is still pending")
                     }
-                    return@withLock SavedPdfOutput(
-                        uri = existing.uri.toUri(),
-                        treeUri = existing.treeUri?.toUri(),
-                        warning = null,
-                        displayName = existing.displayName,
-                        mimeType = existing.mimeType,
-                        ownerPackageName = existing.ownerPackageName,
-                        byteLength = existing.byteLength,
-                        sha256 = existing.sha256,
-                    )
+                    when (outputDeleter.queryPdf(existing)) {
+                        ExactItemQuery.Exact ->
+                            return@withLock SavedPdfOutput(
+                                uri = existing.uri.toUri(),
+                                treeUri = existing.treeUri?.toUri(),
+                                warning = null,
+                                displayName = existing.displayName,
+                                mimeType = existing.mimeType,
+                                ownerPackageName = existing.ownerPackageName,
+                                byteLength = existing.byteLength,
+                                sha256 = existing.sha256,
+                            )
+                        ExactItemQuery.Absent ->
+                            rewriteCachedOutputMetadata(cached) { metadata ->
+                                if (metadata.pdf != existing) {
+                                    throw IOException("Saved PDF authority changed")
+                                }
+                                metadata.copy(pdf = null)
+                            }
+                        ExactItemQuery.IdentityMismatch,
+                        ExactItemQuery.Failed,
+                        -> throw IOException("Saved PDF identity could not be verified")
+                    }
                 }
                 val output =
                     if (pdfTreeUri != null) {
@@ -3266,6 +3279,7 @@ internal class ScanStorage(
         unknownOutputCreateAcknowledgement: UnknownOutputCreateAcknowledgement? = null,
     ): SavedScan {
         val activePdf = metadata?.pdf?.takeUnless(PdfOutputRef::pending)
+        val visiblePdf = visiblePdfOutput(activePdf, outputDeleter::queryPdf)
         val activeImages = metadata?.images?.filterNot(ImageOutputRef::pending).orEmpty()
         val exact = metadata?.takeIf { it.hasCompleteExactDeleteInventory(context.packageName) }
         return SavedScan(
@@ -3295,11 +3309,11 @@ internal class ScanStorage(
                             ),
                     )
                 },
-            savedPdf = activePdf?.uri?.toUri(),
-            savedPdfTree = activePdf?.treeUri?.toUri(),
+            savedPdf = visiblePdf.reference?.uri?.toUri(),
+            savedPdfTree = visiblePdf.reference?.treeUri?.toUri(),
             savedPdfDisplayName = activePdf?.displayName,
             savedPdfLocation =
-                activePdf?.let {
+                visiblePdf.reference?.let {
                     savedOutputLocation(
                         treeUri = it.treeUri,
                         uri = it.uri,
@@ -3307,11 +3321,13 @@ internal class ScanStorage(
                         collection = MediaOutputCollection.Downloads,
                     )
                 },
+            savedPdfDeleted = visiblePdf.deleted,
             warnings =
                 (warnings + listOfNotNull(pdfSizeTargetWarning(cached.pdfSizeTarget, cached.pdf.length())))
                     .distinct(),
             outputMetadataValid = metadata != null && !mutationBlocked,
-            savedPdfDeleteVerified = !mutationBlocked && exact?.pdf == activePdf && activePdf != null,
+            savedPdfDeleteVerified =
+                !mutationBlocked && exact?.pdf == visiblePdf.reference && visiblePdf.reference != null,
             savedImagesDeleteVerified =
                 !mutationBlocked && activeImages.isNotEmpty() &&
                     exact?.images == activeImages,
@@ -3324,7 +3340,7 @@ internal class ScanStorage(
         uri: String,
         displayName: String?,
         collection: MediaOutputCollection,
-    ): String {
+    ): String? {
         if (treeUri != null) {
             val tree = treeUri.toUri()
             if (tree.authority == "com.android.externalstorage.documents") {
@@ -3338,13 +3354,13 @@ internal class ScanStorage(
                     }
                 directory?.let { outputLocationPath(it, displayName) }?.let { return it }
             }
-            return uri
+            return null
         }
         val address = parseMediaItemAddress(uri)
-        if (address?.collection != collection) return uri
-        val relativePath = readMediaRelativePath(uri.toUri()) ?: return uri
-        val directory = mediaStoreDirectoryPath(address.volume, relativePath) ?: return uri
-        return outputLocationPath(directory, displayName) ?: uri
+        if (address?.collection != collection) return null
+        val relativePath = readMediaRelativePath(uri.toUri()) ?: return null
+        val directory = mediaStoreDirectoryPath(address.volume, relativePath) ?: return null
+        return outputLocationPath(directory, displayName)
     }
 
     private fun readMediaRelativePath(uri: Uri): String? =

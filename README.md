@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.5"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.5 showing the Result screen, file controls, and visual signature editor."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.6"><img src="docs/images/scanit-v1.1-update.png" width="100%" alt="ScanIt v1.3.6 showing the Result screen, file controls, and visual signature editor."></a>
 </p>
 
-## v1.3.5 update
+## v1.3.6 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -48,7 +48,7 @@ PDF and image changes into compact Size, Format, and Location controls.
 After a full app restart, ScanIt opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.3.5](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.5)
+[Download ScanIt v1.3.6](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.6)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

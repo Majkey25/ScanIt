@@ -378,6 +378,43 @@ internal fun outputLocationPath(directory: String, displayName: String?): String
     return "${directory.trimEnd('/')}/$name"
 }
 
+internal fun displayOutputLocationPath(value: String?): String? {
+    val path = value?.replace('\\', '/')?.trimEnd('/') ?: return null
+    if (path.isBlank() || path.startsWith("content://", ignoreCase = true)) return null
+    val internalRoot = "/storage/emulated/0"
+    if (path == internalRoot) return "Internal storage"
+    if (path.startsWith("$internalRoot/")) {
+        val relative = path.removePrefix("$internalRoot/")
+        val readable =
+            if (relative == "Download" || relative.startsWith("Download/")) {
+                "Downloads${relative.removePrefix("Download")}"
+            } else {
+                relative
+            }
+        return "Internal storage/$readable"
+    }
+    if (path.startsWith("/storage/")) {
+        val relative = path.removePrefix("/storage/").substringAfter('/', missingDelimiterValue = "")
+        return if (relative.isBlank()) "External storage" else "External storage/$relative"
+    }
+    return path
+}
+
+internal data class VisiblePdfOutput(
+    val reference: PdfOutputRef?,
+    val deleted: Boolean,
+)
+
+internal fun visiblePdfOutput(
+    reference: PdfOutputRef?,
+    query: (PdfOutputRef) -> ExactItemQuery,
+): VisiblePdfOutput =
+    when {
+        reference == null -> VisiblePdfOutput(null, false)
+        query(reference) == ExactItemQuery.Absent -> VisiblePdfOutput(null, true)
+        else -> VisiblePdfOutput(reference, false)
+    }
+
 internal fun imageOutputLocationLabel(locations: List<String>): String? {
     val unique = locations.distinct()
     if (unique.isEmpty()) return null
@@ -718,6 +755,7 @@ internal data class SavedScan(
     val savedPdfTree: Uri? = null,
     val savedPdfDisplayName: String? = null,
     val savedPdfLocation: String? = null,
+    val savedPdfDeleted: Boolean = false,
     val warnings: List<UiMessage> = emptyList(),
     val outputMetadataValid: Boolean = false,
     val savedPdfDeleteVerified: Boolean = false,

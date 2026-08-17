@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.3.6] - 2026-08-17
+
+### Fixed
+
+- Replaced technical provider URIs in File details with readable storage paths.
+- Detects a saved PDF that was deleted outside the app and offers a direct Save action to recreate it.
+
 ## [1.3.5] - 2026-08-17
 
 ### Changed
@@ -205,6 +212,7 @@ Historical copies retain the license supplied with them. See
 [1.3.2]: https://github.com/Majkey25/ScanIt/compare/v1.3.1...v1.3.2
 [1.3.3]: https://github.com/Majkey25/ScanIt/compare/v1.3.2...v1.3.3
 [1.3.4]: https://github.com/Majkey25/ScanIt/compare/v1.3.3...v1.3.4
+[1.3.6]: https://github.com/Majkey25/ScanIt/compare/v1.3.5...v1.3.6
 [1.3.5]: https://github.com/Majkey25/ScanIt/compare/v1.3.4...v1.3.5
 [1.2.1]: https://github.com/Majkey25/ScanIt/compare/v1.2.0...v1.2.1
 [1.1.0-alpha.1]: https://github.com/Majkey25/ScanIt/compare/v1.0.0-preview.1...main

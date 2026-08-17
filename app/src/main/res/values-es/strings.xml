@@ -37,6 +37,7 @@
     <string name="fullscreen_preview_hint">Pellizca para ampliar, arrastra para mover o toca dos veces para restablecer.</string>
     <string name="file_saved">Guardado</string>
     <string name="file_temporary">Temporal</string>
+    <string name="file_deleted">Eliminado</string>
     <string name="file_not_saved">No guardado</string>
     <string name="pdf_document">PDF</string>
     <string name="images">Imágenes</string>
