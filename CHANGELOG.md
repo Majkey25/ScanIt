@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.3.8] - 2026-08-17
+
+### Fixed
+
+- File details keeps Deleted status rows aligned and detects externally deleted saved images.
+- Missing PDFs and images can each be recreated directly with Save without reusing stale provider URIs.
+
 ## [1.3.7] - 2026-08-17
 
 ### Fixed
@@ -218,6 +225,7 @@ Historical copies retain the license supplied with them. See
 [1.3.2]: https://github.com/Majkey25/ScanIt/compare/v1.3.1...v1.3.2
 [1.3.3]: https://github.com/Majkey25/ScanIt/compare/v1.3.2...v1.3.3
 [1.3.4]: https://github.com/Majkey25/ScanIt/compare/v1.3.3...v1.3.4
+[1.3.8]: https://github.com/Majkey25/ScanIt/compare/v1.3.7...v1.3.8
 [1.3.7]: https://github.com/Majkey25/ScanIt/compare/v1.3.6...v1.3.7
 [1.3.6]: https://github.com/Majkey25/ScanIt/compare/v1.3.5...v1.3.6
 [1.3.5]: https://github.com/Majkey25/ScanIt/compare/v1.3.4...v1.3.5
