@@ -60,6 +60,8 @@ internal data class ScannerV2CaptureTicket(
     val pageId: PageId,
     val generation: Long,
     val destination: File,
+    val suggestedCrop: PageQuad? = null,
+    val preferSuggestedCrop: Boolean = false,
 )
 
 internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,7 +93,10 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         mutableState.value = mutableState.value.copy(busy = false, issue = ScannerV2Issue.SessionUnavailable)
     }
 
-    suspend fun reserveCapture(): ScannerV2CaptureTicket? = withContext(Dispatchers.IO) {
+    suspend fun reserveCapture(
+        suggestedCrop: PageQuad?,
+        preferSuggestedCrop: Boolean,
+    ): ScannerV2CaptureTicket? = withContext(Dispatchers.IO) {
         lock.withLock {
             val current = mutableState.value.manifest ?: return@withLock null
             if (mutableState.value.busy || current.state.stage != ScannerSessionStage.Capturing) {
@@ -103,7 +108,14 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
             val destination = store.captureFile(current.sessionId, pageId)
             if (destination.exists()) throw IOException("Scanner capture destination already exists")
             mutableState.value = mutableState.value.copy(manifest = replacement, busy = true, issue = null)
-            ScannerV2CaptureTicket(current.sessionId, pageId, current.state.generation, destination)
+            ScannerV2CaptureTicket(
+                current.sessionId,
+                pageId,
+                current.state.generation,
+                destination,
+                suggestedCrop,
+                preferSuggestedCrop,
+            )
         }
     }
 
@@ -810,7 +822,11 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
         validateScannerV2Source(source)
         val preview = decodeScannerV2Preview(source)
         try {
-            val crop = detectScannerV2Crop(preview) ?: PageQuad.fullFrame()
+            val crop = resolveScannerV2CaptureCrop(
+                ticket.suggestedCrop,
+                detectScannerV2Crop(preview),
+                ticket.preferSuggestedCrop,
+            )
             val fingerprint = source.inputStream().use { readOutputFingerprint(it, source.length()) }
             val record = ScannerV2PageRecord(
                 pageId = ticket.pageId,

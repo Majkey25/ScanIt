@@ -6,6 +6,8 @@
     <string name="v2_capture_title">Escanear</string>
     <string name="v2_allow_camera">Permitir cámara</string>
     <string name="v2_capture_button">Escanear</string>
+    <string name="v2_document_detected">Documento detectado</string>
+    <string name="v2_document_ready">Documento estable. Capturando.</string>
     <string name="v2_import_image">Importar imagen</string>
     <string name="v2_discard_interrupted_capture">Descartar foto interrumpida</string>
     <string name="v2_review_title">Revisar</string>

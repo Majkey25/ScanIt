@@ -135,6 +135,44 @@ class ScannerV2GeometryTest {
     }
 
     @Test
+    fun cropMagnifierStaysVisibleOnTheOppositeSideOfTheDraggedCorner() {
+        val topLeftLens = scannerV2MagnifierCenter(
+            PageCorner.TopLeft,
+            point(.05, .02),
+        )
+        val bottomRightLens = scannerV2MagnifierCenter(
+            PageCorner.BottomRight,
+            point(.96, .98),
+        )
+
+        assertPoint(.82, .18, topLeftLens)
+        assertPoint(.18, .82, bottomRightLens)
+    }
+
+    @Test
+    fun cropMagnifierCrosshairTracksCornersInsideClampedSourceWindow() {
+        val nearEdge = scannerV2MagnifierSourcePosition(
+            draggedPoint = point(.02, .03),
+            imageWidth = 1200,
+            imageHeight = 800,
+            sourceLeft = 0,
+            sourceTop = 0,
+            sourceSize = 112,
+        )
+        val centered = scannerV2MagnifierSourcePosition(
+            draggedPoint = point(.5, .5),
+            imageWidth = 1200,
+            imageHeight = 800,
+            sourceLeft = 544,
+            sourceTop = 344,
+            sourceSize = 112,
+        )
+
+        assertPoint(24.0 / 112.0, 24.0 / 112.0, nearEdge)
+        assertPoint(.5, .5, centered)
+    }
+
+    @Test
     fun warpSizeUsesQuadEdgesWithoutUpscaling() {
         val size = deriveWarpSize(
             sourceWidth = 4000,

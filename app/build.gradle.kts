@@ -126,6 +126,7 @@ dependencies {
     "v2testImplementation"("androidx.camera:camera-camera2:1.6.1")
     "v2testImplementation"("androidx.camera:camera-compose:1.6.1")
     "v2testImplementation"("androidx.camera:camera-lifecycle:1.6.1")
+    "v2testImplementation"("org.boofcv:boofcv-feature:1.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
 }

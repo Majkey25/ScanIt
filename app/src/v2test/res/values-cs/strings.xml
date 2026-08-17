@@ -6,6 +6,8 @@
     <string name="v2_capture_title">Skenovat</string>
     <string name="v2_allow_camera">Povolit fotoaparát</string>
     <string name="v2_capture_button">Skenovat</string>
+    <string name="v2_document_detected">Dokument rozpoznán</string>
+    <string name="v2_document_ready">Dokument je stabilní. Pořizuji snímek.</string>
     <string name="v2_import_image">Importovat obrázek</string>
     <string name="v2_discard_interrupted_capture">Zahodit přerušenou fotografii</string>
     <string name="v2_review_title">Kontrola</string>

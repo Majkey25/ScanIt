@@ -110,13 +110,80 @@ class ScannerV2EdgeDetectorTest {
     }
 
     @Test
+    fun freshStillDetectionWinsOverDivergentLiveGuide() {
+        val analysisBytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-analysis-320x240.gray"),
+        ).use { it.readBytes() }
+        val stillBytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-scene-240x320.gray"),
+        ).use { it.readBytes() }
+        val liveGuide = rotateScannerV2AnalysisQuad(
+            requireNotNull(detectLiveDocumentQuad(LumaFrame(320, 240, analysisBytes))),
+            90,
+        )
+        val stillDetection = detectDocumentQuad(LumaFrame(240, 320, stillBytes))
+        requireNotNull(stillDetection)
+        assertEquals(
+            stillDetection,
+            resolveScannerV2CaptureCrop(liveGuide, stillDetection, preferSuggested = false),
+        )
+    }
+
+    @Test
+    fun detectsOuterDisplayInCapturedEmulatorJpegFixture() {
+        val bytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-live-capture-240x320.gray"),
+        ).use { it.readBytes() }
+        val detected = detectDocumentQuad(LumaFrame(240, 320, bytes))
+        val expected = listOf(
+            NormalizedPoint(.543, .327),
+            NormalizedPoint(.902, .263),
+            NormalizedPoint(.892, .539),
+            NormalizedPoint(.543, .500),
+        )
+
+        requireNotNull(detected)
+        val actual = listOf(detected.topLeft, detected.topRight, detected.bottomRight, detected.bottomLeft)
+        expected.zip(actual).forEach { (wanted, found) ->
+            assertTrue("x ${found.x} is not near ${wanted.x}", kotlin.math.abs(wanted.x - found.x) <= .07)
+            assertTrue("y ${found.y} is not near ${wanted.y}", kotlin.math.abs(wanted.y - found.y) <= .07)
+        }
+    }
+
+    @Test
+    fun detectsOuterDisplayInActualCameraAnalysisFrame() {
+        val bytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-analysis-320x240.gray"),
+        ).use { it.readBytes() }
+        val detected = detectLiveDocumentQuad(LumaFrame(320, 240, bytes))
+        val expected = listOf(
+            NormalizedPoint(.263, .098),
+            NormalizedPoint(.539, .108),
+            NormalizedPoint(.500, .457),
+            NormalizedPoint(.327, .457),
+        )
+
+        requireNotNull(detected)
+        val actual = listOf(detected.topLeft, detected.topRight, detected.bottomRight, detected.bottomLeft)
+        println("Scanner v2 analysis fixture quad=$actual")
+        expected.zip(actual).forEach { (wanted, found) ->
+            assertTrue("x ${found.x} is not near ${wanted.x}", kotlin.math.abs(wanted.x - found.x) <= .06)
+            assertTrue("y ${found.y} is not near ${wanted.y}", kotlin.math.abs(wanted.y - found.y) <= .06)
+        }
+    }
+
+    @Test
     fun uniformAndRandomNoiseDoNotProduceDocument() {
         val uniform = LumaFrame(256, 192, ByteArray(256 * 192) { 100.toByte() })
         val random = Random(7)
         val noise = LumaFrame(256, 192, ByteArray(256 * 192) { random.nextInt(256).toByte() })
 
         assertNull(detectDocumentQuad(uniform))
+        val started = System.nanoTime()
         assertNull(detectDocumentQuad(noise))
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000.0
+        println("Scanner v2 still fallback noise=${elapsedMs}ms")
+        assertTrue("Still fallback ${elapsedMs}ms exceeds host safety bound", elapsedMs < 1_500.0)
     }
 
     @Test
@@ -157,6 +224,52 @@ class ScannerV2EdgeDetectorTest {
         assertEquals(31, frame.unsignedPixel(31))
         assertEquals(31, frame.unsignedPixel(31 * width))
         assertEquals(62, frame.unsignedPixel(width * height - 1))
+    }
+
+    @Test
+    fun copiesOnlyTheCameraViewportCrop() {
+        val sourceWidth = 40
+        val sourceHeight = 40
+        val rowStride = 88
+        val pixelStride = 2
+        val source = ByteArray(rowStride * sourceHeight) { 0x7f }
+        for (y in 0 until sourceHeight) {
+            for (x in 0 until sourceWidth) {
+                source[y * rowStride + x * pixelStride] = (x + y * sourceWidth).toByte()
+            }
+        }
+
+        val frame = copyScannerV2LumaCrop(
+            sourceWidth = sourceWidth,
+            sourceHeight = sourceHeight,
+            cropLeft = 4,
+            cropTop = 6,
+            cropWidth = 32,
+            cropHeight = 32,
+            rowStride = rowStride,
+            pixelStride = pixelStride,
+            source = ByteBuffer.wrap(source),
+        )
+
+        assertEquals((4 + 6 * sourceWidth) and 0xff, frame.unsignedPixel(0))
+        assertEquals((35 + 37 * sourceWidth) and 0xff, frame.unsignedPixel(32 * 32 - 1))
+    }
+
+    @Test
+    fun rejectsCameraViewportCropOutsideThePlane() {
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            copyScannerV2LumaCrop(
+                sourceWidth = 40,
+                sourceHeight = 40,
+                cropLeft = 9,
+                cropTop = 8,
+                cropWidth = 32,
+                cropHeight = 32,
+                rowStride = 40,
+                pixelStride = 1,
+                source = ByteBuffer.allocate(40 * 40),
+            )
+        }
     }
 
     @Test
@@ -235,7 +348,7 @@ class ScannerV2EdgeDetectorTest {
     }
 
     @Test
-    fun cameraAnalysisFrameMeetsThreeFramesPerSecondBudget() {
+    fun cameraAnalysisFrameMeetsTenFramesPerSecondBudget() {
         val image = frame(
             width = 320,
             height = 240,
@@ -247,17 +360,36 @@ class ScannerV2EdgeDetectorTest {
             ),
             documentDelta = 150,
         )
-        repeat(3) { requireNotNull(detectDocumentQuad(image)) }
+        repeat(3) { requireNotNull(detectLiveDocumentQuad(image)) }
 
         val durations = LongArray(20) {
             val started = System.nanoTime()
-            requireNotNull(detectDocumentQuad(image))
+            requireNotNull(detectLiveDocumentQuad(image))
             System.nanoTime() - started
         }.sorted()
         val p95Ms = durations[18] / 1_000_000.0
 
         println("Scanner v2 detector 320x240 p95=${p95Ms}ms")
-        assertTrue("Detector p95 ${p95Ms}ms exceeds 3 fps budget", p95Ms < 300.0)
+        assertTrue("Detector p95 ${p95Ms}ms exceeds 10 fps budget", p95Ms < 100.0)
+    }
+
+    @Test
+    fun actualCameraAnalysisFrameMeetsTenFramesPerSecondBudget() {
+        val bytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-analysis-320x240.gray"),
+        ).use { it.readBytes() }
+        val image = LumaFrame(320, 240, bytes)
+        repeat(3) { requireNotNull(detectLiveDocumentQuad(image)) }
+
+        val durations = LongArray(10) {
+            val started = System.nanoTime()
+            requireNotNull(detectLiveDocumentQuad(image))
+            System.nanoTime() - started
+        }.sorted()
+        val p95Ms = durations[8] / 1_000_000.0
+
+        println("Scanner v2 actual camera fixture p95=${p95Ms}ms")
+        assertTrue("Actual detector p95 ${p95Ms}ms exceeds host safety bound", p95Ms < 50.0)
     }
 
     private fun frame(

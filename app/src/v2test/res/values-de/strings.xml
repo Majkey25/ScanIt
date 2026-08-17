@@ -6,6 +6,8 @@
     <string name="v2_capture_title">Scannen</string>
     <string name="v2_allow_camera">Kamera erlauben</string>
     <string name="v2_capture_button">Scannen</string>
+    <string name="v2_document_detected">Dokument erkannt</string>
+    <string name="v2_document_ready">Dokument ist stabil. Aufnahme läuft.</string>
     <string name="v2_import_image">Bild importieren</string>
     <string name="v2_discard_interrupted_capture">Unterbrochenes Foto verwerfen</string>
     <string name="v2_review_title">Prüfen</string>

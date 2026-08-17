@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Rational
 import android.util.Size
 import android.view.Surface
 import androidx.activity.ComponentActivity
@@ -20,7 +21,10 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceRequest
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionFilter
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -88,22 +92,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -112,14 +126,15 @@ import androidx.lifecycle.lifecycleScope
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.UUID
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consumed"
 private const val V2_VIEW_MODEL_TOKEN_KEY = "v2_view_model_token"
-private const val V2_ANALYSIS_INTERVAL_MS = 300L
-private const val V2_ANALYSIS_GUIDE_HOLD_MS = 650L
+private const val V2_ANALYSIS_INTERVAL_MS = 100L
+private const val V2_ANALYSIS_GUIDE_HOLD_MS = 250L
 private val V2_ANALYSIS_SIZE = Size(320, 240)
 
 class ScannerV2Activity : ComponentActivity() {
@@ -131,7 +146,11 @@ class ScannerV2Activity : ComponentActivity() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
     private val cameraAnalysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val autoCaptureGate = ScannerV2AutoCaptureGate()
     private var liveDocumentQuad by mutableStateOf<PageQuad?>(null)
+    private var liveDocumentReady by mutableStateOf(false)
+    private var analysisGuide: PageQuad? = null
+    private var captureRequestInFlight = false
     private var cameraPermissionGranted by mutableStateOf(false)
     @Volatile
     private var cameraBindGeneration = 0L
@@ -339,6 +358,7 @@ class ScannerV2Activity : ComponentActivity() {
                     state = state,
                     surfaceRequest = surfaceRequest,
                     liveDocumentQuad = liveDocumentQuad,
+                    liveDocumentReady = liveDocumentReady,
                     cameraPermissionGranted = cameraPermissionGranted,
                     onRequestCameraPermission = {
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
@@ -405,15 +425,25 @@ class ScannerV2Activity : ComponentActivity() {
                 try {
                     val provider = future.get()
                     val selector = CameraSelector.DEFAULT_BACK_CAMERA
-                    val resolution = ResolutionSelector.Builder()
+                    val previewResolution = ResolutionSelector.Builder()
                         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                         .build()
                     val preview = Preview.Builder()
-                        .setResolutionSelector(resolution)
+                        .setResolutionSelector(previewResolution)
+                        .build()
+                    val captureResolution = ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                        .setResolutionFilter(
+                            ResolutionFilter { supportedSizes, _ ->
+                                supportedSizes.filter { size ->
+                                    isSupportedScannerV2CaptureSize(size.width, size.height)
+                                }
+                            },
+                        )
                         .build()
                     val capture = ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                        .setResolutionSelector(resolution)
+                        .setResolutionSelector(captureResolution)
                         .setTargetRotation(display?.rotation ?: Surface.ROTATION_0)
                         .build()
                     val analysisResolution = ResolutionSelector.Builder()
@@ -432,9 +462,19 @@ class ScannerV2Activity : ComponentActivity() {
                     analysis.setAnalyzer(cameraAnalysisExecutor) { image ->
                         analyzeCameraFrame(image, generation)
                     }
+                    val viewPort = ViewPort.Builder(
+                        Rational(3, 4),
+                        display?.rotation ?: Surface.ROTATION_0,
+                    ).setScaleType(ViewPort.FILL_CENTER).build()
+                    val useCaseGroup = UseCaseGroup.Builder()
+                        .setViewPort(viewPort)
+                        .addUseCase(preview)
+                        .addUseCase(capture)
+                        .addUseCase(analysis)
+                        .build()
                     viewModel.bindPreview(preview)
                     provider.unbindAll()
-                    provider.bindToLifecycle(this, selector, preview, capture, analysis)
+                    provider.bindToLifecycle(this, selector, useCaseGroup)
                     cameraProvider = provider
                     imageCapture = capture
                 } catch (_: Exception) {
@@ -449,6 +489,10 @@ class ScannerV2Activity : ComponentActivity() {
         cameraBindGeneration += 1
         imageCapture = null
         liveDocumentQuad = null
+        liveDocumentReady = false
+        analysisGuide = null
+        autoCaptureGate.reset()
+        captureRequestInFlight = false
         lastAnalysisStartedAt = 0L
         lastAnalysisDetectedAt = 0L
         analysisGuideVisible = false
@@ -465,37 +509,45 @@ class ScannerV2Activity : ComponentActivity() {
             lastAnalysisStartedAt = now
             val plane = image.planes.firstOrNull() ?: return
             val detected = try {
-                val frame = copyScannerV2LumaPlane(
-                    width = image.width,
-                    height = image.height,
+                val crop = image.cropRect
+                val frame = copyScannerV2LumaCrop(
+                    sourceWidth = image.width,
+                    sourceHeight = image.height,
+                    cropLeft = crop.left,
+                    cropTop = crop.top,
+                    cropWidth = crop.width(),
+                    cropHeight = crop.height(),
                     rowStride = plane.rowStride,
                     pixelStride = plane.pixelStride,
                     source = plane.buffer,
                 )
-                detectDocumentQuad(frame)?.let { crop ->
+                detectLiveDocumentQuad(frame)?.let { crop ->
                     rotateScannerV2AnalysisQuad(crop, image.imageInfo.rotationDegrees)
                 }
             } catch (_: IllegalArgumentException) {
                 null
             }
             if (generation != cameraBindGeneration) return
-            val shouldPublish = when {
+            val decision = autoCaptureGate.update(detected)
+            val publishedGuide = when {
                 detected != null -> {
                     lastAnalysisDetectedAt = now
                     analysisGuideVisible = true
-                    true
+                    decision.guide.also { analysisGuide = it }
                 }
-                analysisGuideVisible && now - lastAnalysisDetectedAt >= V2_ANALYSIS_GUIDE_HOLD_MS -> {
+                analysisGuideVisible && now - lastAnalysisDetectedAt < V2_ANALYSIS_GUIDE_HOLD_MS ->
+                    analysisGuide
+                else -> {
                     analysisGuideVisible = false
-                    true
+                    analysisGuide = null
+                    null
                 }
-                else -> false
             }
-            if (shouldPublish) {
-                runOnUiThread {
-                    if (generation == cameraBindGeneration && !isDestroyed) {
-                        liveDocumentQuad = detected
-                    }
+            runOnUiThread {
+                if (generation == cameraBindGeneration && !isDestroyed) {
+                    liveDocumentQuad = publishedGuide
+                    liveDocumentReady = detected != null && decision.ready
+                    if (decision.shouldCapture) capture(preferLiveGuide = true)
                 }
             }
         } finally {
@@ -503,18 +555,25 @@ class ScannerV2Activity : ComponentActivity() {
         }
     }
 
-    private fun capture() {
+    private fun capture(preferLiveGuide: Boolean = false) {
+        if (captureRequestInFlight) return
         val capture = imageCapture ?: run {
             viewModel.cameraUnavailable()
             return
         }
+        captureRequestInFlight = true
+        val suggestedCrop = liveDocumentQuad
         lifecycleScope.launch {
             val ticket = try {
-                viewModel.reserveCapture()
+                viewModel.reserveCapture(suggestedCrop, preferLiveGuide)
             } catch (failure: Exception) {
                 if (failure is kotlinx.coroutines.CancellationException) throw failure
                 null
-            } ?: return@launch
+            } ?: run {
+                captureRequestInFlight = false
+                autoCaptureGate.reset()
+                return@launch
+            }
             capture.targetRotation = display?.rotation ?: Surface.ROTATION_0
             val output = ImageCapture.OutputFileOptions.Builder(ticket.destination).build()
             capture.takePicture(
@@ -522,10 +581,14 @@ class ScannerV2Activity : ComponentActivity() {
                 ContextCompat.getMainExecutor(this@ScannerV2Activity),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        captureRequestInFlight = false
                         viewModel.captureCompleted(ticket)
                     }
 
                     override fun onError(exception: ImageCaptureException) {
+                        captureRequestInFlight = false
+                        autoCaptureGate.reset()
+                        liveDocumentReady = false
                         viewModel.captureFailed(ticket)
                     }
                 },
@@ -583,6 +646,7 @@ private fun ScannerV2App(
     state: ScannerV2UiState,
     surfaceRequest: SurfaceRequest?,
     liveDocumentQuad: PageQuad?,
+    liveDocumentReady: Boolean,
     cameraPermissionGranted: Boolean,
     onRequestCameraPermission: () -> Unit,
     onCapture: () -> Unit,
@@ -612,6 +676,7 @@ private fun ScannerV2App(
                 state = state,
                 surfaceRequest = surfaceRequest,
                 liveDocumentQuad = liveDocumentQuad,
+                liveDocumentReady = liveDocumentReady,
                 permissionGranted = cameraPermissionGranted,
                 onRequestPermission = onRequestCameraPermission,
                 onCapture = onCapture,
@@ -649,6 +714,7 @@ private fun ScannerV2CameraScreen(
     state: ScannerV2UiState,
     surfaceRequest: SurfaceRequest?,
     liveDocumentQuad: PageQuad?,
+    liveDocumentReady: Boolean,
     permissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     onCapture: () -> Unit,
@@ -672,7 +738,8 @@ private fun ScannerV2CameraScreen(
             Text("${state.manifest?.pages?.size ?: 0}/$MAX_SCAN_PAGES")
         }
         Box(
-            Modifier.fillMaxWidth().aspectRatio(3f / 4f)
+            Modifier.fillMaxWidth().weight(1f, fill = false)
+                .aspectRatio(3f / 4f, matchHeightConstraintsFirst = true)
                 .background(Color.Black, RoundedCornerShape(20.dp))
                 .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)),
             contentAlignment = Alignment.Center,
@@ -684,12 +751,14 @@ private fun ScannerV2CameraScreen(
                 surfaceRequest != null -> CameraXViewfinder(
                     surfaceRequest = surfaceRequest,
                     modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
                 else -> CircularProgressIndicator(color = Color.White)
             }
             if (surfaceRequest != null && liveDocumentQuad != null) {
                 ScannerV2LiveDocumentGuide(
                     crop = liveDocumentQuad,
+                    ready = liveDocumentReady,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -703,34 +772,71 @@ private fun ScannerV2CameraScreen(
                 Text(stringResource(R.string.v2_discard_interrupted_capture))
             }
         }
-        Spacer(Modifier.weight(1f))
         Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            Modifier.fillMaxWidth().height(84.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedButton(
+            IconButton(
                 onClick = onImportImage,
                 enabled = !state.busy,
+                modifier = Modifier.size(56.dp),
             ) {
-                Text(stringResource(R.string.v2_import_image))
+                Icon(
+                    painter = painterResource(R.drawable.ic_image),
+                    contentDescription = stringResource(R.string.v2_import_image),
+                    modifier = Modifier.size(28.dp),
+                )
             }
-            Button(
+            Spacer(Modifier.width(28.dp))
+            val captureEnabled = permissionGranted && surfaceRequest != null && !state.busy
+            val captureDescription = stringResource(R.string.v2_capture_button)
+            Surface(
                 onClick = onCapture,
-                enabled = permissionGranted && surfaceRequest != null && !state.busy,
-                modifier = Modifier.size(88.dp),
+                enabled = captureEnabled,
+                modifier = Modifier.size(76.dp).semantics {
+                    contentDescription = captureDescription
+                    role = Role.Button
+                },
                 shape = CircleShape,
+                color = Color.Transparent,
+                border = BorderStroke(
+                    4.dp,
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = if (captureEnabled) 1f else .38f),
+                ),
             ) {
-                Text(stringResource(R.string.v2_capture_button))
+                Box(
+                    Modifier.fillMaxSize().padding(8.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurface.copy(
+                                alpha = if (captureEnabled) 1f else .38f,
+                            ),
+                            CircleShape,
+                        ),
+                )
             }
+            Spacer(Modifier.width(84.dp))
         }
     }
 }
 
 @Composable
-private fun ScannerV2LiveDocumentGuide(crop: PageQuad, modifier: Modifier = Modifier) {
+private fun ScannerV2LiveDocumentGuide(
+    crop: PageQuad,
+    ready: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val density = LocalDensity.current
-    Canvas(modifier) {
+    val description = stringResource(
+        if (ready) R.string.v2_document_ready else R.string.v2_document_detected,
+    )
+    Canvas(
+        modifier.semantics {
+            contentDescription = description
+            stateDescription = description
+            if (ready) liveRegion = LiveRegionMode.Polite
+        },
+    ) {
         fun point(value: NormalizedPoint): Offset = Offset(
             x = (value.x * size.width).toFloat(),
             y = (value.y * size.height).toFloat(),
@@ -753,7 +859,7 @@ private fun ScannerV2LiveDocumentGuide(crop: PageQuad, modifier: Modifier = Modi
         )
         drawPath(
             path = path,
-            color = Color.White,
+            color = if (ready) Color(0xFF69E6A6) else Color.White,
             style = Stroke(width = with(density) { 2.dp.toPx() }, cap = StrokeCap.Round),
         )
     }
@@ -1427,6 +1533,7 @@ private fun ScannerV2CropPreview(
         val ratio = bitmap.width.toFloat() / bitmap.height
         val width = minOf(maxWidth, maxHeight * ratio)
         val height = width / ratio
+        val image = remember(bitmap) { bitmap.asImageBitmap() }
         var activeCorner by remember(bitmap) { mutableStateOf<PageCorner?>(null) }
         var grabOffset by remember(bitmap) { mutableStateOf(Offset.Zero) }
         val currentCrop by rememberUpdatedState(crop)
@@ -1484,18 +1591,22 @@ private fun ScannerV2CropPreview(
                 ),
         ) {
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = image,
                 contentDescription = stringResource(R.string.v2_page_preview),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.FillBounds,
             )
-            if (editable) ScannerV2CropOverlay(crop)
+            if (editable) ScannerV2CropOverlay(image, crop, activeCorner)
         }
     }
 }
 
 @Composable
-private fun ScannerV2CropOverlay(crop: PageQuad) {
+private fun ScannerV2CropOverlay(
+    image: ImageBitmap,
+    crop: PageQuad,
+    activeCorner: PageCorner?,
+) {
     Canvas(Modifier.fillMaxSize()) {
         val points = listOf(crop.topLeft, crop.topRight, crop.bottomRight, crop.bottomLeft).map {
             Offset((it.x * size.width).toFloat(), (it.y * size.height).toFloat())
@@ -1509,6 +1620,65 @@ private fun ScannerV2CropOverlay(crop: PageQuad) {
         points.forEach { point ->
             drawCircle(Color.Black.copy(alpha = .65f), radius = 14.dp.toPx(), center = point)
             drawCircle(Color.White, radius = 9.dp.toPx(), center = point)
+        }
+        activeCorner?.let { corner ->
+            val draggedPoint = crop.corner(corner)
+            val normalizedCenter = scannerV2MagnifierCenter(corner, draggedPoint)
+            val radius = 52.dp.toPx().coerceAtMost(minOf(size.width, size.height) * .22f)
+            val center = Offset(
+                x = (normalizedCenter.x * size.width).toFloat().coerceIn(radius, size.width - radius),
+                y = (normalizedCenter.y * size.height).toFloat().coerceIn(radius, size.height - radius),
+            )
+            val sourceDimension = minOf(image.width, image.height)
+            val sourceSize = (sourceDimension * .14f).roundToInt()
+                .coerceAtLeast(1)
+                .coerceAtMost(sourceDimension)
+            val sourceLeft = ((draggedPoint.x * image.width).roundToInt() - sourceSize / 2)
+                .coerceIn(0, image.width - sourceSize)
+            val sourceTop = ((draggedPoint.y * image.height).roundToInt() - sourceSize / 2)
+                .coerceIn(0, image.height - sourceSize)
+            val destinationSize = (radius * 2f).roundToInt()
+            val destinationOffset = IntOffset(
+                (center.x - radius).roundToInt(),
+                (center.y - radius).roundToInt(),
+            )
+            val sourcePosition = scannerV2MagnifierSourcePosition(
+                draggedPoint,
+                image.width,
+                image.height,
+                sourceLeft,
+                sourceTop,
+                sourceSize,
+            )
+            val crosshairCenter = Offset(
+                destinationOffset.x + sourcePosition.x.toFloat() * destinationSize,
+                destinationOffset.y + sourcePosition.y.toFloat() * destinationSize,
+            )
+            val lensPath = Path().apply { addOval(Rect(center, radius)) }
+            clipPath(lensPath) {
+                drawImage(
+                    image = image,
+                    srcOffset = IntOffset(sourceLeft, sourceTop),
+                    srcSize = IntSize(sourceSize, sourceSize),
+                    dstOffset = destinationOffset,
+                    dstSize = IntSize(destinationSize, destinationSize),
+                )
+            }
+            drawCircle(Color.Black.copy(alpha = .78f), radius, center, style = Stroke(6.dp.toPx()))
+            drawCircle(Color.White, radius, center, style = Stroke(2.dp.toPx()))
+            val crosshair = 10.dp.toPx()
+            drawLine(
+                Color.White,
+                Offset(crosshairCenter.x - crosshair, crosshairCenter.y),
+                Offset(crosshairCenter.x + crosshair, crosshairCenter.y),
+                strokeWidth = 2.dp.toPx(),
+            )
+            drawLine(
+                Color.White,
+                Offset(crosshairCenter.x, crosshairCenter.y - crosshair),
+                Offset(crosshairCenter.x, crosshairCenter.y + crosshair),
+                strokeWidth = 2.dp.toPx(),
+            )
         }
     }
 }

@@ -18,7 +18,7 @@ private const val SCANNER_V2_PREVIEW_MAX_EDGE = 1600
 private const val SCANNER_V2_PREVIEW_MAX_PIXELS = 2_000_000L
 private const val SCANNER_V2_THUMBNAIL_MAX_EDGE = 160
 private const val SCANNER_V2_THUMBNAIL_MAX_PIXELS = 25_600L
-private const val SCANNER_V2_DETECTOR_MAX_EDGE = 512
+private const val SCANNER_V2_DETECTOR_MAX_EDGE = 320
 
 internal data class ScannerV2ViewportTransform(
     val scale: Float,

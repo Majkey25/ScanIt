@@ -6,6 +6,8 @@
     <string name="v2_capture_title">Scan</string>
     <string name="v2_allow_camera">Allow camera</string>
     <string name="v2_capture_button">Scan</string>
+    <string name="v2_document_detected">Document detected</string>
+    <string name="v2_document_ready">Document stable. Capturing.</string>
     <string name="v2_import_image">Import image</string>
     <string name="v2_discard_interrupted_capture">Discard interrupted photo</string>
     <string name="v2_review_title">Review</string>

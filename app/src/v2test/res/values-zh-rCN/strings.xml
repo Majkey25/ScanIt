@@ -6,6 +6,8 @@
     <string name="v2_capture_title">扫描</string>
     <string name="v2_allow_camera">允许使用相机</string>
     <string name="v2_capture_button">扫描</string>
+    <string name="v2_document_detected">已检测到文档</string>
+    <string name="v2_document_ready">文档已稳定，正在拍摄。</string>
     <string name="v2_import_image">导入图片</string>
     <string name="v2_discard_interrupted_capture">丢弃中断的照片</string>
     <string name="v2_review_title">检查</string>

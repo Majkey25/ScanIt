@@ -9,6 +9,8 @@ import kotlin.math.sqrt
 private const val MIN_PAGE_QUAD_AREA = 0.01
 private const val MAX_CORNER_NUDGE = 0.1
 private const val GEOMETRY_EPSILON = 1e-8
+private const val MAGNIFIER_NEAR_EDGE = 0.18
+private const val MAGNIFIER_FAR_EDGE = 0.82
 
 internal data class NormalizedPoint(val x: Double, val y: Double) {
     init {
@@ -22,6 +24,37 @@ internal enum class PageCorner {
     TopRight,
     BottomRight,
     BottomLeft,
+}
+
+internal fun scannerV2MagnifierCenter(
+    corner: PageCorner,
+    draggedPoint: NormalizedPoint,
+): NormalizedPoint = NormalizedPoint(
+    x = when (corner) {
+        PageCorner.TopLeft, PageCorner.BottomLeft -> MAGNIFIER_FAR_EDGE
+        PageCorner.TopRight, PageCorner.BottomRight -> MAGNIFIER_NEAR_EDGE
+    },
+    y = draggedPoint.y.coerceIn(MAGNIFIER_NEAR_EDGE, MAGNIFIER_FAR_EDGE),
+)
+
+internal fun scannerV2MagnifierSourcePosition(
+    draggedPoint: NormalizedPoint,
+    imageWidth: Int,
+    imageHeight: Int,
+    sourceLeft: Int,
+    sourceTop: Int,
+    sourceSize: Int,
+): NormalizedPoint {
+    require(imageWidth > 0 && imageHeight > 0 && sourceSize > 0) {
+        "Magnifier source dimensions are invalid"
+    }
+    require(sourceLeft in 0..imageWidth - sourceSize && sourceTop in 0..imageHeight - sourceSize) {
+        "Magnifier source window is invalid"
+    }
+    return NormalizedPoint(
+        x = (draggedPoint.x * imageWidth - sourceLeft).div(sourceSize).coerceIn(0.0, 1.0),
+        y = (draggedPoint.y * imageHeight - sourceTop).div(sourceSize).coerceIn(0.0, 1.0),
+    )
 }
 
 @ConsistentCopyVisibility
