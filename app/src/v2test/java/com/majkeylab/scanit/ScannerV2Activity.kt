@@ -58,6 +58,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -66,10 +67,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -100,6 +103,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -107,7 +111,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val V2_LAUNCH_DIRECTIVE_CONSUMED_KEY = "v2_launch_directive_consumed"
 private const val V2_VIEW_MODEL_TOKEN_KEY = "v2_view_model_token"
@@ -118,6 +125,9 @@ private val V2_ANALYSIS_SIZE = Size(320, 240)
 class ScannerV2Activity : ComponentActivity() {
     private val viewModel: ScannerV2ViewModel by viewModels()
     private val resultViewModel: ScanViewModel by viewModels()
+    private val customFilterStore by lazy(LazyThreadSafetyMode.NONE) {
+        ScannerV2CustomFilterStore(applicationContext)
+    }
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
     private val cameraAnalysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -158,6 +168,24 @@ class ScannerV2Activity : ComponentActivity() {
             Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         setContent {
+            var customFilters by remember {
+                mutableStateOf<List<ScannerV2CustomFilter>>(emptyList())
+            }
+            var customFiltersLoaded by remember { mutableStateOf(false) }
+            var customFiltersUnreadable by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                when (val loaded = withContext(Dispatchers.IO) { customFilterStore.load() }) {
+                    is ScannerV2CustomFilterLoadResult.Loaded -> {
+                        customFilters = loaded.presets
+                        customFiltersUnreadable = false
+                    }
+                    ScannerV2CustomFilterLoadResult.Unreadable -> {
+                        customFilters = emptyList()
+                        customFiltersUnreadable = true
+                    }
+                }
+                customFiltersLoaded = true
+            }
             val state by viewModel.state.collectAsState()
             val resultState by resultViewModel.state.collectAsState()
             val resultNavigationReady by resultViewModel.navigationReady.collectAsState()
@@ -325,6 +353,26 @@ class ScannerV2Activity : ComponentActivity() {
                     onEditCrop = viewModel::editSelectedCrop,
                     onCancelCropEdit = viewModel::cancelCropEditing,
                     onApplyAppearance = viewModel::applyAppearance,
+                    customFilters = customFilters,
+                    customFiltersLoaded = customFiltersLoaded,
+                    customFiltersUnreadable = customFiltersUnreadable,
+                    onSaveCustomFilter = { name, appearance ->
+                        customFilters = upsertScannerV2CustomFilter(
+                            current = customFilters,
+                            rawName = name,
+                            appearance = appearance,
+                            newId = UUID.randomUUID().toString(),
+                        ).also(customFilterStore::save)
+                    },
+                    onDeleteCustomFilter = { id ->
+                        customFilters = deleteScannerV2CustomFilter(customFilters, id)
+                            .also(customFilterStore::save)
+                    },
+                    onResetCustomFilters = {
+                        customFilterStore.reset()
+                        customFilters = emptyList()
+                        customFiltersUnreadable = false
+                    },
                     onAddPage = viewModel::addPage,
                     onRetakePage = viewModel::retakeSelectedPage,
                     onDeletePage = viewModel::deleteSelectedPage,
@@ -545,6 +593,12 @@ private fun ScannerV2App(
     onEditCrop: () -> Unit,
     onCancelCropEdit: () -> Unit,
     onApplyAppearance: (ScannerV2Appearance) -> Unit,
+    customFilters: List<ScannerV2CustomFilter>,
+    customFiltersLoaded: Boolean,
+    customFiltersUnreadable: Boolean,
+    onSaveCustomFilter: (String, ScannerV2Appearance) -> Unit,
+    onDeleteCustomFilter: (String) -> Unit,
+    onResetCustomFilters: () -> Unit,
     onAddPage: () -> Unit,
     onRetakePage: () -> Unit,
     onDeletePage: () -> Unit,
@@ -571,6 +625,12 @@ private fun ScannerV2App(
                 onEditCrop = onEditCrop,
                 onCancelCropEdit = onCancelCropEdit,
                 onApplyAppearance = onApplyAppearance,
+                customFilters = customFilters,
+                customFiltersLoaded = customFiltersLoaded,
+                customFiltersUnreadable = customFiltersUnreadable,
+                onSaveCustomFilter = onSaveCustomFilter,
+                onDeleteCustomFilter = onDeleteCustomFilter,
+                onResetCustomFilters = onResetCustomFilters,
                 onAddPage = onAddPage,
                 onRetakePage = onRetakePage,
                 onDeletePage = onDeletePage,
@@ -706,6 +766,12 @@ private fun ScannerV2ReviewScreen(
     onEditCrop: () -> Unit,
     onCancelCropEdit: () -> Unit,
     onApplyAppearance: (ScannerV2Appearance) -> Unit,
+    customFilters: List<ScannerV2CustomFilter>,
+    customFiltersLoaded: Boolean,
+    customFiltersUnreadable: Boolean,
+    onSaveCustomFilter: (String, ScannerV2Appearance) -> Unit,
+    onDeleteCustomFilter: (String) -> Unit,
+    onResetCustomFilters: () -> Unit,
     onAddPage: () -> Unit,
     onRetakePage: () -> Unit,
     onDeletePage: () -> Unit,
@@ -928,8 +994,15 @@ private fun ScannerV2ReviewScreen(
             ScannerV2AppearanceEditor(
                 appearance = record.appearance,
                 previews = state.filterPreviews,
+                pageKey = record.pageId.value,
+                customFilters = customFilters,
+                customFiltersLoaded = customFiltersLoaded,
+                customFiltersUnreadable = customFiltersUnreadable,
                 busy = state.busy,
                 onApply = onApplyAppearance,
+                onSaveCustomFilter = onSaveCustomFilter,
+                onDeleteCustomFilter = onDeleteCustomFilter,
+                onResetCustomFilters = onResetCustomFilters,
             )
             OutlinedButton(
                 onClick = onEditCrop,
@@ -1065,12 +1138,41 @@ private fun ScannerV2FullscreenPreview(
 private fun ScannerV2AppearanceEditor(
     appearance: ScannerV2Appearance,
     previews: Map<ScannerV2Filter, android.graphics.Bitmap>,
+    pageKey: String,
+    customFilters: List<ScannerV2CustomFilter>,
+    customFiltersLoaded: Boolean,
+    customFiltersUnreadable: Boolean,
     busy: Boolean,
     onApply: (ScannerV2Appearance) -> Unit,
+    onSaveCustomFilter: (String, ScannerV2Appearance) -> Unit,
+    onDeleteCustomFilter: (String) -> Unit,
+    onResetCustomFilters: () -> Unit,
 ) {
-    var selectedFilter by remember(appearance) { mutableStateOf(appearance.filter) }
-    var intensity by remember(appearance) { mutableIntStateOf(appearance.intensity) }
-    var shadows by remember(appearance) { mutableIntStateOf(appearance.shadows) }
+    var selectedFilterWire by rememberSaveable(
+        pageKey,
+        appearance.filter.wireValue,
+        appearance.intensity,
+        appearance.shadows,
+    ) { mutableStateOf(appearance.filter.wireValue) }
+    var intensity by rememberSaveable(
+        pageKey,
+        appearance.filter.wireValue,
+        appearance.intensity,
+        appearance.shadows,
+    ) { mutableIntStateOf(appearance.intensity) }
+    var shadows by rememberSaveable(
+        pageKey,
+        appearance.filter.wireValue,
+        appearance.intensity,
+        appearance.shadows,
+    ) { mutableIntStateOf(appearance.shadows) }
+    var selectedCustomFilterId by rememberSaveable(pageKey) { mutableStateOf<String?>(null) }
+    var showSaveDialog by rememberSaveable(pageKey) { mutableStateOf(false) }
+    var showResetDialog by rememberSaveable(pageKey) { mutableStateOf(false) }
+    var customFilterName by rememberSaveable(pageKey) { mutableStateOf("") }
+    var pendingDeleteFilterId by rememberSaveable(pageKey) { mutableStateOf<String?>(null) }
+    val selectedFilter = ScannerV2Filter.parse(selectedFilterWire) ?: appearance.filter
+    val edited = ScannerV2Appearance(selectedFilter, intensity, shadows)
     Text(stringResource(R.string.v2_filters), style = MaterialTheme.typography.titleMedium)
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(ScannerV2Filter.entries.size) { index ->
@@ -1083,9 +1185,10 @@ private fun ScannerV2AppearanceEditor(
                     .semantics { contentDescription = filterLabel },
                 onClick = {
                     val preset = ScannerV2Appearance.defaultFor(filter)
-                    selectedFilter = filter
+                    selectedFilterWire = filter.wireValue
                     intensity = preset.intensity
                     shadows = preset.shadows
+                    selectedCustomFilterId = null
                     if (preset != appearance) onApply(preset)
                 },
                 label = {
@@ -1109,11 +1212,54 @@ private fun ScannerV2AppearanceEditor(
             )
         }
     }
+    if (customFilters.isNotEmpty()) {
+        Text(stringResource(R.string.v2_custom_filters), style = MaterialTheme.typography.titleSmall)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(customFilters, key = { preset -> preset.id }) { preset ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = selectedCustomFilterId == preset.id,
+                        enabled = !busy,
+                        onClick = {
+                            selectedFilterWire = preset.appearance.filter.wireValue
+                            intensity = preset.appearance.intensity
+                            shadows = preset.appearance.shadows
+                            selectedCustomFilterId = preset.id
+                            if (preset.appearance != appearance) onApply(preset.appearance)
+                        },
+                        label = {
+                            Text(
+                                preset.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { pendingDeleteFilterId = preset.id },
+                        enabled = !busy,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_close),
+                            contentDescription = stringResource(
+                                R.string.v2_delete_custom_filter,
+                                preset.name,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
     if (selectedFilter != ScannerV2Filter.Original) {
         Text(stringResource(R.string.v2_filter_intensity, intensity))
         Slider(
             value = intensity.toFloat(),
-            onValueChange = { intensity = it.toInt() },
+            onValueChange = {
+                intensity = it.toInt()
+                selectedCustomFilterId = null
+            },
             valueRange = 0f..100f,
             enabled = !busy,
         )
@@ -1121,12 +1267,14 @@ private fun ScannerV2AppearanceEditor(
             Text(stringResource(R.string.v2_filter_shadows, shadows))
             Slider(
                 value = shadows.toFloat(),
-                onValueChange = { shadows = it.toInt() },
+                onValueChange = {
+                    shadows = it.toInt()
+                    selectedCustomFilterId = null
+                },
                 valueRange = 0f..100f,
                 enabled = !busy,
             )
         }
-        val edited = ScannerV2Appearance(selectedFilter, intensity, shadows)
         Button(
             onClick = { onApply(edited) },
             enabled = !busy && edited != appearance,
@@ -1134,6 +1282,125 @@ private fun ScannerV2AppearanceEditor(
         ) {
             Text(stringResource(R.string.v2_apply_filter))
         }
+        OutlinedButton(
+            onClick = {
+                if (customFiltersUnreadable) {
+                    showResetDialog = true
+                } else {
+                    customFilterName = ""
+                    showSaveDialog = true
+                }
+            },
+            enabled = !busy && customFiltersLoaded,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.v2_save_custom_filter))
+        }
+    }
+    if (showSaveDialog) {
+        val saveError = scannerV2CustomFilterSaveError(customFilters, customFilterName, edited)
+        val replacementName = scannerV2CustomFilterReplacementName(customFilters, customFilterName)
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text(stringResource(R.string.v2_save_custom_filter)) },
+            text = {
+                OutlinedTextField(
+                    value = customFilterName,
+                    onValueChange = { value ->
+                        if (value.length <= MAX_SCANNER_V2_CUSTOM_FILTER_NAME_LENGTH + 1) {
+                            customFilterName = value
+                        }
+                    },
+                    label = { Text(stringResource(R.string.v2_custom_filter_name)) },
+                    singleLine = true,
+                    isError = customFilterName.isNotEmpty() && saveError != null,
+                    supportingText = {
+                        if (customFilterName.isNotEmpty()) {
+                            when (saveError) {
+                                ScannerV2CustomFilterSaveError.InvalidName,
+                                ScannerV2CustomFilterSaveError.UnsupportedAppearance,
+                                -> Text(
+                                    stringResource(
+                                        R.string.v2_custom_filter_invalid_name,
+                                        MAX_SCANNER_V2_CUSTOM_FILTER_NAME_LENGTH,
+                                    ),
+                                )
+                                ScannerV2CustomFilterSaveError.CapacityReached -> Text(
+                                    stringResource(
+                                        R.string.v2_custom_filter_limit,
+                                        MAX_SCANNER_V2_CUSTOM_FILTERS,
+                                    ),
+                                )
+                                null -> replacementName?.let { name ->
+                                    Text(stringResource(R.string.v2_custom_filter_replaces, name))
+                                }
+                            }
+                        }
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSaveCustomFilter(customFilterName, edited)
+                        showSaveDialog = false
+                    },
+                    enabled = !busy && saveError == null,
+                ) {
+                    Text(
+                        stringResource(
+                            if (replacementName == null) R.string.v2_save else R.string.v2_replace,
+                        ),
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveDialog = false }) {
+                    Text(stringResource(R.string.v2_cancel))
+                }
+            },
+        )
+    }
+    customFilters.firstOrNull { it.id == pendingDeleteFilterId }?.let { preset ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteFilterId = null },
+            title = { Text(stringResource(R.string.v2_delete_custom_filter_title)) },
+            text = { Text(stringResource(R.string.v2_delete_custom_filter_confirm, preset.name)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteCustomFilter(preset.id)
+                        if (selectedCustomFilterId == preset.id) selectedCustomFilterId = null
+                        pendingDeleteFilterId = null
+                    },
+                ) { Text(stringResource(R.string.v2_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteFilterId = null }) {
+                    Text(stringResource(R.string.v2_cancel))
+                }
+            },
+        )
+    }
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text(stringResource(R.string.v2_custom_filter_reset_title)) },
+            text = { Text(stringResource(R.string.v2_custom_filter_reset_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onResetCustomFilters()
+                        showResetDialog = false
+                    },
+                ) { Text(stringResource(R.string.v2_reset)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text(stringResource(R.string.v2_cancel))
+                }
+            },
+        )
     }
 }
 
