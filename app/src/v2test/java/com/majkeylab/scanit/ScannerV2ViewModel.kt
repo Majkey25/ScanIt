@@ -95,7 +95,6 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
 
     suspend fun reserveCapture(
         suggestedCrop: PageQuad?,
-        preferSuggestedCrop: Boolean,
     ): ScannerV2CaptureTicket? = withContext(Dispatchers.IO) {
         lock.withLock {
             val current = mutableState.value.manifest ?: return@withLock null
@@ -114,7 +113,7 @@ internal class ScannerV2ViewModel(application: Application) : AndroidViewModel(a
                 current.state.generation,
                 destination,
                 suggestedCrop,
-                preferSuggestedCrop,
+                preferSuggestedCrop = false,
             )
         }
     }

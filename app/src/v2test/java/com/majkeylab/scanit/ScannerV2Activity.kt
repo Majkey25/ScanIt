@@ -547,7 +547,7 @@ class ScannerV2Activity : ComponentActivity() {
                 if (generation == cameraBindGeneration && !isDestroyed) {
                     liveDocumentQuad = publishedGuide
                     liveDocumentReady = detected != null && decision.ready
-                    if (decision.shouldCapture) capture(preferLiveGuide = true)
+                    if (decision.shouldCapture) capture()
                 }
             }
         } finally {
@@ -555,7 +555,7 @@ class ScannerV2Activity : ComponentActivity() {
         }
     }
 
-    private fun capture(preferLiveGuide: Boolean = false) {
+    private fun capture() {
         if (captureRequestInFlight) return
         val capture = imageCapture ?: run {
             viewModel.cameraUnavailable()
@@ -565,7 +565,7 @@ class ScannerV2Activity : ComponentActivity() {
         val suggestedCrop = liveDocumentQuad
         lifecycleScope.launch {
             val ticket = try {
-                viewModel.reserveCapture(suggestedCrop, preferLiveGuide)
+                viewModel.reserveCapture(suggestedCrop)
             } catch (failure: Exception) {
                 if (failure is kotlinx.coroutines.CancellationException) throw failure
                 null

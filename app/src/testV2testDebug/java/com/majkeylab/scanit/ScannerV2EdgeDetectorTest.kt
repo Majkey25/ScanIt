@@ -151,6 +151,28 @@ class ScannerV2EdgeDetectorTest {
     }
 
     @Test
+    fun detectsOuterDisplayInCurrentEmulatorJpegFixture() {
+        val bytes = requireNotNull(
+            javaClass.getResourceAsStream("/scanner-v2/tv-current-capture-240x320.gray"),
+        ).use { it.readBytes() }
+        val detected = detectDocumentQuad(LumaFrame(240, 320, bytes))
+        val expected = listOf(
+            NormalizedPoint(.543, .327),
+            NormalizedPoint(.902, .263),
+            NormalizedPoint(.892, .539),
+            NormalizedPoint(.543, .500),
+        )
+
+        requireNotNull(detected)
+        val actual = listOf(detected.topLeft, detected.topRight, detected.bottomRight, detected.bottomLeft)
+        println("Scanner v2 current capture quad=$actual")
+        expected.zip(actual).forEach { (wanted, found) ->
+            assertTrue("x ${found.x} is not near ${wanted.x}", kotlin.math.abs(wanted.x - found.x) <= .055)
+            assertTrue("y ${found.y} is not near ${wanted.y}", kotlin.math.abs(wanted.y - found.y) <= .055)
+        }
+    }
+
+    @Test
     fun detectsOuterDisplayInActualCameraAnalysisFrame() {
         val bytes = requireNotNull(
             javaClass.getResourceAsStream("/scanner-v2/tv-analysis-320x240.gray"),
