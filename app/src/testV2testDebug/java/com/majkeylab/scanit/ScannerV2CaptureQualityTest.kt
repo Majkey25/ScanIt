@@ -41,6 +41,7 @@ class ScannerV2CaptureQualityTest {
         }.sorted()
         val p95Ms = durations[46] / 1_000_000.0
 
+        println("Scanner v2 quality p95=${p95Ms}ms")
         assertTrue("Quality p95 ${p95Ms}ms exceeds budget", p95Ms < 10.0)
     }
 

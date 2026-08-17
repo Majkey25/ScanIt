@@ -17,14 +17,20 @@ internal fun analyzeScannerV2CaptureQuality(
     frame: LumaFrame,
     crop: PageQuad? = null,
 ): Set<ScannerV2CaptureQualityIssue> {
+    val included = crop?.let { page ->
+        BooleanArray(frame.width * frame.height) { index ->
+            page.containsPixel(index % frame.width, index / frame.width, frame.width, frame.height)
+        }
+    }
     var count = 0
     var sum = 0L
     var dark = 0
     var bright = 0
     for (y in 0 until frame.height) {
         for (x in 0 until frame.width) {
-            if (crop != null && !crop.containsPixel(x, y, frame.width, frame.height)) continue
-            val value = frame.unsignedPixel(y * frame.width + x)
+            val index = y * frame.width + x
+            if (included != null && !included[index]) continue
+            val value = frame.unsignedPixel(index)
             count += 1
             sum += value
             if (value <= DARK_LUMA) dark += 1
@@ -45,17 +51,14 @@ internal fun analyzeScannerV2CaptureQuality(
     var squaredDifference = 0.0
     for (y in 1 until frame.height - 1) {
         for (x in 1 until frame.width - 1) {
+            val index = y * frame.width + x
             if (
-                crop != null &&
-                (!crop.containsPixel(x, y, frame.width, frame.height) ||
-                    !crop.containsPixel(x - 1, y, frame.width, frame.height) ||
-                    !crop.containsPixel(x + 1, y, frame.width, frame.height) ||
-                    !crop.containsPixel(x, y - 1, frame.width, frame.height) ||
-                    !crop.containsPixel(x, y + 1, frame.width, frame.height))
+                included != null &&
+                (!included[index] || !included[index - 1] || !included[index + 1] ||
+                    !included[index - frame.width] || !included[index + frame.width])
             ) {
                 continue
             }
-            val index = y * frame.width + x
             val laplacian = 4 * frame.unsignedPixel(index) -
                 frame.unsignedPixel(index - 1) -
                 frame.unsignedPixel(index + 1) -
