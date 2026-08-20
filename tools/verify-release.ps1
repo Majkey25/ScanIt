@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "22"
+$expectedVersionCode = "23"
 $expectedMinSdk = "33"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
@@ -99,15 +99,15 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.3.8-internal"
+        $expectedVersionName = "1.4.0-beta.1-internal"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "1.3.8"
+        $expectedVersionName = "1.4.0-beta.1"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "1.3.8"
+        $expectedVersionName = "1.4.0-beta.1"
     }
 }
 
