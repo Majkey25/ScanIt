@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -38,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -55,14 +57,18 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -74,6 +80,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -110,6 +117,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,6 +130,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private const val PRIVACY_POLICY_URL =
     "https://majkey25.github.io/ScanIt/privacy.html"
@@ -182,8 +191,6 @@ internal fun ScanItApp(
     onLoadThumbnail: suspend (File) -> Bitmap?,
     onLoadResultPreview: suspend (File, Int) -> Bitmap? = { _, _ -> null },
     onLoadResultImageDimensions: suspend (List<File>) -> List<Pair<Int, Int>>? = { null },
-    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap? =
-        { _, _, _ -> null },
     onSelectResultPage: (Int) -> Unit,
     onNavigateBack: () -> Unit,
     onSharePdf: (() -> Unit)? = null,
@@ -198,12 +205,25 @@ internal fun ScanItApp(
     onRenamePdf: (String) -> Unit = {},
     onRenameImages: (String) -> Unit = {},
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit = {},
-    onCloseAppearanceEditor: () -> Unit = {},
-    onApplyAppearance: (ScanAppearanceSettings) -> Unit = {},
     onRunDocumentAction: (DocumentAction) -> Unit = {},
+    onRunSafeShare: (SafeShareScope) -> Unit = {},
+    onRunManualRedaction: (SafeShareScope) -> Unit = {},
+    onRunCleanWhiteboard: (SafeShareScope) -> Unit = {},
+    onApplyCleanWhiteboard: () -> Unit = {},
+    onCancelSafeShare: () -> Unit = {},
+    onSelectSafeSharePage: (Int) -> Unit = {},
+    onAddSafeShareRegion: () -> Unit = {},
+    onToggleSafeShareRegion: (String) -> Unit = {},
+    onMoveSafeShareRegion: (String, Float, Float) -> Unit = { _, _, _ -> },
+    onResizeSafeShareRegion: (String, Float, Float) -> Unit = { _, _, _ -> },
+    onDeleteSafeShareRegion: (String) -> Unit = {},
+    onApplySafeShare: () -> Unit = {},
     onDismissDocumentAction: () -> Unit = {},
     onExportDocumentText: () -> Unit = {},
-    onOpenDocumentActionUrl: (String) -> Unit = {},
+    onFindDocumentText: suspend (String) -> List<TextMatch> = { emptyList() },
+    onReadAloud: () -> Unit = {},
+    onStopReadAloud: () -> Unit = {},
+    onRunSystemAction: (DetectedCodeAction) -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
     onCloseVisualMarkEditor: () -> Unit = {},
     onSelectVisualMarkTemplate: (String) -> Unit = {},
@@ -231,9 +251,9 @@ internal fun ScanItApp(
         val visualMarkEditor = (state as? ScreenState.Result)?.visualMarkEditor
         val documentActionState = (state as? ScreenState.Result)?.documentActionState
         when {
+            backAction == AppBackAction.CancelSafeShare -> onCancelSafeShare()
+            !documentActionDismissAllowed(documentActionState) -> Unit
             visualMarkEditor != null -> onCloseVisualMarkEditor()
-            state is ScreenState.Result && state.appearanceReviewRequired ->
-                onCloseAppearanceEditor()
             documentActionState != null -> onDismissDocumentAction()
             backAction == AppBackAction.CloseSettings -> showSettings = false
             backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
@@ -246,15 +266,18 @@ internal fun ScanItApp(
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
-        if (state is ScreenState.Result && state.appearanceReviewRequired) {
-            AppearanceEditScreen(
+        if (state is ScreenState.Result && state.safeShareState != null) {
+            SafeShareScreen(
                 result = state,
-                defaultAppearance = settings.appearance,
-                onClose = onCloseAppearanceEditor,
-                onApply = onApplyAppearance,
-                onSelectPage = onSelectResultPage,
-                onLoadThumbnail = onLoadThumbnail,
-                onLoadAppearancePreview = onLoadAppearancePreview,
+                onCancel = onCancelSafeShare,
+                onSelectPage = onSelectSafeSharePage,
+                onAddArea = onAddSafeShareRegion,
+                onToggleRegion = onToggleSafeShareRegion,
+                onMoveRegion = onMoveSafeShareRegion,
+                onResizeRegion = onResizeSafeShareRegion,
+                onDeleteRegion = onDeleteSafeShareRegion,
+                onApply = onApplySafeShare,
+                onLoadPreview = onLoadResultPreview,
             )
         } else if (state is ScreenState.Result && state.visualMarkEditor != null) {
             VisualMarkEditorScreen(
@@ -336,9 +359,16 @@ internal fun ScanItApp(
                         onRenameImages = onRenameImages,
                         onAcknowledgeUnknownOutput = onAcknowledgeUnknownOutput,
                         onRunDocumentAction = onRunDocumentAction,
+                        onRunSafeShare = onRunSafeShare,
+                        onRunManualRedaction = onRunManualRedaction,
+                        onRunCleanWhiteboard = onRunCleanWhiteboard,
+                        onApplyCleanWhiteboard = onApplyCleanWhiteboard,
                         onDismissDocumentAction = onDismissDocumentAction,
                         onExportDocumentText = onExportDocumentText,
-                        onOpenDocumentActionUrl = onOpenDocumentActionUrl,
+                        onFindDocumentText = onFindDocumentText,
+                        onReadAloud = onReadAloud,
+                        onStopReadAloud = onStopReadAloud,
+                        onRunSystemAction = onRunSystemAction,
                         onSelectPage = onSelectResultPage,
                         onLoadThumbnail = onLoadThumbnail,
                         onLoadResultPreview = onLoadResultPreview,
@@ -391,224 +421,6 @@ private fun FailureScreen(
 }
 
 @Composable
-private fun AppearanceEditScreen(
-    result: ScreenState.Result,
-    defaultAppearance: ScanAppearanceSettings,
-    onClose: () -> Unit,
-    onApply: (ScanAppearanceSettings) -> Unit,
-    onSelectPage: (Int) -> Unit,
-    onLoadThumbnail: suspend (File) -> Bitmap?,
-    onLoadAppearancePreview: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-) {
-    val cached = result.scan.cached
-    val pageIndex = resolvedPageIndex(result.selectedPageIndex, cached.pages.size)
-    val initial =
-        cached.appearanceSettings
-            ?: cached.appearance?.let(defaultAppearance::withApplied)
-            ?: defaultAppearance
-    var modeWire by rememberSaveable(cached.entryId) { mutableStateOf(initial.colorMode.wireValue) }
-    val mode = ScanColorMode.entries.firstOrNull { it.wireValue == modeWire } ?: initial.colorMode
-    val draft = initial.copy(colorMode = mode)
-    val sourcePage = cached.sourcePages.getOrNull(pageIndex)
-    val preview =
-        ownedAppearancePreview(
-            sourcePage = sourcePage,
-            settings = draft,
-            maxSize = 1024,
-            onLoad = onLoadAppearancePreview,
-        )
-    val enabled = !result.appearanceApplyInProgress
-    val pagePosition = stringResource(R.string.page_position, pageIndex + 1, cached.pages.size)
-    Scaffold(
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            CompactTopBar(
-                title = stringResource(R.string.appearance),
-                onBack = onClose,
-                backEnabled = enabled,
-                actionsEnabled = enabled,
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (preview.loading) {
-                        CircularProgressIndicator()
-                    } else if (preview.bitmap == null) {
-                        Text(stringResource(R.string.preview_unavailable))
-                    } else {
-                        Image(
-                            bitmap = preview.bitmap.asImageBitmap(),
-                            contentDescription = pagePosition,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-                }
-            }
-            item { Text(pagePosition, style = MaterialTheme.typography.titleMedium) }
-            if (cached.pages.size > 1) {
-                item {
-                    ResultPageStrip(
-                        pages = cached.pages,
-                        selectedPageIndex = pageIndex,
-                        enabled = enabled,
-                        onSelectPage = onSelectPage,
-                        onLoadThumbnail = onLoadThumbnail,
-                    )
-                }
-            }
-            item {
-                Text(stringResource(R.string.filters), style = MaterialTheme.typography.titleMedium)
-            }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ScanColorMode.entries) { candidate ->
-                        AppearanceFilterTile(
-                            mode = candidate,
-                            selected = candidate == mode,
-                            sourcePage = sourcePage,
-                            settings = initial.copy(colorMode = candidate),
-                            enabled = enabled,
-                            onLoad = onLoadAppearancePreview,
-                            onClick = { modeWire = candidate.wireValue },
-                        )
-                    }
-                }
-            }
-            item {
-                Text(
-                    stringResource(R.string.edit_filters_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            result.appearanceMessage?.let { message ->
-                item {
-                    Text(
-                        message.resolve(),
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-            }
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onClose,
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    ) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                    Button(
-                        onClick = { onApply(draft) },
-                        enabled = enabled,
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp),
-                    ) {
-                        Text(
-                            stringResource(
-                                if (result.appearanceApplyInProgress) {
-                                    R.string.applying_appearance
-                                } else {
-                                    R.string.apply_appearance
-                                },
-                            ),
-                        )
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(4.dp)) }
-        }
-    }
-}
-
-@Composable
-private fun AppearanceFilterTile(
-    mode: ScanColorMode,
-    selected: Boolean,
-    sourcePage: File?,
-    settings: ScanAppearanceSettings,
-    enabled: Boolean,
-    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-    onClick: () -> Unit,
-) {
-    val preview = ownedAppearancePreview(sourcePage, settings, 160, onLoad)
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        selected = selected,
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(if (selected) 2.dp else 1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.width(112.dp).heightIn(min = 144.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier = Modifier.fillMaxWidth().height(104.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (preview.loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else if (preview.bitmap == null) {
-                    Text(
-                        stringResource(R.string.preview_unavailable),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                } else {
-                    Image(
-                        bitmap = preview.bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-            }
-            Text(scanColorModeLabel(mode), style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
-
-@Composable
-private fun ownedAppearancePreview(
-    sourcePage: File?,
-    settings: ScanAppearanceSettings,
-    maxSize: Int,
-    onLoad: suspend (File, ScanAppearanceSettings, Int) -> Bitmap?,
-): BitmapPreviewState {
-    val preview by produceState(BitmapPreviewState(), sourcePage, settings, maxSize) {
-        val bitmap =
-            if (sourcePage == null) {
-                null
-            } else {
-                try {
-                    onLoad(sourcePage, settings, maxSize)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Exception) {
-                    null
-                }
-            }
-        value = BitmapPreviewState(bitmap = bitmap, loading = false)
-        awaitDispose { bitmap?.recycle() }
-    }
-    return preview
-}
-
-@Composable
 private fun ResultScreen(
     result: ScreenState.Result,
     onNewScan: () -> Unit,
@@ -629,9 +441,16 @@ private fun ResultScreen(
     onRenameImages: (String) -> Unit,
     onAcknowledgeUnknownOutput: (UnknownOutputCreateAcknowledgement) -> Unit,
     onRunDocumentAction: (DocumentAction) -> Unit,
+    onRunSafeShare: (SafeShareScope) -> Unit,
+    onRunManualRedaction: (SafeShareScope) -> Unit,
+    onRunCleanWhiteboard: (SafeShareScope) -> Unit,
+    onApplyCleanWhiteboard: () -> Unit,
     onDismissDocumentAction: () -> Unit,
     onExportDocumentText: () -> Unit,
-    onOpenDocumentActionUrl: (String) -> Unit,
+    onFindDocumentText: suspend (String) -> List<TextMatch>,
+    onReadAloud: () -> Unit,
+    onStopReadAloud: () -> Unit,
+    onRunSystemAction: (DetectedCodeAction) -> Unit,
     onSelectPage: (Int) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
     onLoadResultPreview: suspend (File, Int) -> Bitmap?,
@@ -652,6 +471,9 @@ private fun ResultScreen(
     var showUnknownOutputDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showFullscreen by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showDocumentActions by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showSafeShareScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showManualRedactionScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showCleanWhiteboardScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     val cachedImageDimensions by
         produceState<List<Pair<Int, Int>>?>(
             initialValue = null,
@@ -793,7 +615,7 @@ private fun ResultScreen(
                             },
                             enabled = actionsEnabled,
                             modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
+                            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
                                 iconRes = R.drawable.ic_camera,
@@ -943,10 +765,56 @@ private fun ResultScreen(
     }
     if (showDocumentActions) {
         DocumentActionPickerDialog(
+            cleanWhiteboardAvailable = result.canCleanWhiteboard,
             onDismiss = { showDocumentActions = false },
+            onSafeShare = {
+                showDocumentActions = false
+                showSafeShareScope = true
+            },
+            onRedactDocument = {
+                showDocumentActions = false
+                showManualRedactionScope = true
+            },
+            onCleanWhiteboard = {
+                showDocumentActions = false
+                showCleanWhiteboardScope = true
+            },
             onSelect = { action ->
                 showDocumentActions = false
                 onRunDocumentAction(action)
+            },
+        )
+    }
+    if (showSafeShareScope) {
+        PageScopeDialog(
+            titleRes = R.string.safe_share_scope_title,
+            bodyRes = R.string.safe_share_scope_body,
+            onDismiss = { showSafeShareScope = false },
+            onSelect = { scope ->
+                showSafeShareScope = false
+                onRunSafeShare(scope)
+            },
+        )
+    }
+    if (showCleanWhiteboardScope) {
+        PageScopeDialog(
+            titleRes = R.string.clean_whiteboard_scope_title,
+            bodyRes = R.string.clean_whiteboard_scope_body,
+            onDismiss = { showCleanWhiteboardScope = false },
+            onSelect = { scope ->
+                showCleanWhiteboardScope = false
+                onRunCleanWhiteboard(scope)
+            },
+        )
+    }
+    if (showManualRedactionScope) {
+        PageScopeDialog(
+            titleRes = R.string.redact_document_scope_title,
+            bodyRes = R.string.redact_document_scope_body,
+            onDismiss = { showManualRedactionScope = false },
+            onSelect = { scope ->
+                showManualRedactionScope = false
+                onRunManualRedaction(scope)
             },
         )
     }
@@ -955,7 +823,15 @@ private fun ResultScreen(
             state = actionState,
             onDismiss = onDismissDocumentAction,
             onExportText = onExportDocumentText,
-            onOpenUrl = onOpenDocumentActionUrl,
+            onFindText = onFindDocumentText,
+            onSelectMatch = { match ->
+                onDismissDocumentAction()
+                onSelectPage(match.page)
+            },
+            onReadAloud = onReadAloud,
+            onStopReadAloud = onStopReadAloud,
+            onRunSystemAction = onRunSystemAction,
+            onApplyWhiteboard = onApplyCleanWhiteboard,
         )
     }
 }
@@ -1144,46 +1020,192 @@ private fun ownedResultPreview(
                 }
             }
         value = BitmapPreviewState(bitmap = bitmap, loading = false)
-        awaitDispose { bitmap?.recycle() }
     }
     return preview
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun DocumentActionPickerDialog(
+    cleanWhiteboardAvailable: Boolean,
     onDismiss: () -> Unit,
+    onSafeShare: () -> Unit,
+    onRedactDocument: () -> Unit,
+    onCleanWhiteboard: () -> Unit,
     onSelect: (DocumentAction) -> Unit,
+) {
+    val maxHeight =
+        with(LocalDensity.current) {
+            (LocalWindowInfo.current.containerSize.height * 0.9f).toDp()
+        }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = null,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().height(maxHeight),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(top = 8.dp)) {
+                    Text(
+                        stringResource(R.string.document_actions),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        stringResource(R.string.document_actions_on_device),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_close),
+                        contentDescription = stringResource(R.string.document_actions_close),
+                    )
+                }
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                documentActionInventory().forEach { section ->
+                    val actions =
+                        section.actions.filter {
+                            it != DocumentAction.CleanWhiteboard || cleanWhiteboardAvailable
+                        }
+                    if (actions.isEmpty()) return@forEach
+                    item {
+                        Text(
+                            documentActionSectionLabel(section.title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        if (section.title == DocumentActionSectionTitle.Read) {
+                            Text(
+                                stringResource(R.string.document_actions_model_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                            )
+                        } else {
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                        ) {
+                            Column {
+                                actions.forEachIndexed { index, action ->
+                                    DocumentActionPickerRow(
+                                        iconRes = documentActionIcon(action),
+                                        labelRes = documentActionLabel(action),
+                                        scopeRes = documentActionScope(action),
+                                        onClick =
+                                            when (action) {
+                                                DocumentAction.SafeShare -> onSafeShare
+                                                DocumentAction.RedactDocument -> onRedactDocument
+                                                DocumentAction.CleanWhiteboard -> onCleanWhiteboard
+                                                else -> { { onSelect(action) } }
+                                            },
+                                    )
+                                    if (index < actions.lastIndex) {
+                                        HorizontalDivider(modifier = Modifier.padding(start = 64.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun documentActionSectionLabel(title: DocumentActionSectionTitle): String =
+    stringResource(
+        when (title) {
+            DocumentActionSectionTitle.Read -> R.string.document_action_section_read
+            DocumentActionSectionTitle.Use -> R.string.document_action_section_use
+            DocumentActionSectionTitle.Protect -> R.string.document_action_section_protect
+            DocumentActionSectionTitle.Improve -> R.string.document_action_section_improve
+        },
+    )
+
+internal fun documentActionIcon(action: DocumentAction): Int =
+    when (action) {
+        DocumentAction.ExtractText -> R.drawable.ic_action_extract_text
+        DocumentAction.FindText -> R.drawable.ic_action_find_text
+        DocumentAction.ReadAloud -> R.drawable.ic_action_read_aloud
+        DocumentAction.DetectCodes -> R.drawable.ic_qr_code
+        DocumentAction.ReceiptDetails -> R.drawable.ic_action_receipt
+        DocumentAction.CreateContact -> R.drawable.ic_action_contact
+        DocumentAction.SafeShare -> R.drawable.ic_action_safe_share
+        DocumentAction.RedactDocument -> R.drawable.ic_action_redact
+        DocumentAction.CleanWhiteboard -> R.drawable.ic_action_clean_whiteboard
+    }
+
+private fun documentActionLabel(action: DocumentAction): Int =
+    when (action) {
+        DocumentAction.ExtractText -> R.string.extract_text
+        DocumentAction.FindText -> R.string.find_text
+        DocumentAction.ReadAloud -> R.string.read_aloud
+        DocumentAction.DetectCodes -> R.string.detect_codes
+        DocumentAction.ReceiptDetails -> R.string.receipt_details
+        DocumentAction.CreateContact -> R.string.create_contact
+        DocumentAction.SafeShare -> R.string.safe_share
+        DocumentAction.RedactDocument -> R.string.redact_document
+        DocumentAction.CleanWhiteboard -> R.string.clean_whiteboard
+    }
+
+private fun documentActionScope(action: DocumentAction): Int =
+    when (action) {
+        DocumentAction.ExtractText,
+        DocumentAction.FindText,
+        DocumentAction.ReadAloud,
+        DocumentAction.ReceiptDetails,
+        -> R.string.all_pages
+        DocumentAction.DetectCodes -> R.string.selected_page
+        DocumentAction.CreateContact -> R.string.selected_page_or_text
+        DocumentAction.SafeShare,
+        DocumentAction.RedactDocument,
+        DocumentAction.CleanWhiteboard,
+        -> R.string.selected_page_or_all_pages
+    }
+
+@Composable
+private fun PageScopeDialog(
+    titleRes: Int,
+    bodyRes: Int,
+    onDismiss: () -> Unit,
+    onSelect: (SafeShareScope) -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.document_actions)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    stringResource(R.string.document_actions_on_device),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    stringResource(R.string.document_actions_model_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                DocumentActionPickerRow(
-                    iconRes = R.drawable.ic_text,
-                    labelRes = R.string.extract_text,
-                    scopeRes = R.string.all_pages,
-                    onClick = { onSelect(DocumentAction.ExtractText) },
-                )
-                DocumentActionPickerRow(
-                    iconRes = R.drawable.ic_qr_code,
-                    labelRes = R.string.detect_codes,
-                    scopeRes = R.string.selected_page,
-                    onClick = { onSelect(DocumentAction.DetectCodes) },
-                )
+        title = { Text(stringResource(titleRes)) },
+        text = { Text(stringResource(bodyRes)) },
+        confirmButton = {
+            TextButton(onClick = { onSelect(SafeShareScope.AllPages) }) {
+                Text(stringResource(R.string.all_pages))
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+                TextButton(onClick = { onSelect(SafeShareScope.SelectedPage) }) {
+                    Text(stringResource(R.string.selected_page))
+                }
+            }
         },
     )
 }
@@ -1197,20 +1219,27 @@ private fun DocumentActionPickerRow(
 ) {
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.medium,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = Color.Transparent,
         modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-            )
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(stringResource(labelRes), style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -1228,7 +1257,12 @@ private fun DocumentActionStateDialog(
     state: DocumentActionState,
     onDismiss: () -> Unit,
     onExportText: () -> Unit,
-    onOpenUrl: (String) -> Unit,
+    onFindText: suspend (String) -> List<TextMatch>,
+    onSelectMatch: (TextMatch) -> Unit,
+    onReadAloud: () -> Unit,
+    onStopReadAloud: () -> Unit,
+    onRunSystemAction: (DetectedCodeAction) -> Unit,
+    onApplyWhiteboard: () -> Unit,
 ) {
     val context = LocalContext.current
     val truncatedMessage = stringResource(R.string.document_action_truncated)
@@ -1236,6 +1270,30 @@ private fun DocumentActionStateDialog(
     val qrCodeLabel = stringResource(R.string.qr_code)
     val barcodeLabel = stringResource(R.string.barcode)
     val noTextFound = stringResource(R.string.no_text_found)
+    val completed = state as? DocumentActionState.Completed
+    val entities = completed?.output as? EntityCandidates
+    val speech = completed?.output as? DocumentActionOutput.Speech
+    val whiteboardPreview = completed?.output as? DocumentActionOutput.WhiteboardPreview
+    var query by remember(completed?.output) { mutableStateOf("") }
+    var selectedReceiptIndex by remember(entities) { mutableIntStateOf(-1) }
+    var selectedContactIndexes by remember(entities) { mutableStateOf(emptySet<Int>()) }
+    var ttsDisclosureAccepted by remember(speech) { mutableStateOf(false) }
+    var showTtsDisclosure by remember(speech) { mutableStateOf(false) }
+    val findReady = completed?.output == DocumentActionOutput.FindReady
+    val matches by
+        produceState(emptyList<TextMatch>(), query, findReady) {
+            value =
+                if (findReady && query.isNotEmpty()) {
+                    onFindText(query)
+                } else {
+                    emptyList()
+                }
+        }
+    if (speech != null) {
+        DisposableEffect(Unit) {
+            onDispose(onStopReadAloud)
+        }
+    }
     val maxContentHeight =
         with(LocalDensity.current) {
             (LocalWindowInfo.current.containerSize.height * 0.55f).toDp()
@@ -1245,16 +1303,55 @@ private fun DocumentActionStateDialog(
             is DocumentActionState.Processing ->
                 when (state.action) {
                     DocumentAction.ExtractText -> stringResource(R.string.extracting_text)
+                    DocumentAction.FindText -> stringResource(R.string.finding_text)
+                    DocumentAction.ReadAloud -> stringResource(R.string.preparing_read_aloud)
                     DocumentAction.DetectCodes -> stringResource(R.string.detecting_codes)
+                    DocumentAction.ReceiptDetails -> stringResource(R.string.finding_details)
+                    DocumentAction.CreateContact -> stringResource(R.string.finding_contact_details)
+                    DocumentAction.SafeShare -> stringResource(R.string.safe_share_analyzing)
+                    DocumentAction.RedactDocument -> stringResource(R.string.redact_document)
+                    DocumentAction.CleanWhiteboard ->
+                        stringResource(R.string.clean_whiteboard_preparing)
                 }
             is DocumentActionState.Completed ->
-                when (state.output) {
-                    is DocumentActionOutput.Text -> stringResource(R.string.extracted_text)
-                    is DocumentActionOutput.Codes -> stringResource(R.string.detected_codes)
+                when (state.action) {
+                    DocumentAction.FindText -> stringResource(R.string.find_text)
+                    DocumentAction.ReadAloud -> stringResource(R.string.read_aloud)
+                    DocumentAction.ReceiptDetails -> stringResource(R.string.receipt_candidates)
+                    DocumentAction.CreateContact -> stringResource(R.string.contact_candidates)
+                    DocumentAction.CleanWhiteboard -> stringResource(R.string.clean_whiteboard)
+                    else ->
+                        when (state.output) {
+                            is DocumentActionOutput.Text -> stringResource(R.string.extracted_text)
+                            is DocumentActionOutput.Codes -> stringResource(R.string.detected_codes)
+                            DocumentActionOutput.FindReady -> stringResource(R.string.find_text)
+                            is DocumentActionOutput.Speech -> stringResource(R.string.read_aloud)
+                            is EntityCandidates -> stringResource(R.string.receipt_candidates)
+                            is DocumentActionOutput.WhiteboardPreview ->
+                                stringResource(R.string.clean_whiteboard)
+                        }
                 }
             is DocumentActionState.Exporting -> stringResource(R.string.exporting_text)
             is DocumentActionState.Failed -> stringResource(R.string.document_actions)
         }
+    val selectedReceipt = entities?.values?.getOrNull(selectedReceiptIndex)
+    val selectedContactCandidates =
+        entities?.values?.filterIndexed { index, _ -> index in selectedContactIndexes }.orEmpty()
+    val selectedSystemAction = selectedReceipt?.let(::systemActionForCandidate)
+    val selectedContactAction =
+        validatedContactAction(
+            name = null,
+            phones =
+                selectedContactCandidates
+                    .filter { it.kind == DocumentEntityKind.Phone }
+                    .map(DocumentEntityCandidate::value)
+                    .distinct(),
+            emails =
+                selectedContactCandidates
+                    .filter { it.kind == DocumentEntityKind.Email }
+                    .map(DocumentEntityCandidate::value)
+                    .distinct(),
+        )?.let(::validatedSystemAction) as? DetectedCodeAction.CreateContact
     val copyText =
         when (state) {
             is DocumentActionState.Completed ->
@@ -1267,14 +1364,29 @@ private fun DocumentActionStateDialog(
                                 ?.let { url -> "${code.value}\n$url" }
                                 ?: code.value
                         }.takeIf { it.isNotEmpty() }
+                    DocumentActionOutput.FindReady,
+                    is DocumentActionOutput.Speech,
+                    -> null
+                    is EntityCandidates ->
+                        if (state.action == DocumentAction.CreateContact) {
+                            selectedContactCandidates.joinToString("\n") { it.value }
+                                .takeIf(String::isNotEmpty)
+                        } else {
+                            selectedReceipt?.value
+                        }
+                    is DocumentActionOutput.WhiteboardPreview -> null
                 }
             else -> null
         }
-    val completedCodes =
-        (state as? DocumentActionState.Completed)?.output as? DocumentActionOutput.Codes
-    val openableUrl = completedCodes?.values?.singleOrNull()?.openableHttpUrl
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (
+                state !is DocumentActionState.Processing ||
+                    state.action != DocumentAction.CleanWhiteboard
+            ) {
+                onDismiss()
+            }
+        },
         title = { Text(title) },
         text = {
             when (state) {
@@ -1288,15 +1400,15 @@ private fun DocumentActionStateDialog(
                         CircularProgressIndicator()
                     }
                 is DocumentActionState.Completed ->
-                    Column(
-                        modifier =
-                            Modifier.heightIn(max = maxContentHeight)
-                                .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        SelectionContainer {
-                            when (val output = state.output) {
-                                is DocumentActionOutput.Text ->
+                    when (val output = state.output) {
+                        is DocumentActionOutput.Text ->
+                            Column(
+                                modifier =
+                                    Modifier.heightIn(max = maxContentHeight)
+                                        .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                SelectionContainer {
                                     Text(
                                         buildString {
                                             append(
@@ -1310,12 +1422,20 @@ private fun DocumentActionStateDialog(
                                             }
                                         },
                                     )
-                                is DocumentActionOutput.Codes ->
-                                    if (output.values.isEmpty()) {
-                                        Text(stringResource(R.string.no_codes_found))
-                                    } else {
-                                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                            output.values.forEach { code ->
+                                }
+                                DocumentTextExportStatusMessage(state.textExportStatus)
+                            }
+                        is DocumentActionOutput.Codes ->
+                            if (output.values.isEmpty()) {
+                                Text(stringResource(R.string.no_codes_found))
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.heightIn(max = maxContentHeight),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    items(output.values) { code ->
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            SelectionContainer {
                                                 Column {
                                                     Text(
                                                         when (code.kind) {
@@ -1342,28 +1462,202 @@ private fun DocumentActionStateDialog(
                                                     }
                                                 }
                                             }
+                                            (code.action?.let(::validatedSystemAction))?.let { action ->
+                                                if (action is DetectedCodeAction.OpenWifiSettings) {
+                                                    Text(
+                                                        stringResource(
+                                                            R.string.wifi_ssid,
+                                                            action.ssid,
+                                                        ),
+                                                    )
+                                                    action.password?.let { password ->
+                                                        Text(
+                                                            stringResource(
+                                                                R.string.wifi_password,
+                                                                password,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                                OutlinedButton(
+                                                    onClick = { onRunSystemAction(action) },
+                                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                                ) {
+                                                    Text(systemActionLabel(action))
+                                                }
+                                            }
                                         }
                                     }
+                                }
                             }
-                        }
-                        state.textExportStatus?.let { status ->
+                        DocumentActionOutput.FindReady ->
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = query,
+                                    onValueChange = { value ->
+                                        if (value.length <= MAX_FIND_QUERY_CHARACTERS) query = value
+                                    },
+                                    label = { Text(stringResource(R.string.search_document)) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                if (query.isNotEmpty() && matches.isEmpty()) {
+                                    Text(stringResource(R.string.no_matches_found))
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.heightIn(max = maxContentHeight),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        itemsIndexed(matches) { index, match ->
+                                            Surface(
+                                                onClick = { onSelectMatch(match) },
+                                                shape = MaterialTheme.shapes.small,
+                                                border =
+                                                    BorderStroke(
+                                                        1.dp,
+                                                        MaterialTheme.colorScheme.outlineVariant,
+                                                    ),
+                                                modifier =
+                                                    Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                                            ) {
+                                                Text(
+                                                    stringResource(
+                                                        R.string.match_page,
+                                                        index + 1,
+                                                        match.page + 1,
+                                                    ),
+                                                    modifier = Modifier.padding(16.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        is DocumentActionOutput.Speech ->
                             Text(
-                                stringResource(
-                                    when (status) {
-                                        DocumentTextExportStatus.Saved -> R.string.text_export_saved
-                                        DocumentTextExportStatus.Failed -> R.string.text_export_failed
-                                    },
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color =
-                                    if (status == DocumentTextExportStatus.Saved) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.error
-                                    },
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                when {
+                                    !output.hasText -> stringResource(R.string.no_text_found)
+                                    output.truncated ->
+                                        stringResource(R.string.read_aloud_ready_truncated)
+                                    else -> stringResource(R.string.read_aloud_ready)
+                                },
                             )
-                        }
+                        is EntityCandidates ->
+                            if (output.values.isEmpty()) {
+                                Text(stringResource(R.string.no_candidates_found))
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.heightIn(max = maxContentHeight),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    itemsIndexed(output.values) { index, candidate ->
+                                        val contactMode =
+                                            state.action == DocumentAction.CreateContact
+                                        val selected =
+                                            if (contactMode) {
+                                                index in selectedContactIndexes
+                                            } else {
+                                                index == selectedReceiptIndex
+                                            }
+                                        val selectionEnabled =
+                                            !contactMode ||
+                                                selected ||
+                                                output.values.withIndex().count { (candidateIndex, value) ->
+                                                    candidateIndex in selectedContactIndexes &&
+                                                        value.kind == candidate.kind
+                                                } < 3
+                                        Surface(
+                                            onClick = {
+                                                if (contactMode) {
+                                                    selectedContactIndexes =
+                                                        if (selected) {
+                                                            selectedContactIndexes - index
+                                                        } else {
+                                                            selectedContactIndexes + index
+                                                        }
+                                                } else {
+                                                    selectedReceiptIndex = index
+                                                }
+                                            },
+                                            enabled = selectionEnabled,
+                                            selected = selected,
+                                            shape = MaterialTheme.shapes.small,
+                                            border =
+                                                BorderStroke(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outlineVariant,
+                                                ),
+                                            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                if (contactMode) {
+                                                    Checkbox(
+                                                        checked = selected,
+                                                        onCheckedChange = null,
+                                                    )
+                                                } else {
+                                                    RadioButton(
+                                                        selected = selected,
+                                                        onClick = null,
+                                                    )
+                                                }
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(documentEntityLabel(candidate.kind))
+                                                    SelectionContainer { Text(candidate.value) }
+                                                    Text(
+                                                        stringResource(
+                                                            R.string.document_action_page,
+                                                            candidate.page + 1,
+                                                        ),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color =
+                                                            MaterialTheme.colorScheme
+                                                                .onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        is DocumentActionOutput.WhiteboardPreview ->
+                            Column(
+                                modifier =
+                                    Modifier.heightIn(max = maxContentHeight)
+                                        .verticalScroll(rememberScrollState()),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    listOf(
+                                        R.string.clean_whiteboard_before to output.before,
+                                        R.string.clean_whiteboard_after to output.after,
+                                    ).forEach { (label, bitmap) ->
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                        ) {
+                                            Text(
+                                                stringResource(label),
+                                                style = MaterialTheme.typography.labelLarge,
+                                                modifier = Modifier.padding(bottom = 6.dp),
+                                            )
+                                            Image(
+                                                bitmap = bitmap.asImageBitmap(),
+                                                contentDescription = null,
+                                                modifier =
+                                                    Modifier.fillMaxWidth()
+                                                        .heightIn(min = 120.dp),
+                                                contentScale = ContentScale.Fit,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                     }
                 is DocumentActionState.Failed -> Text(state.message.resolve())
             }
@@ -1385,12 +1679,50 @@ private fun DocumentActionStateDialog(
                         Text(stringResource(R.string.export_text))
                     }
                 }
-                if (openableUrl != null) {
+                if (speech?.hasText == true) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = {
+                                if (ttsDisclosureAccepted) {
+                                    onReadAloud()
+                                } else {
+                                    showTtsDisclosure = true
+                                }
+                            },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.play_read_aloud))
+                        }
+                        TextButton(
+                            onClick = onStopReadAloud,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(stringResource(R.string.stop_reading))
+                        }
+                    }
+                }
+                if (selectedSystemAction != null) {
                     Button(
-                        onClick = { onOpenUrl(openableUrl) },
+                        onClick = { onRunSystemAction(selectedSystemAction) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(R.string.open_link))
+                        Text(systemActionLabel(selectedSystemAction))
+                    }
+                }
+                if (selectedContactAction != null) {
+                    Button(
+                        onClick = { onRunSystemAction(selectedContactAction) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.create_contact))
+                    }
+                }
+                if (whiteboardPreview != null) {
+                    Button(
+                        onClick = onApplyWhiteboard,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(R.string.apply_clean_whiteboard))
                     }
                 }
                 Row {
@@ -1408,17 +1740,99 @@ private fun DocumentActionStateDialog(
                             Text(stringResource(R.string.copy))
                         }
                     }
-                    TextButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.heightIn(min = 48.dp),
+                    if (state !is DocumentActionState.Processing ||
+                        state.action != DocumentAction.CleanWhiteboard
                     ) {
-                        Text(stringResource(R.string.close))
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (whiteboardPreview == null) R.string.close else R.string.cancel,
+                                ),
+                            )
+                        }
                     }
                 }
             }
         },
     )
+    if (showTtsDisclosure) {
+        AlertDialog(
+            onDismissRequest = { showTtsDisclosure = false },
+            title = { Text(stringResource(R.string.tts_disclosure_title)) },
+            text = { Text(stringResource(R.string.tts_disclosure_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showTtsDisclosure = false
+                        ttsDisclosureAccepted = true
+                        onReadAloud()
+                    },
+                ) {
+                    Text(stringResource(R.string.play_read_aloud))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTtsDisclosure = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
+
+@Composable
+private fun DocumentTextExportStatusMessage(status: DocumentTextExportStatus?) {
+    status?.let {
+        Text(
+            stringResource(
+                when (it) {
+                    DocumentTextExportStatus.Saved -> R.string.text_export_saved
+                    DocumentTextExportStatus.Failed -> R.string.text_export_failed
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color =
+                if (it == DocumentTextExportStatus.Saved) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+}
+
+@Composable
+private fun systemActionLabel(action: DetectedCodeAction): String =
+    stringResource(
+        when (action) {
+            is DetectedCodeAction.OpenUrl -> R.string.open_link
+            is DetectedCodeAction.Dial -> R.string.dial_phone
+            is DetectedCodeAction.ComposeEmail -> R.string.compose_email
+            is DetectedCodeAction.ComposeSms -> R.string.compose_sms
+            is DetectedCodeAction.CreateContact -> R.string.create_contact
+            is DetectedCodeAction.CreateCalendarEvent -> R.string.create_calendar_event
+            is DetectedCodeAction.OpenGeo -> R.string.open_map
+            is DetectedCodeAction.OpenWifiSettings -> R.string.open_wifi_settings
+        },
+    )
+
+@Composable
+private fun documentEntityLabel(kind: DocumentEntityKind): String =
+    stringResource(
+        when (kind) {
+            DocumentEntityKind.Email -> R.string.candidate_email
+            DocumentEntityKind.Phone -> R.string.candidate_phone
+            DocumentEntityKind.Url -> R.string.candidate_url
+            DocumentEntityKind.Iban -> R.string.candidate_iban
+            DocumentEntityKind.PaymentCard -> R.string.candidate_payment_card
+            DocumentEntityKind.Money -> R.string.candidate_money
+            DocumentEntityKind.Date -> R.string.candidate_date
+        },
+    )
 
 private fun copySensitiveDocumentActionResult(
     context: android.content.Context,
@@ -3526,19 +3940,6 @@ private fun SettingsScreen(
         }
     }
 }
-
-@Composable
-private fun scanColorModeLabel(mode: ScanColorMode): String =
-    stringResource(
-        when (mode) {
-            ScanColorMode.Natural -> R.string.filter_natural
-            ScanColorMode.Color -> R.string.filter_color
-            ScanColorMode.LightText -> R.string.filter_light_text
-            ScanColorMode.Grayscale -> R.string.filter_grayscale
-            ScanColorMode.BlackWhite -> R.string.filter_black_white
-            ScanColorMode.Whiteboard -> R.string.filter_whiteboard
-        },
-    )
 
 @Composable
 private fun imageSizePresetLabel(preset: ImageSizePreset): String =

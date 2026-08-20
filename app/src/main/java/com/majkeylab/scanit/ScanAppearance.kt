@@ -115,6 +115,9 @@ internal fun googleScannerAppearanceSettings(): ScanAppearanceSettings =
         shadows = 0,
     )
 
+internal fun cleanWhiteboardAppearanceSettings(): ScanAppearanceSettings =
+    ScanAppearanceSettings(colorMode = ScanColorMode.Whiteboard)
+
 internal fun parseScanAppearanceSettings(
     colorModeWireValue: String?,
     colorIntensity: Int?,

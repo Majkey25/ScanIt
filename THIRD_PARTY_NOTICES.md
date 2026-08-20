@@ -16,6 +16,7 @@ The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
 - Google Play services ML Kit Document Scanner 16.0.0 and its runtime dependencies.
 - Google Play services ML Kit Text Recognition 19.0.1 and its runtime dependencies.
 - Google Play services ML Kit Barcode Scanning 18.3.1 and its runtime dependencies.
+- Google Play services ML Kit Face Detection 17.1.0 and its runtime dependencies.
 
 ## Apache License 2.0 components
 
@@ -37,17 +38,19 @@ the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms). Its
 scanner UI, models, and related resources are delivered through Google Play
 services. The public ScanIt build does not claim ownership of them.
 
-`com.google.android.gms:play-services-mlkit-text-recognition:19.0.1` and
-`com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1` use
-on-device models delivered through Google Play services for ScanIt's local
-text-extraction and QR/barcode Actions. A model may download before first use.
-Results remain on the device unless the user copies or shares them.
+`com.google.android.gms:play-services-mlkit-text-recognition:19.0.1`,
+`com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1`, and
+`com.google.android.gms:play-services-mlkit-face-detection:17.1.0` use on-device
+models delivered through Google Play services for ScanIt's local text,
+QR/barcode, and face detection. A model may download before first use. Results
+remain on the device unless the user copies or shares them.
 
 See also:
 
 - [ML Kit Document Scanner documentation](https://developers.google.com/ml-kit/vision/doc-scanner/android)
 - [ML Kit Text Recognition documentation](https://developers.google.com/ml-kit/vision/text-recognition/v2/android)
 - [ML Kit Barcode Scanning documentation](https://developers.google.com/ml-kit/vision/barcode-scanning/android)
+- [ML Kit Face Detection documentation](https://developers.google.com/ml-kit/vision/face-detection/android)
 - [Google APIs Terms of Service](https://developers.google.com/terms)
 
 Android, Google Play, Google Play services, and ML Kit are trademarks of Google

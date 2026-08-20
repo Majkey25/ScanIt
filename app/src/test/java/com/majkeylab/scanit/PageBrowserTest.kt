@@ -8,6 +8,13 @@ import org.junit.Test
 
 class PageBrowserTest {
     @Test
+    fun appearanceEditorUsesSplitLayoutOnlyInLandscape() {
+        assertTrue(appearanceEditorUsesSplitLayout(2400, 1080))
+        assertFalse(appearanceEditorUsesSplitLayout(1080, 2400))
+        assertFalse(appearanceEditorUsesSplitLayout(1080, 1080))
+    }
+
+    @Test
     fun resultActionsUseCompactAccessibleHeight() {
         assertEquals(48, RESULT_ACTION_MIN_HEIGHT_DP)
     }

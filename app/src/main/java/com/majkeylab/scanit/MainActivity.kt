@@ -2,15 +2,21 @@ package com.majkeylab.scanit
 
 import android.app.Activity
 import android.app.LocaleManager
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Bundle
 import android.os.LocaleList
 import android.print.PrintManager
+import android.provider.CalendarContract
+import android.provider.ContactsContract
 import android.provider.DocumentsContract
+import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,7 +26,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -29,6 +34,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -71,10 +77,56 @@ internal fun scannerMode(purpose: ScannerPurpose): Int =
         ScannerPurpose.VisualMark -> GmsDocumentScannerOptions.SCANNER_MODE_BASE
     }
 
-class MainActivity : ComponentActivity() {
+internal enum class TtsPlayDecision {
+    Initialize,
+    Queue,
+    Speak,
+}
+
+internal data class TtsInitializationResult(
+    val ready: Boolean,
+    val text: String?,
+)
+
+internal class TtsInitializationGate {
+    private var initializing = false
+    private var queuedText: String? = null
+
+    fun play(text: String, engineExists: Boolean): TtsPlayDecision {
+        require(text.isNotBlank()) { "Speech text is empty" }
+        return when {
+            !engineExists -> {
+                initializing = true
+                queuedText = text
+                TtsPlayDecision.Initialize
+            }
+            initializing -> {
+                queuedText = text
+                TtsPlayDecision.Queue
+            }
+            else -> TtsPlayDecision.Speak
+        }
+    }
+
+    fun stop() {
+        queuedText = null
+    }
+
+    fun initialized(success: Boolean): TtsInitializationResult {
+        val result = TtsInitializationResult(initializing && success, queuedText)
+        initializing = false
+        queuedText = null
+        return result
+    }
+}
+
+class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: ScanViewModel by viewModels()
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
+    private var textToSpeech: TextToSpeech? = null
+    private val ttsInitializationGate = TtsInitializationGate()
+    private var speechPreparationJob: Job? = null
     private val savedOutputsChangedReceiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -135,7 +187,6 @@ class MainActivity : ComponentActivity() {
                 onLoadThumbnail = viewModel::loadThumbnail,
                 onLoadResultPreview = viewModel::loadResultPreview,
                 onLoadResultImageDimensions = viewModel::loadResultImageDimensions,
-                onLoadAppearancePreview = viewModel::loadAppearancePreview,
                 onSelectResultPage = viewModel::selectResultPage,
                 onNavigateBack = viewModel::navigateBack,
                 onSharePdf = ::shareCurrentPdf,
@@ -150,12 +201,25 @@ class MainActivity : ComponentActivity() {
                 onRenamePdf = viewModel::renameCurrentPdf,
                 onRenameImages = viewModel::renameCurrentImages,
                 onAcknowledgeUnknownOutput = viewModel::acknowledgeUnknownOutputCreate,
-                onCloseAppearanceEditor = viewModel::closeAppearanceEditor,
-                onApplyAppearance = viewModel::applyCurrentAppearance,
                 onRunDocumentAction = viewModel::runDocumentAction,
-                onDismissDocumentAction = viewModel::dismissDocumentAction,
+                onRunSafeShare = viewModel::runSafeShare,
+                onRunManualRedaction = viewModel::runManualRedaction,
+                onRunCleanWhiteboard = viewModel::runCleanWhiteboard,
+                onApplyCleanWhiteboard = viewModel::beginCleanWhiteboardApply,
+                onCancelSafeShare = viewModel::cancelSafeShare,
+                onSelectSafeSharePage = viewModel::selectSafeSharePage,
+                onAddSafeShareRegion = viewModel::addSafeShareRegion,
+                onToggleSafeShareRegion = viewModel::toggleSafeShareRegion,
+                onMoveSafeShareRegion = viewModel::moveSafeShareRegion,
+                onResizeSafeShareRegion = viewModel::resizeSafeShareRegion,
+                onDeleteSafeShareRegion = viewModel::deleteSafeShareRegion,
+                onApplySafeShare = viewModel::beginSafeShareApply,
+                onDismissDocumentAction = ::dismissDocumentAction,
                 onExportDocumentText = ::startDocumentTextExport,
-                onOpenDocumentActionUrl = ::openDocumentActionUrl,
+                onFindDocumentText = viewModel::findDocumentText,
+                onReadAloud = ::startReadAloud,
+                onStopReadAloud = ::stopReadAloud,
+                onRunSystemAction = ::runSystemAction,
                 onOpenVisualMarkEditor = viewModel::openVisualMarkEditor,
                 onCloseVisualMarkEditor = viewModel::closeVisualMarkEditor,
                 onSelectVisualMarkTemplate = viewModel::selectVisualMarkTemplate,
@@ -224,8 +288,32 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        stopReadAloud()
         unregisterReceiver(savedOutputsChangedReceiver)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        ttsInitializationGate.stop()
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        super.onDestroy()
+    }
+
+    override fun onInit(status: Int) {
+        val engine = textToSpeech
+        val result =
+            ttsInitializationGate.initialized(
+                status == TextToSpeech.SUCCESS && engine != null,
+            )
+        if (!result.ready || engine == null) {
+            engine?.shutdown()
+            textToSpeech = null
+            if (result.text != null) showToast(R.string.tts_reading_failed)
+            return
+        }
+        result.text?.let { speak(engine, it) }
     }
 
     override fun onResume() {
@@ -418,20 +506,148 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openDocumentActionUrl(value: String) {
-        val url = validatedHttpUrl(value)
-        if (url == null) {
-            showToast(R.string.link_open_failed)
+    private fun runSystemAction(action: DetectedCodeAction) {
+        val validated = validatedSystemAction(action)
+        if (validated == null) {
+            showToast(R.string.system_action_failed)
             return
         }
+        val intent =
+            when (validated) {
+                is DetectedCodeAction.OpenUrl ->
+                    Intent(Intent.ACTION_VIEW, Uri.parse(validated.url))
+                        .addCategory(Intent.CATEGORY_BROWSABLE)
+                is DetectedCodeAction.Dial ->
+                    Intent(
+                        Intent.ACTION_DIAL,
+                        Uri.fromParts("tel", validated.phone, null),
+                    )
+                is DetectedCodeAction.ComposeEmail ->
+                    Intent(
+                        Intent.ACTION_SENDTO,
+                        Uri.fromParts("mailto", validated.address, null),
+                    ).apply {
+                        validated.subject?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+                        validated.body?.let { putExtra(Intent.EXTRA_TEXT, it) }
+                    }
+                is DetectedCodeAction.ComposeSms ->
+                    Intent(
+                        Intent.ACTION_SENDTO,
+                        Uri.fromParts("smsto", validated.phone, null),
+                    ).apply {
+                        validated.message?.let { putExtra("sms_body", it) }
+                    }
+                is DetectedCodeAction.CreateContact ->
+                    Intent(Intent.ACTION_INSERT)
+                        .setType(ContactsContract.Contacts.CONTENT_TYPE)
+                        .apply {
+                            validated.name?.let {
+                                putExtra(ContactsContract.Intents.Insert.NAME, it)
+                            }
+                            val phoneKeys =
+                                listOf(
+                                    ContactsContract.Intents.Insert.PHONE,
+                                    ContactsContract.Intents.Insert.SECONDARY_PHONE,
+                                    ContactsContract.Intents.Insert.TERTIARY_PHONE,
+                                )
+                            validated.phones.take(phoneKeys.size).forEachIndexed { index, value ->
+                                putExtra(phoneKeys[index], value)
+                            }
+                            val emailKeys =
+                                listOf(
+                                    ContactsContract.Intents.Insert.EMAIL,
+                                    ContactsContract.Intents.Insert.SECONDARY_EMAIL,
+                                    ContactsContract.Intents.Insert.TERTIARY_EMAIL,
+                                )
+                            validated.emails.take(emailKeys.size).forEachIndexed { index, value ->
+                                putExtra(emailKeys[index], value)
+                            }
+                        }
+                is DetectedCodeAction.CreateCalendarEvent ->
+                    Intent(Intent.ACTION_INSERT)
+                        .setData(CalendarContract.Events.CONTENT_URI)
+                        .putExtra(CalendarContract.Events.TITLE, validated.title)
+                        .apply {
+                            validated.startMillis?.let {
+                                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, it)
+                            }
+                            validated.endMillis?.let {
+                                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, it)
+                            }
+                        }
+                is DetectedCodeAction.OpenGeo ->
+                    Intent.createChooser(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("geo:${validated.latitude},${validated.longitude}"),
+                        ),
+                        getString(R.string.open_map),
+                    )
+                is DetectedCodeAction.OpenWifiSettings -> Intent(Settings.Panel.ACTION_WIFI)
+            }
         try {
-            startActivity(
-                Intent(Intent.ACTION_VIEW, url.toUri())
-                    .addCategory(Intent.CATEGORY_BROWSABLE),
-            )
-        } catch (_: RuntimeException) {
-            showToast(R.string.link_open_failed)
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            showToast(R.string.system_action_failed)
+        } catch (_: SecurityException) {
+            showToast(R.string.system_action_failed)
         }
+    }
+
+    private fun startReadAloud() {
+        speechPreparationJob?.cancel()
+        speechPreparationJob =
+            lifecycleScope.launch {
+                val text = viewModel.currentReadAloudText()?.let(::validatedSpeechText)
+                if (text == null) {
+                    speechPreparationJob = null
+                    showToast(R.string.tts_reading_failed)
+                    return@launch
+                }
+                val engine = textToSpeech
+                when (ttsInitializationGate.play(text, engine != null)) {
+                    TtsPlayDecision.Initialize -> {
+                        try {
+                            textToSpeech = TextToSpeech(this@MainActivity, this@MainActivity)
+                        } catch (_: RuntimeException) {
+                            ttsInitializationGate.initialized(success = false)
+                            showToast(R.string.tts_reading_failed)
+                        }
+                    }
+                    TtsPlayDecision.Queue -> Unit
+                    TtsPlayDecision.Speak -> speak(checkNotNull(engine), text)
+                }
+                speechPreparationJob = null
+            }
+    }
+
+    private fun speak(engine: TextToSpeech, text: String) {
+        val result =
+            try {
+                engine.speak(
+                    text,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "scanit_document",
+                )
+            } catch (_: RuntimeException) {
+                TextToSpeech.ERROR
+            }
+        if (result == TextToSpeech.ERROR) {
+            showToast(R.string.tts_reading_failed)
+        }
+    }
+
+    private fun stopReadAloud() {
+        speechPreparationJob?.cancel()
+        speechPreparationJob = null
+        ttsInitializationGate.stop()
+        textToSpeech?.stop()
+    }
+
+    private fun dismissDocumentAction() {
+        stopReadAloud()
+        viewModel.dismissDocumentAction()
     }
 
     private fun processScannerResult(data: Intent?) {

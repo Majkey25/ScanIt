@@ -1062,7 +1062,276 @@ internal data class VisualMarkEditorState(
 
 internal enum class DocumentAction(val wireValue: String) {
     ExtractText("extract_text"),
+    FindText("find_text"),
+    ReadAloud("read_aloud"),
     DetectCodes("detect_codes"),
+    ReceiptDetails("receipt_details"),
+    CreateContact("create_contact"),
+    SafeShare("safe_share"),
+    RedactDocument("redact_document"),
+    CleanWhiteboard("clean_whiteboard"),
+}
+
+internal enum class DocumentActionSectionTitle {
+    Read,
+    Use,
+    Protect,
+    Improve,
+}
+
+internal data class DocumentActionSection(
+    val title: DocumentActionSectionTitle,
+    val actions: List<DocumentAction>,
+)
+
+internal fun documentActionInventory(): List<DocumentActionSection> =
+    listOf(
+        DocumentActionSection(
+            DocumentActionSectionTitle.Read,
+            listOf(DocumentAction.ExtractText, DocumentAction.FindText, DocumentAction.ReadAloud),
+        ),
+        DocumentActionSection(
+            DocumentActionSectionTitle.Use,
+            listOf(
+                DocumentAction.DetectCodes,
+                DocumentAction.ReceiptDetails,
+                DocumentAction.CreateContact,
+            ),
+        ),
+        DocumentActionSection(
+            DocumentActionSectionTitle.Protect,
+            listOf(DocumentAction.SafeShare, DocumentAction.RedactDocument),
+        ),
+        DocumentActionSection(
+            DocumentActionSectionTitle.Improve,
+            listOf(DocumentAction.CleanWhiteboard),
+        ),
+    )
+
+internal data class DocumentOcrSnapshot(
+    val pageTexts: List<String>,
+    val elements: List<OcrElement>,
+    val truncated: Boolean,
+) {
+    init {
+        require(pageTexts.size <= MAX_SCAN_PAGES) { "OCR page count is invalid" }
+        var characters = 0
+        for (text in pageTexts) {
+            require(text.length <= MAX_DOCUMENT_TEXT_CHARACTERS - characters) {
+                "OCR text is too large"
+            }
+            characters += text.length
+        }
+        require(elements.all { it.page in pageTexts.indices }) {
+            "OCR element page has no matching text page"
+        }
+    }
+}
+
+internal data class TextMatch(
+    val page: Int,
+    val start: Int,
+    val endExclusive: Int,
+) {
+    init {
+        require(page in 0 until MAX_SCAN_PAGES) { "Text match page is invalid" }
+        require(start >= 0 && endExclusive > start) { "Text match range is invalid" }
+    }
+}
+
+internal enum class DocumentEntityKind {
+    Email,
+    Phone,
+    Url,
+    Iban,
+    PaymentCard,
+    Money,
+    Date,
+}
+
+internal enum class SensitiveRegionKind {
+    Email,
+    Phone,
+    Url,
+    Iban,
+    PaymentCard,
+    Code,
+    Face,
+    Manual,
+}
+
+internal data class RedactionSuggestion(
+    val page: Int,
+    val kind: SensitiveRegionKind,
+    val bounds: NormalizedRect,
+) {
+    init {
+        require(page in 0 until MAX_SCAN_PAGES) { "Redaction suggestion page is invalid" }
+    }
+}
+
+internal data class SafeShareAnalysis(
+    val pageCount: Int,
+    val suggestions: List<RedactionSuggestion>,
+) {
+    init {
+        require(pageCount in 1..MAX_SCAN_PAGES) { "Safe Share page count is invalid" }
+        val counts = IntArray(pageCount)
+        for (suggestion in suggestions) {
+            require(suggestion.page in 0 until pageCount) {
+                "Redaction suggestion has no matching page"
+            }
+            require(++counts[suggestion.page] <= MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) {
+                "Safe Share suggestions exceed the page limit"
+            }
+        }
+    }
+}
+
+internal data class RedactionRegion(
+    val id: String,
+    val page: Int,
+    val kind: SensitiveRegionKind,
+    val bounds: NormalizedRect,
+    val selected: Boolean,
+) {
+    init {
+        require(id.isNotBlank() && id.length <= 128 && id.none(Char::isISOControl)) {
+            "Redaction region ID is invalid"
+        }
+        require(page in 0 until MAX_SCAN_PAGES) { "Redaction region page is invalid" }
+    }
+}
+
+internal enum class SafeShareScope {
+    SelectedPage,
+    AllPages,
+}
+
+internal enum class RedactionMode(val requiresAnalysis: Boolean) {
+    Automatic(true),
+    Manual(false),
+}
+
+internal data class SafeShareRequest(
+    val cacheId: String,
+    val entryId: String,
+    val scope: SafeShareScope,
+    val selectedPage: Int,
+    val generation: Long,
+    val mode: RedactionMode,
+) {
+    init {
+        require(isSafeCacheId(cacheId)) { "Safe Share cache ID is invalid" }
+        require(isCanonicalUuid(entryId)) { "Safe Share entry ID is invalid" }
+        require(selectedPage in 0 until MAX_SCAN_PAGES) { "Safe Share page is invalid" }
+        require(generation > 0L) { "Safe Share generation is invalid" }
+    }
+}
+
+internal fun SafeShareRequest.matches(
+    cacheId: String,
+    entryId: String?,
+    scope: SafeShareScope,
+    selectedPage: Int,
+    generation: Long,
+    mode: RedactionMode,
+): Boolean =
+    this.cacheId == cacheId &&
+        this.entryId == entryId &&
+        this.scope == scope &&
+        this.selectedPage == selectedPage &&
+        this.generation == generation &&
+        this.mode == mode
+
+internal data class CleanWhiteboardRequest(
+    val cacheId: String,
+    val entryId: String,
+    val scope: SafeShareScope,
+    val selectedPage: Int,
+    val generation: Long,
+) {
+    init {
+        require(isSafeCacheId(cacheId)) { "Clean Whiteboard cache ID is invalid" }
+        require(isCanonicalUuid(entryId)) { "Clean Whiteboard entry ID is invalid" }
+        require(selectedPage in 0 until MAX_SCAN_PAGES) { "Clean Whiteboard page is invalid" }
+        require(generation > 0L) { "Clean Whiteboard generation is invalid" }
+    }
+}
+
+internal fun CleanWhiteboardRequest.matches(
+    cacheId: String,
+    entryId: String?,
+    scope: SafeShareScope,
+    selectedPage: Int,
+    generation: Long,
+): Boolean =
+    this.cacheId == cacheId &&
+        this.entryId == entryId &&
+        this.scope == scope &&
+        this.selectedPage == selectedPage &&
+        this.generation == generation
+
+internal sealed interface SafeShareState {
+    data object Analyzing : SafeShareState
+
+    data class Reviewing(
+        val page: Int,
+        val regions: List<RedactionRegion>,
+    ) : SafeShareState {
+        init {
+            require(page in 0 until MAX_SCAN_PAGES) { "Safe Share review page is invalid" }
+            require(regions.map(RedactionRegion::id).distinct().size == regions.size) {
+                "Safe Share region IDs are duplicated"
+            }
+            val counts = IntArray(MAX_SCAN_PAGES)
+            for (region in regions) {
+                require(++counts[region.page] <= MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) {
+                    "Safe Share regions exceed the page limit"
+                }
+            }
+        }
+    }
+
+    data object Applying : SafeShareState
+
+    data class Failed(val message: UiMessage) : SafeShareState
+}
+
+internal fun initialRedactionReview(
+    mode: RedactionMode,
+    selectedPage: Int,
+): SafeShareState.Reviewing? =
+    if (mode.requiresAnalysis) null else SafeShareState.Reviewing(selectedPage, emptyList())
+
+internal sealed interface DetectedCodeAction {
+    data class OpenUrl(val url: String) : DetectedCodeAction
+
+    data class Dial(val phone: String) : DetectedCodeAction
+
+    data class ComposeEmail(
+        val address: String,
+        val subject: String?,
+        val body: String?,
+    ) : DetectedCodeAction
+
+    data class ComposeSms(val phone: String, val message: String?) : DetectedCodeAction
+
+    data class CreateContact(
+        val name: String?,
+        val phones: List<String>,
+        val emails: List<String>,
+    ) : DetectedCodeAction
+
+    data class CreateCalendarEvent(
+        val title: String,
+        val startMillis: Long?,
+        val endMillis: Long?,
+    ) : DetectedCodeAction
+
+    data class OpenGeo(val latitude: Double, val longitude: Double) : DetectedCodeAction
+
+    data class OpenWifiSettings(val ssid: String, val password: String?) : DetectedCodeAction
 }
 
 internal sealed interface DocumentActionOutput {
@@ -1072,7 +1341,24 @@ internal sealed interface DocumentActionOutput {
     ) : DocumentActionOutput
 
     data class Codes(val values: List<DetectedCode>) : DocumentActionOutput
+
+    data object FindReady : DocumentActionOutput
+
+    data class Speech(
+        val hasText: Boolean,
+        val truncated: Boolean,
+    ) : DocumentActionOutput
+
+    data class WhiteboardPreview(
+        val before: Bitmap,
+        val after: Bitmap,
+        val appearance: ScanAppearanceSettings,
+    ) : DocumentActionOutput
 }
+
+internal data class EntityCandidates(
+    val values: List<DocumentEntityCandidate>,
+) : DocumentActionOutput
 
 internal sealed interface DocumentActionState {
     data class Processing(val action: DocumentAction) : DocumentActionState
@@ -1080,12 +1366,16 @@ internal sealed interface DocumentActionState {
     data class Completed(
         val output: DocumentActionOutput,
         val textExportStatus: DocumentTextExportStatus? = null,
+        val action: DocumentAction = DocumentAction.ExtractText,
     ) : DocumentActionState
 
     data class Exporting(val output: DocumentActionOutput.Text) : DocumentActionState
 
     data class Failed(val message: UiMessage) : DocumentActionState
 }
+
+internal fun documentActionDismissAllowed(state: DocumentActionState?): Boolean =
+    state !is DocumentActionState.Processing || state.action != DocumentAction.CleanWhiteboard
 
 internal enum class DocumentTextExportStatus {
     Saved,
@@ -1100,6 +1390,7 @@ internal fun completedDocumentTextExport(
         output = output,
         textExportStatus =
             if (saved) DocumentTextExportStatus.Saved else DocumentTextExportStatus.Failed,
+        action = DocumentAction.ExtractText,
     )
 
 internal enum class DocumentTextExportDisposition {
@@ -1348,8 +1639,16 @@ internal fun initialNavigation(
     savedRoute: String?,
     savedCacheId: String?,
     activeResultCacheId: String?,
+    safeShareWasActive: Boolean = false,
 ): InitialNavigation {
     val durableCacheId = activeResultCacheId?.takeIf(::isSafeActiveResultCacheId)
+    if (
+        safeShareWasActive &&
+            savedRoute == "result" &&
+            durableCacheId != null
+    ) {
+        return InitialNavigation(RestoredRoute.Result, durableCacheId)
+    }
     if (durableCacheId != null) {
         return InitialNavigation(
             route = RestoredRoute.Scanner,
@@ -1380,11 +1679,10 @@ internal sealed interface ScreenState {
         val outputSaveInProgress: Boolean = false,
         val outputChangeInProgress: Boolean = false,
         val imageSharePreparationInProgress: Boolean = false,
-        val appearanceApplyInProgress: Boolean = false,
-        val appearanceReviewRequired: Boolean = false,
-        val appearanceMessage: UiMessage? = null,
         val visualMarkEditor: VisualMarkEditorState? = null,
         val documentActionState: DocumentActionState? = null,
+        val safeShareState: SafeShareState? = null,
+        val safeShareScope: SafeShareScope? = null,
     ) : ScreenState
 
     data class Recent(
@@ -1401,9 +1699,9 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
         outputSaveInProgress ||
             outputChangeInProgress ||
             imageSharePreparationInProgress ||
-            appearanceApplyInProgress ||
             documentActionState is DocumentActionState.Processing ||
             documentActionState is DocumentActionState.Exporting ||
+            safeShareState != null ||
             visualMarkEditor != null
 
 internal val ScreenState.Result.canAddVisualMark: Boolean
@@ -1415,11 +1713,20 @@ internal val ScreenState.Result.canAddVisualMark: Boolean
             scan.cached.appearanceSettings != null &&
             scan.outputMetadataValid
 
+internal val ScreenState.Result.canCleanWhiteboard: Boolean
+    get() =
+        scan.cached.entryId != null &&
+            scan.cached.pages.isNotEmpty() &&
+            scan.cached.sourcePages.size == scan.cached.pages.size &&
+            scan.cached.appearanceSettings != null &&
+            scan.outputMetadataValid
+
 internal enum class AppBackAction {
     CloseSettings,
     CollapseFileDetails,
     ShowRecent,
     LaunchScanner,
+    CancelSafeShare,
     Consume,
 }
 
@@ -1430,6 +1737,15 @@ internal fun appBackAction(
 ): AppBackAction =
     when {
         settingsOpen -> AppBackAction.CloseSettings
+        state is ScreenState.Result && state.safeShareState != null ->
+            when (state.safeShareState) {
+                SafeShareState.Analyzing,
+                SafeShareState.Applying,
+                -> AppBackAction.Consume
+                is SafeShareState.Reviewing,
+                is SafeShareState.Failed,
+                -> AppBackAction.CancelSafeShare
+            }
         state is ScreenState.Result && state.resultActionsBlocked -> AppBackAction.Consume
         fileDetailsOpen && state is ScreenState.Result -> AppBackAction.CollapseFileDetails
         state is ScreenState.Processing && !state.canNavigateBack -> AppBackAction.Consume

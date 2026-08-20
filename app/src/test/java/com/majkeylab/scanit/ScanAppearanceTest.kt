@@ -2,10 +2,28 @@ package com.majkeylab.scanit
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScanAppearanceTest {
+    @Test
+    fun cleanWhiteboardPresetTransformsFreshGoogleScannerPixels() {
+        val google = googleScannerAppearanceSettings()
+        val preset = cleanWhiteboardAppearanceSettings()
+        val appearance = preset.selected()
+        val before = intArrayOf(gray(32), gray(96), gray(160), gray(224))
+        val after = processScanPixels(before, 4, 1, appearance)
+
+        assertEquals(0, google.whiteboardIntensity)
+        assertEquals(0, google.shadows)
+        assertEquals(ScanColorMode.Whiteboard, appearance.colorMode)
+        assertTrue(appearance.intensity > 0 || appearance.shadows > 0)
+        assertFalse(before.contentEquals(after))
+        assertTrue(after.all(::isOpaqueBlackOrWhite))
+        assertEquals(preset, cleanWhiteboardAppearanceSettings())
+    }
+
     @Test
     fun freshAppearanceUsesFullBlackWhiteAndHalfShadows() {
         assertEquals(

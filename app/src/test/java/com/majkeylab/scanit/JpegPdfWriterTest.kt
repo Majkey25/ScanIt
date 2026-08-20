@@ -67,6 +67,43 @@ class JpegPdfWriterTest {
     }
 
     @Test
+    fun acceptsStandardGoogleScannerPageSlightlyAboveTwelveMegapixels() {
+        val root = Files.createTempDirectory("scanit-jpeg-pdf-google-page").toFile()
+        try {
+            val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
+            val pdf = File(root, "scan.pdf")
+
+            JpegPdfWriter.write(
+                pdf,
+                listOf(JpegPdfPage(jpeg, width = 3060, height = 4080)),
+            )
+
+            assertTrue(pdf.isFile)
+        } finally {
+            assertTrue(root.deleteRecursively())
+        }
+    }
+
+    @Test
+    fun rejectsPageAboveTheRaisedPixelSafetyBound() {
+        val root = Files.createTempDirectory("scanit-jpeg-pdf-large-page").toFile()
+        try {
+            val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
+            val pdf = File(root, "scan.pdf")
+
+            assertThrows(IllegalArgumentException::class.java) {
+                JpegPdfWriter.write(
+                    pdf,
+                    listOf(JpegPdfPage(jpeg, width = 4000, height = 4000)),
+                )
+            }
+            assertFalse(pdf.exists())
+        } finally {
+            assertTrue(root.deleteRecursively())
+        }
+    }
+
+    @Test
     fun preservesExistingDestinationAndCleansStagingFile() {
         val root = Files.createTempDirectory("scanit-jpeg-pdf-existing").toFile()
         try {
