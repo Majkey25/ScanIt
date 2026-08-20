@@ -11,7 +11,7 @@
         android:theme="@style/Theme.ScanIt">
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="document_ui,ocr,barcode" />
+            android:value="document_ui,ocr,barcode,face" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

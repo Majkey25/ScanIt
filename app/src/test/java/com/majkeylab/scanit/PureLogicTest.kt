@@ -25,6 +25,607 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun redactionModesDeclareWhetherAnalysisIsRequired() {
+        assertTrue(RedactionMode.Automatic.requiresAnalysis)
+        assertFalse(RedactionMode.Manual.requiresAnalysis)
+    }
+
+    @Test
+    fun manualRedactionStartsInReviewWithoutAnalysis() {
+        assertEquals(false, RedactionMode.Manual.requiresAnalysis)
+        assertEquals(true, RedactionMode.Automatic.requiresAnalysis)
+        assertEquals(
+            SafeShareState.Reviewing(page = 2, regions = emptyList()),
+            initialRedactionReview(RedactionMode.Manual, selectedPage = 2),
+        )
+        assertEquals(null, initialRedactionReview(RedactionMode.Automatic, selectedPage = 2))
+    }
+
+    @Test
+    fun safeShareRequestIdentityIncludesRedactionMode() {
+        val request =
+            SafeShareRequest(
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                scope = SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 8L,
+                mode = RedactionMode.Manual,
+            )
+
+        assertTrue(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 8L,
+                mode = RedactionMode.Manual,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 8L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+    }
+
+    @Test
+    fun cleanWhiteboardApplyConsumesBackAndCannotBeDismissed() {
+        val applying = DocumentActionState.Processing(DocumentAction.CleanWhiteboard)
+        val result =
+            ScreenState.Result(
+                scan = savedScan(entryId = ENTRY_ID, outputMetadataValid = true),
+                thumbnail = null,
+                documentActionState = applying,
+            )
+
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(settingsOpen = false, fileDetailsOpen = false, state = result),
+        )
+        assertFalse(documentActionDismissAllowed(applying))
+        assertTrue(
+            documentActionDismissAllowed(
+                DocumentActionState.Completed(
+                    DocumentActionOutput.FindReady,
+                    action = DocumentAction.CleanWhiteboard,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun cleanWhiteboardScopeBindsExactPageGenerationAndVariantPlan() {
+        val selected =
+            CleanWhiteboardRequest(
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                scope = SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 7L,
+            )
+
+        assertTrue(
+            selected.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 7L,
+            ),
+        )
+        assertFalse(
+            selected.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 7L,
+            ),
+        )
+        assertFalse(
+            selected.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 0,
+                generation = 7L,
+            ),
+        )
+        assertFalse(
+            selected.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 8L,
+            ),
+        )
+        assertEquals(
+            listOf(
+                AppearanceVariantPagePlan(applyToSource = false, applyToRendered = false),
+                AppearanceVariantPagePlan(applyToSource = true, applyToRendered = false),
+                AppearanceVariantPagePlan(applyToSource = false, applyToRendered = false),
+            ),
+            appearanceVariantPagePlan(pageCount = 3, selectedPageIndex = 1),
+        )
+        assertEquals(
+            List(3) {
+                AppearanceVariantPagePlan(applyToSource = false, applyToRendered = true)
+            },
+            appearanceVariantPagePlan(pageCount = 3, selectedPageIndex = null),
+        )
+    }
+
+    @Test
+    fun documentActionsUseTheFinalGroupedInventory() {
+        val inventory = documentActionInventory()
+
+        assertEquals(
+            listOf(
+                DocumentActionSectionTitle.Read,
+                DocumentActionSectionTitle.Use,
+                DocumentActionSectionTitle.Protect,
+                DocumentActionSectionTitle.Improve,
+            ),
+            inventory.map(DocumentActionSection::title),
+        )
+        assertEquals(
+            listOf(
+                DocumentAction.ExtractText,
+                DocumentAction.FindText,
+                DocumentAction.ReadAloud,
+                DocumentAction.DetectCodes,
+                DocumentAction.ReceiptDetails,
+                DocumentAction.CreateContact,
+                DocumentAction.SafeShare,
+                DocumentAction.RedactDocument,
+                DocumentAction.CleanWhiteboard,
+            ),
+            inventory.flatMap(DocumentActionSection::actions),
+        )
+    }
+
+    @Test
+    fun documentActionsHaveDistinctIcons() {
+        val actions = documentActionInventory().flatMap(DocumentActionSection::actions)
+        val icons = actions.map(::documentActionIcon)
+
+        assertEquals(actions.size, icons.distinct().size)
+    }
+
+    @Test
+    fun documentActionsExposeAutomaticAndManualProtection() {
+        assertEquals(
+            listOf(DocumentAction.SafeShare, DocumentAction.RedactDocument),
+            documentActionInventory()
+                .single { it.title == DocumentActionSectionTitle.Protect }
+                .actions,
+        )
+    }
+
+    @Test
+    fun safeShareSelectedPageScopeExcludesOtherPages() {
+        val analysis =
+            SafeShareAnalysis(
+                pageCount = 2,
+                suggestions =
+                    listOf(
+                        RedactionSuggestion(
+                            0,
+                            SensitiveRegionKind.Email,
+                            NormalizedRect(0.1f, 0.1f, 0.2f, 0.2f),
+                        ),
+                        RedactionSuggestion(
+                            1,
+                            SensitiveRegionKind.Face,
+                            NormalizedRect(0.3f, 0.3f, 0.5f, 0.6f),
+                        ),
+                    ),
+            )
+
+        val regions = safeShareRegions(analysis, SafeShareScope.SelectedPage, selectedPage = 1)
+
+        assertEquals(1, regions.size)
+        assertEquals(1, regions.single().page)
+        assertEquals(SensitiveRegionKind.Face, regions.single().kind)
+        assertTrue(regions.single().selected)
+    }
+
+    @Test
+    fun safeShareAllPagesScopeKeepsEveryPage() {
+        val analysis =
+            SafeShareAnalysis(
+                pageCount = 2,
+                suggestions =
+                    listOf(
+                        RedactionSuggestion(
+                            0,
+                            SensitiveRegionKind.Email,
+                            NormalizedRect(0.1f, 0.1f, 0.2f, 0.2f),
+                        ),
+                        RedactionSuggestion(
+                            1,
+                            SensitiveRegionKind.Face,
+                            NormalizedRect(0.3f, 0.3f, 0.5f, 0.6f),
+                        ),
+                    ),
+            )
+
+        val regions = safeShareRegions(analysis, SafeShareScope.AllPages, selectedPage = 1)
+
+        assertEquals(listOf(0, 1), regions.map(RedactionRegion::page))
+        assertEquals(listOf("suggestion-0-0", "suggestion-1-1"), regions.map(RedactionRegion::id))
+    }
+
+    @Test
+    fun safeShareApplyRequiresCurrentLoadedPreview() {
+        val page = File("page-2.jpg")
+
+        assertFalse(
+            safeSharePreviewReady(
+                previewPage = 2,
+                previewFile = page,
+                bitmapAvailable = false,
+                currentPage = 2,
+                currentFile = page,
+            ),
+        )
+        assertFalse(
+            safeSharePreviewReady(
+                previewPage = -1,
+                previewFile = null,
+                bitmapAvailable = false,
+                currentPage = 2,
+                currentFile = page,
+            ),
+        )
+        assertFalse(
+            safeSharePreviewReady(
+                previewPage = 1,
+                previewFile = File("page-1.jpg"),
+                bitmapAvailable = true,
+                currentPage = 2,
+                currentFile = page,
+            ),
+        )
+        assertFalse(safeShareCanApply(previewReady = false, selectedCount = 1))
+        assertFalse(safeShareCanApply(previewReady = true, selectedCount = 0))
+        assertTrue(
+            safeShareCanApply(
+                previewReady =
+                    safeSharePreviewReady(
+                        previewPage = 2,
+                        previewFile = page,
+                        bitmapAvailable = true,
+                        currentPage = 2,
+                        currentFile = page,
+                    ),
+                selectedCount = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun safeShareManualAreaCanBeAddedAndDeleted() {
+        val added = addManualRedactionRegion(emptyList(), id = "manual-1", page = 0)
+
+        assertEquals(1, added.size)
+        assertEquals(SensitiveRegionKind.Manual, added.single().kind)
+        assertEquals(NormalizedRect(0.25f, 0.35f, 0.75f, 0.65f), added.single().bounds)
+        assertEquals(emptyList<RedactionRegion>(), deleteManualRedactionRegion(added, "manual-1"))
+    }
+
+    @Test
+    fun safeShareMoveClampsWithoutChangingRegionSize() {
+        val region =
+            RedactionRegion(
+                "manual-1",
+                0,
+                SensitiveRegionKind.Manual,
+                NormalizedRect(0.2f, 0.3f, 0.5f, 0.7f),
+                selected = true,
+            )
+
+        val moved = moveRedactionRegion(listOf(region), "manual-1", deltaX = -1f, deltaY = 1f)
+
+        assertEquals(NormalizedRect(0f, 0.6f, 0.3f, 1f), moved.single().bounds)
+    }
+
+    @Test
+    fun safeShareResizeClampsAndKeepsMinimumSize() {
+        val region =
+            RedactionRegion(
+                "manual-1",
+                0,
+                SensitiveRegionKind.Manual,
+                NormalizedRect(0.2f, 0.3f, 0.5f, 0.7f),
+                selected = true,
+            )
+
+        val expanded = resizeRedactionRegion(listOf(region), "manual-1", 1f, 1f)
+        val shrunk = resizeRedactionRegion(expanded, "manual-1", -1f, -1f)
+
+        assertEquals(NormalizedRect(0.2f, 0.3f, 1f, 1f), expanded.single().bounds)
+        with(shrunk.single().bounds) {
+            assertEquals(0.2f, left, 0.0001f)
+            assertEquals(0.3f, top, 0.0001f)
+            assertEquals(0.22f, right, 0.0001f)
+            assertEquals(0.32f, bottom, 0.0001f)
+        }
+    }
+
+    @Test
+    fun safeShareResizeKeepsValidTinyEdgeRegionInsteadOfCrashing() {
+        val region =
+            RedactionRegion(
+                "manual-edge",
+                0,
+                SensitiveRegionKind.Manual,
+                NormalizedRect(0.99f, 0.99f, 1f, 1f),
+                selected = true,
+            )
+
+        val resized = resizeRedactionRegion(listOf(region), region.id, -1f, -1f)
+
+        assertEquals(region.bounds, resized.single().bounds)
+    }
+
+    @Test
+    fun safeShareAutomaticAreasCanBeDeselectedButNotDeleted() {
+        val region =
+            RedactionRegion(
+                "suggestion-0",
+                0,
+                SensitiveRegionKind.Email,
+                NormalizedRect(0.1f, 0.1f, 0.2f, 0.2f),
+                selected = true,
+            )
+
+        val toggled = toggleRedactionRegion(listOf(region), region.id)
+
+        assertFalse(toggled.single().selected)
+        assertEquals(toggled, deleteManualRedactionRegion(toggled, region.id))
+    }
+
+    @Test
+    fun safeShareManualAreasStopAtPerPageLimit() {
+        val fullPage =
+            List(MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) { index ->
+                RedactionRegion(
+                    "manual-$index",
+                    0,
+                    SensitiveRegionKind.Manual,
+                    NormalizedRect(0.1f, 0.1f, 0.2f, 0.2f),
+                    selected = true,
+                )
+            }
+
+        assertEquals(
+            fullPage,
+            addManualRedactionRegion(fullPage, id = "manual-overflow", page = 0),
+        )
+        assertEquals(
+            MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE + 1,
+            addManualRedactionRegion(fullPage, id = "manual-page-2", page = 1).size,
+        )
+    }
+
+    @Test
+    fun safeShareBackCancelsReviewButConsumesBusyStates() {
+        val result =
+            ScreenState.Result(
+                scan = savedScan(entryId = ENTRY_ID, outputMetadataValid = true),
+                thumbnail = null,
+            )
+
+        assertEquals(
+            AppBackAction.CancelSafeShare,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state =
+                    result.copy(
+                        safeShareState = SafeShareState.Reviewing(0, emptyList()),
+                    ),
+            ),
+        )
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = result.copy(safeShareState = SafeShareState.Analyzing),
+            ),
+        )
+        assertEquals(
+            AppBackAction.Consume,
+            appBackAction(
+                settingsOpen = false,
+                fileDetailsOpen = false,
+                state = result.copy(safeShareState = SafeShareState.Applying),
+            ),
+        )
+    }
+
+    @Test
+    fun safeShareProcessRestoreReturnsToResult() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, CACHE_ID),
+            initialNavigation(
+                savedRoute = "result",
+                savedCacheId = CACHE_ID,
+                activeResultCacheId = CACHE_ID,
+                safeShareWasActive = true,
+            ),
+        )
+    }
+
+    @Test
+    fun safeShareProvisionalRestoreUsesActiveCandidateInsteadOfSavedParent() {
+        assertEquals(
+            InitialNavigation(RestoredRoute.Result, "Scan_protected"),
+            initialNavigation(
+                savedRoute = "result",
+                savedCacheId = "Scan_parent",
+                activeResultCacheId = "Scan_protected",
+                safeShareWasActive = true,
+            ),
+        )
+        assertEquals(
+            InitialNavigation(
+                route = RestoredRoute.Scanner,
+                cacheId = null,
+                clearCheckpointBeforeLaunch = true,
+            ),
+            initialNavigation(
+                savedRoute = "result",
+                savedCacheId = "Scan_parent",
+                activeResultCacheId = "Scan_protected",
+            ),
+        )
+    }
+
+    @Test
+    fun safeShareRequestRejectsStaleGenerationAndWrongIdentity() {
+        val request =
+            SafeShareRequest(
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                scope = SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            )
+
+        assertTrue(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 0,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.SelectedPage,
+                selectedPage = 1,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                CACHE_ID,
+                ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 8L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                CACHE_ID,
+                OTHER_ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+        assertFalse(
+            request.matches(
+                "Scan_other",
+                ENTRY_ID,
+                SafeShareScope.AllPages,
+                selectedPage = 1,
+                generation = 7L,
+                mode = RedactionMode.Automatic,
+            ),
+        )
+    }
+
+    @Test
+    fun ttsInitializationQueuesReplayAfterStopAndSecondPlay() {
+        val gate = TtsInitializationGate()
+
+        assertEquals(TtsPlayDecision.Initialize, gate.play("first", engineExists = false))
+        gate.stop()
+        assertEquals(TtsPlayDecision.Queue, gate.play("second", engineExists = true))
+        assertEquals(
+            TtsInitializationResult(ready = true, text = "second"),
+            gate.initialized(success = true),
+        )
+        assertEquals(TtsPlayDecision.Speak, gate.play("third", engineExists = true))
+    }
+
+    @Test
+    fun ttsInitializationSuccessWithoutQueuedTextStaysReadyAndFailureResets() {
+        val stopped = TtsInitializationGate()
+        assertEquals(TtsPlayDecision.Initialize, stopped.play("first", engineExists = false))
+        stopped.stop()
+        assertEquals(
+            TtsInitializationResult(ready = true, text = null),
+            stopped.initialized(success = true),
+        )
+        assertEquals(TtsPlayDecision.Speak, stopped.play("second", engineExists = true))
+
+        val failed = TtsInitializationGate()
+        assertEquals(TtsPlayDecision.Initialize, failed.play("first", engineExists = false))
+        assertEquals(
+            TtsInitializationResult(ready = false, text = "first"),
+            failed.initialized(success = false),
+        )
+        assertEquals(TtsPlayDecision.Initialize, failed.play("retry", engineExists = false))
+    }
+
+    @Test
+    fun internalBuildHasDistinctTestAppLabel() {
+        val repository = File("..").canonicalFile
+        val manifest = File(repository, "app/src/internal/AndroidManifest.xml").readText()
+        val strings = File(repository, "app/src/internal/res/values/strings.xml").readText()
+
+        assertTrue(manifest.contains("android:label=\"@string/internal_app_name\""))
+        assertTrue(manifest.contains("tools:replace=\"android:label\""))
+        assertTrue(
+            strings.contains(
+                "<string name=\"internal_app_name\" translatable=\"false\">ScanIt.test</string>",
+            ),
+        )
+    }
+
+    @Test
+    fun composeDisplayedBitmapsAreNotManuallyRecycled() {
+        val repository = File("..").canonicalFile
+        val appUi = File(repository, "app/src/main/java/com/majkeylab/scanit/AppUi.kt").readText()
+        val markUi = File(repository, "app/src/main/java/com/majkeylab/scanit/VisualMarkUi.kt").readText()
+
+        assertFalse(appUi.contains("awaitDispose { bitmap?.recycle() }"))
+        assertFalse(markUi.contains("onDispose { bitmap?.recycle() }"))
+    }
+
+    @Test
     fun resultCopyIsPresentAcrossEverySupportedLanguage() {
         val repository = File("..").canonicalFile
         val resourceDirectories =
@@ -34,8 +635,44 @@ class PureLogicTest {
             val strings =
                 File(repository, "app/src/main/res/$directory/strings.xml").readText()
             assertTrue(strings.contains("<string name=\"page_position_short\">"))
+            assertFalse(strings.contains("<string name=\"edit\">"))
             assertTrue(strings.contains("<string name=\"rescan\">"))
             assertFalse(strings.contains("<string name=\"edit_scan\">"))
+        }
+    }
+
+    @Test
+    fun documentActionCopyIsPresentAcrossEverySupportedLanguage() {
+        val repository = File("..").canonicalFile
+        val resourceDirectories =
+            listOf("values", "values-cs", "values-de", "values-es", "values-zh-rCN")
+        val keyPattern = Regex("""<string name="([^"]+)"""")
+        val keys =
+            listOf(
+                "find_text",
+                "read_aloud",
+                "receipt_details",
+                "create_contact",
+                "search_document",
+                "no_matches_found",
+                "tts_disclosure_message",
+                "receipt_candidates",
+                "contact_candidates",
+                "system_action_failed",
+            )
+        val defaultKeys =
+            keyPattern.findAll(
+                File(repository, "app/src/main/res/values/strings.xml").readText(),
+            ).map { it.groupValues[1] }.toSet()
+
+        resourceDirectories.forEach { directory ->
+            val strings = File(repository, "app/src/main/res/$directory/strings.xml").readText()
+            keys.forEach { key -> assertTrue(strings.contains("<string name=\"$key\">")) }
+            assertEquals(
+                "String keys differ in $directory",
+                defaultKeys,
+                keyPattern.findAll(strings).map { it.groupValues[1] }.toSet(),
+            )
         }
     }
 
@@ -289,7 +926,7 @@ class PureLogicTest {
     }
 
     @Test
-    fun resultActionsRouteRescanToScannerAndUnknownOutputWarningFailsClosed() {
+    fun resultActionsRouteAndUnknownOutputWarningFailsClosed() {
         val editable = uiSavedScan()
         assertEquals(
             ResultActionDestination.Scanner,
@@ -303,13 +940,24 @@ class PureLogicTest {
             ResultActionDestination.DocumentActions,
             resultActionDestination(ResultEntryAction.Actions),
         )
-
         val acknowledgement =
             UnknownOutputCreateAcknowledgement(CACHE_ID, ENTRY_ID, OTHER_ENTRY_ID)
         val warning = editable.copy(unknownOutputCreateAcknowledgement = acknowledgement)
         assertSame(acknowledgement, confirmedUnknownOutputAcknowledgement(warning, confirmed = true))
         assertNull(confirmedUnknownOutputAcknowledgement(warning, confirmed = false))
         assertNull(confirmedUnknownOutputAcknowledgement(editable, confirmed = true))
+    }
+
+    @Test
+    fun resultExposesOnlyRescanSignAndActions() {
+        assertEquals(
+            listOf(
+                ResultEntryAction.Rescan,
+                ResultEntryAction.SignOrStamp,
+                ResultEntryAction.Actions,
+            ),
+            ResultEntryAction.entries,
+        )
     }
 
     @Test
@@ -575,7 +1223,7 @@ class PureLogicTest {
     }
 
     @Test
-    fun mainScannerRestoresFullEditorWhileMarkCaptureStaysBase() {
+    fun mainScannerUsesFullGoogleEditorWhileMarkCaptureStaysBase() {
         assertEquals(
             GmsDocumentScannerOptions.SCANNER_MODE_FULL,
             scannerMode(ScannerPurpose.Document),
@@ -992,118 +1640,13 @@ class PureLogicTest {
     }
 
     @Test
-    fun successfulResultApplyDurablyStoresAppearanceAndNewCheckpointTogether() {
-        val (preferences, _) = inMemoryPreferences()
-        val store = SettingsStore(preferences, "Scanned document")
-        val owner = store.authoritySnapshot().owner
-        val appearance =
-            ScanAppearanceSettings(
-                colorMode = ScanColorMode.Color,
-                colorIntensity = 42,
-                grayscaleIntensity = 61,
-                blackWhiteIntensity = 100,
-                shadows = 27,
-            )
-
-        val result =
-            store.saveAppliedAppearanceAndActiveResult(
-                appearance,
-                PdfSizeTarget.Mb5,
-                "Scan_applied",
-                owner,
-            )
-
-        assertEquals(AppearanceCommitResult.Applied, result)
-        assertEquals(appearance, store.load().appearance)
-        assertEquals(PdfSizeTarget.Mb5, store.load().pdfSizeTarget)
-        assertEquals("Scan_applied", store.activeResultCacheId())
-        assertEquals(
-            ActiveResultCheckpoint("Scan_applied"),
-            store.activeResultCheckpoint(),
-        )
-    }
-
-    @Test
-    fun pendingAppearanceReviewSurvivesActiveResultCheckpointRoundTrip() {
-        val entryId = "123e4567-e89b-12d3-a456-426614174000"
-        val encoded = encodeActiveResultCheckpoint("Scan_review", entryId)
-
-        assertEquals(
-            ActiveResultCheckpoint("Scan_review", entryId),
-            decodeActiveResultCheckpointPayload(encoded),
-        )
-        assertNull(
-            decodeActiveResultCheckpointPayload(
-                encodeActiveResultCheckpoint("Scan_review"),
-            )?.appearanceReviewEntryId,
-        )
-    }
-
-    @Test
-    fun settingsStorePersistsPendingAppearanceReviewWithResultAuthority() {
-        val (preferences, _) = inMemoryPreferences()
-        val store = SettingsStore(preferences, "Scanned document")
-        val owner = store.authoritySnapshot().owner
+    fun legacyPendingAppearanceReviewCheckpointRestoresCacheOnly() {
         val entryId = "123e4567-e89b-12d3-a456-426614174000"
 
         assertEquals(
-            AuthorityMutationResult.Applied,
-            store.saveActiveResult(
-                cacheId = "Scan_review",
-                expectedOwner = owner,
-                appearanceReviewEntryId = entryId,
-            ),
+            ActiveResultCheckpoint("Scan_review"),
+            decodeActiveResultCheckpointPayload("3:Scan_review:$entryId"),
         )
-        assertEquals(
-            ActiveResultCheckpoint("Scan_review", entryId),
-            store.activeResultCheckpoint(),
-        )
-    }
-
-    @Test
-    fun failedCommitWithCandidateReadbackKeepsMonotonicAuthority() {
-        val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
-        val store = SettingsStore(preferences, "Scanned document")
-        val owner = store.authoritySnapshot().owner
-        val appearance =
-            ScanAppearanceSettings(
-                colorMode = ScanColorMode.Color,
-                colorIntensity = 35,
-                shadows = 20,
-            )
-
-        val result =
-            store.saveAppliedAppearanceAndActiveResult(
-                appearance,
-                PdfSizeTarget.Mb10,
-                "Scan_applied",
-                expectedOwner = owner,
-            )
-
-        assertEquals(AppearanceCommitResult.Applied, result)
-        assertEquals(appearance, store.load().appearance)
-        assertEquals(PdfSizeTarget.Mb10, store.load().pdfSizeTarget)
-        assertEquals(ActiveResultCheckpoint("Scan_applied"), store.activeResultCheckpoint())
-    }
-
-    @Test
-    fun appearanceCommitRejectsCheckpointWhenAppearanceReadbackDoesNotMatch() {
-        val (preferences, _) =
-            inMemoryPreferences(
-                commitResults = listOf(false),
-                afterCommit = { _, values -> values.remove("appearance_mode") },
-            )
-        val store = SettingsStore(preferences, "Scanned document")
-        val owner = store.authoritySnapshot().owner
-
-        assertThrows(IOException::class.java) {
-            store.saveAppliedAppearanceAndActiveResult(
-                ScanAppearanceSettings(colorMode = ScanColorMode.Color),
-                PdfSizeTarget.Mb5,
-                "Scan_applied",
-                owner,
-            )
-        }
     }
 
     @Test
@@ -1172,20 +1715,11 @@ class PureLogicTest {
             store.trySave(AppSettings(savePdf = false), oldVmOwner),
         )
         assertEquals(AuthorityMutationResult.Stale, store.clearActiveResult(oldVmOwner))
-        assertEquals(
-            AppearanceCommitResult.Stale,
-            store.saveAppliedAppearanceAndActiveResult(
-                ScanAppearanceSettings(colorMode = ScanColorMode.Color),
-                PdfSizeTarget.Mb5,
-                "Scan_stale",
-                oldVmOwner,
-            ),
-        )
         assertEquals(AuthorityMutationResult.Applied, store.clearActiveResult(newVmOwner))
     }
 
     @Test
-    fun staleSettingsAndAppearanceApplyCannotOverwriteNewerAuthority() {
+    fun staleSettingsCannotOverwriteNewerAuthority() {
         val (preferences, _) = inMemoryPreferences()
         val store = SettingsStore(preferences, "Scanned document")
         val original = store.authoritySnapshot()
@@ -1201,15 +1735,6 @@ class PureLogicTest {
             AuthorityMutationResult.Stale,
             store.trySave(
                 original.settings.copy(appearance = staleAppearance),
-                original.owner,
-            ),
-        )
-        assertEquals(
-            AppearanceCommitResult.Stale,
-            store.saveAppliedAppearanceAndActiveResult(
-                staleAppearance,
-                PdfSizeTarget.Mb10,
-                "Scan_stale",
                 original.owner,
             ),
         )
@@ -1452,46 +1977,6 @@ class PureLogicTest {
         )
         assertEquals(appearance, store.load().appearance)
         assertEquals("Scan_newer", store.activeResultCacheId())
-    }
-
-    @Test
-    fun fullSettingsSaveIsBlockedWhileAppearanceCommitRuns() {
-        val applying =
-            ScreenState.Result(
-                scan =
-                    SavedScan(
-                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
-                        galleryPages = emptyList(),
-                        savedPdf = null,
-                    ),
-                thumbnail = null,
-                appearanceApplyInProgress = true,
-            )
-
-        assertFalse(settingsSaveAllowed(applying))
-        assertTrue(settingsSaveAllowed(applying.copy(appearanceApplyInProgress = false)))
-        assertTrue(settingsSaveAllowed(ScreenState.Ready))
-    }
-
-    @Test
-    fun legacyAppearanceReviewFlagDoesNotBlockDirectResultActions() {
-        val reviewing =
-            ScreenState.Result(
-                scan =
-                    SavedScan(
-                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
-                        galleryPages = emptyList(),
-                        savedPdf = null,
-                    ),
-                thumbnail = null,
-                appearanceReviewRequired = true,
-            )
-
-        assertFalse(reviewing.resultActionsBlocked)
-        assertEquals(
-            AppBackAction.ShowRecent,
-            appBackAction(settingsOpen = false, fileDetailsOpen = false, state = reviewing),
-        )
     }
 
     @Test
@@ -2202,30 +2687,6 @@ class PureLogicTest {
         assertEquals(
             AppBackAction.CollapseFileDetails,
             appBackAction(settingsOpen = false, fileDetailsOpen = true, state = result),
-        )
-    }
-
-    @Test
-    fun backNavigationIsConsumedWhileAppearanceIsApplying() {
-        val result =
-            ScreenState.Result(
-                scan =
-                    SavedScan(
-                        cached = CachedScan("Scan_1", emptyList(), File("Scan_1.pdf")),
-                        galleryPages = emptyList(),
-                        savedPdf = null,
-                    ),
-                thumbnail = null,
-                appearanceApplyInProgress = true,
-            )
-
-        assertEquals(
-            AppBackAction.Consume,
-            appBackAction(
-                settingsOpen = false,
-                fileDetailsOpen = true,
-                state = result,
-            ),
         )
     }
 

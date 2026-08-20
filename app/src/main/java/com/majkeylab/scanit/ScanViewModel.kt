@@ -39,6 +39,7 @@ private const val OUTPUT_TREE_PENDING_KEY = "output_tree_pending"
 private const val OUTPUT_TREE_SELECTION_REQUEST_KEY = "output_tree_selection_request"
 private const val OUTPUT_TREE_SELECTION_URI_KEY = "output_tree_selection_uri"
 private const val OUTPUT_TREE_SELECTION_FLAGS_KEY = "output_tree_selection_flags"
+private const val SAFE_SHARE_ACTIVE_KEY = "safe_share_active"
 private const val RESULT_PREVIEW_SIZE = 1024
 private const val PAGE_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
@@ -401,6 +402,62 @@ private data class PreparedInitialScan(
     val thumbnail: Bitmap?,
 )
 
+private fun DocumentActionOutput.WhiteboardPreview.recycle() {
+    if (!before.isRecycled) before.recycle()
+    if (!after.isRecycled) after.recycle()
+}
+
+private fun DocumentActionState?.recycleWhiteboardPreview() {
+    ((this as? DocumentActionState.Completed)?.output as? DocumentActionOutput.WhiteboardPreview)
+        ?.recycle()
+}
+
+private data class OwnedOcrSnapshot(
+    val cacheId: String,
+    val entryId: String,
+    val snapshot: DocumentOcrSnapshot,
+)
+
+internal enum class OcrSnapshotInvalidation {
+    RouteMutation,
+    ResultMutation,
+    Cancellation,
+    Replacement,
+    Cleared,
+}
+
+internal class OcrSnapshotOwner {
+    private var generation = 0L
+    private var active: OwnedOcrSnapshot? = null
+
+    fun begin(): Long {
+        invalidate(OcrSnapshotInvalidation.Replacement)
+        return generation
+    }
+
+    fun publish(
+        requestGeneration: Long,
+        cacheId: String,
+        entryId: String,
+        snapshot: DocumentOcrSnapshot,
+    ): Boolean {
+        if (requestGeneration != generation) return false
+        active = OwnedOcrSnapshot(cacheId, entryId, snapshot)
+        return true
+    }
+
+    fun current(cacheId: String, entryId: String): DocumentOcrSnapshot? =
+        active
+            ?.takeIf { it.cacheId == cacheId && it.entryId == entryId }
+            ?.snapshot
+
+    fun invalidate(reason: OcrSnapshotInvalidation) {
+        active = null
+        check(generation < Long.MAX_VALUE) { "OCR snapshot generation exhausted after $reason" }
+        generation += 1L
+    }
+}
+
 internal fun automaticOutputTarget(settings: AppSettings): SaveNowTarget? =
     when {
         settings.savePdf && settings.saveImages -> SaveNowTarget.Both
@@ -440,8 +497,10 @@ internal class ScanViewModel(
     private val settingsStore = SettingsStore(application)
     private val savedRoute = savedStateHandle.get<String>(ROUTE_KEY)
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
+    private val restoredSafeShareActive = savedStateHandle.remove<Boolean>(SAFE_SHARE_ACTIVE_KEY) == true
     private val storage = ScanStorage(application)
     private val documentActionProcessor = DocumentActionProcessor(application)
+    private val safeShareAnalyzer = SafeShareAnalyzer(application)
     private val markTemplateStore = MarkTemplateStore(application)
     private val scannerLaunchGate =
         ScannerLaunchGate(
@@ -476,11 +535,14 @@ internal class ScanViewModel(
     private var cacheRefreshJob: Job? = null
     private var outputSaveJob: Job? = null
     private var outputChangeJob: Job? = null
-    private var appearanceApplyJob: Job? = null
     private var documentActionJob: Job? = null
     private var documentActionGeneration = 0L
     private var activeDocumentActionRequest: DocumentActionRequest? = null
+    private var activeSafeShareRequest: SafeShareRequest? = null
+    private var activeCleanWhiteboardRequest: CleanWhiteboardRequest? = null
+    private val ocrSnapshotOwner = OcrSnapshotOwner()
     private var documentTextExportWriteStarted = false
+    private var cleanWhiteboardApplyJob: Job? = null
     private var visualMarkTemplateJob: Job? = null
     private var visualMarkApplyJob: Job? = null
     private var visualMarkScanSource: MarkEditorSource? = null
@@ -632,6 +694,7 @@ internal class ScanViewModel(
             outputChangeGate.complete(request)
             return
         }
+        clearOcrSnapshot(OcrSnapshotInvalidation.ResultMutation)
         persistOutputGeneration()
         mutableState.value = current.copy(outputChangeInProgress = true)
         outputChangeJob =
@@ -764,6 +827,7 @@ internal class ScanViewModel(
         request: OutputChangeRequest,
         operation: suspend () -> OutputReplacementResult,
     ) {
+        clearOcrSnapshot(OcrSnapshotInvalidation.Replacement)
         outputChangeJob =
             viewModelScope.launch {
                 try {
@@ -802,6 +866,7 @@ internal class ScanViewModel(
         selection: OutputTreeSelection,
     ) {
         val request = selection.request
+        clearOcrSnapshot(OcrSnapshotInvalidation.Replacement)
         outputChangeJob =
             viewModelScope.launch {
                 try {
@@ -948,14 +1013,19 @@ internal class ScanViewModel(
         )
 
     fun refreshAfterShareCleanup() {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         if (mutableState.value !is ScreenState.Result && mutableState.value !is ScreenState.Recent) {
             return
         }
+        val safeShareState = (mutableState.value as? ScreenState.Result)?.safeShareState
+        if (safeShareState != null) return
         if (!shareRefreshGate.request()) return
         viewModelScope.launch {
             while (shareRefreshGate.consume()) {
                 when (val snapshot = mutableState.value) {
                     is ScreenState.Result -> {
+                        if (cleanWhiteboardApplyJob?.isActive == true) continue
+                        if (snapshot.safeShareState != null) continue
                         val cacheId = snapshot.scan.cached.baseName
                         val entryId = snapshot.scan.cached.entryId
                         val saved =
@@ -967,14 +1037,19 @@ internal class ScanViewModel(
                                 null
                             }
                         val latest = mutableState.value as? ScreenState.Result ?: continue
+                        if (cleanWhiteboardApplyJob?.isActive == true) continue
                         val refreshed = saved?.takeIf { it.cached.entryId == entryId }
                         if (
                             latest.scan.cached.baseName == cacheId &&
                                 latest.scan.cached.entryId == entryId &&
                                 refreshed != null
                         ) {
+                            invalidateDocumentAction(OcrSnapshotInvalidation.ResultMutation)
                             mutableState.value =
-                                latest.copy(scan = refreshed.copy(warnings = latest.scan.warnings))
+                                latest.copy(
+                                    scan = refreshed.copy(warnings = latest.scan.warnings),
+                                    documentActionState = null,
+                                )
                             refreshRecentCache(cacheId)
                         }
                     }
@@ -1059,6 +1134,7 @@ internal class ScanViewModel(
         }
 
     fun beginScannerLaunch() {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         if (processingJob?.isActive == true) return
         if ((mutableState.value as? ScreenState.Recent)?.deletionInProgress == true) return
         completeScannerLaunch()
@@ -1102,6 +1178,7 @@ internal class ScanViewModel(
     }
 
     fun scannerLaunchFailed(requestGeneration: Long, message: UiMessage) {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         if (scannerLaunchGate.fail(requestGeneration)) {
             persistScannerStage()
             val generation = beginRouteMutation()
@@ -1123,6 +1200,7 @@ internal class ScanViewModel(
     }
 
     fun scannerResultFailed(message: UiMessage) {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
             val generation = beginRouteMutation()
@@ -1137,6 +1215,7 @@ internal class ScanViewModel(
     }
 
     fun processScan(pageUris: List<Uri>): Boolean {
+        if (cleanWhiteboardApplyJob?.isActive == true) return false
         completeScannerLaunch()
         if (!isAcceptedScanPageCount(pageUris.size)) {
             scannerResultFailed(UiMessage(R.string.scanner_result_error))
@@ -1315,6 +1394,8 @@ internal class ScanViewModel(
     }
 
     fun showRecent() {
+        val safeShareState = (mutableState.value as? ScreenState.Result)?.safeShareState
+        if (safeShareState != null) return
         refreshRecentScreen()
     }
 
@@ -1374,21 +1455,6 @@ internal class ScanViewModel(
             }
     }
 
-    suspend fun loadAppearancePreview(
-        sourcePage: File,
-        settings: ScanAppearanceSettings,
-        maxSize: Int,
-    ): Bitmap? =
-        withContext(Dispatchers.IO) {
-            val processingContext = currentCoroutineContext()
-            storage.loadAppearancePreview(
-                sourcePage = sourcePage,
-                appearance = settings.selected(),
-                maxSize = maxSize,
-                isCancelled = { !processingContext.isActive },
-            )
-        }
-
     suspend fun loadResultPreview(
         page: File,
         maxSize: Int,
@@ -1412,16 +1478,6 @@ internal class ScanViewModel(
                 dimensions.width to dimensions.height
             }
         }
-
-    fun closeAppearanceEditor() {
-        val current = mutableState.value as? ScreenState.Result ?: return
-        if (!current.appearanceReviewRequired || current.appearanceApplyInProgress) return
-        mutableState.value =
-            current.copy(
-                appearanceReviewRequired = false,
-                appearanceMessage = null,
-            )
-    }
 
     fun openVisualMarkEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return
@@ -1719,207 +1775,6 @@ internal class ScanViewModel(
             }
     }
 
-    fun applyCurrentAppearance(requested: ScanAppearanceSettings) {
-        val current = mutableState.value as? ScreenState.Result ?: return
-        val cached = current.scan.cached
-        if (
-            !current.appearanceReviewRequired ||
-                current.outputSaveInProgress ||
-                current.appearanceApplyInProgress ||
-                current.visualMarkEditor != null ||
-                current.pagePreviewLoading ||
-                appearanceApplyJob?.isActive == true ||
-                cached.sourcePages.size != cached.pages.size ||
-                cached.appearance == null ||
-                cached.entryId == null ||
-                !current.scan.outputMetadataValid
-        ) {
-            return
-        }
-        val previousSettings = currentSettings()
-        val normalized =
-            parseScanAppearanceSettings(
-                colorModeWireValue = requested.colorMode.wireValue,
-                naturalIntensity = requested.naturalIntensity,
-                colorIntensity = requested.colorIntensity,
-                lightTextIntensity = requested.lightTextIntensity,
-                grayscaleIntensity = requested.grayscaleIntensity,
-                blackWhiteIntensity = requested.blackWhiteIntensity,
-                whiteboardIntensity = requested.whiteboardIntensity,
-                shadows = requested.shadows,
-            )
-        if (
-            cached.appearanceSettings == normalized &&
-                cached.pdfSizeTarget == previousSettings.pdfSizeTarget
-        ) {
-            finishUnchangedAppearanceReview(current, previousSettings)
-            return
-        }
-        val generation = beginRouteMutation()
-        mutableState.value =
-            current.copy(
-                appearanceApplyInProgress = true,
-                appearanceMessage = null,
-            )
-        appearanceApplyJob =
-            viewModelScope.launch {
-                var created: CachedScan? = null
-                var checkpointCommitted = false
-                var pageIndex = current.selectedPageIndex
-                var thumbnail = current.thumbnail
-                var buildWarnings: List<UiMessage> = emptyList()
-                try {
-                    withContext(Dispatchers.IO) {
-                        val coroutineContext = currentCoroutineContext()
-                        val build =
-                            storage.createAppearanceVariant(
-                                source = cached,
-                                appearanceSettings = normalized,
-                                pdfSizeTarget = previousSettings.pdfSizeTarget,
-                                isCancelled = { !coroutineContext.isActive },
-                            )
-                        created = build.cached
-                        buildWarnings =
-                            if (build.pdf.targetMet) {
-                                emptyList()
-                            } else {
-                                listOf(pdfSizeTargetWarning(build.pdf))
-                            }
-                        pageIndex =
-                            resolvedPageIndex(
-                                current.selectedPageIndex,
-                                build.cached.pages.size,
-                            )
-                        thumbnail =
-                            storage.loadThumbnail(
-                                build.cached.pages[pageIndex],
-                                RESULT_PREVIEW_SIZE,
-                            )
-                    }
-                    val completed =
-                        routeMutationMutex.withLock {
-                            val latest = mutableState.value as? ScreenState.Result
-                            if (
-                                !routeMutationGate.isCurrent(generation) ||
-                                    latest?.scan?.cached?.baseName != cached.baseName ||
-                                    latest.scan.cached.entryId != cached.entryId
-                            ) {
-                                return@withLock false
-                            }
-                            val candidate = checkNotNull(created)
-                            val commitResult =
-                                withContext(NonCancellable + Dispatchers.IO) {
-                                    commitAppliedAppearance(
-                                        normalized = normalized,
-                                        pdfSizeTarget = previousSettings.pdfSizeTarget,
-                                        targetCacheId = candidate.baseName,
-                                    )
-                                }
-                            if (commitResult != AppearanceCommitResult.Applied) {
-                                return@withLock false
-                            }
-                            checkpointCommitted = true
-                            mutableSettings.value =
-                                mutableSettings.value.copy(
-                                    appearance = normalized,
-                                    pdfSizeTarget = previousSettings.pdfSizeTarget,
-                                )
-                            val activated =
-                                withContext(NonCancellable + Dispatchers.IO) {
-                                    completeAppearanceCandidate(candidate, buildWarnings)
-                                }
-                            val saved =
-                                withContext(NonCancellable + Dispatchers.IO) {
-                                    saveAutomaticReviewOutputs(
-                                        activated,
-                                        previousSettings.copy(appearance = normalized),
-                                    )
-                                }
-                            if (routeMutationGate.isCurrent(generation)) {
-                                publishResult(
-                                    ScreenState.Result(
-                                        scan = saved,
-                                        thumbnail = thumbnail,
-                                        selectedPageIndex = pageIndex,
-                                    ),
-                                )
-                            }
-                            true
-                        }
-                    if (!completed && !checkpointCommitted) {
-                        created?.let { discardAppearanceVariantUnlessActive(it) }
-                        if (routeMutationGate.isCurrent(generation)) {
-                            val latest = mutableState.value as? ScreenState.Result
-                            if (
-                                latest?.scan?.cached?.baseName == cached.baseName &&
-                                    latest.scan.cached.entryId == cached.entryId
-                            ) {
-                                mutableState.value =
-                                    latest.copy(
-                                        appearanceApplyInProgress = false,
-                                        appearanceMessage =
-                                            UiMessage(R.string.appearance_apply_failed),
-                                    )
-                            }
-                        }
-                    }
-                } catch (cancellation: CancellationException) {
-                    if (!checkpointCommitted) {
-                        created?.let { discardAppearanceVariantUnlessActive(it) }
-                    }
-                    throw cancellation
-                } catch (_: Exception) {
-                    if (checkpointCommitted) {
-                        val recovered =
-                            try {
-                                withContext(NonCancellable + Dispatchers.IO) {
-                                    created?.let { candidate ->
-                                        val activated =
-                                            completeAppearanceCandidate(
-                                                candidate,
-                                                buildWarnings +
-                                                    UiMessage(R.string.state_update_failed),
-                                            )
-                                        saveAutomaticReviewOutputs(
-                                            activated,
-                                            previousSettings.copy(appearance = normalized),
-                                        )
-                                    }
-                                }
-                            } catch (_: Exception) {
-                                null
-                            }
-                        routeMutationMutex.withLock {
-                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
-                                publishResult(
-                                    ScreenState.Result(
-                                        scan = recovered,
-                                        thumbnail = thumbnail,
-                                        selectedPageIndex = pageIndex,
-                                    ),
-                                )
-                            } else if (routeMutationGate.isCurrent(generation)) {
-                                navigationInitialized = true
-                                persistRoute(ROUTE_FAILURE)
-                                mutableState.value =
-                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
-                            }
-                        }
-                    } else {
-                        created?.let { discardAppearanceVariantUnlessActive(it) }
-                        if (routeMutationGate.isCurrent(generation)) {
-                            mutableState.value =
-                                current.copy(
-                                    appearanceApplyInProgress = false,
-                                    appearanceMessage =
-                                        UiMessage(R.string.appearance_apply_failed),
-                                )
-                        }
-                    }
-                }
-            }
-    }
-
     fun changeCurrentPdfSize(target: PdfSizeTarget) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val entryId = current.scan.cached.entryId ?: return
@@ -1937,11 +1792,7 @@ internal class ScanViewModel(
                 OutputChangeKind.PdfSize(target),
             ) ?: return
         persistOutputGeneration()
-        mutableState.value =
-            current.copy(
-                outputChangeInProgress = true,
-                appearanceMessage = null,
-            )
+        mutableState.value = current.copy(outputChangeInProgress = true)
         startOutputReplacement(request) {
             val operationContext = currentCoroutineContext()
             storage.replacePdfSize(
@@ -1952,8 +1803,349 @@ internal class ScanViewModel(
         }
     }
 
+    fun runSafeShare(scope: SafeShareScope) =
+        runRedaction(scope, RedactionMode.Automatic)
+
+    fun runManualRedaction(scope: SafeShareScope) =
+        runRedaction(scope, RedactionMode.Manual)
+
+    private fun runRedaction(scope: SafeShareScope, mode: RedactionMode) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
+        if (
+            current.resultActionsBlocked ||
+                current.safeShareState != null ||
+                current.scan.cached.pages.size !in 1..MAX_SCAN_PAGES
+        ) {
+            return
+        }
+        val selectedPage =
+            resolvedPageIndex(current.selectedPageIndex, current.scan.cached.pages.size)
+        val request =
+            SafeShareRequest(
+                cacheId = current.scan.cached.baseName,
+                entryId = entryId,
+                scope = scope,
+                selectedPage = selectedPage,
+                generation = nextDocumentActionGeneration(),
+                mode = mode,
+            )
+        activeSafeShareRequest = request
+        savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = true
+        initialRedactionReview(mode, selectedPage)?.let { review ->
+            mutableState.value =
+                current.copy(
+                    safeShareState = review,
+                    safeShareScope = scope,
+                )
+            return
+        }
+        val analysisPages =
+            safeShareAnalysisPages(current.scan.cached.pages, scope, selectedPage)
+        val ownedSnapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId)
+        val ocrSnapshotGeneration =
+            if (ownedSnapshot == null && scope == SafeShareScope.AllPages) {
+                ocrSnapshotOwner.begin()
+            } else {
+                null
+            }
+        mutableState.value =
+            current.copy(
+                safeShareState = SafeShareState.Analyzing,
+                safeShareScope = scope,
+            )
+        documentActionJob =
+            viewModelScope.launch {
+                var extractedSnapshot: DocumentOcrSnapshot? = null
+                val state =
+                    try {
+                        val analysis =
+                            withContext(Dispatchers.IO) {
+                                val snapshot =
+                                    ownedSnapshot?.let {
+                                        if (scope == SafeShareScope.SelectedPage) {
+                                            it.selectSafeSharePages(analysisPages)
+                                        } else {
+                                            it
+                                        }
+                                    }
+                                        ?: extractSafeShareOcr(
+                                            analysisPages,
+                                            documentActionProcessor::extractOcr,
+                                        ).also {
+                                            if (scope == SafeShareScope.AllPages) {
+                                                extractedSnapshot = it
+                                            }
+                                        }
+                                safeShareAnalyzer.analyze(
+                                    pages = analysisPages,
+                                    pageCount = current.scan.cached.pages.size,
+                                    ocr = snapshot,
+                                )
+                            }
+                        SafeShareState.Reviewing(
+                            page = selectedPage,
+                            regions = safeShareRegions(analysis, scope, selectedPage),
+                        )
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (failure: Exception) {
+                        val message =
+                            when (documentActionFailureKind(failure)) {
+                                DocumentActionFailureKind.ModelUnavailable ->
+                                    R.string.document_action_model_unavailable
+                                DocumentActionFailureKind.Failed -> R.string.document_action_failed
+                            }
+                        SafeShareState.Failed(UiMessage(message))
+                    }
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                if (isSafeShareRequestCurrent(request, latest)) {
+                    if (
+                        extractedSnapshot != null &&
+                            !ocrSnapshotOwner.publish(
+                                checkNotNull(ocrSnapshotGeneration),
+                                request.cacheId,
+                                request.entryId,
+                                checkNotNull(extractedSnapshot),
+                            )
+                    ) {
+                        return@launch
+                    }
+                    mutableState.value = latest.copy(safeShareState = state)
+                }
+                if (activeSafeShareRequest == request) documentActionJob = null
+            }
+    }
+
+    fun selectSafeSharePage(page: Int) {
+        val pageCount =
+            (mutableState.value as? ScreenState.Result)?.scan?.cached?.pages?.size ?: return
+        updateSafeShareReview { request, review ->
+            val allowed =
+                page in 0 until pageCount &&
+                    (request.scope == SafeShareScope.AllPages || page == request.selectedPage)
+            if (allowed) review.copy(page = page) else review
+        }
+    }
+
+    fun addSafeShareRegion() {
+        updateSafeShareReview { _, review ->
+            val nextIndex = review.regions.count { it.kind == SensitiveRegionKind.Manual }
+            var id = "manual-$nextIndex"
+            var suffix = nextIndex
+            while (review.regions.any { it.id == id }) id = "manual-${++suffix}"
+            review.copy(
+                regions = addManualRedactionRegion(review.regions, id, review.page),
+            )
+        }
+    }
+
+    fun toggleSafeShareRegion(id: String) {
+        updateSafeShareReview { _, review ->
+            review.copy(regions = toggleRedactionRegion(review.regions, id))
+        }
+    }
+
+    fun moveSafeShareRegion(id: String, deltaX: Float, deltaY: Float) {
+        updateSafeShareReview { _, review ->
+            review.copy(
+                regions = moveRedactionRegion(review.regions, id, deltaX, deltaY),
+            )
+        }
+    }
+
+    fun resizeSafeShareRegion(id: String, deltaX: Float, deltaY: Float) {
+        updateSafeShareReview { _, review ->
+            review.copy(
+                regions = resizeRedactionRegion(review.regions, id, deltaX, deltaY),
+            )
+        }
+    }
+
+    fun deleteSafeShareRegion(id: String) {
+        updateSafeShareReview { _, review ->
+            review.copy(regions = deleteManualRedactionRegion(review.regions, id))
+        }
+    }
+
+    fun beginSafeShareApply() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val review = current.safeShareState as? SafeShareState.Reviewing ?: return
+        val request = activeSafeShareRequest ?: return
+        val selected = review.regions.filter(RedactionRegion::selected)
+        if (
+            selected.isEmpty() ||
+                !isSafeShareRequestCurrent(request, current)
+        ) {
+            return
+        }
+        val regionsByPage =
+            selected.groupBy(RedactionRegion::page).mapValues { (_, regions) ->
+                regions.map(RedactionRegion::bounds)
+            }
+        val generation = beginRouteMutation()
+        savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = true
+        mutableState.value = current.copy(safeShareState = SafeShareState.Applying)
+        documentActionJob =
+            viewModelScope.launch {
+                var candidate: CachedScan? = null
+                var checkpointCommitted = false
+                var thumbnail: Bitmap? = null
+                var warnings: List<UiMessage> = emptyList()
+                try {
+                    val build =
+                        withContext(Dispatchers.IO) {
+                            val operationContext = currentCoroutineContext()
+                            storage.createRedactedVariant(
+                                source = current.scan.cached,
+                                regionsByPage = regionsByPage,
+                                isCancelled = { !operationContext.isActive },
+                            )
+                        }
+                    candidate = build.cached
+                    if (!build.pdf.targetMet) {
+                        warnings = listOf(pdfSizeTargetWarning(build.pdf))
+                    }
+                    thumbnail =
+                        withContext(Dispatchers.IO) {
+                            storage.loadThumbnail(
+                                build.cached.pages[request.selectedPage],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                        }
+                    when (persistResultCheckpoint(generation, build.cached.baseName)) {
+                        ResultActivation.Applied -> checkpointCommitted = true
+                        ResultActivation.Rejected,
+                        ResultActivation.Stale,
+                        ->
+                            return@launch restoreSafeShareApplyFailure(
+                                current.scan.cached,
+                                generation,
+                                candidate,
+                            )
+                    }
+                    val saved =
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            completeDerivedCandidate(build.cached, warnings)
+                        }
+                    routeMutationMutex.withLock {
+                        if (routeMutationGate.isCurrent(generation)) {
+                            publishResult(
+                                ScreenState.Result(
+                                    scan = saved,
+                                    thumbnail = thumbnail,
+                                    selectedPageIndex = request.selectedPage,
+                                ),
+                            )
+                            savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = false
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    if (!checkpointCommitted) {
+                        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+                    }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (!checkpointCommitted) {
+                        restoreSafeShareApplyFailure(current.scan.cached, generation, candidate)
+                    } else {
+                        val recovered =
+                            try {
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    candidate?.let {
+                                        completeDerivedCandidate(
+                                            it,
+                                            warnings + UiMessage(R.string.state_update_failed),
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = recovered,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = request.selectedPage,
+                                    ),
+                                )
+                                savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = false
+                            } else if (routeMutationGate.isCurrent(generation)) {
+                                persistRoute(ROUTE_FAILURE)
+                                mutableState.value =
+                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                            }
+                        }
+                    }
+                } finally {
+                    documentActionJob = null
+                }
+            }
+    }
+
+    fun cancelSafeShare() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val safeShareState = current.safeShareState ?: return
+        if (safeShareState == SafeShareState.Applying) return
+        invalidateDocumentAction(OcrSnapshotInvalidation.Cancellation)
+        mutableState.value = current.copy(safeShareState = null, safeShareScope = null)
+    }
+
+    private inline fun updateSafeShareReview(
+        update: (SafeShareRequest, SafeShareState.Reviewing) -> SafeShareState.Reviewing,
+    ) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val review = current.safeShareState as? SafeShareState.Reviewing ?: return
+        val request = activeSafeShareRequest ?: return
+        if (!isSafeShareRequestCurrent(request, current)) return
+        mutableState.value = current.copy(safeShareState = update(request, review))
+    }
+
+    private fun isSafeShareRequestCurrent(
+        request: SafeShareRequest,
+        current: ScreenState.Result,
+    ): Boolean =
+        activeSafeShareRequest == request &&
+            current.safeShareScope == request.scope &&
+            request.matches(
+                current.scan.cached.baseName,
+                current.scan.cached.entryId,
+                request.scope,
+                resolvedPageIndex(
+                    current.selectedPageIndex,
+                    current.scan.cached.pages.size,
+                ),
+                documentActionGeneration,
+                request.mode,
+            )
+
+    private fun isCleanWhiteboardRequestCurrent(
+        request: CleanWhiteboardRequest,
+        current: ScreenState.Result,
+    ): Boolean =
+        activeCleanWhiteboardRequest == request &&
+            request.matches(
+                current.scan.cached.baseName,
+                current.scan.cached.entryId,
+                request.scope,
+                resolvedPageIndex(
+                    current.selectedPageIndex,
+                    current.scan.cached.pages.size,
+                ),
+                documentActionGeneration,
+            )
+
     fun runDocumentAction(action: DocumentAction) {
         val current = mutableState.value as? ScreenState.Result ?: return
+        if (
+            action == DocumentAction.SafeShare ||
+                action == DocumentAction.RedactDocument ||
+                action == DocumentAction.CleanWhiteboard
+        ) {
+            return
+        }
         val entryId = current.scan.cached.entryId ?: return
         if (current.resultActionsBlocked || current.documentActionState != null) return
         val pageIndex = resolvedPageIndex(current.selectedPageIndex, current.scan.cached.pages.size)
@@ -1966,25 +2158,86 @@ internal class ScanViewModel(
                 generation = nextDocumentActionGeneration(),
             )
         activeDocumentActionRequest = request
+        val ownedSnapshot =
+            if (action == DocumentAction.DetectCodes) {
+                null
+            } else {
+                ocrSnapshotOwner.current(request.cacheId, request.entryId)
+            }
+        val ocrSnapshotGeneration =
+            if (action != DocumentAction.DetectCodes && ownedSnapshot == null) {
+                ocrSnapshotOwner.begin()
+            } else {
+                null
+            }
         documentTextExportWriteStarted = false
         mutableState.value =
             current.copy(documentActionState = DocumentActionState.Processing(action))
         documentActionJob =
             viewModelScope.launch {
+                var extractedSnapshot: DocumentOcrSnapshot? = null
                 val state =
                     try {
                         val output =
                             withContext(Dispatchers.IO) {
                                 when (action) {
-                                    DocumentAction.ExtractText ->
-                                        documentActionProcessor.extractText(current.scan.cached.pages)
                                     DocumentAction.DetectCodes ->
                                         documentActionProcessor.detectCodes(
                                             current.scan.cached.pages[pageIndex],
                                         )
+                                    DocumentAction.SafeShare,
+                                    DocumentAction.RedactDocument,
+                                    DocumentAction.CleanWhiteboard,
+                                    -> error("unreachable")
+                                    DocumentAction.ExtractText,
+                                    DocumentAction.FindText,
+                                    DocumentAction.ReadAloud,
+                                    DocumentAction.ReceiptDetails,
+                                    DocumentAction.CreateContact,
+                                    -> {
+                                        val snapshot =
+                                            ownedSnapshot
+                                                ?: documentActionProcessor.extractOcr(
+                                                    current.scan.cached.pages,
+                                                ).also { extractedSnapshot = it }
+                                        when (action) {
+                                            DocumentAction.ExtractText -> documentText(snapshot)
+                                            DocumentAction.FindText ->
+                                                DocumentActionOutput.FindReady
+                                            DocumentAction.ReadAloud -> {
+                                                val text = documentText(snapshot)
+                                                val speech = validatedSpeechText(text.value)
+                                                DocumentActionOutput.Speech(
+                                                    hasText = speech != null,
+                                                    truncated =
+                                                        text.truncated ||
+                                                            speech?.length != text.value.trim().length,
+                                                )
+                                            }
+                                            DocumentAction.ReceiptDetails ->
+                                                EntityCandidates(
+                                                    buildDocumentEntityCandidates(snapshot.elements),
+                                                )
+                                            DocumentAction.CreateContact ->
+                                                EntityCandidates(
+                                                    buildDocumentEntityCandidates(snapshot.elements)
+                                                        .filter { candidate ->
+                                                            candidate.kind ==
+                                                                DocumentEntityKind.Email ||
+                                                                candidate.kind ==
+                                                                DocumentEntityKind.Phone
+                                                        },
+                                                )
+                                            DocumentAction.DetectCodes -> error("unreachable")
+                                            DocumentAction.SafeShare,
+                                            DocumentAction.RedactDocument,
+                                            DocumentAction.CleanWhiteboard,
+                                            -> error("unreachable")
+                                        }
+                                    }
                                 }
                             }
-                        DocumentActionState.Completed(output)
+                        DocumentActionState.Completed(output, action = action)
                     } catch (cancellation: CancellationException) {
                         throw cancellation
                     } catch (failure: Exception) {
@@ -2000,11 +2253,351 @@ internal class ScanViewModel(
                 if (
                     isDocumentActionRequestCurrent(request, latest)
                 ) {
+                    if (
+                        extractedSnapshot != null &&
+                            !ocrSnapshotOwner.publish(
+                                checkNotNull(ocrSnapshotGeneration),
+                                request.cacheId,
+                                request.entryId,
+                                checkNotNull(extractedSnapshot),
+                            )
+                    ) {
+                        return@launch
+                    }
                     mutableState.value = latest.copy(documentActionState = state)
                 }
-                documentActionJob = null
+                if (activeDocumentActionRequest == request) documentActionJob = null
             }
     }
+
+    fun runCleanWhiteboard(scope: SafeShareScope) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val entryId = current.scan.cached.entryId ?: return
+        if (current.resultActionsBlocked || current.documentActionState != null || !current.canCleanWhiteboard) {
+            return
+        }
+        val selectedPage =
+            resolvedPageIndex(current.selectedPageIndex, current.scan.cached.pages.size)
+        val request =
+            CleanWhiteboardRequest(
+                cacheId = current.scan.cached.baseName,
+                entryId = entryId,
+                scope = scope,
+                selectedPage = selectedPage,
+                generation = nextDocumentActionGeneration(),
+            )
+        activeCleanWhiteboardRequest = request
+        mutableState.value =
+            current.copy(
+                documentActionState =
+                    DocumentActionState.Processing(DocumentAction.CleanWhiteboard),
+            )
+        documentActionJob =
+            viewModelScope.launch {
+                val output =
+                    try {
+                        withContext(Dispatchers.IO) {
+                            cleanWhiteboardPreview(current, request.selectedPage)
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                val latest = mutableState.value as? ScreenState.Result
+                if (output != null && latest != null && isCleanWhiteboardRequestCurrent(request, latest)) {
+                    mutableState.value =
+                        latest.copy(
+                            documentActionState =
+                                DocumentActionState.Completed(
+                                    output,
+                                    action = DocumentAction.CleanWhiteboard,
+                                ),
+                        )
+                } else {
+                    output?.recycle()
+                    if (latest != null && isCleanWhiteboardRequestCurrent(request, latest)) {
+                        mutableState.value =
+                            latest.copy(
+                                documentActionState =
+                                    DocumentActionState.Failed(
+                                        UiMessage(R.string.document_action_failed),
+                                    ),
+                            )
+                    }
+                }
+                if (activeCleanWhiteboardRequest == request) documentActionJob = null
+            }
+    }
+
+    private suspend fun cleanWhiteboardPreview(
+        current: ScreenState.Result,
+        pageIndex: Int,
+    ): DocumentActionOutput.WhiteboardPreview {
+        val cached = current.scan.cached
+        val source = cached.sourcePages.getOrNull(pageIndex)
+            ?: throw IOException("Cached scan has no whiteboard source")
+        val appearance = cleanWhiteboardAppearanceSettings()
+        val operationContext = currentCoroutineContext()
+        var before: Bitmap? = null
+        var sourcePreview: Bitmap? = null
+        var after: Bitmap? = null
+        return try {
+            before = storage.loadThumbnail(cached.pages[pageIndex], RESULT_PREVIEW_SIZE)
+                ?: throw IOException("Whiteboard before preview is unavailable")
+            sourcePreview = storage.loadThumbnail(source, RESULT_PREVIEW_SIZE)
+                ?: throw IOException("Whiteboard source preview is unavailable")
+            after = sourcePreview.copy(Bitmap.Config.ARGB_8888, true)
+                ?: throw IOException("Whiteboard after preview is unavailable")
+            applyScanAppearance(checkNotNull(after), appearance.selected()) {
+                !operationContext.isActive
+            }
+            DocumentActionOutput.WhiteboardPreview(checkNotNull(before), checkNotNull(after), appearance)
+        } catch (failure: Throwable) {
+            before?.recycle()
+            after?.recycle()
+            throw failure
+        } finally {
+            sourcePreview?.recycle()
+        }
+    }
+
+    fun beginCleanWhiteboardApply() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val completed = current.documentActionState as? DocumentActionState.Completed ?: return
+        val preview = completed.output as? DocumentActionOutput.WhiteboardPreview ?: return
+        val request = activeCleanWhiteboardRequest ?: return
+        if (
+            completed.action != DocumentAction.CleanWhiteboard ||
+                current.resultActionsBlocked ||
+                current.scan.cached.entryId == null ||
+                cleanWhiteboardApplyJob?.isActive == true ||
+                !isCleanWhiteboardRequestCurrent(request, current)
+        ) {
+            return
+        }
+        applyCleanWhiteboard(current, request, preview.appearance)
+    }
+
+    private fun applyCleanWhiteboard(
+        current: ScreenState.Result,
+        request: CleanWhiteboardRequest,
+        appearance: ScanAppearanceSettings,
+    ) {
+        val source = current.scan.cached
+        val generation = beginRouteMutation()
+        mutableState.value =
+            current.copy(
+                documentActionState =
+                    DocumentActionState.Processing(DocumentAction.CleanWhiteboard),
+            )
+        cleanWhiteboardApplyJob =
+            viewModelScope.launch {
+                var candidate: CachedScan? = null
+                var checkpointCommitted = false
+                var thumbnail: Bitmap? = null
+                var warnings: List<UiMessage> = emptyList()
+                try {
+                    val build =
+                        withContext(Dispatchers.IO) {
+                            val operationContext = currentCoroutineContext()
+                            storage.createAppearanceVariant(
+                                source = source,
+                                appearanceSettings = appearance,
+                                pdfSizeTarget = source.pdfSizeTarget,
+                                selectedPageIndex =
+                                    request.selectedPage.takeIf {
+                                        request.scope == SafeShareScope.SelectedPage
+                                    },
+                                restoreSettingsOnActivation = false,
+                                isCancelled = { !operationContext.isActive },
+                            )
+                        }
+                    candidate = build.cached
+                    if (!build.pdf.targetMet) warnings = listOf(pdfSizeTargetWarning(build.pdf))
+                    thumbnail =
+                        withContext(Dispatchers.IO) {
+                            storage.loadThumbnail(
+                                build.cached.pages[request.selectedPage],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                        }
+                    when (persistResultCheckpoint(generation, build.cached.baseName)) {
+                        ResultActivation.Applied -> checkpointCommitted = true
+                        ResultActivation.Rejected,
+                        ResultActivation.Stale,
+                        -> {
+                            restoreWhiteboardApplyFailure(source, candidate)
+                            return@launch
+                        }
+                    }
+                    withContext(NonCancellable) {
+                        val saved =
+                            withContext(Dispatchers.IO) {
+                                completeAppearanceCandidate(build.cached, warnings)
+                            }
+                        routeMutationMutex.withLock {
+                            publishResult(
+                                ScreenState.Result(
+                                    scan = saved,
+                                    thumbnail = thumbnail,
+                                    selectedPageIndex = request.selectedPage,
+                                ),
+                            )
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    withContext(NonCancellable) {
+                        if (!checkpointCommitted) restoreWhiteboardApplyFailure(source, candidate)
+                    }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (!checkpointCommitted) {
+                        restoreWhiteboardApplyFailure(source, candidate)
+                    } else {
+                        recoverCommittedWhiteboardApply(
+                            candidate,
+                            warnings,
+                            thumbnail,
+                            request.selectedPage,
+                        )
+                    }
+                } finally {
+                    if (cleanWhiteboardApplyJob === currentCoroutineContext()[Job]) {
+                        cleanWhiteboardApplyJob = null
+                    }
+                }
+            }
+    }
+
+    private suspend fun restoreWhiteboardApplyFailure(
+        source: CachedScan,
+        candidate: CachedScan?,
+    ) {
+        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+        routeMutationMutex.withLock {
+            val current = mutableState.value as? ScreenState.Result ?: return@withLock
+            if (
+                current.scan.cached.baseName != source.baseName ||
+                    current.scan.cached.entryId != source.entryId ||
+                    current.documentActionState !=
+                    DocumentActionState.Processing(DocumentAction.CleanWhiteboard)
+            ) {
+                return@withLock
+            }
+            mutableState.value =
+                current.copy(
+                    documentActionState =
+                        DocumentActionState.Failed(UiMessage(R.string.document_action_failed)),
+                )
+        }
+    }
+
+    private suspend fun recoverCommittedWhiteboardApply(
+        candidate: CachedScan?,
+        warnings: List<UiMessage>,
+        thumbnail: Bitmap?,
+        selectedPage: Int,
+    ) =
+        withContext(NonCancellable) {
+            val recovered =
+                try {
+                    withContext(Dispatchers.IO) {
+                        candidate?.let {
+                            completeAppearanceCandidate(
+                                it,
+                                warnings + UiMessage(R.string.state_update_failed),
+                            )
+                        }
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            routeMutationMutex.withLock {
+                if (recovered != null) {
+                    publishResult(
+                        ScreenState.Result(
+                            scan = recovered,
+                            thumbnail = thumbnail,
+                            selectedPageIndex = selectedPage,
+                        ),
+                    )
+                } else {
+                    persistRoute(ROUTE_FAILURE)
+                    mutableState.value =
+                        ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                }
+            }
+        }
+
+    suspend fun findDocumentText(query: String): List<TextMatch> {
+        if (query.length !in 1..MAX_FIND_QUERY_CHARACTERS) return emptyList()
+        val current = mutableState.value as? ScreenState.Result ?: return emptyList()
+        val completed = current.documentActionState as? DocumentActionState.Completed
+            ?: return emptyList()
+        if (completed.output != DocumentActionOutput.FindReady) return emptyList()
+        val request = activeDocumentActionRequest ?: return emptyList()
+        if (
+            request.action != DocumentAction.FindText ||
+                !isDocumentActionRequestCurrent(request, current)
+        ) {
+            return emptyList()
+        }
+        val snapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId) ?: return emptyList()
+        val matches =
+            try {
+                withContext(Dispatchers.Default) { findText(snapshot, query) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: IllegalArgumentException) {
+                return emptyList()
+            }
+        val latest = mutableState.value as? ScreenState.Result ?: return emptyList()
+        return matches.takeIf {
+            activeDocumentActionRequest == request &&
+                isDocumentActionRequestCurrent(request, latest) &&
+                (latest.documentActionState as? DocumentActionState.Completed)?.output ==
+                DocumentActionOutput.FindReady &&
+                ocrSnapshotOwner.current(request.cacheId, request.entryId) === snapshot
+        } ?: emptyList()
+    }
+
+    suspend fun currentReadAloudText(): String? {
+        val current = mutableState.value as? ScreenState.Result ?: return null
+        val completed = current.documentActionState as? DocumentActionState.Completed ?: return null
+        val speech = completed.output as? DocumentActionOutput.Speech ?: return null
+        if (!speech.hasText) return null
+        val request = activeDocumentActionRequest ?: return null
+        if (
+            request.action != DocumentAction.ReadAloud ||
+                !isDocumentActionRequestCurrent(request, current)
+        ) {
+            return null
+        }
+        val snapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId) ?: return null
+        val text =
+            withContext(Dispatchers.Default) {
+                validatedSpeechText(documentText(snapshot).value)
+            }
+        val latest = mutableState.value as? ScreenState.Result ?: return null
+        return text?.takeIf {
+            activeDocumentActionRequest == request &&
+                isDocumentActionRequestCurrent(request, latest) &&
+                (latest.documentActionState as? DocumentActionState.Completed)?.output == speech &&
+                ocrSnapshotOwner.current(request.cacheId, request.entryId) === snapshot
+        }
+    }
+
+    private fun documentText(snapshot: DocumentOcrSnapshot): DocumentActionOutput.Text =
+        buildDocumentText(
+            snapshot.pageTexts,
+            pageLabel = { page ->
+                getApplication<Application>().getString(
+                    R.string.document_action_page,
+                    page,
+                )
+            },
+        )
 
     fun beginDocumentTextExport(): DocumentActionRequest? {
         val current = mutableState.value as? ScreenState.Result ?: return null
@@ -2039,6 +2632,7 @@ internal class ScanViewModel(
         }
         mutableState.value =
             current.copy(documentActionState = DocumentActionState.Completed(exporting.output))
+        clearOcrSnapshot(OcrSnapshotInvalidation.Cancellation)
         return DocumentTextExportDisposition.Accepted
     }
 
@@ -2108,18 +2702,15 @@ internal class ScanViewModel(
                             documentActionState = completedDocumentTextExport(exporting.output, saved),
                         )
                 }
-                documentActionJob = null
+                if (activeDocumentActionRequest == request) documentActionJob = null
             }
         return DocumentTextExportDisposition.Accepted
     }
 
     fun dismissDocumentAction() {
-        documentActionJob?.cancel()
-        documentActionJob = null
-        activeDocumentActionRequest = null
-        documentTextExportWriteStarted = false
-        nextDocumentActionGeneration()
         val current = mutableState.value as? ScreenState.Result ?: return
+        if (!documentActionDismissAllowed(current.documentActionState)) return
+        invalidateDocumentAction(OcrSnapshotInvalidation.Cancellation)
         if (current.documentActionState != null) {
             mutableState.value = current.copy(documentActionState = null)
         }
@@ -2149,78 +2740,13 @@ internal class ScanViewModel(
             generation = documentActionGeneration,
         )
 
-    private fun finishUnchangedAppearanceReview(
-        current: ScreenState.Result,
-        settings: AppSettings,
-    ) {
-        val cacheId = current.scan.cached.baseName
-        val entryId = current.scan.cached.entryId ?: return
-        val generation = beginRouteMutation()
-        mutableState.value =
-            current.copy(
-                appearanceApplyInProgress = true,
-                appearanceMessage = null,
-            )
-        appearanceApplyJob =
-            viewModelScope.launch {
-                try {
-                    val saved =
-                        withContext(Dispatchers.IO) {
-                            saveAutomaticReviewOutputs(current.scan, settings)
-                        }
-                    if (
-                        persistResultCheckpoint(generation, cacheId) !=
-                            ResultActivation.Applied
-                    ) {
-                        throw IOException("Appearance review state could not be cleared")
-                    }
-                    routeMutationMutex.withLock {
-                        val latest = mutableState.value as? ScreenState.Result
-                        if (
-                            routeMutationGate.isCurrent(generation) &&
-                                latest?.scan?.cached?.baseName == cacheId &&
-                                latest.scan.cached.entryId == entryId
-                        ) {
-                            publishResult(
-                                latest.copy(
-                                    scan = saved,
-                                    appearanceApplyInProgress = false,
-                                    appearanceReviewRequired = false,
-                                    appearanceMessage = null,
-                                ),
-                            )
-                        }
-                    }
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Exception) {
-                    if (routeMutationGate.isCurrent(generation)) {
-                        val latest = mutableState.value as? ScreenState.Result
-                        if (
-                            latest?.scan?.cached?.baseName == cacheId &&
-                                latest.scan.cached.entryId == entryId
-                        ) {
-                            mutableState.value =
-                                latest.copy(
-                                    appearanceApplyInProgress = false,
-                                    appearanceMessage =
-                                        UiMessage(R.string.appearance_apply_failed),
-                                )
-                        }
-                    }
-                } finally {
-                    appearanceApplyJob = null
-                }
-            }
-    }
-
-
     fun saveCurrentOutputs(target: SaveNowTarget) {
         val current = mutableState.value as? ScreenState.Result ?: return
         if (current.resultActionsBlocked) return
         val entryId = current.scan.cached.entryId ?: return
         if (target !in saveNowTargets(current.scan)) return
         val action = resultSaveGate.begin(current.scan.cached.baseName, entryId) ?: return
+        clearOcrSnapshot(OcrSnapshotInvalidation.ResultMutation)
         mutableState.value = current.copy(outputSaveInProgress = true)
         outputSaveJob =
             viewModelScope.launch {
@@ -2278,8 +2804,11 @@ internal class ScanViewModel(
     }
 
     fun navigateBack() {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         recentActionGate.invalidate()
         val current = mutableState.value
+        val safeShareState = (current as? ScreenState.Result)?.safeShareState
+        if (safeShareState != null) return
         if (current is ScreenState.Recent && current.deletionInProgress) return
         if (current is ScreenState.Processing && !current.canNavigateBack) {
             return
@@ -2451,15 +2980,16 @@ internal class ScanViewModel(
                 val activeCheckpoint = checkpoint.checkpoint
                 val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
                 val destination =
-                    initialNavigation(savedRoute, savedCacheId, activeCheckpoint?.cacheId)
+                    initialNavigation(
+                        savedRoute,
+                        savedCacheId,
+                        activeCheckpoint?.cacheId,
+                        restoredSafeShareActive || authoritativeWasProvisional,
+                    )
                 when (destination.route) {
                     RestoredRoute.Result -> {
                         val cacheId = checkNotNull(destination.cacheId)
-                        val result =
-                            loadCachedResult(
-                                cacheId,
-                                activeCheckpoint?.appearanceReviewEntryId,
-                            )
+                        val result = loadCachedResult(cacheId)
                         if (result == null) {
                             if (restoreOutputChange) invalidateOutputChange()
                             if (
@@ -2533,7 +3063,6 @@ internal class ScanViewModel(
 
     private suspend fun loadCachedResult(
         cacheId: String,
-        appearanceReviewEntryId: String? = null,
     ): ScreenState.Result? {
         if (!isSafeActiveResultCacheId(cacheId)) return null
         val savedResultCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
@@ -2564,9 +3093,6 @@ internal class ScanViewModel(
                     scan = saved,
                     thumbnail = thumbnail,
                     selectedPageIndex = pageIndex,
-                    appearanceReviewRequired =
-                        appearanceReviewEntryId != null &&
-                            saved.cached.entryId == appearanceReviewEntryId,
                 )
             }
         } catch (cancellation: CancellationException) {
@@ -2593,7 +3119,6 @@ internal class ScanViewModel(
     private suspend fun persistResultCheckpoint(
         generation: Long,
         cacheId: String,
-        appearanceReviewEntryId: String? = null,
     ): ResultActivation =
         routeMutationMutex.withLock {
             if (!routeMutationGate.isCurrent(generation)) return@withLock ResultActivation.Stale
@@ -2604,7 +3129,6 @@ internal class ScanViewModel(
                         settingsStore.saveActiveResult(
                             cacheId = cacheId,
                             expectedOwner = owner,
-                            appearanceReviewEntryId = appearanceReviewEntryId,
                         )
                     }
                 if (saved != AuthorityMutationResult.Applied) {
@@ -2612,18 +3136,18 @@ internal class ScanViewModel(
                 }
                 activeResultOwner =
                     owner.withCheckpoint(
-                        ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                        ActiveResultCheckpoint(cacheId),
                     )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (_: IOException) {
                 return@withLock recoverResultCheckpoint(
-                    ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                    ActiveResultCheckpoint(cacheId),
                     owner,
                 )
             } catch (_: IllegalArgumentException) {
                 return@withLock recoverResultCheckpoint(
-                    ActiveResultCheckpoint(cacheId, appearanceReviewEntryId),
+                    ActiveResultCheckpoint(cacheId),
                     owner,
                 )
             }
@@ -2650,6 +3174,7 @@ internal class ScanViewModel(
         }
 
     private fun publishResult(result: ScreenState.Result) {
+        clearOcrSnapshot(OcrSnapshotInvalidation.ResultMutation)
         val cacheId = result.scan.cached.baseName
         val request = outputChangeGate.active
         val outputChangeRestored =
@@ -2674,6 +3199,7 @@ internal class ScanViewModel(
     }
 
     private fun refreshRecentScreen(message: UiMessage? = null) {
+        if (cleanWhiteboardApplyJob?.isActive == true) return
         val generation = beginRouteMutation()
         recentJob =
             viewModelScope.launch {
@@ -2736,12 +3262,7 @@ internal class ScanViewModel(
         keepVisualMarkEditor: Boolean = false,
         keepOutputChange: Boolean = false,
     ): Long {
-        appearanceApplyJob?.cancel()
-        documentActionJob?.cancel()
-        documentActionJob = null
-        activeDocumentActionRequest = null
-        documentTextExportWriteStarted = false
-        nextDocumentActionGeneration()
+        invalidateDocumentAction(OcrSnapshotInvalidation.RouteMutation)
         visualMarkTemplateJob?.cancel()
         if (!keepVisualMarkEditor) {
             visualMarkApplyJob?.cancel()
@@ -2760,6 +3281,30 @@ internal class ScanViewModel(
         recentJob?.cancel()
         resultPreviewJob?.cancel()
         return routeMutationGate.begin()
+    }
+
+    private fun invalidateDocumentAction(reason: OcrSnapshotInvalidation) {
+        (mutableState.value as? ScreenState.Result)
+            ?.documentActionState
+            .recycleWhiteboardPreview()
+        documentActionJob?.cancel()
+        documentActionJob = null
+        activeDocumentActionRequest = null
+        activeSafeShareRequest = null
+        activeCleanWhiteboardRequest = null
+        savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = false
+        documentTextExportWriteStarted = false
+        nextDocumentActionGeneration()
+        clearOcrSnapshot(reason)
+    }
+
+    private fun clearOcrSnapshot(reason: OcrSnapshotInvalidation) {
+        ocrSnapshotOwner.invalidate(reason)
+    }
+
+    override fun onCleared() {
+        invalidateDocumentAction(OcrSnapshotInvalidation.Cleared)
+        super.onCleared()
     }
 
     private fun beginVisualMarkTemplateMutation(
@@ -2885,6 +3430,30 @@ internal class ScanViewModel(
         }
     }
 
+    private suspend fun restoreSafeShareApplyFailure(
+        source: CachedScan,
+        generation: Long,
+        candidate: CachedScan?,
+    ) {
+        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) return@withLock
+            val current = mutableState.value as? ScreenState.Result ?: return@withLock
+            if (
+                current.scan.cached.baseName != source.baseName ||
+                    current.scan.cached.entryId != source.entryId ||
+                    current.safeShareState != SafeShareState.Applying
+            ) {
+                return@withLock
+            }
+            mutableState.value =
+                current.copy(
+                    safeShareState =
+                        SafeShareState.Failed(UiMessage(R.string.document_action_failed)),
+                )
+        }
+    }
+
     private suspend fun discardAppearanceVariantUnlessActive(variant: CachedScan) {
         withContext(NonCancellable + Dispatchers.IO) {
             val isActive =
@@ -2921,25 +3490,6 @@ internal class ScanViewModel(
                 false
             }
         }
-
-    private fun commitAppliedAppearance(
-        normalized: ScanAppearanceSettings,
-        pdfSizeTarget: PdfSizeTarget,
-        targetCacheId: String,
-    ): AppearanceCommitResult {
-        val owner = activeResultOwner ?: return AppearanceCommitResult.Stale
-        val result =
-            settingsStore.saveAppliedAppearanceAndActiveResult(
-                normalized,
-                pdfSizeTarget,
-                targetCacheId,
-                owner,
-            )
-        if (result == AppearanceCommitResult.Applied) {
-            activeResultOwner = owner.withCheckpoint(ActiveResultCheckpoint(targetCacheId))
-        }
-        return result
-    }
 
     private suspend fun saveCurrentOutputs(
         scan: SavedScan,

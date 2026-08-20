@@ -103,7 +103,7 @@ source, release artifacts, and real-device workflows.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.
-- No account, ads, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
+- No account, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
 - No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
 
 ## Install

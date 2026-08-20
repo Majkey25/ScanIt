@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -8,8 +9,10 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -19,6 +22,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RecentScanTest {
+    @Test
+    fun scanInputCopyRejectsEmptyAndOversizedProviderStreams() {
+        val exact = ByteArrayOutputStream()
+
+        assertEquals(
+            4L,
+            copyBoundedInput(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), exact, 4L),
+        )
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4), exact.toByteArray())
+        assertThrows(IOException::class.java) {
+            copyBoundedInput(ByteArrayInputStream(ByteArray(5)), ByteArrayOutputStream(), 4L)
+        }
+        assertThrows(IOException::class.java) {
+            copyBoundedInput(ByteArrayInputStream(ByteArray(0)), ByteArrayOutputStream(), 4L)
+        }
+        assertThrows(CancellationException::class.java) {
+            copyBoundedInput(
+                ByteArrayInputStream(byteArrayOf(1)),
+                ByteArrayOutputStream(),
+                4L,
+                isCancelled = { true },
+            )
+        }
+    }
+
     @Test
     fun provisionalCreateMarkerIsBoundedAtomicAndAmbiguousRecoveryBlocksMutation() =
         withShareRoot { root ->
@@ -1182,6 +1210,354 @@ class RecentScanTest {
             assertTrue(cache.isProvisional(finalId))
             assertEquals(finalId, cache.open(finalId)?.baseName)
             assertFalse(File(root, ".pending-recovery-$finalId").exists())
+        }
+
+    @Test
+    fun protectedPageWriterUsesRenderedPixelsForFreshIdenticalSourceAndPagePairs() =
+        withShareRoot { root ->
+            val current = File(root, "current").apply { assertTrue(mkdir()) }
+            val pages =
+                (1..2).map { page ->
+                    File(current, "page-$page.jpg").apply {
+                        writeBytes(byteArrayOf(page.toByte(), 40))
+                    }
+                }
+            val originals = pages.map(File::readBytes)
+            val work = File(root, "work").apply { assertTrue(mkdir()) }
+            val region = NormalizedRect(0.25f, 0.25f, 0.5f, 0.5f)
+            val calls = mutableListOf<Pair<String, Int>>()
+
+            val protected =
+                writeRedactedPages(
+                    renderedPages = pages,
+                    workDirectory = work,
+                    derivedBaseName = "Scan_protected",
+                    regionsByPage = mapOf(0 to listOf(region)),
+                    isCancelled = { false },
+                ) { source, destination, regions, isCancelled ->
+                    assertFalse(isCancelled())
+                    calls += source.name to regions.size
+                    destination.writeBytes(
+                        source.readBytes().map { byte -> (byte + 10).toByte() }.toByteArray(),
+                    )
+                    JpegDimensions(80, 80)
+                }
+
+            assertEquals(listOf("page-1.jpg" to 1, "page-2.jpg" to 0), calls)
+            assertEquals(
+                listOf("Scan_protected_source_01.jpg", "Scan_protected_source_02.jpg"),
+                protected.sourcePages.map(File::getName),
+            )
+            assertEquals(
+                listOf("Scan_protected_01.jpg", "Scan_protected_02.jpg"),
+                protected.renderedPages.map(File::getName),
+            )
+            protected.sourcePages.indices.forEach { index ->
+                assertArrayEquals(
+                    protected.sourcePages[index].readBytes(),
+                    protected.renderedPages[index].readBytes(),
+                )
+                assertArrayEquals(originals[index], pages[index].readBytes())
+                assertFalse(originals[index].contentEquals(protected.sourcePages[index].readBytes()))
+            }
+            assertEquals(listOf(JpegDimensions(80, 80), JpegDimensions(80, 80)), protected.dimensions)
+        }
+
+    @Test
+    fun protectedPageCancellationRemovesEveryDerivedPixelFileAndKeepsOriginals() =
+        withShareRoot { root ->
+            val current = File(root, "current").apply { assertTrue(mkdir()) }
+            val pages =
+                (1..2).map { page ->
+                    File(current, "page-$page.jpg").apply { writeBytes(byteArrayOf(page.toByte())) }
+                }
+            val originals = pages.map(File::readBytes)
+            val work = File(root, "work").apply { assertTrue(mkdir()) }
+            var rendered = 0
+
+            assertThrows(CancellationException::class.java) {
+                writeRedactedPages(
+                    renderedPages = pages,
+                    workDirectory = work,
+                    derivedBaseName = "Scan_cancelled",
+                    regionsByPage = mapOf(0 to listOf(NormalizedRect(0f, 0f, 0.5f, 0.5f))),
+                    isCancelled = { false },
+                ) { _, destination, _, _ ->
+                    destination.writeBytes(byteArrayOf(9))
+                    if (++rendered == 2) throw CancellationException("cancelled")
+                    JpegDimensions(80, 80)
+                }
+            }
+
+            assertEquals(emptyList<File>(), work.listFiles().orEmpty().toList())
+            pages.indices.forEach { index -> assertArrayEquals(originals[index], pages[index].readBytes()) }
+        }
+
+    @Test
+    fun protectedPdfEmbedsOnlyProtectedJpegStreams() =
+        withShareRoot { root ->
+            File(root, "original.jpg").writeBytes(
+                byteArrayOf(0xff.toByte(), 0xd8.toByte()) +
+                    "ORIGINAL_SECRET_PIXELS".toByteArray() +
+                    byteArrayOf(0xff.toByte(), 0xd9.toByte()),
+            )
+            val protectedPages =
+                listOf("PROTECTED_PAGE_ONE", "PROTECTED_PAGE_TWO").mapIndexed { index, marker ->
+                    File(root, "protected-$index.jpg").apply {
+                        writeBytes(
+                            byteArrayOf(0xff.toByte(), 0xd8.toByte()) +
+                                marker.toByteArray() +
+                                byteArrayOf(0xff.toByte(), 0xd9.toByte()),
+                        )
+                    }
+                }
+            val output = File(root, "protected.pdf")
+
+            val result =
+                buildProtectedScanPdf(
+                    output,
+                    protectedPages,
+                    listOf(JpegDimensions(80, 80), JpegDimensions(80, 80)),
+                    PdfSizeTarget.Original,
+                    isCancelled = { false },
+                )
+
+            val pdf = output.readText(Charsets.ISO_8859_1)
+            assertEquals(PdfEncoding.Jpeg, result.encoding)
+            assertTrue(pdf.contains("PROTECTED_PAGE_ONE"))
+            assertTrue(pdf.contains("PROTECTED_PAGE_TWO"))
+            assertFalse(pdf.contains("ORIGINAL_SECRET_PIXELS"))
+            assertEquals(2, "/Subtype /Image".toRegex().findAll(pdf).count())
+        }
+
+    @Test
+    fun selectedWhiteboardAndLaterPdfReplacementUseOnlyFlattenedRenderedPixels() =
+        withShareRoot { root ->
+            val parentAppearance =
+                ScanAppearanceSettings(
+                    colorMode = ScanColorMode.Grayscale,
+                    grayscaleIntensity = 73,
+                    shadows = 41,
+                )
+            val requested = parentAppearance.copy(colorMode = ScanColorMode.Whiteboard)
+            val stored =
+                appearanceVariantStoredSettings(
+                    current = parentAppearance,
+                    requested = requested,
+                    selectedPageIndex = 1,
+                )
+            assertEquals(googleScannerAppearanceSettings(), stored)
+
+            fun page(name: String): File =
+                File(root, "$name.jpg").apply {
+                    outputStream().use { output ->
+                        output.write(byteArrayOf(0xff.toByte(), 0xd8.toByte()))
+                        output.write(name.toByteArray())
+                        output.write(ByteArray(140_000) { 0x41 })
+                        output.write(byteArrayOf(0xff.toByte(), 0xd9.toByte()))
+                    }
+                }
+
+            val originalSources = listOf(page("ORIGINAL_SOURCE"), page("STALE_FILTER_OUTPUT"))
+            val pages = listOf(page("CURRENT_RENDERED"), page("WHITEBOARD_RENDERED"))
+            val dimensions = List(2) { JpegDimensions(4_000, 3_000) }
+            val samples = mutableListOf<Pair<String, Int>>()
+            val renderer: (File, File, Int) -> RenderedJpeg = { source, destination, sample ->
+                samples += source.nameWithoutExtension to sample
+                destination.outputStream().use { output ->
+                    output.write(byteArrayOf(0xff.toByte(), 0xd8.toByte()))
+                    output.write("${source.nameWithoutExtension}_S$sample".toByteArray())
+                    output.write(ByteArray(1_000) { 0x42 })
+                    output.write(byteArrayOf(0xff.toByte(), 0xd9.toByte()))
+                }
+                RenderedJpeg(2_000, 1_500, sample, destination.length())
+            }
+
+            val initialOutput = File(root, "selected-whiteboard.pdf")
+            val initial =
+                buildAppearanceVariantPdf(
+                    output = initialOutput,
+                    sourcePages = originalSources,
+                    renderedPages = pages,
+                    renderedDimensions = dimensions,
+                    appearance = requested.selected(),
+                    target = PdfSizeTarget.Kb200,
+                    selectedPageIndex = 1,
+                    isCancelled = { false },
+                    renderFlattenedSampledPage = renderer,
+                )
+            val replacementOutput = File(root, "replacement.pdf")
+            val replacement =
+                buildReplacementScanPdf(
+                    output = replacementOutput,
+                    sourcePages = originalSources,
+                    renderedPages = pages,
+                    renderedDimensions = dimensions,
+                    appearance = stored.selected(),
+                    target = PdfSizeTarget.Kb200,
+                    isCancelled = { false },
+                    renderFlattenedSampledPage = renderer,
+                )
+            val initialPdf = initialOutput.readText(Charsets.ISO_8859_1)
+            val replacementPdf = replacementOutput.readText(Charsets.ISO_8859_1)
+
+            assertEquals(2, initial.sampleMultiplier)
+            assertEquals(2, replacement.sampleMultiplier)
+            assertEquals(
+                listOf(
+                    "CURRENT_RENDERED" to 2,
+                    "WHITEBOARD_RENDERED" to 2,
+                    "CURRENT_RENDERED" to 2,
+                    "WHITEBOARD_RENDERED" to 2,
+                ),
+                samples,
+            )
+            listOf(initialPdf, replacementPdf).forEach { pdf ->
+                assertTrue(pdf.contains("CURRENT_RENDERED_S2"))
+                assertTrue(pdf.contains("WHITEBOARD_RENDERED_S2"))
+                assertFalse(pdf.contains("ORIGINAL_SOURCE"))
+                assertFalse(pdf.contains("STALE_FILTER_OUTPUT"))
+            }
+        }
+
+    @Test
+    fun protectedCheckpointActivationSurvivesInterruptionAndNeverDeletesItsParent() =
+        withShareRoot { root ->
+            val lineageId = "Scan_lineage"
+            val parentId = "Scan_parent"
+            val parentEntryId = "00000000-0000-0000-0000-000000000001"
+            val parent =
+                createEntry(root, parentId, sourcePageCount = 1).apply {
+                    initializeOutputMetadata(
+                        this,
+                        parentId,
+                        1,
+                        100L,
+                        parentEntryId,
+                        PdfSizeTarget.Original,
+                    )
+                    writeLegacyAppearanceMetadata(this, lineageId)
+                    assertTrue(setLastModified(100L))
+                }
+            (1..7).forEach { index -> createManagedEntry(root, "Scan_old_$index", index.toLong()) }
+            val candidateId = "Scan_protected"
+            val pending =
+                createEntry(
+                    root,
+                    ".pending-protected",
+                    sourcePageCount = 1,
+                    fileBaseName = candidateId,
+                ).apply {
+                    writeScanAppearanceMetadata(
+                        this,
+                        ScanAppearanceSettings(),
+                        PdfSizeTarget.Original,
+                        lineageId,
+                        parentId,
+                        parentEntryId,
+                        restoreSettingsOnActivation = false,
+                    )
+                    initializeOutputMetadata(
+                        this,
+                        candidateId,
+                        1,
+                        200L,
+                        pdfSizeTarget = PdfSizeTarget.Original,
+                    )
+                    assertTrue(File(this, PRESERVE_PARENT_CACHE_MARKER).createNewFile())
+                }
+            RecentScanCache(root).publishProvisional(pending, File(root, candidateId))
+
+            var interrupted = false
+            assertThrows(IOException::class.java) {
+                RecentScanCache(
+                    root,
+                    moveEntry = { source, target ->
+                        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+                        if (!interrupted) {
+                            interrupted = true
+                            throw IOException("activation interrupted after move")
+                        }
+                    },
+                ).activateCheckpointProvisional(candidateId, maxEntries = 8)
+            }
+
+            assertTrue(parent.isDirectory)
+            assertTrue(RecentScanCache(root).isProvisional(candidateId))
+            val activated = RecentScanCache(root).activateCheckpointProvisional(candidateId, maxEntries = 8)
+            val outputs = checkNotNull(readOutputMetadata(File(root, candidateId), candidateId, 1))
+            assertEquals(candidateId, activated.baseName)
+            assertFalse(RecentScanCache(root).isProvisional(candidateId))
+            assertTrue(parent.isDirectory)
+            assertEquals(OUTPUT_METADATA_VERSION, outputs.version)
+            assertNull(outputs.pdf)
+            assertEquals(emptyList<ImageOutputRef>(), outputs.images)
+            assertEquals(8, RecentScanCache(root).list(maxEntries = 8).size)
+        }
+
+    @Test
+    fun protectedActivationKeepsParentDurableMetadataAndExternalBytesUnchanged() =
+        withShareRoot { root ->
+            val durable = File(root.parentFile, "protected-parent-output.pdf").apply {
+                writeBytes("DURABLE_PARENT".toByteArray())
+            }
+            try {
+                val lineageId = "Scan_lineage"
+                val parentId = "Scan_parent"
+                val parentEntryId = "00000000-0000-0000-0000-000000000001"
+                val parent =
+                    createEntry(root, parentId, sourcePageCount = 1).apply {
+                        initializeOutputMetadata(
+                            this,
+                            parentId,
+                            1,
+                            100L,
+                            parentEntryId,
+                            PdfSizeTarget.Original,
+                        )
+                        rewriteOutputMetadata(this, parentId, parentEntryId, 1) {
+                            it.copy(pdf = exactPdf("content://media/external/downloads/1"))
+                        }
+                        writeLegacyAppearanceMetadata(this, lineageId)
+                    }
+                val parentMetadata = File(parent, OUTPUT_METADATA_FILE_NAME).readBytes()
+                val durableBytes = durable.readBytes()
+                val candidateId = "Scan_protected"
+                val pending =
+                    createEntry(
+                        root,
+                        ".pending-protected",
+                        sourcePageCount = 1,
+                        fileBaseName = candidateId,
+                    ).apply {
+                        writeScanAppearanceMetadata(
+                            this,
+                            ScanAppearanceSettings(),
+                            PdfSizeTarget.Original,
+                            lineageId,
+                            parentId,
+                            parentEntryId,
+                            restoreSettingsOnActivation = false,
+                        )
+                        initializeOutputMetadata(
+                            this,
+                            candidateId,
+                            1,
+                            200L,
+                            pdfSizeTarget = PdfSizeTarget.Original,
+                        )
+                        assertTrue(File(this, PRESERVE_PARENT_CACHE_MARKER).createNewFile())
+                    }
+                RecentScanCache(root).publishProvisional(pending, File(root, candidateId))
+
+                RecentScanCache(root).activateCheckpointProvisional(candidateId)
+
+                assertTrue(parent.isDirectory)
+                assertArrayEquals(parentMetadata, File(parent, OUTPUT_METADATA_FILE_NAME).readBytes())
+                assertArrayEquals(durableBytes, durable.readBytes())
+            } finally {
+                assertTrue(durable.delete())
+            }
         }
 
     @Test

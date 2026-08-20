@@ -61,15 +61,8 @@ internal enum class AuthorityMutationResult {
 internal fun settingsSaveApplied(result: AuthorityMutationResult): Boolean =
     result == AuthorityMutationResult.Applied
 
-internal enum class AppearanceCommitResult {
-    Applied,
-    NotApplied,
-    Stale,
-}
-
 internal data class ActiveResultCheckpoint(
     val cacheId: String,
-    val appearanceReviewEntryId: String? = null,
 )
 
 internal data class ActiveResultOwner(
@@ -89,21 +82,11 @@ internal data class ActiveResultAuthoritySnapshot(
 internal fun isSafeActiveResultCacheId(cacheId: String): Boolean =
     cacheId.length <= MAX_ACTIVE_RESULT_CACHE_ID_LENGTH && isSafeCacheId(cacheId)
 
-internal fun encodeActiveResultCheckpoint(
-    cacheId: String,
-    appearanceReviewEntryId: String? = null,
-): String {
+internal fun encodeActiveResultCheckpoint(cacheId: String): String {
     require(isSafeActiveResultCacheId(cacheId)) {
         "Active result cache ID is unsafe"
     }
-    require(appearanceReviewEntryId == null || isCanonicalUuid(appearanceReviewEntryId)) {
-        "Appearance review entry ID is unsafe"
-    }
-    return if (appearanceReviewEntryId == null) {
-        "$ACTIVE_RESULT_CHECKPOINT_V1_PREFIX$cacheId"
-    } else {
-        "$ACTIVE_RESULT_CHECKPOINT_V3_PREFIX$cacheId:$appearanceReviewEntryId"
-    }
+    return "$ACTIVE_RESULT_CHECKPOINT_V1_PREFIX$cacheId"
 }
 
 internal fun decodeActiveResultCheckpointPayload(value: String?): ActiveResultCheckpoint? {
@@ -112,8 +95,8 @@ internal fun decodeActiveResultCheckpointPayload(value: String?): ActiveResultCh
         val fields = value.split(':')
         if (fields.size != 3 || fields[0] != "3") return null
         val cacheId = fields[1].takeIf(::isSafeActiveResultCacheId) ?: return null
-        val entryId = fields[2].takeIf(::isCanonicalUuid) ?: return null
-        return ActiveResultCheckpoint(cacheId, entryId)
+        fields[2].takeIf(::isCanonicalUuid) ?: return null
+        return ActiveResultCheckpoint(cacheId)
     }
     if (value.startsWith(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)) {
         val cacheId = value.removePrefix(ACTIVE_RESULT_CHECKPOINT_V1_PREFIX)
@@ -357,37 +340,6 @@ internal class SettingsStore(
     }
 
     @Throws(IOException::class)
-    internal fun saveAppliedAppearanceAndActiveResult(
-        appearance: ScanAppearanceSettings,
-        pdfSizeTarget: PdfSizeTarget,
-        cacheId: String,
-        expectedOwner: ActiveResultOwner,
-    ): AppearanceCommitResult =
-        withActiveResultAuthority {
-            if (!ownerMatchesLocked(expectedOwner)) {
-                return@withActiveResultAuthority AppearanceCommitResult.Stale
-            }
-            val normalized = normalizeAppearanceSettings(appearance)
-            val target = ActiveResultCheckpoint(cacheId)
-            val checkpoint = encodeActiveResultCheckpoint(cacheId)
-            preferences
-                .edit()
-                .putAppearance(normalized)
-                .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
-                .putString(KEY_ACTIVE_RESULT_CHECKPOINT, checkpoint)
-                .commit()
-            val storedCheckpoint = activeResultCheckpointLocked()
-            val loaded = load()
-            when {
-                storedCheckpoint == target &&
-                    loaded.appearance == normalized &&
-                    loaded.pdfSizeTarget == pdfSizeTarget -> AppearanceCommitResult.Applied
-                storedCheckpoint == expectedOwner.checkpoint -> AppearanceCommitResult.NotApplied
-                else -> throw IOException("Applied appearance checkpoint is ambiguous")
-            }
-        }
-
-    @Throws(IOException::class)
     internal fun restoreAppearanceAuthority(
         appearance: ScanAppearanceSettings,
         pdfSizeTarget: PdfSizeTarget,
@@ -463,13 +415,12 @@ internal class SettingsStore(
     internal fun saveActiveResult(
         cacheId: String,
         expectedOwner: ActiveResultOwner,
-        appearanceReviewEntryId: String? = null,
     ): AuthorityMutationResult =
         withActiveResultAuthority {
             if (!ownerMatchesLocked(expectedOwner)) {
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
-            val encoded = encodeActiveResultCheckpoint(cacheId, appearanceReviewEntryId)
+            val encoded = encodeActiveResultCheckpoint(cacheId)
             preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
             val verified =
                 readPreferenceOrDefault<String?>(null) {

@@ -74,7 +74,7 @@ the Play developer account.
 > - monochrome light and dark interface
 > - system, English, Czech, German, Spanish, and Simplified Chinese language selection
 >
-> ScanIt has no ads, subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
+> ScanIt has no subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
 >
 > Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, ScanIt keeps the smallest readable result and shows its actual size.
 >
@@ -120,7 +120,7 @@ the Play developer account.
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický, český, německý, španělský a zjednodušený čínský jazyk
 >
-> ScanIt neobsahuje reklamy, předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
+> ScanIt neobsahuje předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
 >
 > Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, ScanIt ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
 >

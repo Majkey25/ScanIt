@@ -93,7 +93,6 @@ class VisualMarkApplyTest {
         assertTrue(result.resultActionsBlocked)
         assertFalse(result.copy(visualMarkEditor = null).resultActionsBlocked)
         assertTrue(result.copy(visualMarkEditor = null, outputSaveInProgress = true).resultActionsBlocked)
-        assertTrue(result.copy(visualMarkEditor = null, appearanceApplyInProgress = true).resultActionsBlocked)
     }
 
     @Test

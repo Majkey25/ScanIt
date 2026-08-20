@@ -37,11 +37,55 @@ private const val PDF_MIME_TYPE = "application/pdf"
 private const val JPEG_MIME_TYPE = "image/jpeg"
 private const val PNG_MIME_TYPE = "image/png"
 private const val MAX_SHARE_CACHE_SCANS = 8
+private const val MAX_SCAN_SOURCE_PAGE_BYTES = 128L * 1024L * 1024L
+private const val MAX_SCAN_SOURCE_TOTAL_BYTES = 512L * 1024L * 1024L
 private const val RECOVERY_PENDING_PREFIX = ".pending-recovery-"
 private const val DELETE_PENDING_PREFIX = ".pending-delete-"
 private const val REMOVE_PENDING_PREFIX = ".pending-remove-"
 private const val COMMITTED_PRUNE_PREFIX = ".committed-prune-"
 internal val storageTransactionLock = ReentrantLock()
+
+internal data class AppearanceVariantPagePlan(
+    val applyToSource: Boolean,
+    val applyToRendered: Boolean,
+)
+
+internal fun appearanceVariantPagePlan(
+    pageCount: Int,
+    selectedPageIndex: Int?,
+): List<AppearanceVariantPagePlan> {
+    require(pageCount in 1..MAX_SCAN_PAGES) { "Appearance page count is invalid" }
+    require(selectedPageIndex == null || selectedPageIndex in 0 until pageCount) {
+        "Appearance page is invalid"
+    }
+    return List(pageCount) { pageIndex ->
+        when {
+            selectedPageIndex == null -> AppearanceVariantPagePlan(false, true)
+            pageIndex == selectedPageIndex -> AppearanceVariantPagePlan(true, false)
+            else -> AppearanceVariantPagePlan(false, false)
+        }
+    }
+}
+
+internal fun appearanceVariantStoredSettings(
+    current: ScanAppearanceSettings,
+    requested: ScanAppearanceSettings,
+    selectedPageIndex: Int?,
+): ScanAppearanceSettings =
+    if (selectedPageIndex == null) {
+        requested
+    } else {
+        current.copy(
+            colorMode = ScanColorMode.Natural,
+            naturalIntensity = 0,
+            colorIntensity = 0,
+            lightTextIntensity = 0,
+            grayscaleIntensity = 0,
+            blackWhiteIntensity = 0,
+            whiteboardIntensity = 0,
+            shadows = 0,
+        )
+    }
 
 internal inline fun <T> withStorageTransaction(operation: () -> T): T =
     storageTransactionLock.withLock(operation)
@@ -84,6 +128,7 @@ internal fun requireCanonicalOutputTreeUri(tree: Uri): Uri {
 }
 
 private const val PROVISIONAL_CACHE_MARKER = ".provisional"
+internal const val PRESERVE_PARENT_CACHE_MARKER = ".preserve-parent"
 private const val ACTIVATION_ROLLBACK_MARKER = ".activation-rollback"
 private val MEDIA_IDENTITY_PROJECTION =
     arrayOf(
@@ -339,6 +384,12 @@ internal data class CachedScanBuild(
     val pdf: ScanPdfBuildResult,
 )
 
+internal data class ProtectedScanPages(
+    val sourcePages: List<File>,
+    val renderedPages: List<File>,
+    val dimensions: List<JpegDimensions>,
+)
+
 internal fun scanPageFileName(
     baseName: String,
     pageNumber: Int,
@@ -444,6 +495,190 @@ internal fun writeMarkedSourcePages(
     }
 }
 
+internal fun writeRedactedPages(
+    renderedPages: List<File>,
+    workDirectory: File,
+    derivedBaseName: String,
+    regionsByPage: Map<Int, List<NormalizedRect>>,
+    isCancelled: () -> Boolean,
+    renderPage: (File, File, List<NormalizedRect>, () -> Boolean) -> JpegDimensions =
+        ::renderRedactedJpeg,
+): ProtectedScanPages {
+    require(renderedPages.size in 1..MAX_SCAN_PAGES) { "Protected scan page count is invalid" }
+    require(isSafeCacheId(derivedBaseName)) { "Protected scan name is unsafe" }
+    require(
+        regionsByPage.isNotEmpty() &&
+            regionsByPage.all { (page, regions) ->
+                page in renderedPages.indices &&
+                    regions.isNotEmpty() &&
+                    regions.size <= MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE
+            },
+    ) { "Protected scan regions are invalid" }
+    if (!workDirectory.isDirectory) throw IOException("Protected scan work directory is unavailable")
+    renderedPages.forEach { page ->
+        if (!page.isFile || page.length() <= 0L) {
+            throw IOException("Protected scan rendered page is unavailable")
+        }
+    }
+    val sources = ArrayList<File>(renderedPages.size)
+    val rendered = ArrayList<File>(renderedPages.size)
+    val dimensions = ArrayList<JpegDimensions>(renderedPages.size)
+    val created = ArrayList<File>(renderedPages.size * 2)
+    try {
+        renderedPages.forEachIndexed { index, page ->
+            if (isCancelled()) throw CancellationException("Protected scan creation cancelled")
+            val source = File(workDirectory, scanSourcePageFileName(derivedBaseName, index + 1))
+            if (source.exists()) throw IOException("Protected scan source target already exists")
+            created += source
+            val bounds = renderPage(page, source, regionsByPage[index].orEmpty(), isCancelled)
+            if (
+                bounds.width <= 0 ||
+                    bounds.height <= 0 ||
+                    !source.isFile ||
+                    source.length() <= 0L
+            ) {
+                throw IOException("Protected scan source page is incomplete")
+            }
+            if (isCancelled()) throw CancellationException("Protected scan creation cancelled")
+            val output = File(workDirectory, scanPageFileName(derivedBaseName, index + 1))
+            created += output
+            copyDerivedSourcePage(source, output)
+            FileOutputStream(output, true).use { stream -> stream.fd.sync() }
+            if (isCancelled()) throw CancellationException("Protected scan creation cancelled")
+            sources += source
+            rendered += output
+            dimensions += bounds
+        }
+        return ProtectedScanPages(sources, rendered, dimensions)
+    } catch (failure: Throwable) {
+        created.asReversed().forEach { file ->
+            try {
+                Files.deleteIfExists(file.toPath())
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
+            }
+        }
+        throw failure
+    }
+}
+
+internal fun buildProtectedScanPdf(
+    output: File,
+    pages: List<File>,
+    dimensions: List<JpegDimensions>,
+    target: PdfSizeTarget,
+    isCancelled: () -> Boolean,
+    renderSampledPage: ((File, File, Int) -> RenderedJpeg)? = null,
+): ScanPdfBuildResult {
+    require(pages.isNotEmpty() && pages.size == dimensions.size) {
+        "Protected PDF pages are incomplete"
+    }
+    val buildPages =
+        pages.mapIndexed { index, page ->
+            val bounds = dimensions[index]
+            require(bounds.width > 0 && bounds.height > 0) {
+                "Protected PDF page dimensions are invalid"
+            }
+            val baseSample = appearanceDecodeSampleSize(bounds.width, bounds.height)
+            ScanPdfBuildPage(
+                longestEdge = maxOf(bounds.width, bounds.height),
+                renderJpeg = { workingDirectory, sampleMultiplier ->
+                    if (sampleMultiplier == 1) {
+                        JpegPdfPage(page, bounds.width, bounds.height)
+                    } else {
+                        val destination = File(workingDirectory, "page-${index + 1}.jpg")
+                        val sampleSize =
+                            relativePdfSourceSampleSize(baseSample, sampleMultiplier)
+                        val rendered =
+                            renderSampledPage?.invoke(page, destination, sampleSize)
+                                ?: ScanAppearanceRenderer.renderJpeg(
+                                    source = page,
+                                    destination = destination,
+                                    appearance =
+                                        ScanAppearance(
+                                            ScanColorMode.Natural,
+                                            intensity = 0,
+                                            shadows = 0,
+                                        ),
+                                    minimumSampleSize = sampleSize,
+                                    isCancelled = isCancelled,
+                                )
+                        JpegPdfPage(
+                            destination,
+                            rendered.width,
+                            rendered.height,
+                            physicalWidthPixels = bounds.width,
+                            physicalHeightPixels = bounds.height,
+                        )
+                    }
+                },
+                createBitonal = { error("Protected PDF does not use bitonal encoding") },
+            )
+        }
+    return buildScanPdf(output, buildPages, target, bitonalEligible = false, isCancelled)
+}
+
+internal fun buildAppearanceVariantPdf(
+    output: File,
+    sourcePages: List<File>,
+    renderedPages: List<File>,
+    renderedDimensions: List<JpegDimensions>,
+    appearance: ScanAppearance,
+    target: PdfSizeTarget,
+    selectedPageIndex: Int?,
+    isCancelled: () -> Boolean,
+    renderFlattenedSampledPage: ((File, File, Int) -> RenderedJpeg)? = null,
+): ScanPdfBuildResult =
+    if (selectedPageIndex == null) {
+        buildScanPdfFromPages(
+            output = output,
+            sourcePages = sourcePages,
+            renderedPages = renderedPages,
+            appearance = appearance,
+            target = target,
+            isCancelled = isCancelled,
+        )
+    } else {
+        buildProtectedScanPdf(
+            output = output,
+            pages = renderedPages,
+            dimensions = renderedDimensions,
+            target = target,
+            isCancelled = isCancelled,
+            renderSampledPage = renderFlattenedSampledPage,
+        )
+    }
+
+internal fun buildReplacementScanPdf(
+    output: File,
+    sourcePages: List<File>,
+    renderedPages: List<File>,
+    renderedDimensions: List<JpegDimensions>,
+    appearance: ScanAppearance,
+    target: PdfSizeTarget,
+    isCancelled: () -> Boolean,
+    renderFlattenedSampledPage: ((File, File, Int) -> RenderedJpeg)? = null,
+): ScanPdfBuildResult =
+    if (appearance == googleScannerAppearanceSettings().selected()) {
+        buildProtectedScanPdf(
+            output = output,
+            pages = renderedPages,
+            dimensions = renderedDimensions,
+            target = target,
+            isCancelled = isCancelled,
+            renderSampledPage = renderFlattenedSampledPage,
+        )
+    } else {
+        buildScanPdfFromPages(
+            output = output,
+            sourcePages = sourcePages,
+            renderedPages = renderedPages,
+            appearance = appearance,
+            target = target,
+            isCancelled = isCancelled,
+        )
+    }
+
 internal fun copyDerivedSourcePage(source: File, target: File) {
     if (!source.isFile || source.length() <= 0L) {
         throw IOException("Derived scan source page is unavailable")
@@ -471,6 +706,7 @@ private data class ParsedCacheEntry(
     val outputs: OutputMetadata?,
     val outputMetadataReadResult: OutputMetadataReadResult,
     val provisional: Boolean,
+    val preserveParent: Boolean,
 )
 
 private fun readCacheOutputMetadata(
@@ -822,6 +1058,9 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     }
     val parentCacheId = candidate.cached.parentCacheId
     val parentEntryId = candidate.cached.parentEntryId
+    if (candidate.preserveParent && (parentCacheId == null || parentEntryId == null)) {
+        throw IOException("Preserved provisional cache parent is unavailable")
+    }
     if (parentCacheId == null && parentEntryId == null) {
         return activateProvisionalCacheEntryInRoot(
             root = safeRoot,
@@ -845,7 +1084,8 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     }
     val retireParent =
         exactParent?.takeIf { entry ->
-            entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true &&
+            !candidate.preserveParent &&
+                entry.outputs?.let { it.pdf == null && it.images.isEmpty() } == true &&
                 !cacheEntryHasUnresolvedDurableState(entry)
         }
     val protectedParent =
@@ -1083,6 +1323,7 @@ private fun readCacheEntry(
     val sourcePagesByNumber = mutableMapOf<Int, File>()
     var pdf: File? = null
     var provisional = false
+    var preserveParent = false
     var hasLocalPdfReplacement = false
     children.forEach { child ->
         val file = child.absoluteFile
@@ -1107,6 +1348,10 @@ private fun readCacheEntry(
             PROVISIONAL_CACHE_MARKER -> {
                 if (file.length() != 0L) return null
                 provisional = true
+            }
+            PRESERVE_PARENT_CACHE_MARKER -> {
+                if (file.length() != 0L) return null
+                preserveParent = true
             }
             scanPdfFileName(cacheId) -> {
                 if (file.length() <= 0L) return null
@@ -1209,6 +1454,7 @@ private fun readCacheEntry(
         outputs = outputs,
         outputMetadataReadResult = outputMetadataReadResult,
         provisional = provisional,
+        preserveParent = preserveParent,
     )
 }
 
@@ -1618,6 +1864,91 @@ internal class RecentScanCache(
         }
 }
 
+internal fun ScanStorage.createRedactedVariant(
+    source: CachedScan,
+    regionsByPage: Map<Int, List<NormalizedRect>>,
+    isCancelled: () -> Boolean,
+): CachedScanBuild =
+    withStorageTransaction {
+        val selectedRegions = regionsByPage.mapValues { (_, regions) -> regions.toList() }.toMap()
+        val current = openCachedScan(source.baseName)
+        if (
+            current?.entryId == null ||
+                current.entryId != source.entryId ||
+                current.appearanceSettings == null
+        ) {
+            throw IOException("Cached scan has no current protected-revision source")
+        }
+        val sourceDirectory = current.pdf.canonicalFile.parentFile
+            ?: throw IOException("Cached scan directory is unavailable")
+        val shareRoot = sourceDirectory.parentFile?.let(::ensureShareRoot)
+            ?: throw IOException("Cached scan root is unavailable")
+        if (
+            sourceDirectory.name != current.baseName ||
+                !isDirectChild(shareRoot, sourceDirectory) ||
+                current.pages.any { page -> page.canonicalFile.parentFile != sourceDirectory }
+        ) {
+            throw IOException("Cached scan source path is unsafe")
+        }
+        val baseName = nextDerivedCacheId(current.lineageCacheId, "protected")
+        val finalDirectory = File(shareRoot, baseName)
+        val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
+        if (!workDirectory.mkdir()) {
+            throw IOException("Pending protected cache directory could not be created")
+        }
+        try {
+            val protected =
+                writeRedactedPages(
+                    renderedPages = current.pages,
+                    workDirectory = workDirectory,
+                    derivedBaseName = baseName,
+                    regionsByPage = selectedRegions,
+                    isCancelled = isCancelled,
+                )
+            val pdfBuild =
+                buildProtectedScanPdf(
+                    output = File(workDirectory, scanPdfFileName(baseName)),
+                    pages = protected.renderedPages,
+                    dimensions = protected.dimensions,
+                    target = current.pdfSizeTarget,
+                    isCancelled = isCancelled,
+                )
+            FileOutputStream(File(workDirectory, scanPdfFileName(baseName)), true).use { output ->
+                output.fd.sync()
+            }
+            writeScanAppearanceMetadata(
+                directory = workDirectory,
+                appearanceSettings = current.appearanceSettings,
+                pdfSizeTarget = current.pdfSizeTarget,
+                lineageCacheId = current.lineageCacheId,
+                parentCacheId = current.baseName,
+                parentEntryId = current.entryId,
+                restoreSettingsOnActivation = false,
+            )
+            initializeOutputMetadata(
+                directory = workDirectory,
+                cacheId = baseName,
+                pageCount = protected.renderedPages.size,
+                createdAtEpochMs = System.currentTimeMillis(),
+                pdfSizeTarget = current.pdfSizeTarget,
+            )
+            FileOutputStream(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
+                output.fd.sync()
+            }
+            CachedScanBuild(
+                cached = publishCacheEntry(workDirectory, finalDirectory),
+                pdf = pdfBuild,
+            )
+        } catch (failure: Throwable) {
+            if (workDirectory.exists() && !deleteTreeWithoutFollowingLinks(workDirectory)) {
+                failure.addSuppressed(
+                    IOException("Failed protected cache could not be deleted"),
+                )
+            }
+            throw failure
+        }
+    }
+
 internal class ScanStorage(
     private val context: Context,
     private val clock: Clock = Clock.systemDefaultZone(),
@@ -1645,10 +1976,13 @@ internal class ScanStorage(
             }
 
             try {
+                var remainingSourceBytes = MAX_SCAN_SOURCE_TOTAL_BYTES
                 val sourcePages =
                     pageUris.mapIndexed { index, uri ->
+                        val copyLimit = minOf(MAX_SCAN_SOURCE_PAGE_BYTES, remainingSourceBytes)
+                        if (copyLimit <= 0L) throw IOException("Scanner input is too large")
                         File(workDirectory, scanSourcePageFileName(baseName, index + 1)).also {
-                            copyUriToFile(uri, it)
+                            remainingSourceBytes -= copyUriToFile(uri, it, copyLimit, isCancelled)
                         }
                     }
                 val renderedPages =
@@ -1693,6 +2027,7 @@ internal class ScanStorage(
         source: CachedScan,
         appearanceSettings: ScanAppearanceSettings,
         pdfSizeTarget: PdfSizeTarget,
+        selectedPageIndex: Int? = null,
         restoreSettingsOnActivation: Boolean = true,
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): CachedScanBuild =
@@ -1707,6 +2042,15 @@ internal class ScanStorage(
                 throw IOException("Cached scan has no immutable appearance sources")
             }
             val appearance = appearanceSettings.selected()
+            val pagePlan = appearanceVariantPagePlan(source.sourcePages.size, selectedPageIndex)
+            val currentAppearanceSettings = source.appearanceSettings
+                ?: throw IOException("Cached scan appearance settings are unavailable")
+            val storedAppearanceSettings =
+                appearanceVariantStoredSettings(
+                    currentAppearanceSettings,
+                    appearanceSettings,
+                    selectedPageIndex,
+                )
             val shareRoot = ensureShareRoot(shareCacheRoot())
             val baseName =
                 recentScanCache.nextDerivedCacheId(source.lineageCacheId, "appearance")
@@ -1719,32 +2063,49 @@ internal class ScanStorage(
                 val sourcePages =
                     source.sourcePages.mapIndexed { index, page ->
                         File(workDirectory, scanSourcePageFileName(baseName, index + 1)).also {
-                            copyDerivedSourcePage(page, it)
+                            if (pagePlan[index].applyToSource) {
+                                ScanAppearanceRenderer.renderJpeg(
+                                    page,
+                                    it,
+                                    appearance,
+                                    isCancelled = isCancelled,
+                                )
+                            } else if (selectedPageIndex == null) {
+                                copyDerivedSourcePage(page, it)
+                            } else {
+                                copyDerivedSourcePage(source.pages[index], it)
+                            }
                         }
                     }
                 val renderedPages =
                     sourcePages.mapIndexed { index, page ->
                         File(workDirectory, scanPageFileName(baseName, index + 1)).also { destination ->
-                            ScanAppearanceRenderer.renderJpeg(
-                                page,
-                                destination,
-                                appearance,
-                                isCancelled = isCancelled,
-                            )
+                            if (selectedPageIndex == null) {
+                                ScanAppearanceRenderer.renderJpeg(
+                                    page,
+                                    destination,
+                                    appearance,
+                                    isCancelled = isCancelled,
+                                )
+                            } else {
+                                copyDerivedSourcePage(page, destination)
+                            }
                         }
                     }
                 val pdfBuild =
-                    buildScanPdfFromPages(
+                    buildAppearanceVariantPdf(
                         output = File(workDirectory, scanPdfFileName(baseName)),
                         sourcePages = sourcePages,
                         renderedPages = renderedPages,
-                        appearance = appearance,
+                        renderedDimensions = renderedPages.map(::readJpegDimensions),
+                        appearance = storedAppearanceSettings.selected(),
                         target = pdfSizeTarget,
+                        selectedPageIndex = selectedPageIndex,
                         isCancelled = isCancelled,
                     )
                 writeScanAppearanceMetadata(
                     workDirectory,
-                    appearanceSettings,
+                    storedAppearanceSettings,
                     pdfSizeTarget,
                     source.lineageCacheId,
                     parentCacheId = source.baseName,
@@ -2390,10 +2751,11 @@ internal class ScanStorage(
         var localJournal: LocalPdfReplacementJournal? = null
         try {
             val build =
-                buildScanPdfFromPages(
+                buildReplacementScanPdf(
                     output = candidate,
                     sourcePages = cached.sourcePages,
                     renderedPages = cached.pages,
+                    renderedDimensions = cached.pages.map(::readJpegDimensions),
                     appearance = appearance,
                     target = target,
                     isCancelled = isCancelled,
@@ -3147,29 +3509,6 @@ internal class ScanStorage(
                 inSampleSize = thumbnailSampleSize(bounds.outWidth, bounds.outHeight, maxSize)
             }
         return BitmapFactory.decodeFile(firstPage.path, options)
-    }
-
-    fun loadAppearancePreview(
-        sourcePage: File,
-        appearance: ScanAppearance,
-        maxSize: Int,
-        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
-    ): Bitmap? {
-        val decoded = loadThumbnail(sourcePage, maxSize) ?: return null
-        val mutable =
-            try {
-                decoded.copy(Bitmap.Config.ARGB_8888, true)
-            } finally {
-                decoded.recycle()
-            }
-        if (mutable == null) return null
-        return try {
-            applyScanAppearance(mutable, appearance, isCancelled)
-            mutable
-        } catch (failure: Throwable) {
-            mutable.recycle()
-            throw failure
-        }
     }
 
     private fun shareCacheRoot(): File {
@@ -4244,10 +4583,19 @@ internal class ScanStorage(
         return file.inputStream().use { readOutputFingerprint(it, expectedLength) }
     }
 
-    private fun copyUriToFile(source: Uri, destination: File) {
+    private fun copyUriToFile(
+        source: Uri,
+        destination: File,
+        maxBytes: Long,
+        isCancelled: () -> Boolean,
+    ): Long {
+        require(maxBytes > 0L) { "Source limit must be positive" }
         val reportedSourceLength = querySize(source)?.takeIf { it >= 0L }
         if (reportedSourceLength == 0L) {
             throw IOException("Source URI is empty")
+        }
+        if (reportedSourceLength != null && reportedSourceLength > maxBytes) {
+            throw IOException("Source URI is too large")
         }
         val input =
             resolver.openInputStream(source)
@@ -4255,7 +4603,8 @@ internal class ScanStorage(
         val copied =
             input.use { stream ->
                 FileOutputStream(destination).use { output ->
-                    stream.copyTo(output).also { output.fd.sync() }
+                    copyBoundedInput(stream, output, maxBytes, isCancelled)
+                        .also { output.fd.sync() }
                 }
             }
         requireExactProviderCopy(
@@ -4265,6 +4614,7 @@ internal class ScanStorage(
         ) {
             destination.length()
         }
+        return copied
     }
 
     private fun copyFileToUri(source: File, destination: Uri) {

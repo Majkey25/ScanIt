@@ -47,14 +47,14 @@ class MarkTemplateStorageTest {
 
         assertEquals(
             4L,
-            copyBoundedMarkInput(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), output, 4),
+            copyBoundedInput(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), output, 4),
         )
         assertArrayEquals(byteArrayOf(1, 2, 3, 4), output.toByteArray())
         assertThrows(IOException::class.java) {
-            copyBoundedMarkInput(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5)), ByteArrayOutputStream(), 4)
+            copyBoundedInput(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5)), ByteArrayOutputStream(), 4)
         }
         assertThrows(IOException::class.java) {
-            copyBoundedMarkInput(ByteArrayInputStream(byteArrayOf()), ByteArrayOutputStream(), 4)
+            copyBoundedInput(ByteArrayInputStream(byteArrayOf()), ByteArrayOutputStream(), 4)
         }
     }
 

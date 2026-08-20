@@ -11,10 +11,11 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import kotlin.math.roundToInt
 
 private const val MARK_DIRECTORY = "marks"
-private const val MARK_COPY_BUFFER_BYTES = 8_192
+private const val COPY_BUFFER_BYTES = 8_192
 private const val MARK_TEMP_PREFIX = ".mark_"
 private const val MARK_TEMP_SUFFIX = ".tmp"
 private val MARK_STORAGE_LOCK = Any()
@@ -33,7 +34,7 @@ internal class MarkTemplateStore(context: Context) {
         try {
             resolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(importFile).use { output ->
-                    copyBoundedMarkInput(input, output, MAX_MARK_INPUT_BYTES)
+                    copyBoundedInput(input, output, MAX_MARK_INPUT_BYTES)
                 }
             } ?: throw IOException("The selected mark could not be opened")
             val decoded = decodeMarkBitmap(importFile, MARK_DECODE_MAX_SIDE)
@@ -114,23 +115,25 @@ internal fun nextMarkTemplateId(
     }
 }
 
-internal fun copyBoundedMarkInput(
+internal fun copyBoundedInput(
     input: InputStream,
     output: OutputStream,
     maxBytes: Long,
+    isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
 ): Long {
     require(maxBytes > 0) { "Input limit must be positive" }
-    val buffer = ByteArray(MARK_COPY_BUFFER_BYTES)
+    val buffer = ByteArray(COPY_BUFFER_BYTES)
     var total = 0L
     while (true) {
+        if (isCancelled()) throw CancellationException("Input copy was cancelled")
         val count = input.read(buffer)
         if (count < 0) break
         if (count == 0) continue
-        total += count
-        if (total > maxBytes) throw IOException("The selected mark is too large")
+        if (total > maxBytes - count) throw IOException("Input is too large")
         output.write(buffer, 0, count)
+        total += count
     }
-    if (total == 0L) throw IOException("The selected mark is empty")
+    if (total == 0L) throw IOException("Input is empty")
     return total
 }
 

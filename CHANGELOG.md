@@ -2,6 +2,26 @@
 
 All notable changes are documented here.
 
+## [1.4.0-beta.1] - 2026-08-20
+
+### Added
+
+- Added grouped on-device Actions for finding and reading text, receipt/contact candidates, automatic Safe Share, manual redaction, and whiteboard cleanup.
+- Added a distinct local vector icon for every action and a review-first manual redaction flow that creates a protected child revision.
+
+### Fixed
+
+- Rapid scrolling in Actions no longer moves, glitches, or dismisses the sheet; only the action list owns vertical gestures.
+
+### Security
+
+- Kept untrusted text, QR/barcode payloads, redaction geometry, and action callbacks bounded and tied to the exact active scan.
+- Public GitHub and Play variants retain no app-owned Internet permission, Gemini code, advertising SDK, billing SDK, or broad storage permission.
+
+### Performance
+
+- Kept action rendering lazy and image analysis bounded to one sampled bitmap at a time, with explicit cancellation and bitmap cleanup.
+
 ## [1.3.8] - 2026-08-17
 
 ### Fixed
@@ -215,6 +235,7 @@ Historical copies retain the license supplied with them. See
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
+[1.4.0-beta.1]: https://github.com/Majkey25/ScanIt/compare/v1.3.8...v1.4.0-beta.1
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
 [1.2.2]: https://github.com/Majkey25/ScanIt/compare/v1.2.1...v1.2.2
