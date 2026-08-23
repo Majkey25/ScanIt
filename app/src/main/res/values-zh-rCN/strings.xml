@@ -205,6 +205,7 @@
     <string name="draw_visual_mark_accessibility">触摸绘制可能需要 TalkBack 直通模式。屏幕阅读器用户可选择“取消”，然后选择“导入图像”或“扫描纸张”。</string>
     <string name="clear_drawing">清除</string>
     <string name="undo_drawing">撤销</string>
+    <string name="redo_drawing">重做</string>
     <string name="save_visual_mark">保存</string>
     <string name="delete_visual_mark_title">删除已保存的标记？</string>
     <string name="delete_visual_mark_body">这会删除所选的已保存签名或印章。</string>
@@ -308,7 +309,10 @@
     <string name="safe_share">安全分享</string>
     <string name="redact_document">遮盖文档</string>
     <string name="redact_document_scope_title">遮盖文档</string>
-    <string name="redact_document_scope_body">选择要添加遮盖区域的页面。</string>
+    <string name="redact_document_scope_body">选择要手绘永久遮盖的页面。</string>
+    <string name="redaction_draw_hint">在文字或信息上拖动以永久遮盖。</string>
+    <string name="redaction_canvas_accessibility">文档遮盖绘图区域</string>
+    <string name="redaction_brush_thickness">画笔粗细</string>
     <string name="safe_share_scope_title">选择保护范围</string>
     <string name="safe_share_scope_body">仅检查当前页面，或检查此文档的所有页面。</string>
     <string name="selected_page_or_all_pages">所选页面或所有页面</string>

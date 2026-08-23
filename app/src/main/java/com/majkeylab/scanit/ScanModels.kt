@@ -1214,6 +1214,30 @@ internal data class RedactionRegion(
     }
 }
 
+internal const val MIN_REDACTION_BRUSH_WIDTH_FRACTION = 0.01f
+internal const val MAX_REDACTION_BRUSH_WIDTH_FRACTION = 0.10f
+internal const val DEFAULT_REDACTION_BRUSH_WIDTH_FRACTION = 0.03f
+
+internal data class RedactionStroke(
+    val points: List<MarkPoint>,
+    val widthFraction: Float,
+) {
+    init {
+        require(points.isNotEmpty()) { "Redaction stroke must contain a point" }
+        require(
+            widthFraction.isFinite() &&
+                widthFraction in
+                MIN_REDACTION_BRUSH_WIDTH_FRACTION..MAX_REDACTION_BRUSH_WIDTH_FRACTION,
+        ) { "Redaction stroke width is invalid" }
+    }
+}
+
+internal fun validateRedactionStrokes(strokes: List<RedactionStroke>) {
+    if (strokes.isEmpty()) return
+    require(strokes.size <= MAX_MARK_DRAWING_STROKES) { "Redaction stroke count is too large" }
+    validateNormalizedMarkStrokes(strokes.map { MarkStroke(it.points) })
+}
+
 internal enum class SafeShareScope {
     SelectedPage,
     AllPages,
@@ -1289,6 +1313,10 @@ internal sealed interface SafeShareState {
     data class Reviewing(
         val page: Int,
         val regions: List<RedactionRegion>,
+        val mode: RedactionMode = RedactionMode.Automatic,
+        val strokesByPage: Map<Int, List<RedactionStroke>> = emptyMap(),
+        val undoneStrokesByPage: Map<Int, List<RedactionStroke>> = emptyMap(),
+        val brushWidthFraction: Float = DEFAULT_REDACTION_BRUSH_WIDTH_FRACTION,
     ) : SafeShareState {
         init {
             require(page in 0 until MAX_SCAN_PAGES) { "Safe Share review page is invalid" }
@@ -1301,6 +1329,24 @@ internal sealed interface SafeShareState {
                     "Safe Share regions exceed the page limit"
                 }
             }
+            require(mode != RedactionMode.Manual || regions.isEmpty()) {
+                "Manual redaction cannot contain detected regions"
+            }
+            require(
+                brushWidthFraction.isFinite() &&
+                    brushWidthFraction in
+                    MIN_REDACTION_BRUSH_WIDTH_FRACTION..MAX_REDACTION_BRUSH_WIDTH_FRACTION,
+            ) { "Redaction brush width is invalid" }
+            require(
+                (strokesByPage.keys + undoneStrokesByPage.keys).all {
+                    it in 0 until MAX_SCAN_PAGES
+                } &&
+                    strokesByPage.values.none(List<RedactionStroke>::isEmpty) &&
+                    undoneStrokesByPage.values.none(List<RedactionStroke>::isEmpty),
+            ) { "Redaction stroke pages are invalid" }
+            validateRedactionStrokes(
+                strokesByPage.values.flatten() + undoneStrokesByPage.values.flatten(),
+            )
         }
     }
 
@@ -1313,7 +1359,11 @@ internal fun initialRedactionReview(
     mode: RedactionMode,
     selectedPage: Int,
 ): SafeShareState.Reviewing? =
-    if (mode.requiresAnalysis) null else SafeShareState.Reviewing(selectedPage, emptyList())
+    if (mode.requiresAnalysis) {
+        null
+    } else {
+        SafeShareState.Reviewing(selectedPage, emptyList(), mode = mode)
+    }
 
 internal sealed interface DetectedCodeAction {
     data class OpenUrl(val url: String) : DetectedCodeAction

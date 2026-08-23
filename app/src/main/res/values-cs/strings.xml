@@ -210,6 +210,7 @@
     <string name="draw_visual_mark_accessibility">Kreslení dotykem může vyžadovat průchozí gesto TalkBacku. Uživatelé čtečky obrazovky mohou zvolit Zrušit a potom Importovat obrázek nebo Skenovat předlohu.</string>
     <string name="clear_drawing">Vymazat</string>
     <string name="undo_drawing">Zpět</string>
+    <string name="redo_drawing">Znovu</string>
     <string name="save_visual_mark">Uložit</string>
     <string name="delete_visual_mark_title">Smazat uloženou značku?</string>
     <string name="delete_visual_mark_body">Tímto odstraníte vybraný uložený podpis nebo razítko.</string>
@@ -313,7 +314,10 @@
     <string name="safe_share">Bezpečné sdílení</string>
     <string name="redact_document">Začernit dokument</string>
     <string name="redact_document_scope_title">Začernit dokument</string>
-    <string name="redact_document_scope_body">Vyberte stránky, na které chcete přidat oblasti k začernění.</string>
+    <string name="redact_document_scope_body">Vyberte stránky, na které chcete ručně nakreslit trvalé začernění.</string>
+    <string name="redaction_draw_hint">Tažením přes text nebo údaje je trvale začerníte.</string>
+    <string name="redaction_canvas_accessibility">Plocha pro začernění dokumentu</string>
+    <string name="redaction_brush_thickness">Tloušťka štětce</string>
     <string name="safe_share_scope_title">Vyberte rozsah ochrany</string>
     <string name="safe_share_scope_body">Zkontrolujte pouze aktuální stránku, nebo všechny stránky dokumentu.</string>
     <string name="selected_page_or_all_pages">Vybraná stránka nebo všechny stránky</string>

@@ -51,6 +51,53 @@ class RedactionRendererTest {
     }
 
     @Test
+    fun pixelStrokesScaleCoordinatesAndThicknessFromTheShortPageEdge() {
+        assertEquals(
+            listOf(
+                RedactionPixelStroke(
+                    points =
+                        listOf(
+                            RedactionPixelPoint(50f, 25f),
+                            RedactionPixelPoint(150f, 75f),
+                        ),
+                    width = 5f,
+                ),
+            ),
+            redactionPixelStrokes(
+                width = 200,
+                height = 100,
+                strokes =
+                    listOf(
+                        RedactionStroke(
+                            points = listOf(MarkPoint(0.25f, 0.25f), MarkPoint(0.75f, 0.75f)),
+                            widthFraction = 0.05f,
+                        ),
+                    ),
+            ),
+        )
+    }
+
+    @Test
+    fun pixelStrokePreflightRejectsOutOfRangePointsAndUnboundedInput() {
+        assertThrows(IllegalArgumentException::class.java) {
+            redactionPixelStrokes(
+                100,
+                100,
+                listOf(RedactionStroke(listOf(MarkPoint(1.01f, 0.5f)), 0.05f)),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            redactionPixelStrokes(
+                100,
+                100,
+                List(MAX_MARK_DRAWING_STROKES + 1) {
+                    RedactionStroke(listOf(MarkPoint(0.5f, 0.5f)), 0.05f)
+                },
+            )
+        }
+    }
+
+    @Test
     fun atomicPublicationPreservesDestinationOnCancellationOrVerificationFailure() {
         val destination = temporaryFolder.newFile("redacted.jpg").apply { writeText("old") }
         var checks = 0

@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## [1.4.1] - 2026-08-23
+
+### Changed
+
+- Replaced manual redaction boxes with an opaque black freehand brush, adjustable thickness, page-aware undo and redo, and clear-page controls.
+
+### Security
+
+- Manual redaction strokes are permanently rasterized into a protected child revision before its PDF is built; they are not removable annotations.
+
 ## [1.4.0] - 2026-08-23
 
 ### Added
@@ -240,6 +250,7 @@ Historical copies retain the license supplied with them. See
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
+[1.4.1]: https://github.com/Majkey25/ScanIt/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Majkey25/ScanIt/compare/v1.3.8...v1.4.0
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/Majkey25/ScanIt/compare/v1.1.0...v1.2.0
