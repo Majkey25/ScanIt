@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `24` |
-| Version name | `1.4.0` |
+| Version code | `25` |
+| Version name | `1.4.1` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -65,6 +65,7 @@ the Play developer account.
 > - per-document image size, format, and folder changes from File details
 > - image size options for Original, 3840 px, 2560 px, 1600 px, or custom 320–6000 px
 > - on-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection
+> - permanent freehand black redaction with adjustable brush thickness, undo, redo, and clear-page controls
 > - local Smart cleanup and lasso-based Manual cleanup with a preserved parent revision
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
@@ -113,6 +114,7 @@ the Play developer account.
 > - změna velikosti, formátu a složky obrázků v detailech souboru
 > - velikost obrázku Původní, 3840 px, 2560 px, 1600 px nebo vlastní 320–6000 px
 > - místní rozpoznání latinského textu ze všech stran, výslovný export textu a rozpoznání QR nebo čárových kódů na aktuální straně
+> - trvalé ruční začernění černým štětcem s nastavitelnou tloušťkou, krokem zpět, znovu a vymazáním stránky
 > - místní Chytré vyčištění a Ruční čistič s obtažením skvrn a zachovanou původní revizí
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
@@ -130,29 +132,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 24 / 1.4.0
+## Release notes — version 25 / 1.4.1
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Fixed random page rotation and Actions scrolling. Added local Smart cleanup and Manual cleanup for spots and edge fingers. The parent revision is preserved.
+> Manual redaction now uses a permanent black freehand brush with adjustable thickness, undo, redo, and clear-page controls. Redacted pixels are burned into a protected child revision.
 
 ### Čeština
 
-> Opravena náhodná rotace stran a posouvání Akcí. Přidáno místní Chytré vyčištění a Ruční čistič skvrn a prstů u okraje. Původní revize zůstává zachována.
+> Ruční redakce nyní používá trvalý černý štětec s nastavitelnou tloušťkou, krokem zpět, znovu a vymazáním stránky. Tahy se vypálí do chráněné odvozené revize.
 
 ### Deutsch
 
-> Zufällige Seitendrehung und Scrollfehler wurden behoben. Lokale intelligente und manuelle Bereinigung entfernen Flecken und Randfinger; die Originalrevision bleibt erhalten.
+> Manuelle Schwärzung nutzt jetzt einen dauerhaften schwarzen Pinsel mit einstellbarer Stärke sowie Rückgängig-, Wiederholen- und Seitenleeren-Funktionen.
 
 ### Español
 
-> Se corrigieron la rotación aleatoria y el desplazamiento. La limpieza inteligente y manual local elimina manchas y dedos del borde conservando la revisión original.
+> La censura manual usa ahora un pincel negro permanente con grosor ajustable y controles para deshacer, rehacer y borrar la página.
 
 ### 简体中文
 
-> 修复了页面随机旋转和“操作”滚动问题。新增本地智能清理和手动圈选清理，可去除污点和边缘手指，并保留原始版本。
+> 手动遮盖现在使用永久黑色画笔，可调粗细，并支持撤销、重做和清除当前页。遮盖会写入受保护的派生版本。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -330,7 +332,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 24, version `1.4.0`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 25, version `1.4.1`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [ ] Public artifact contains no Gemini/cloud-cleanup code or app-owned `INTERNET` permission; verify before Play submission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

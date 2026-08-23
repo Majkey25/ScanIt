@@ -2054,6 +2054,7 @@ internal class ScanViewModel(
                         SafeShareState.Reviewing(
                             page = selectedPage,
                             regions = safeShareRegions(analysis, scope, selectedPage),
+                            mode = mode,
                         )
                     } catch (cancellation: CancellationException) {
                         throw cancellation
@@ -2136,13 +2137,61 @@ internal class ScanViewModel(
         }
     }
 
+    fun addManualRedactionStroke(stroke: RedactionStroke) {
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) {
+                addManualRedactionStroke(review, stroke)
+            } else {
+                review
+            }
+        }
+    }
+
+    fun changeManualRedactionBrushWidth(widthFraction: Float) {
+        if (
+            !widthFraction.isFinite() ||
+                widthFraction !in
+                MIN_REDACTION_BRUSH_WIDTH_FRACTION..MAX_REDACTION_BRUSH_WIDTH_FRACTION
+        ) {
+            return
+        }
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) {
+                review.copy(brushWidthFraction = widthFraction)
+            } else {
+                review
+            }
+        }
+    }
+
+    fun undoManualRedaction() {
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) undoManualRedactionStroke(review) else review
+        }
+    }
+
+    fun redoManualRedaction() {
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) redoManualRedactionStroke(review) else review
+        }
+    }
+
+    fun clearManualRedactionPage() {
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) clearManualRedactionPage(review) else review
+        }
+    }
+
     fun beginSafeShareApply() {
         val current = mutableState.value as? ScreenState.Result ?: return
         val review = current.safeShareState as? SafeShareState.Reviewing ?: return
         val request = activeSafeShareRequest ?: return
         val selected = review.regions.filter(RedactionRegion::selected)
+        val strokesByPage =
+            review.strokesByPage.takeIf { request.mode == RedactionMode.Manual }.orEmpty()
         if (
-            selected.isEmpty() ||
+            (request.mode == RedactionMode.Automatic && selected.isEmpty()) ||
+                (request.mode == RedactionMode.Manual && strokesByPage.isEmpty()) ||
                 !isSafeShareRequestCurrent(request, current)
         ) {
             return
@@ -2167,6 +2216,7 @@ internal class ScanViewModel(
                             storage.createRedactedVariant(
                                 source = current.scan.cached,
                                 regionsByPage = regionsByPage,
+                                strokesByPage = strokesByPage,
                                 isCancelled = { !operationContext.isActive },
                             )
                         }

@@ -206,6 +206,7 @@
     <string name="draw_visual_mark_accessibility">Für das Zeichnen per Berührung kann eine TalkBack-Durchleitung erforderlich sein. Nutzer von Screenreadern können Abbrechen und danach Bild importieren oder Papier scannen auswählen.</string>
     <string name="clear_drawing">Leeren</string>
     <string name="undo_drawing">Rückgängig</string>
+    <string name="redo_drawing">Wiederholen</string>
     <string name="save_visual_mark">Speichern</string>
     <string name="delete_visual_mark_title">Gespeicherte Markierung löschen?</string>
     <string name="delete_visual_mark_body">Die ausgewählte gespeicherte Unterschrift oder der Stempel wird entfernt.</string>
@@ -309,7 +310,10 @@
     <string name="safe_share">Sicher teilen</string>
     <string name="redact_document">Dokument schwärzen</string>
     <string name="redact_document_scope_title">Dokument schwärzen</string>
-    <string name="redact_document_scope_body">Wähle die Seiten aus, auf denen du Schwärzungsbereiche hinzufügen möchtest.</string>
+    <string name="redact_document_scope_body">Wähle die Seiten aus, auf denen du dauerhafte Schwärzungen zeichnen möchtest.</string>
+    <string name="redaction_draw_hint">Ziehe über Text oder Angaben, um sie dauerhaft zu schwärzen.</string>
+    <string name="redaction_canvas_accessibility">Zeichenfläche zum Schwärzen des Dokuments</string>
+    <string name="redaction_brush_thickness">Pinselstärke</string>
     <string name="safe_share_scope_title">Schutzbereich auswählen</string>
     <string name="safe_share_scope_body">Nur die aktuelle Seite oder alle Seiten dieses Dokuments prüfen.</string>
     <string name="selected_page_or_all_pages">Ausgewählte Seite oder alle Seiten</string>

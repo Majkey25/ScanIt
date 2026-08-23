@@ -208,6 +208,7 @@
     <string name="draw_visual_mark_accessibility">Touch drawing may require TalkBack pass-through. Screen reader users can select Cancel, then Import image or Scan paper.</string>
     <string name="clear_drawing">Clear</string>
     <string name="undo_drawing">Undo</string>
+    <string name="redo_drawing">Redo</string>
     <string name="save_visual_mark">Save</string>
     <string name="delete_visual_mark_title">Delete saved mark?</string>
     <string name="delete_visual_mark_body">This removes the selected saved signature or stamp.</string>
@@ -311,7 +312,10 @@
     <string name="safe_share">Safe Share</string>
     <string name="redact_document">Redact document</string>
     <string name="redact_document_scope_title">Redact document</string>
-    <string name="redact_document_scope_body">Choose the pages where you want to add redaction areas.</string>
+    <string name="redact_document_scope_body">Choose the pages where you want to draw permanent redactions.</string>
+    <string name="redaction_draw_hint">Drag over text or details to cover them permanently.</string>
+    <string name="redaction_canvas_accessibility">Document redaction drawing area</string>
+    <string name="redaction_brush_thickness">Brush thickness</string>
     <string name="safe_share_scope_title">Choose protection scope</string>
     <string name="safe_share_scope_body">Review the current page only, or review every page in this document.</string>
     <string name="selected_page_or_all_pages">Selected page or all pages</string>

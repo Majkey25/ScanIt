@@ -184,6 +184,71 @@ internal fun deleteManualRedactionRegion(
 ): List<RedactionRegion> =
     regions.filterNot { region -> region.id == id && region.kind == SensitiveRegionKind.Manual }
 
+internal fun addManualRedactionStroke(
+    review: SafeShareState.Reviewing,
+    stroke: RedactionStroke,
+): SafeShareState.Reviewing {
+    if (review.mode != RedactionMode.Manual) return review
+    validateRedactionStrokes(listOf(stroke))
+    val current = review.strokesByPage[review.page].orEmpty()
+    val totalStrokes = review.strokesByPage.values.sumOf(List<RedactionStroke>::size)
+    val totalPoints = review.strokesByPage.values.flatten().sumOf { it.points.size }
+    if (
+        totalStrokes >= MAX_MARK_DRAWING_STROKES ||
+            totalPoints + stroke.points.size > MAX_MARK_DRAWING_POINTS
+    ) {
+        return review
+    }
+    return review.copy(
+        strokesByPage = review.strokesByPage + (review.page to current + stroke),
+        undoneStrokesByPage = emptyMap(),
+    )
+}
+
+internal fun undoManualRedactionStroke(
+    review: SafeShareState.Reviewing,
+): SafeShareState.Reviewing {
+    if (review.mode != RedactionMode.Manual) return review
+    val pageStrokes = review.strokesByPage[review.page].orEmpty()
+    val stroke = pageStrokes.lastOrNull() ?: return review
+    val strokesByPage = review.strokesByPage.toMutableMap()
+    if (pageStrokes.size == 1) strokesByPage.remove(review.page)
+    else strokesByPage[review.page] = pageStrokes.dropLast(1)
+    return review.copy(
+        strokesByPage = strokesByPage,
+        undoneStrokesByPage =
+            review.undoneStrokesByPage +
+                (review.page to review.undoneStrokesByPage[review.page].orEmpty() + stroke),
+    )
+}
+
+internal fun redoManualRedactionStroke(
+    review: SafeShareState.Reviewing,
+): SafeShareState.Reviewing {
+    if (review.mode != RedactionMode.Manual) return review
+    val undone = review.undoneStrokesByPage[review.page].orEmpty()
+    val stroke = undone.lastOrNull() ?: return review
+    val undoneByPage = review.undoneStrokesByPage.toMutableMap()
+    if (undone.size == 1) undoneByPage.remove(review.page)
+    else undoneByPage[review.page] = undone.dropLast(1)
+    return review.copy(
+        strokesByPage =
+            review.strokesByPage +
+                (review.page to review.strokesByPage[review.page].orEmpty() + stroke),
+        undoneStrokesByPage = undoneByPage,
+    )
+}
+
+internal fun clearManualRedactionPage(
+    review: SafeShareState.Reviewing,
+): SafeShareState.Reviewing {
+    if (review.mode != RedactionMode.Manual || review.page !in review.strokesByPage) return review
+    return review.copy(
+        strokesByPage = review.strokesByPage - review.page,
+        undoneStrokesByPage = emptyMap(),
+    )
+}
+
 private inline fun List<RedactionRegion>.updateManualRegion(
     id: String,
     update: (NormalizedRect) -> NormalizedRect,
@@ -206,6 +271,11 @@ internal fun SafeShareScreen(
     onMoveRegion: (String, Float, Float) -> Unit,
     onResizeRegion: (String, Float, Float) -> Unit,
     onDeleteRegion: (String) -> Unit,
+    onAddStroke: (RedactionStroke) -> Unit,
+    onBrushWidthChange: (Float) -> Unit,
+    onUndoStroke: () -> Unit,
+    onRedoStroke: () -> Unit,
+    onClearPage: () -> Unit,
     onApply: () -> Unit,
     onLoadPreview: suspend (File, Int) -> Bitmap?,
 ) {
@@ -215,21 +285,40 @@ internal fun SafeShareScreen(
         SafeShareState.Applying ->
             SafeShareProgress(stringResource(R.string.safe_share_applying), onCancel = null)
         is SafeShareState.Failed -> SafeShareFailure(state.message.resolve(), onCancel)
-        is SafeShareState.Reviewing ->
-            SafeShareReview(
-                pages = result.scan.cached.pages,
-                state = state,
-                scope = result.safeShareScope ?: SafeShareScope.SelectedPage,
-                onCancel = onCancel,
-                onSelectPage = onSelectPage,
-                onAddArea = onAddArea,
-                onToggleRegion = onToggleRegion,
-                onMoveRegion = onMoveRegion,
-                onResizeRegion = onResizeRegion,
-                onDeleteRegion = onDeleteRegion,
-                onApply = onApply,
-                onLoadPreview = onLoadPreview,
-            )
+        is SafeShareState.Reviewing -> {
+            val scope = result.safeShareScope ?: SafeShareScope.SelectedPage
+            if (state.mode == RedactionMode.Manual) {
+                ManualRedactionReview(
+                    pages = result.scan.cached.pages,
+                    state = state,
+                    scope = scope,
+                    onCancel = onCancel,
+                    onSelectPage = onSelectPage,
+                    onAddStroke = onAddStroke,
+                    onBrushWidthChange = onBrushWidthChange,
+                    onUndoStroke = onUndoStroke,
+                    onRedoStroke = onRedoStroke,
+                    onClearPage = onClearPage,
+                    onApply = onApply,
+                    onLoadPreview = onLoadPreview,
+                )
+            } else {
+                SafeShareReview(
+                    pages = result.scan.cached.pages,
+                    state = state,
+                    scope = scope,
+                    onCancel = onCancel,
+                    onSelectPage = onSelectPage,
+                    onAddArea = onAddArea,
+                    onToggleRegion = onToggleRegion,
+                    onMoveRegion = onMoveRegion,
+                    onResizeRegion = onResizeRegion,
+                    onDeleteRegion = onDeleteRegion,
+                    onApply = onApply,
+                    onLoadPreview = onLoadPreview,
+                )
+            }
+        }
         null -> Unit
     }
 }

@@ -1264,6 +1264,39 @@ class RecentScanTest {
         }
 
     @Test
+    fun protectedPageWriterAcceptsStrokeOnlyRedactions() =
+        withShareRoot { root ->
+            val current = File(root, "current").apply { assertTrue(mkdir()) }
+            val pages =
+                (1..2).map { page ->
+                    File(current, "page-$page.jpg").apply { writeBytes(byteArrayOf(page.toByte())) }
+                }
+            val work = File(root, "work").apply { assertTrue(mkdir()) }
+            val stroke =
+                RedactionStroke(
+                    listOf(MarkPoint(0.1f, 0.2f), MarkPoint(0.8f, 0.2f)),
+                    0.04f,
+                )
+            val calls = mutableListOf<Pair<Int, Int>>()
+
+            writeRedactedPages(
+                renderedPages = pages,
+                workDirectory = work,
+                derivedBaseName = "Scan_protected",
+                regionsByPage = emptyMap(),
+                strokesByPage = mapOf(1 to listOf(stroke)),
+                isCancelled = { false },
+            ) { source, destination, regions, strokes, isCancelled ->
+                assertFalse(isCancelled())
+                calls += regions.size to strokes.size
+                destination.writeBytes(source.readBytes() + 10)
+                JpegDimensions(80, 80)
+            }
+
+            assertEquals(listOf(0 to 0, 0 to 1), calls)
+        }
+
+    @Test
     fun protectedPageCancellationRemovesEveryDerivedPixelFileAndKeepsOriginals() =
         withShareRoot { root ->
             val current = File(root, "current").apply { assertTrue(mkdir()) }

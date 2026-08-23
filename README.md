@@ -13,10 +13,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.4.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.4.1"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.4.0 update
+## v1.4.1 update
+
+Manual redaction now works like a black marker: draw directly over text, adjust
+the brush thickness, and use undo, redo, or clear. Applying the redaction burns
+the black strokes into a protected child revision, so the covered pixels cannot
+be moved or removed from that result.
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -56,7 +61,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, ScanIt opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.4.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.4.0)
+[Download ScanIt v1.4.1](https://github.com/Majkey25/ScanIt/releases/tag/v1.4.1)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

@@ -503,17 +503,49 @@ internal fun writeRedactedPages(
     isCancelled: () -> Boolean,
     renderPage: (File, File, List<NormalizedRect>, () -> Boolean) -> JpegDimensions =
         ::renderRedactedJpeg,
+): ProtectedScanPages =
+    writeRedactedPages(
+        renderedPages = renderedPages,
+        workDirectory = workDirectory,
+        derivedBaseName = derivedBaseName,
+        regionsByPage = regionsByPage,
+        strokesByPage = emptyMap(),
+        isCancelled = isCancelled,
+    ) { source, destination, regions, _, cancelled ->
+        renderPage(source, destination, regions, cancelled)
+    }
+
+internal fun writeRedactedPages(
+    renderedPages: List<File>,
+    workDirectory: File,
+    derivedBaseName: String,
+    regionsByPage: Map<Int, List<NormalizedRect>>,
+    strokesByPage: Map<Int, List<RedactionStroke>>,
+    isCancelled: () -> Boolean,
+    renderPage: (
+        File,
+        File,
+        List<NormalizedRect>,
+        List<RedactionStroke>,
+        () -> Boolean,
+    ) -> JpegDimensions = ::renderRedactedJpeg,
 ): ProtectedScanPages {
     require(renderedPages.size in 1..MAX_SCAN_PAGES) { "Protected scan page count is invalid" }
     require(isSafeCacheId(derivedBaseName)) { "Protected scan name is unsafe" }
     require(
-        regionsByPage.isNotEmpty() &&
+        regionsByPage.isNotEmpty() || strokesByPage.isNotEmpty(),
+    ) { "Protected scan has no redactions" }
+    require(
             regionsByPage.all { (page, regions) ->
                 page in renderedPages.indices &&
                     regions.isNotEmpty() &&
                     regions.size <= MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE
+            } &&
+            strokesByPage.all { (page, strokes) ->
+                page in renderedPages.indices && strokes.isNotEmpty()
             },
     ) { "Protected scan regions are invalid" }
+    validateRedactionStrokes(strokesByPage.values.flatten())
     if (!workDirectory.isDirectory) throw IOException("Protected scan work directory is unavailable")
     renderedPages.forEach { page ->
         if (!page.isFile || page.length() <= 0L) {
@@ -530,7 +562,14 @@ internal fun writeRedactedPages(
             val source = File(workDirectory, scanSourcePageFileName(derivedBaseName, index + 1))
             if (source.exists()) throw IOException("Protected scan source target already exists")
             created += source
-            val bounds = renderPage(page, source, regionsByPage[index].orEmpty(), isCancelled)
+            val bounds =
+                renderPage(
+                    page,
+                    source,
+                    regionsByPage[index].orEmpty(),
+                    strokesByPage[index].orEmpty(),
+                    isCancelled,
+                )
             if (
                 bounds.width <= 0 ||
                     bounds.height <= 0 ||
@@ -1899,10 +1938,12 @@ internal class RecentScanCache(
 internal fun ScanStorage.createRedactedVariant(
     source: CachedScan,
     regionsByPage: Map<Int, List<NormalizedRect>>,
+    strokesByPage: Map<Int, List<RedactionStroke>> = emptyMap(),
     isCancelled: () -> Boolean,
 ): CachedScanBuild =
     withStorageTransaction {
         val selectedRegions = regionsByPage.mapValues { (_, regions) -> regions.toList() }.toMap()
+        val selectedStrokes = strokesByPage.mapValues { (_, strokes) -> strokes.toList() }.toMap()
         val current = openCachedScan(source.baseName)
         if (
             current?.entryId == null ||
@@ -1935,6 +1976,7 @@ internal fun ScanStorage.createRedactedVariant(
                     workDirectory = workDirectory,
                     derivedBaseName = baseName,
                     regionsByPage = selectedRegions,
+                    strokesByPage = selectedStrokes,
                     isCancelled = isCancelled,
                 )
             val pdfBuild =

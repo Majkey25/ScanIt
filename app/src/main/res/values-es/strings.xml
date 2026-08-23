@@ -207,6 +207,7 @@
     <string name="draw_visual_mark_accessibility">El dibujo táctil puede requerir el modo de transferencia de TalkBack. Los usuarios de lectores de pantalla pueden elegir Cancelar y después Importar imagen o Escanear papel.</string>
     <string name="clear_drawing">Borrar</string>
     <string name="undo_drawing">Deshacer</string>
+    <string name="redo_drawing">Rehacer</string>
     <string name="save_visual_mark">Guardar</string>
     <string name="delete_visual_mark_title">¿Eliminar la marca guardada?</string>
     <string name="delete_visual_mark_body">Esto elimina la firma o el sello guardado seleccionado.</string>
@@ -310,7 +311,10 @@
     <string name="safe_share">Compartir de forma segura</string>
     <string name="redact_document">Censurar documento</string>
     <string name="redact_document_scope_title">Censurar documento</string>
-    <string name="redact_document_scope_body">Elige las páginas en las que quieres añadir áreas censuradas.</string>
+    <string name="redact_document_scope_body">Elige las páginas en las que quieres dibujar censuras permanentes.</string>
+    <string name="redaction_draw_hint">Arrastra sobre el texto o los datos para ocultarlos permanentemente.</string>
+    <string name="redaction_canvas_accessibility">Área de dibujo para censurar el documento</string>
+    <string name="redaction_brush_thickness">Grosor del pincel</string>
     <string name="safe_share_scope_title">Elige el alcance de la protección</string>
     <string name="safe_share_scope_body">Revisa solo la página actual o todas las páginas del documento.</string>
     <string name="selected_page_or_all_pages">Página seleccionada o todas las páginas</string>

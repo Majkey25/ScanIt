@@ -35,7 +35,11 @@ class PureLogicTest {
         assertEquals(false, RedactionMode.Manual.requiresAnalysis)
         assertEquals(true, RedactionMode.Automatic.requiresAnalysis)
         assertEquals(
-            SafeShareState.Reviewing(page = 2, regions = emptyList()),
+            SafeShareState.Reviewing(
+                page = 2,
+                regions = emptyList(),
+                mode = RedactionMode.Manual,
+            ),
             initialRedactionReview(RedactionMode.Manual, selectedPage = 2),
         )
         assertEquals(null, initialRedactionReview(RedactionMode.Automatic, selectedPage = 2))
@@ -334,6 +338,63 @@ class PureLogicTest {
         assertEquals(SensitiveRegionKind.Manual, added.single().kind)
         assertEquals(NormalizedRect(0.25f, 0.35f, 0.75f, 0.65f), added.single().bounds)
         assertEquals(emptyList<RedactionRegion>(), deleteManualRedactionRegion(added, "manual-1"))
+    }
+
+    @Test
+    fun manualRedactionUndoAndRedoOnlyAffectTheCurrentPage() {
+        val first =
+            RedactionStroke(
+                points = listOf(MarkPoint(0.1f, 0.2f), MarkPoint(0.4f, 0.2f)),
+                widthFraction = 0.03f,
+            )
+        val last =
+            RedactionStroke(
+                points = listOf(MarkPoint(0.2f, 0.4f), MarkPoint(0.6f, 0.4f)),
+                widthFraction = 0.05f,
+            )
+        val otherPage =
+            RedactionStroke(
+                points = listOf(MarkPoint(0.1f, 0.6f), MarkPoint(0.5f, 0.6f)),
+                widthFraction = 0.04f,
+            )
+        val review =
+            SafeShareState.Reviewing(
+                page = 0,
+                regions = emptyList(),
+                mode = RedactionMode.Manual,
+                strokesByPage = mapOf(0 to listOf(first, last), 1 to listOf(otherPage)),
+            )
+
+        val undone = undoManualRedactionStroke(review)
+        val redone = redoManualRedactionStroke(undone)
+
+        assertEquals(listOf(first), undone.strokesByPage[0])
+        assertEquals(listOf(otherPage), undone.strokesByPage[1])
+        assertEquals(listOf(last), undone.undoneStrokesByPage[0])
+        assertEquals(review.strokesByPage, redone.strokesByPage)
+        assertEquals(emptyMap<Int, List<RedactionStroke>>(), redone.undoneStrokesByPage)
+    }
+
+    @Test
+    fun newManualRedactionStrokeClearsRedoAndClearKeepsOtherPages() {
+        val old = RedactionStroke(listOf(MarkPoint(0.1f, 0.2f)), 0.03f)
+        val otherPage = RedactionStroke(listOf(MarkPoint(0.2f, 0.3f)), 0.04f)
+        val replacement = RedactionStroke(listOf(MarkPoint(0.3f, 0.4f)), 0.05f)
+        val review =
+            SafeShareState.Reviewing(
+                page = 0,
+                regions = emptyList(),
+                mode = RedactionMode.Manual,
+                strokesByPage = mapOf(1 to listOf(otherPage)),
+                undoneStrokesByPage = mapOf(0 to listOf(old)),
+            )
+
+        val changed = addManualRedactionStroke(review, replacement)
+        val cleared = clearManualRedactionPage(changed)
+
+        assertEquals(listOf(replacement), changed.strokesByPage[0])
+        assertEquals(emptyMap<Int, List<RedactionStroke>>(), changed.undoneStrokesByPage)
+        assertEquals(mapOf(1 to listOf(otherPage)), cleared.strokesByPage)
     }
 
     @Test
