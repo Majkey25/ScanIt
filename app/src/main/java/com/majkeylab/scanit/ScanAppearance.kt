@@ -2,6 +2,8 @@ package com.majkeylab.scanit
 
 private const val DEFAULT_FILTER_INTENSITY = 100
 private const val DEFAULT_SHADOWS = 50
+private const val SMART_CLEANUP_MARGIN_DIVISOR = 8
+private const val SMART_CLEANUP_MIN_MARGIN_PIXELS = 2
 internal const val LOCAL_SHADOW_GRID_SIZE = 8
 
 internal enum class ScanColorMode(val wireValue: String) {
@@ -216,13 +218,119 @@ internal fun processScanPixels(
         }
     val normalizedAppearance = appearance.copy(intensity = intensity)
     return IntArray(pixels.size) { index ->
+        val preparedLuma =
+            if (
+                appearance.colorMode == ScanColorMode.Whiteboard &&
+                    intensity > 0
+            ) {
+                if (isLikelyEdgeFingerPixel(pixels, width, height, index)) {
+                    255
+                } else {
+                    sharpenDocumentLumaUnchecked(correctedLuma, width, height, index)
+                }
+            } else {
+                correctedLuma[index]
+            }
         processAppearancePixel(
             pixel = pixels[index],
-            correctedLuma = correctedLuma[index],
+            correctedLuma = preparedLuma,
             appearance = normalizedAppearance,
             blackWhiteThreshold = blackWhiteThreshold,
         )
     }
+}
+
+internal fun sharpenDocumentLuma(
+    luma: IntArray,
+    width: Int,
+    height: Int,
+    index: Int,
+): Int {
+    requireImageShape(luma.size, width, height)
+    require(index in luma.indices) { "Luma index is outside the image" }
+    require(luma.all { it in 0..255 }) { "Luma values must be between 0 and 255" }
+    return sharpenDocumentLumaUnchecked(luma, width, height, index)
+}
+
+private fun sharpenDocumentLumaUnchecked(
+    luma: IntArray,
+    width: Int,
+    height: Int,
+    index: Int,
+): Int {
+    val x = index % width
+    val y = index / width
+    val center = luma[index]
+    val left = if (x > 0) luma[index - 1] else center
+    val right = if (x + 1 < width) luma[index + 1] else center
+    val top = if (y > 0) luma[index - width] else center
+    val bottom = if (y + 1 < height) luma[index + width] else center
+    return sharpenCrossLuma(center, left, right, top, bottom)
+}
+
+internal fun sharpenCrossLuma(
+    center: Int,
+    left: Int,
+    right: Int,
+    top: Int,
+    bottom: Int,
+): Int = (center * 5 - left - right - top - bottom).coerceIn(0, 255)
+
+// ponytail: margin-only color heuristic; add on-device segmentation only if real misses justify its model size.
+private fun isLikelyEdgeFingerPixel(
+    pixels: IntArray,
+    width: Int,
+    height: Int,
+    index: Int,
+): Boolean {
+    val x = index % width
+    val y = index / width
+    if (!isSmartCleanupMarginPixel(x, y, width, height)) return false
+    if (!isLikelySkinTone(pixels[index])) return false
+
+    var skinPixels = 0
+    var samples = 0
+    for (neighborY in maxOf(0, y - 1)..minOf(height - 1, y + 1)) {
+        for (neighborX in maxOf(0, x - 1)..minOf(width - 1, x + 1)) {
+            samples++
+            if (isLikelySkinTone(pixels[neighborY * width + neighborX])) skinPixels++
+        }
+    }
+    return hasDenseSmartCleanupSkinNeighborhood(skinPixels, samples)
+}
+
+internal fun isSmartCleanupMarginPixel(
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+): Boolean {
+    val margin =
+        maxOf(
+            SMART_CLEANUP_MIN_MARGIN_PIXELS,
+            minOf(width, height) / SMART_CLEANUP_MARGIN_DIVISOR,
+        )
+    return x < margin || x >= width - margin || y < margin || y >= height - margin
+}
+
+internal fun hasDenseSmartCleanupSkinNeighborhood(skinPixels: Int, samples: Int): Boolean =
+    samples > 0 && skinPixels * 3 >= samples * 2
+
+internal fun isLikelySkinTone(pixel: Int): Boolean {
+    if (pixel ushr 24 < 128) return false
+    val red = pixel ushr 16 and 0xFF
+    val green = pixel ushr 8 and 0xFF
+    val blue = pixel and 0xFF
+    val cb = (-43 * red - 85 * green + 128 * blue + 32_768) shr 8
+    val cr = (128 * red - 107 * green - 21 * blue + 32_768) shr 8
+    return red > 40 &&
+        green > 20 &&
+        blue > 10 &&
+        red > green &&
+        red > blue &&
+        maxOf(red, green, blue) - minOf(red, green, blue) > 15 &&
+        cb in 77..127 &&
+        cr in 133..173
 }
 
 internal fun processAppearancePixel(

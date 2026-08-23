@@ -227,8 +227,15 @@
     <string name="document_action_section_use">Use</string>
     <string name="document_action_section_protect">Protect</string>
     <string name="document_action_section_improve">Improve</string>
-    <string name="clean_whiteboard">Clean whiteboard</string>
-    <string name="clean_whiteboard_preparing">Preparing whiteboard preview…</string>
+    <string name="clean_whiteboard">Smart cleanup</string>
+    <string name="manual_cleanup">Manual cleanup</string>
+    <string name="manual_cleanup_scope">Selected page · On-device</string>
+    <string name="manual_cleanup_working">Applying cleanup…</string>
+    <string name="manual_cleanup_hint">Draw a loop around each spot to remove.</string>
+    <string name="manual_cleanup_canvas_accessibility">Document cleanup drawing area</string>
+    <string name="manual_cleanup_apply">Apply cleanup</string>
+    <string name="manual_cleanup_failed">Cleanup failed. Try a smaller loop.</string>
+    <string name="clean_whiteboard_preparing">Preparing cleanup preview…</string>
     <string name="clean_whiteboard_before">Before</string>
     <string name="clean_whiteboard_after">After</string>
     <string name="apply_clean_whiteboard">Apply cleanup</string>

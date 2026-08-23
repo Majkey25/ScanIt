@@ -301,6 +301,45 @@ class ScanAppearanceTest {
         )
     }
 
+    @Test
+    fun smartCleanupWhitensDenseSkinToneOnlyAtPageEdge() {
+        val width = 10
+        val height = 10
+        val edgeSkin = argb(red = 147, green = 89, blue = 67)
+        val interiorSkin = argb(red = 180, green = 120, blue = 90)
+        val source = IntArray(width * height) { gray(255) }
+        for (y in 3..6) {
+            source[y * width] = edgeSkin
+            source[y * width + 1] = edgeSkin
+            source[y * width + 2] = edgeSkin
+            source[y * width + 5] = interiorSkin
+            source[y * width + 6] = interiorSkin
+            source[y * width + 7] = interiorSkin
+        }
+
+        val cleaned =
+            processScanPixels(
+                source,
+                width,
+                height,
+                ScanAppearance(ScanColorMode.Whiteboard, intensity = 100, shadows = 0),
+            )
+
+        assertTrue((3..6).all { y -> cleaned[y * width] == gray(255) })
+        assertTrue((3..6).all { y -> cleaned[y * width + 1] == gray(255) })
+        assertTrue((3..6).all { y -> cleaned[y * width + 5] == gray(0) })
+        assertTrue((3..6).all { y -> cleaned[y * width + 6] == gray(0) })
+    }
+
+    @Test
+    fun smartCleanupSharpensSoftTextEdge() {
+        val luma = intArrayOf(255, 180, 100, 180, 255)
+
+        assertEquals(0, sharpenDocumentLuma(luma, width = 5, height = 1, index = 2))
+        assertEquals(185, sharpenDocumentLuma(luma, width = 5, height = 1, index = 1))
+        assertEquals(255, sharpenDocumentLuma(luma, width = 5, height = 1, index = 0))
+    }
+
     private fun argb(
         red: Int,
         green: Int,

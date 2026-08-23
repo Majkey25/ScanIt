@@ -1060,6 +1060,13 @@ internal data class VisualMarkEditorState(
     val message: UiMessage? = null,
 )
 
+internal data class ManualCleanupEditorState(
+    val source: MarkEditorSource,
+    val strokes: List<MarkStroke> = emptyList(),
+    val applying: Boolean = false,
+    val message: UiMessage? = null,
+)
+
 internal enum class DocumentAction(val wireValue: String) {
     ExtractText("extract_text"),
     FindText("find_text"),
@@ -1070,6 +1077,7 @@ internal enum class DocumentAction(val wireValue: String) {
     SafeShare("safe_share"),
     RedactDocument("redact_document"),
     CleanWhiteboard("clean_whiteboard"),
+    ManualCleanup("manual_cleanup"),
 }
 
 internal enum class DocumentActionSectionTitle {
@@ -1104,7 +1112,10 @@ internal fun documentActionInventory(): List<DocumentActionSection> =
         ),
         DocumentActionSection(
             DocumentActionSectionTitle.Improve,
-            listOf(DocumentAction.CleanWhiteboard),
+            listOf(
+                DocumentAction.CleanWhiteboard,
+                DocumentAction.ManualCleanup,
+            ),
         ),
     )
 
@@ -1375,7 +1386,8 @@ internal sealed interface DocumentActionState {
 }
 
 internal fun documentActionDismissAllowed(state: DocumentActionState?): Boolean =
-    state !is DocumentActionState.Processing || state.action != DocumentAction.CleanWhiteboard
+    state !is DocumentActionState.Processing ||
+        state.action != DocumentAction.CleanWhiteboard
 
 internal enum class DocumentTextExportStatus {
     Saved,
@@ -1680,6 +1692,7 @@ internal sealed interface ScreenState {
         val outputChangeInProgress: Boolean = false,
         val imageSharePreparationInProgress: Boolean = false,
         val visualMarkEditor: VisualMarkEditorState? = null,
+        val manualCleanupEditor: ManualCleanupEditorState? = null,
         val documentActionState: DocumentActionState? = null,
         val safeShareState: SafeShareState? = null,
         val safeShareScope: SafeShareScope? = null,
@@ -1702,7 +1715,8 @@ internal val ScreenState.Result.resultActionsBlocked: Boolean
             documentActionState is DocumentActionState.Processing ||
             documentActionState is DocumentActionState.Exporting ||
             safeShareState != null ||
-            visualMarkEditor != null
+            visualMarkEditor != null ||
+            manualCleanupEditor != null
 
 internal val ScreenState.Result.canAddVisualMark: Boolean
     get() =

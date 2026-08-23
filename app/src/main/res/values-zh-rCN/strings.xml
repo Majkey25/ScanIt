@@ -224,8 +224,15 @@
     <string name="document_action_section_use">使用</string>
     <string name="document_action_section_protect">保护</string>
     <string name="document_action_section_improve">改善</string>
-    <string name="clean_whiteboard">清理白板</string>
-    <string name="clean_whiteboard_preparing">正在准备白板预览…</string>
+    <string name="clean_whiteboard">智能清理</string>
+    <string name="manual_cleanup">手动清理</string>
+    <string name="manual_cleanup_scope">所选页面 · 设备端</string>
+    <string name="manual_cleanup_working">正在应用清理…</string>
+    <string name="manual_cleanup_hint">圈出每个要移除的污点。</string>
+    <string name="manual_cleanup_canvas_accessibility">文档清理绘制区域</string>
+    <string name="manual_cleanup_apply">应用清理</string>
+    <string name="manual_cleanup_failed">清理失败。请缩小选择区域。</string>
+    <string name="clean_whiteboard_preparing">正在准备清理预览…</string>
     <string name="clean_whiteboard_before">处理前</string>
     <string name="clean_whiteboard_after">处理后</string>
     <string name="apply_clean_whiteboard">应用清理</string>

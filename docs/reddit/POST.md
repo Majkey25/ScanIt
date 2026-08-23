@@ -30,10 +30,10 @@ integrity. PDF size options are measured goals, not a lossless-compression
 promise; if a readable result cannot meet the target, ScanIt shows the actual
 size.
 
-The public build has no account, subscription, first-party analytics,
-cloud document library, or app-owned Internet permission. Scanned content stays
-on the device unless you choose to share or print it. The scanner uses Google
-ML Kit Document Scanner through Google Play services.
+The public build has no ScanIt account, subscription, first-party analytics,
+ads, cloud document library, or generative-AI client. Scanning and cleanup stay
+on-device. The scanner uses Google ML Kit Document Scanner through Google Play
+services.
 
 The source is visible for review, but current material is proprietary rather
 than open source. Historical MIT releases keep their original MIT license. The

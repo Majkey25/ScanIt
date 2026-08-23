@@ -699,6 +699,38 @@ internal fun copyDerivedSourcePage(source: File, target: File) {
     }
 }
 
+private fun normalizeScannerPageOrientation(
+    page: File,
+    orientation: ImageExifOrientation,
+    isCancelled: () -> Boolean,
+) {
+    if (orientation == ImageExifOrientation.Normal) return
+    val rotated = File(requireNotNull(page.parentFile), ".${page.name}.orientation.jpg")
+    if (rotated.exists()) throw IOException("Scanner orientation target already exists")
+    try {
+        val rendered =
+            renderImageExport(
+                source = page,
+                destination = rotated,
+                options = ResolvedImageExport(ImageExportFormat.Jpeg, null, null),
+                isCancelled = isCancelled,
+                orientationOverride = orientation,
+            )
+        Files.move(
+            rotated.toPath(),
+            page.toPath(),
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        val dimensions = readJpegDimensions(page)
+        if (dimensions.width != rendered.width || dimensions.height != rendered.height) {
+            throw IOException("Scanner orientation output dimensions changed")
+        }
+    } finally {
+        Files.deleteIfExists(rotated.toPath())
+    }
+}
+
 private data class ParsedCacheEntry(
     val directory: File,
     val recent: RecentScan,
@@ -1961,11 +1993,14 @@ internal class ScanStorage(
         pageUris: List<Uri>,
         appearanceSettings: ScanAppearanceSettings,
         pdfSizeTarget: PdfSizeTarget,
+        pageOrientations: List<ImageExifOrientation> =
+            List(pageUris.size) { ImageExifOrientation.Normal },
         isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     ): CachedScanBuild =
         storageTransactionLock.withLock {
             require(pageUris.isNotEmpty()) { "Scanner returned no pages" }
             require(isAcceptedScanPageCount(pageUris.size)) { "Scanner returned too many pages" }
+            val orientations = validatedScannerPageOrientations(pageUris.size, pageOrientations)
             val baseName = scanBaseName(clock)
             val appearance = appearanceSettings.selected()
             val shareRoot = ensureShareRoot(shareCacheRoot())
@@ -1983,6 +2018,7 @@ internal class ScanStorage(
                         if (copyLimit <= 0L) throw IOException("Scanner input is too large")
                         File(workDirectory, scanSourcePageFileName(baseName, index + 1)).also {
                             remainingSourceBytes -= copyUriToFile(uri, it, copyLimit, isCancelled)
+                            normalizeScannerPageOrientation(it, orientations[index], isCancelled)
                         }
                     }
                 val renderedPages =
@@ -2170,6 +2206,98 @@ internal class ScanStorage(
                                 destination = output,
                                 mark = mark,
                                 placement = placement,
+                                isCancelled = isCancelled,
+                            )
+                        },
+                    )
+                val renderedPages =
+                    sourcePages.mapIndexed { index, page ->
+                        File(workDirectory, scanPageFileName(baseName, index + 1)).also { destination ->
+                            ScanAppearanceRenderer.renderJpeg(
+                                page,
+                                destination,
+                                appearance,
+                                isCancelled = isCancelled,
+                            )
+                        }
+                    }
+                val pdfBuild =
+                    buildScanPdfFromPages(
+                        output = File(workDirectory, scanPdfFileName(baseName)),
+                        sourcePages = sourcePages,
+                        renderedPages = renderedPages,
+                        appearance = appearance,
+                        target = source.pdfSizeTarget,
+                        isCancelled = isCancelled,
+                    )
+                writeScanAppearanceMetadata(
+                    directory = workDirectory,
+                    appearanceSettings = appearanceSettings,
+                    pdfSizeTarget = source.pdfSizeTarget,
+                    lineageCacheId = source.lineageCacheId,
+                    parentCacheId = source.baseName,
+                    parentEntryId = source.entryId,
+                    restoreSettingsOnActivation = false,
+                )
+                initializeOutputMetadata(
+                    directory = workDirectory,
+                    cacheId = baseName,
+                    pageCount = renderedPages.size,
+                    createdAtEpochMs = clock.millis(),
+                    pdfSizeTarget = source.pdfSizeTarget,
+                )
+                CachedScanBuild(
+                    cached = recentScanCache.publishProvisional(workDirectory, finalDirectory),
+                    pdf = pdfBuild,
+                )
+            } catch (failure: Throwable) {
+                deleteRecursivelyOrSuppress(workDirectory, failure)
+                throw failure
+            }
+        }
+
+    fun createManualCleanupVariant(
+        source: CachedScan,
+        selectedPageIndex: Int,
+        strokes: List<MarkStroke>,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): CachedScanBuild =
+        storageTransactionLock.withLock {
+            requireCurrentOutputMetadata(source)
+            val appearanceSettings = source.appearanceSettings
+                ?: throw IOException("Cached scan appearance settings are unavailable")
+            if (
+                source.sourcePages.size != source.pages.size ||
+                    source.sourcePages.isEmpty() ||
+                    selectedPageIndex !in source.sourcePages.indices ||
+                    source.entryId == null
+            ) {
+                throw IOException("Cached scan has no immutable cleanup sources")
+            }
+            validateNormalizedMarkStrokes(strokes)
+            if (strokes.any { it.points.size < 3 }) {
+                throw IOException("Manual cleanup lasso is incomplete")
+            }
+            val appearance = appearanceSettings.selected()
+            val shareRoot = ensureShareRoot(shareCacheRoot())
+            val baseName = recentScanCache.nextDerivedCacheId(source.lineageCacheId, "cleanup")
+            val finalDirectory = File(shareRoot, baseName)
+            val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
+            if (!workDirectory.mkdir()) {
+                throw IOException("Pending cleanup cache directory could not be created")
+            }
+            try {
+                val sourcePages =
+                    writeMarkedSourcePages(
+                        sourcePages = source.sourcePages,
+                        workDirectory = workDirectory,
+                        derivedBaseName = baseName,
+                        selectedPageIndex = selectedPageIndex,
+                        renderSelectedPage = { input, output ->
+                            renderManualCleanupJpeg(
+                                source = input,
+                                destination = output,
+                                strokes = strokes,
                                 isCancelled = isCancelled,
                             )
                         },

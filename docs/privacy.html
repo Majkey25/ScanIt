@@ -23,16 +23,16 @@
 
   <main id="main" class="policy">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective and last updated: 2026-08-15</p>
+    <p class="updated">Effective and last updated: 2026-08-23</p>
 
     <p>This policy describes the public ScanIt Android app and this ScanIt website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
 
     <div class="notice">
-      <strong>Short version:</strong> scanned document content stays on the device unless you explicitly share or print it. ScanIt has no accounts, ads, first-party analytics, maintainer-operated document server, or public cloud-processing feature. Google Play services and ML Kit process limited diagnostic and usage telemetry.
+      <strong>Short version:</strong> scanning and document actions stay on-device. ScanIt has no accounts, ads, first-party analytics, maintainer-operated document server, or generative-AI client. Google Play services and ML Kit operate under Google's terms.
     </div>
 
     <h2>Information the app handles locally</h2>
-    <p>ScanIt handles pages you scan or import, the generated PDF, local saving preferences, language choice, selected folder access, and email subject or message defaults. This information is used only to provide the requested scanning, saving, sharing, and printing functions.</p>
+    <p>ScanIt handles pages you scan or import, the generated PDF, local saving preferences, language choice, selected folder access, and email subject or message defaults. This information is used only to provide the requested scanning, saving, sharing, printing, and local cleanup functions.</p>
 
     <h3>Temporary working copies</h3>
     <p>Pages and PDFs are copied to ScanIt's app-private cache. The cache is bounded to at most eight scan directories and supplies the Result and Recent scans screens. Android may clear it. Removing an item from Recent removes that temporary working copy. When ScanIt can verify an exact saved output that it created, the confirmation dialog can also delete the selected PDF, Gallery images, or both.</p>
@@ -50,11 +50,14 @@
 
     <p>See Google's current <a href="https://developers.google.com/ml-kit/terms">ML Kit Terms and Privacy information</a>, <a href="https://developers.google.com/ml-kit/android-data-disclosure">Android data disclosure</a>, and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 
+    <h2>Local document cleanup</h2>
+    <p>Smart cleanup and Manual cleanup process document pixels on-device. Manual cleanup reads only a bounded area around each user-drawn loop and creates a reversible child revision; the parent remains in the bounded Recent cache. ScanIt does not send cleanup input or output to a cloud AI service.</p>
+
     <h2>Sharing and printing</h2>
     <p>ScanIt sends a selected PDF or image to another app or print service only after you tap a share or print action and choose a recipient. That recipient processes the file under its own privacy terms. Review the destination before sending sensitive material.</p>
 
     <h2>Information ScanIt does not request</h2>
-    <p>The public app has no account system, advertising SDK, first-party analytics, public cloud processing, contact access, location access, or notification access. ScanIt does not request its own camera permission because the scanner uses the Google Play services camera flow. It does not request broad legacy storage access.</p>
+    <p>The public app has no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. It does not request its own camera permission because the scanner uses the Google Play services camera flow, and it does not request broad legacy storage access.</p>
 
     <h2>Support email and GitHub issues</h2>
     <p>If you email support or create a GitHub issue, the information you choose to submit is used to respond, investigate a report, and maintain the project. Public GitHub issues are visible to everyone. Support correspondence is retained only while reasonably needed for support, security, or record-keeping, then deleted when no longer needed. You may request deletion of support correspondence by emailing the support address, subject to legal or security retention needs.</p>

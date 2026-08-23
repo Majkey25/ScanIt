@@ -213,6 +213,11 @@ internal fun applyScanAppearance(
             127
         }
 
+    if (appearance.colorMode == ScanColorMode.Whiteboard && appearance.intensity > 0) {
+        applySmartCleanup(bitmap, appearance, threshold, columns, rows, backgrounds, isCancelled)
+        return
+    }
+
     for (y in 0 until height) {
         throwIfCancelled(isCancelled)
         bitmap.getPixels(row, 0, width, 0, y, width, 1)
@@ -239,6 +244,116 @@ internal fun applyScanAppearance(
         }
         bitmap.setPixels(row, 0, width, 0, y, width, 1)
     }
+}
+
+private fun applySmartCleanup(
+    bitmap: Bitmap,
+    appearance: ScanAppearance,
+    threshold: Int,
+    columns: Int,
+    rows: Int,
+    backgrounds: IntArray,
+    isCancelled: () -> Boolean,
+) {
+    val width = bitmap.width
+    val height = bitmap.height
+    val pixelRows = Array(3) { IntArray(width) }
+    val lumaRows = Array(3) { IntArray(width) }
+    val output = IntArray(width)
+    loadAppearanceRow(bitmap, 0, pixelRows[0], lumaRows[0], columns, rows, backgrounds, appearance.shadows)
+    for (y in 0 until height) {
+        throwIfCancelled(isCancelled)
+        if (y < height - 1) {
+            val next = (y + 1) % pixelRows.size
+            loadAppearanceRow(
+                bitmap,
+                y + 1,
+                pixelRows[next],
+                lumaRows[next],
+                columns,
+                rows,
+                backgrounds,
+                appearance.shadows,
+            )
+        }
+        val current = y % pixelRows.size
+        val previous = if (y > 0) (y - 1) % pixelRows.size else current
+        val next = if (y < height - 1) (y + 1) % pixelRows.size else current
+        for (x in 0 until width) {
+            val correctedLuma = lumaRows[current][x]
+            val preparedLuma =
+                if (isLikelyEdgeFingerPixel(pixelRows, x, y, width, height)) {
+                    255
+                } else {
+                    sharpenCrossLuma(
+                        center = correctedLuma,
+                        left = lumaRows[current][maxOf(0, x - 1)],
+                        right = lumaRows[current][minOf(width - 1, x + 1)],
+                        top = lumaRows[previous][x],
+                        bottom = lumaRows[next][x],
+                    )
+                }
+            output[x] =
+                processAppearancePixel(
+                    pixel = pixelRows[current][x],
+                    correctedLuma = preparedLuma,
+                    appearance = appearance,
+                    blackWhiteThreshold = threshold,
+                )
+        }
+        bitmap.setPixels(output, 0, width, 0, y, width, 1)
+    }
+}
+
+private fun loadAppearanceRow(
+    bitmap: Bitmap,
+    y: Int,
+    pixels: IntArray,
+    luma: IntArray,
+    columns: Int,
+    rows: Int,
+    backgrounds: IntArray,
+    shadowStrength: Int,
+) {
+    val width = bitmap.width
+    val height = bitmap.height
+    bitmap.getPixels(pixels, 0, width, 0, y, width, 1)
+    for (x in 0 until width) {
+        luma[x] =
+            correctedLuma(
+                argbLuma(pixels[x]),
+                x,
+                y,
+                width,
+                height,
+                columns,
+                rows,
+                backgrounds,
+                shadowStrength,
+            )
+    }
+}
+
+private fun isLikelyEdgeFingerPixel(
+    pixelRows: Array<IntArray>,
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+): Boolean {
+    if (!isSmartCleanupMarginPixel(x, y, width, height)) return false
+    val current = pixelRows[y % pixelRows.size]
+    if (!isLikelySkinTone(current[x])) return false
+    var skinPixels = 0
+    var samples = 0
+    for (neighborY in maxOf(0, y - 1)..minOf(height - 1, y + 1)) {
+        val row = pixelRows[neighborY % pixelRows.size]
+        for (neighborX in maxOf(0, x - 1)..minOf(width - 1, x + 1)) {
+            samples++
+            if (isLikelySkinTone(row[neighborX])) skinPixels++
+        }
+    }
+    return hasDenseSmartCleanupSkinNeighborhood(skinPixels, samples)
 }
 
 private fun correctedLuma(
