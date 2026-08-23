@@ -101,6 +101,7 @@ internal fun renderImageExport(
     destination: File,
     options: ResolvedImageExport,
     isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    orientationOverride: ImageExifOrientation? = null,
 ): RenderedImageExport {
     val input = requireReadableImageExportSource(source)
     val target = requireImageExportDestination(destination)
@@ -110,13 +111,13 @@ internal fun renderImageExport(
     val sourceLength = input.length()
     val sourceModified = input.lastModified()
     val bounds = readImageBounds(input)
-    val orientation = readImageExifOrientation(input)
+    val orientation = orientationOverride ?: readImageExifOrientation(input)
     val orientedBounds =
         orientedImageExportDimensions(bounds.width, bounds.height, orientation)
     val encoding = resolveImageExportEncoding(options.format, bounds.format)
     throwIfImageExportCancelled(isCancelled)
 
-    if (isExactImageExportCopy(options, bounds.format)) {
+    if (isExactImageExportCopy(options, bounds.format, orientationOverride)) {
         publishImageExportAtomically(target, isCancelled) { staging ->
             Files.copy(input.toPath(), staging.toPath(), StandardCopyOption.REPLACE_EXISTING)
             FileOutputStream(staging, true).use { it.fd.sync() }
@@ -212,8 +213,10 @@ internal fun renderImageExport(
 internal fun isExactImageExportCopy(
     options: ResolvedImageExport,
     sourceFormat: EncodedImageFormat?,
+    orientationOverride: ImageExifOrientation? = null,
 ): Boolean =
-    sourceFormat != null &&
+    orientationOverride == null &&
+        sourceFormat != null &&
         options.format == ImageExportFormat.Original &&
         options.maxDimension == null
 

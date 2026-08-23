@@ -13,10 +13,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.3.8"><img src="docs/images/scanit-current-overview.png" width="100%" alt="Current ScanIt v1.3.8 workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.4.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.3.8 update
+## v1.4.0 update
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
@@ -31,6 +31,12 @@ can be moved directly on a larger preview, resized and rotated with gestures, or
 fine-tuned from the collapsed Manual position panel.
 ScanIt now supports Android 13 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
+
+ScanIt now corrects page orientation from recognized line angles, with a portrait
+fallback for textless landscape scans, before creating the result. Document Actions
+also contain local Smart cleanup and Manual cleanup. Smart cleanup improves paper
+contrast and removes likely edge fingers; Manual cleanup replaces user-drawn spots
+with the surrounding paper color. Both create reversible child revisions.
 
 The Result screen now keeps the document preview prominent and opens a
 full-screen zoomable viewer when tapped. File details can change a document's
@@ -50,7 +56,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, ScanIt opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.3.8](https://github.com/Majkey25/ScanIt/releases/tag/v1.3.8)
+[Download ScanIt v1.4.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.4.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -89,6 +95,7 @@ source, release artifacts, and real-device workflows.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
 - Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before ScanIt creates the result.
+- Automatic orientation correction from text-line angles, with a portrait fallback for textless landscape scans.
 - Measured PDF size goals of Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, or a custom 1 KB–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
@@ -97,13 +104,14 @@ source, release artifacts, and real-device workflows.
 - Per-document image size, format, and folder changes with exact Original, high-quality JPEG, and lossless PNG export.
 - Full-screen zoom and multipage browsing from the Result preview.
 - On-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection with selectable results.
+- Local Smart cleanup and lasso-based Manual cleanup with a preserved parent revision.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
 - Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.
-- No account, subscription, first-party analytics, cloud document library, or public cloud-processing feature.
+- No ScanIt account, subscription, first-party analytics, advertising SDK, or cloud document library.
 - No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
 
 ## Install
@@ -112,7 +120,7 @@ Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
 
 Google Play services may download the scanner and recognition modules before
-their first use. ScanIt itself does not request the `INTERNET` permission.
+their first use. The public ScanIt app declares no app-owned Internet permission.
 
 Requirements for the current public code:
 
@@ -130,6 +138,7 @@ flowchart LR
     C --> D["PDF / Gallery"]
     C --> E["Share / Print"]
     C --> F["Recent scans"]
+    C --> G["Local cleanup"]
 ```
 
 The scanner processes document content on-device. ScanIt keeps at most eight
@@ -139,7 +148,8 @@ Gallery remain until the user deletes them.
 
 ## Privacy and security
 
-- The public Google Play and GitHub variants contain no app-owned `INTERNET` permission.
+- Ordinary scanning, OCR, barcode detection, redaction, and file creation remain on-device.
+- Smart cleanup and Manual cleanup process document pixels locally and preserve the parent revision.
 - Google Play services and ML Kit may process diagnostic and usage telemetry; scanned input remains on-device according to Google's ML Kit documentation.
 - ScanIt does not send scanned content to a maintainer-operated server.
 - File sharing uses scoped content URIs with read access granted to the selected receiving app.
@@ -178,7 +188,7 @@ passwords must never enter Git.
 
 | Area | Choice |
 |---|---|
-| UI | One Activity, Jetpack Compose, Material 3 |
+| UI | One launcher, Jetpack Compose, Material 3 |
 | Scanner | Google ML Kit Document Scanner |
 | Storage | MediaStore, Storage Access Framework, bounded app cache |
 | PDF | Bounded JPEG/bitonal writers + Android `PrintedPdfDocument` for printing |
@@ -189,6 +199,7 @@ passwords must never enter Git.
 
 - Android decides which compatible apps appear in the Sharesheet.
 - Recent scans are temporary working copies, not a permanent document library.
+- A textless landscape page is assumed to be sideways and is rotated to portrait; use the Google review editor for a legitimate textless landscape document.
 - Android 17 has no `maxSdk` restriction but has not yet been device-tested.
 - Google Play publication is still in testing; do not describe the app as a production Play release yet.
 - Visual marks do not verify identity, authorization, or document integrity.

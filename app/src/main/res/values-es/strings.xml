@@ -226,8 +226,15 @@
     <string name="document_action_section_use">Usar</string>
     <string name="document_action_section_protect">Proteger</string>
     <string name="document_action_section_improve">Mejorar</string>
-    <string name="clean_whiteboard">Limpiar pizarra</string>
-    <string name="clean_whiteboard_preparing">Preparando la vista previa de la pizarra…</string>
+    <string name="clean_whiteboard">Limpieza inteligente</string>
+    <string name="manual_cleanup">Limpieza manual</string>
+    <string name="manual_cleanup_scope">Página seleccionada · En el dispositivo</string>
+    <string name="manual_cleanup_working">Aplicando limpieza…</string>
+    <string name="manual_cleanup_hint">Rodea cada mancha que quieras eliminar.</string>
+    <string name="manual_cleanup_canvas_accessibility">Área de dibujo para limpiar el documento</string>
+    <string name="manual_cleanup_apply">Aplicar limpieza</string>
+    <string name="manual_cleanup_failed">La limpieza falló. Prueba con un área más pequeña.</string>
+    <string name="clean_whiteboard_preparing">Preparando la vista previa de limpieza…</string>
     <string name="clean_whiteboard_before">Antes</string>
     <string name="clean_whiteboard_after">Después</string>
     <string name="apply_clean_whiteboard">Aplicar limpieza</string>

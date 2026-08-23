@@ -208,6 +208,10 @@ internal fun ScanItApp(
     onRunDocumentAction: (DocumentAction) -> Unit = {},
     onRunSafeShare: (SafeShareScope) -> Unit = {},
     onRunManualRedaction: (SafeShareScope) -> Unit = {},
+    onOpenManualCleanup: () -> Unit = {},
+    onCloseManualCleanup: () -> Unit = {},
+    onUpdateManualCleanup: (List<MarkStroke>) -> Unit = {},
+    onApplyManualCleanup: () -> Unit = {},
     onRunCleanWhiteboard: (SafeShareScope) -> Unit = {},
     onApplyCleanWhiteboard: () -> Unit = {},
     onCancelSafeShare: () -> Unit = {},
@@ -249,10 +253,12 @@ internal fun ScanItApp(
         )
     BackHandler {
         val visualMarkEditor = (state as? ScreenState.Result)?.visualMarkEditor
+        val manualCleanupEditor = (state as? ScreenState.Result)?.manualCleanupEditor
         val documentActionState = (state as? ScreenState.Result)?.documentActionState
         when {
             backAction == AppBackAction.CancelSafeShare -> onCancelSafeShare()
             !documentActionDismissAllowed(documentActionState) -> Unit
+            manualCleanupEditor != null -> onCloseManualCleanup()
             visualMarkEditor != null -> onCloseVisualMarkEditor()
             documentActionState != null -> onDismissDocumentAction()
             backAction == AppBackAction.CloseSettings -> showSettings = false
@@ -278,6 +284,14 @@ internal fun ScanItApp(
                 onDeleteRegion = onDeleteSafeShareRegion,
                 onApply = onApplySafeShare,
                 onLoadPreview = onLoadResultPreview,
+            )
+        } else if (state is ScreenState.Result && state.manualCleanupEditor != null) {
+            ManualCleanupEditorScreen(
+                result = state,
+                editor = state.manualCleanupEditor,
+                onClose = onCloseManualCleanup,
+                onStrokesChange = onUpdateManualCleanup,
+                onApply = onApplyManualCleanup,
             )
         } else if (state is ScreenState.Result && state.visualMarkEditor != null) {
             VisualMarkEditorScreen(
@@ -361,6 +375,7 @@ internal fun ScanItApp(
                         onRunDocumentAction = onRunDocumentAction,
                         onRunSafeShare = onRunSafeShare,
                         onRunManualRedaction = onRunManualRedaction,
+                        onOpenManualCleanup = onOpenManualCleanup,
                         onRunCleanWhiteboard = onRunCleanWhiteboard,
                         onApplyCleanWhiteboard = onApplyCleanWhiteboard,
                         onDismissDocumentAction = onDismissDocumentAction,
@@ -443,6 +458,7 @@ private fun ResultScreen(
     onRunDocumentAction: (DocumentAction) -> Unit,
     onRunSafeShare: (SafeShareScope) -> Unit,
     onRunManualRedaction: (SafeShareScope) -> Unit,
+    onOpenManualCleanup: () -> Unit,
     onRunCleanWhiteboard: (SafeShareScope) -> Unit,
     onApplyCleanWhiteboard: () -> Unit,
     onDismissDocumentAction: () -> Unit,
@@ -779,6 +795,10 @@ private fun ResultScreen(
                 showDocumentActions = false
                 showCleanWhiteboardScope = true
             },
+            onManualCleanup = {
+                showDocumentActions = false
+                onOpenManualCleanup()
+            },
             onSelect = { action ->
                 showDocumentActions = false
                 onRunDocumentAction(action)
@@ -1032,6 +1052,7 @@ private fun DocumentActionPickerDialog(
     onSafeShare: () -> Unit,
     onRedactDocument: () -> Unit,
     onCleanWhiteboard: () -> Unit,
+    onManualCleanup: () -> Unit,
     onSelect: (DocumentAction) -> Unit,
 ) {
     val maxHeight =
@@ -1115,6 +1136,7 @@ private fun DocumentActionPickerDialog(
                                                 DocumentAction.SafeShare -> onSafeShare
                                                 DocumentAction.RedactDocument -> onRedactDocument
                                                 DocumentAction.CleanWhiteboard -> onCleanWhiteboard
+                                                DocumentAction.ManualCleanup -> onManualCleanup
                                                 else -> { { onSelect(action) } }
                                             },
                                     )
@@ -1153,6 +1175,7 @@ internal fun documentActionIcon(action: DocumentAction): Int =
         DocumentAction.SafeShare -> R.drawable.ic_action_safe_share
         DocumentAction.RedactDocument -> R.drawable.ic_action_redact
         DocumentAction.CleanWhiteboard -> R.drawable.ic_action_clean_whiteboard
+        DocumentAction.ManualCleanup -> R.drawable.ic_action_manual_cleanup
     }
 
 private fun documentActionLabel(action: DocumentAction): Int =
@@ -1166,6 +1189,7 @@ private fun documentActionLabel(action: DocumentAction): Int =
         DocumentAction.SafeShare -> R.string.safe_share
         DocumentAction.RedactDocument -> R.string.redact_document
         DocumentAction.CleanWhiteboard -> R.string.clean_whiteboard
+        DocumentAction.ManualCleanup -> R.string.manual_cleanup
     }
 
 private fun documentActionScope(action: DocumentAction): Int =
@@ -1181,6 +1205,7 @@ private fun documentActionScope(action: DocumentAction): Int =
         DocumentAction.RedactDocument,
         DocumentAction.CleanWhiteboard,
         -> R.string.selected_page_or_all_pages
+        DocumentAction.ManualCleanup -> R.string.manual_cleanup_scope
     }
 
 @Composable
@@ -1312,6 +1337,7 @@ private fun DocumentActionStateDialog(
                     DocumentAction.RedactDocument -> stringResource(R.string.redact_document)
                     DocumentAction.CleanWhiteboard ->
                         stringResource(R.string.clean_whiteboard_preparing)
+                    DocumentAction.ManualCleanup -> stringResource(R.string.manual_cleanup_working)
                 }
             is DocumentActionState.Completed ->
                 when (state.action) {
@@ -1380,12 +1406,7 @@ private fun DocumentActionStateDialog(
         }
     AlertDialog(
         onDismissRequest = {
-            if (
-                state !is DocumentActionState.Processing ||
-                    state.action != DocumentAction.CleanWhiteboard
-            ) {
-                onDismiss()
-            }
+            if (documentActionDismissAllowed(state)) onDismiss()
         },
         title = { Text(title) },
         text = {
@@ -1740,9 +1761,7 @@ private fun DocumentActionStateDialog(
                             Text(stringResource(R.string.copy))
                         }
                     }
-                    if (state !is DocumentActionState.Processing ||
-                        state.action != DocumentAction.CleanWhiteboard
-                    ) {
+                    if (documentActionDismissAllowed(state)) {
                         TextButton(
                             onClick = onDismiss,
                             modifier = Modifier.heightIn(min = 48.dp),
@@ -3340,7 +3359,7 @@ private fun MainScaffold(
 }
 
 @Composable
-private fun CompactTopBar(
+internal fun CompactTopBar(
     title: String,
     onBack: (() -> Unit)? = null,
     backEnabled: Boolean = true,
@@ -3840,6 +3859,7 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 Button(
@@ -3864,6 +3884,7 @@ private fun SettingsScreen(
                     Text(stringResource(R.string.support_scanit))
                 }
             }
+            item { Spacer(Modifier.height(8.dp)) }
             item {
                 Surface(
                     shape = MaterialTheme.shapes.medium,

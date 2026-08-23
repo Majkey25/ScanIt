@@ -229,8 +229,15 @@
     <string name="document_action_section_use">Použít</string>
     <string name="document_action_section_protect">Chránit</string>
     <string name="document_action_section_improve">Vylepšit</string>
-    <string name="clean_whiteboard">Vyčistit tabuli</string>
-    <string name="clean_whiteboard_preparing">Příprava náhledu vyčištěné tabule…</string>
+    <string name="clean_whiteboard">Chytré vyčištění</string>
+    <string name="manual_cleanup">Ruční čistič</string>
+    <string name="manual_cleanup_scope">Vybraná stránka · V zařízení</string>
+    <string name="manual_cleanup_working">Probíhá vyčištění…</string>
+    <string name="manual_cleanup_hint">Obkreslete každou skvrnu, kterou chcete odstranit.</string>
+    <string name="manual_cleanup_canvas_accessibility">Plocha pro označení skvrn v dokumentu</string>
+    <string name="manual_cleanup_apply">Použít vyčištění</string>
+    <string name="manual_cleanup_failed">Vyčištění se nezdařilo. Zkuste menší výběr.</string>
+    <string name="clean_whiteboard_preparing">Příprava náhledu vyčištěného dokumentu…</string>
     <string name="clean_whiteboard_before">Před</string>
     <string name="clean_whiteboard_after">Po</string>
     <string name="apply_clean_whiteboard">Použít vyčištění</string>

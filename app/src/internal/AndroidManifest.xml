@@ -2,19 +2,7 @@
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.INTERNET" />
-
     <application
         android:label="@string/internal_app_name"
-        tools:replace="android:label">
-        <activity
-            android:name=".InternalGeminiActivity"
-            android:exported="true"
-            android:label="@string/internal_gemini_title">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
+        tools:replace="android:label" />
 </manifest>

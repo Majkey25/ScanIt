@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `22` |
-| Version name | `1.3.8` |
+| Version code | `24` |
+| Version name | `1.4.0` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -54,6 +54,7 @@ the Play developer account.
 >
 > Features:
 > - automatic document detection and capture
+> - automatic orientation correction from text-line angles, with a portrait fallback for textless landscape scans
 > - crop, perspective correction, rotation, filters, shadow removal, and cleanup
 > - single-page and multi-page PDF, original-image, high-quality JPEG, and lossless PNG output
 > - page thumbnails for browsing multi-page results
@@ -64,6 +65,7 @@ the Play developer account.
 > - per-document image size, format, and folder changes from File details
 > - image size options for Original, 3840 px, 2560 px, 1600 px, or custom 320–6000 px
 > - on-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection
+> - local Smart cleanup and lasso-based Manual cleanup with a preserved parent revision
 > - Recent scans with page previews and saved-output deletion
 > - automatic or manual saving of PDFs and Gallery images
 > - PDF saving to Downloads or a folder you choose
@@ -74,7 +76,7 @@ the Play developer account.
 > - monochrome light and dark interface
 > - system, English, Czech, German, Spanish, and Simplified Chinese language selection
 >
-> ScanIt has no subscription, account, first-party analytics, cloud document library, or public cloud-processing feature. Scanned document content stays on the device unless you choose to share or print it.
+> ScanIt has no subscription, account, first-party analytics, ads, cloud document library, or generative-AI client. Scanning and cleanup stay on-device.
 >
 > Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, ScanIt keeps the smallest readable result and shows its actual size.
 >
@@ -100,6 +102,7 @@ the Play developer account.
 >
 > Funkce:
 > - automatická detekce a zachycení dokumentu
+> - automatická oprava orientace podle úhlů textových řádků a portrétní fallback pro landscape skeny bez textu
 > - ořez, korekce perspektivy, otočení, filtry, odstranění stínů a vyčištění
 > - jednostránkový i vícestránkový výstup do PDF, původních obrázků, kvalitního JPEG nebo bezeztrátového PNG
 > - náhledy stránek pro procházení vícestránkových výsledků
@@ -110,6 +113,7 @@ the Play developer account.
 > - změna velikosti, formátu a složky obrázků v detailech souboru
 > - velikost obrázku Původní, 3840 px, 2560 px, 1600 px nebo vlastní 320–6000 px
 > - místní rozpoznání latinského textu ze všech stran, výslovný export textu a rozpoznání QR nebo čárových kódů na aktuální straně
+> - místní Chytré vyčištění a Ruční čistič s obtažením skvrn a zachovanou původní revizí
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
 > - automatické nebo ruční ukládání PDF a obrázků do Galerie
 > - ukládání PDF do Stažených souborů nebo zvolené složky
@@ -120,35 +124,35 @@ the Play developer account.
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický, český, německý, španělský a zjednodušený čínský jazyk
 >
-> ScanIt neobsahuje předplatné, účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani veřejnou funkci cloudového zpracování. Obsah skenu zůstává v zařízení, dokud ho sami nesdílíte nebo nevytisknete.
+> ScanIt neobsahuje předplatné, účet, vlastní analytické nástroje, reklamy, cloudovou knihovnu dokumentů ani generativní AI. Skenování i vyčištění zůstávají v zařízení.
 >
 > Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, ScanIt ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 22 / 1.3.8
+## Release notes — version 24 / 1.4.0
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> File details now keeps Deleted rows aligned and detects saved images removed outside the app. Missing PDFs and images each offer Save to recreate the file safely.
+> Fixed random page rotation and Actions scrolling. Added local Smart cleanup and Manual cleanup for spots and edge fingers. The parent revision is preserved.
 
 ### Čeština
 
-> Detaily souboru nyní drží řádky Smazáno zarovnané a rozpoznají obrázky odstraněné mimo aplikaci. Chybějící PDF i obrázky lze bezpečně znovu vytvořit tlačítkem Uložit.
+> Opravena náhodná rotace stran a posouvání Akcí. Přidáno místní Chytré vyčištění a Ruční čistič skvrn a prstů u okraje. Původní revize zůstává zachována.
 
 ### Deutsch
 
-> Die Dateidetails halten Gelöscht-Zeilen ausgerichtet und erkennen extern entfernte Bilder. Fehlende PDFs und Bilder können jeweils sicher mit Speichern neu erstellt werden.
+> Zufällige Seitendrehung und Scrollfehler wurden behoben. Lokale intelligente und manuelle Bereinigung entfernen Flecken und Randfinger; die Originalrevision bleibt erhalten.
 
 ### Español
 
-> Detalles del archivo mantiene alineadas las filas Eliminado y detecta imágenes borradas fuera de la app. PDF e imágenes ausentes se pueden recrear de forma segura con Guardar.
+> Se corrigieron la rotación aleatoria y el desplazamiento. La limpieza inteligente y manual local elimina manchas y dedos del borde conservando la revisión original.
 
 ### 简体中文
 
-> 文件详情现在会保持“已删除”状态行对齐，并检测在应用外删除的图片。缺失的 PDF 和图片都可通过“保存”安全地重新创建。
+> 修复了页面随机旋转和“操作”滚动问题。新增本地智能清理和手动圈选清理，可去除污点和边缘手指，并保留原始版本。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -209,11 +213,10 @@ features change.
 
 ### Permissions and sensitive APIs
 
-The public manifest does not request ScanIt's own camera, broad storage,
-contacts, location, accounts, notifications, advertising ID, or app-owned
-internet permission. The user explicitly chooses any imported image and custom
-PDF folder through Android system pickers. Verify the final merged manifest
-again before submission.
+The public manifest requests no app-owned Internet, camera, broad storage,
+contacts, location, accounts, notifications, or advertising ID permission.
+The user explicitly chooses imported images through Android system pickers.
+Verify the final merged manifest again before submission.
 
 ## Data Safety worksheet
 
@@ -221,11 +224,11 @@ again before submission.
 
 | Question | Answer |
 |---|---|
-| Does the app collect or share required user data types? | Collects: Yes, because the ML Kit SDK transmits telemetry. Shares: No. |
-| Is all transmitted data encrypted in transit? | Yes, Google states ML Kit uses HTTPS. |
+| Does the app collect or share required user data types? | Collects: Yes, because Google Play services and ML Kit process diagnostic and usage telemetry. |
+| Is all transmitted data encrypted in transit? | Yes. Google states that ML Kit telemetry uses HTTPS. |
 | Can users request account deletion? | Not applicable; ScanIt has no accounts. |
 | Does the app provide an independent deletion-request mechanism for ML Kit telemetry? | No. Google processes that telemetry under Google's Privacy Policy. |
-| Does the app follow the Families policy? | Not applicable; target audience is 18+. |
+| Does the app follow the Families policy? | Recheck against the selected target audience; ScanIt is not designed specifically for children. |
 
 ### Data types to declare
 
@@ -272,8 +275,9 @@ Before submission, compare this worksheet with:
 3. `playReleaseRuntimeClasspath`;
 4. the current ML Kit disclosure and Play form wording.
 
-Stop submission if the artifact contains another data-processing SDK, a public
-cloud endpoint, advertising, analytics, or an app-owned `INTERNET` permission.
+Stop submission if the artifact contains an undeclared data-processing SDK or
+endpoint, advertising, billing, first-party analytics, app-owned Internet access,
+or broad permissions.
 
 ## Store assets and localization
 
@@ -326,9 +330,9 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 22, version `1.3.8`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 24, version `1.4.0`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
-- [x] Public artifact contains no public cloud-processing code or app-owned `INTERNET` permission.
+- [ ] Public artifact contains no Gemini/cloud-cleanup code or app-owned `INTERNET` permission; verify before Play submission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.
 - [x] In-app Privacy Policy link opens the Pages URL above.
 - [x] Pages root, Privacy, and Terms URLs return successfully over HTTPS.

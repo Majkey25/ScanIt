@@ -499,6 +499,7 @@ internal class ScanViewModel(
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val restoredSafeShareActive = savedStateHandle.remove<Boolean>(SAFE_SHARE_ACTIVE_KEY) == true
     private val storage = ScanStorage(application)
+    private val documentOrientationProcessor = DocumentOrientationProcessor(application)
     private val documentActionProcessor = DocumentActionProcessor(application)
     private val safeShareAnalyzer = SafeShareAnalyzer(application)
     private val markTemplateStore = MarkTemplateStore(application)
@@ -543,6 +544,7 @@ internal class ScanViewModel(
     private val ocrSnapshotOwner = OcrSnapshotOwner()
     private var documentTextExportWriteStarted = false
     private var cleanWhiteboardApplyJob: Job? = null
+    private var manualCleanupApplyJob: Job? = null
     private var visualMarkTemplateJob: Job? = null
     private var visualMarkApplyJob: Job? = null
     private var visualMarkScanSource: MarkEditorSource? = null
@@ -1247,11 +1249,14 @@ internal class ScanViewModel(
                         withContext(Dispatchers.IO) {
                             val settings = currentSettings()
                             val processingContext = currentCoroutineContext()
+                            val orientations = documentOrientationProcessor.detect(pages)
+                            currentCoroutineContext().ensureActive()
                             val cacheBuild =
                                 storage.cacheScan(
                                     pageUris = pages,
                                     appearanceSettings = googleScannerAppearanceSettings(),
                                     pdfSizeTarget = settings.pdfSizeTarget,
+                                    pageOrientations = orientations,
                                     isCancelled = { !processingContext.isActive },
                                 )
                             val cachedScan = cacheBuild.cached
@@ -1478,6 +1483,169 @@ internal class ScanViewModel(
                 dimensions.width to dimensions.height
             }
         }
+
+    fun openManualCleanupEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val cached = current.scan.cached
+        val entryId = cached.entryId ?: return
+        if (
+            current.resultActionsBlocked ||
+                current.pagePreviewLoading ||
+                current.thumbnail == null ||
+                cached.sourcePages.size != cached.pages.size ||
+                cached.sourcePages.isEmpty() ||
+                cached.appearanceSettings == null ||
+                !current.scan.outputMetadataValid
+        ) {
+            return
+        }
+        mutableState.value =
+            current.copy(
+                manualCleanupEditor =
+                    ManualCleanupEditorState(
+                        MarkEditorSource(
+                            cacheId = cached.baseName,
+                            entryId = entryId,
+                            pageIndex = resolvedPageIndex(current.selectedPageIndex, cached.pages.size),
+                        ),
+                    ),
+            )
+    }
+
+    fun closeManualCleanupEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        if (current.manualCleanupEditor?.applying == true) return
+        mutableState.value = current.copy(manualCleanupEditor = null)
+    }
+
+    fun updateManualCleanupStrokes(strokes: List<MarkStroke>) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.manualCleanupEditor ?: return
+        if (editor.applying) return
+        if (strokes.isNotEmpty()) validateNormalizedMarkStrokes(strokes)
+        mutableState.value =
+            current.copy(
+                manualCleanupEditor = editor.copy(strokes = strokes, message = null),
+            )
+    }
+
+    fun applyManualCleanup() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.manualCleanupEditor ?: return
+        if (
+            editor.applying ||
+                editor.strokes.isEmpty() ||
+                editor.strokes.any { it.points.size < 3 } ||
+                !isManualCleanupSourceCurrent(editor.source) ||
+                manualCleanupApplyJob?.isActive == true
+        ) {
+            return
+        }
+        try {
+            validateNormalizedMarkStrokes(editor.strokes)
+        } catch (_: IllegalArgumentException) {
+            mutableState.value =
+                current.copy(
+                    manualCleanupEditor =
+                        editor.copy(message = UiMessage(R.string.manual_cleanup_failed)),
+                )
+            return
+        }
+        val source = editor.source
+        val generation = beginRouteMutation(keepManualCleanupEditor = true)
+        mutableState.value =
+            current.copy(
+                manualCleanupEditor = editor.copy(applying = true, message = null),
+            )
+        manualCleanupApplyJob =
+            viewModelScope.launch {
+                var candidate: CachedScan? = null
+                var checkpointCommitted = false
+                var thumbnail: Bitmap? = null
+                var warnings: List<UiMessage> = emptyList()
+                try {
+                    val build =
+                        withContext(Dispatchers.IO) {
+                            val operationContext = currentCoroutineContext()
+                            storage.createManualCleanupVariant(
+                                source = current.scan.cached,
+                                selectedPageIndex = source.pageIndex,
+                                strokes = editor.strokes,
+                                isCancelled = { !operationContext.isActive },
+                            )
+                        }
+                    candidate = build.cached
+                    if (!build.pdf.targetMet) warnings = listOf(pdfSizeTargetWarning(build.pdf))
+                    thumbnail =
+                        withContext(Dispatchers.IO) {
+                            storage.loadThumbnail(
+                                build.cached.pages[source.pageIndex],
+                                RESULT_PREVIEW_SIZE,
+                            )
+                        }
+                    when (persistResultCheckpoint(generation, build.cached.baseName)) {
+                        ResultActivation.Applied -> checkpointCommitted = true
+                        ResultActivation.Rejected,
+                        ResultActivation.Stale,
+                        -> return@launch restoreManualCleanupApplyFailure(source, generation, candidate)
+                    }
+                    val saved =
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            completeDerivedCandidate(build.cached, warnings)
+                        }
+                    routeMutationMutex.withLock {
+                        if (routeMutationGate.isCurrent(generation)) {
+                            publishResult(
+                                ScreenState.Result(
+                                    scan = saved,
+                                    thumbnail = thumbnail,
+                                    selectedPageIndex = source.pageIndex,
+                                ),
+                            )
+                        }
+                    }
+                } catch (cancellation: CancellationException) {
+                    if (!checkpointCommitted) candidate?.let { discardAppearanceVariantUnlessActive(it) }
+                    throw cancellation
+                } catch (_: Exception) {
+                    if (!checkpointCommitted) {
+                        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+                        restoreManualCleanupApplyFailure(source, generation, null)
+                    } else {
+                        val recovered =
+                            try {
+                                withContext(NonCancellable + Dispatchers.IO) {
+                                    candidate?.let {
+                                        completeDerivedCandidate(
+                                            it,
+                                            warnings + UiMessage(R.string.state_update_failed),
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        routeMutationMutex.withLock {
+                            if (routeMutationGate.isCurrent(generation) && recovered != null) {
+                                publishResult(
+                                    ScreenState.Result(
+                                        scan = recovered,
+                                        thumbnail = thumbnail,
+                                        selectedPageIndex = source.pageIndex,
+                                    ),
+                                )
+                            } else if (routeMutationGate.isCurrent(generation)) {
+                                persistRoute(ROUTE_FAILURE)
+                                mutableState.value =
+                                    ScreenState.Failure(UiMessage(R.string.state_update_failed))
+                            }
+                        }
+                    }
+                } finally {
+                    manualCleanupApplyJob = null
+                }
+            }
+    }
 
     fun openVisualMarkEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return
@@ -2142,7 +2310,8 @@ internal class ScanViewModel(
         if (
             action == DocumentAction.SafeShare ||
                 action == DocumentAction.RedactDocument ||
-                action == DocumentAction.CleanWhiteboard
+                action == DocumentAction.CleanWhiteboard ||
+                action == DocumentAction.ManualCleanup
         ) {
             return
         }
@@ -2188,6 +2357,7 @@ internal class ScanViewModel(
                                     DocumentAction.SafeShare,
                                     DocumentAction.RedactDocument,
                                     DocumentAction.CleanWhiteboard,
+                                    DocumentAction.ManualCleanup,
                                     -> error("unreachable")
                                     DocumentAction.ExtractText,
                                     DocumentAction.FindText,
@@ -2232,6 +2402,7 @@ internal class ScanViewModel(
                                             DocumentAction.SafeShare,
                                             DocumentAction.RedactDocument,
                                             DocumentAction.CleanWhiteboard,
+                                            DocumentAction.ManualCleanup,
                                             -> error("unreachable")
                                         }
                                     }
@@ -3260,6 +3431,7 @@ internal class ScanViewModel(
 
     private fun beginRouteMutation(
         keepVisualMarkEditor: Boolean = false,
+        keepManualCleanupEditor: Boolean = false,
         keepOutputChange: Boolean = false,
     ): Long {
         invalidateDocumentAction(OcrSnapshotInvalidation.RouteMutation)
@@ -3270,6 +3442,13 @@ internal class ScanViewModel(
             val result = mutableState.value as? ScreenState.Result
             if (result?.visualMarkEditor != null) {
                 mutableState.value = result.copy(visualMarkEditor = null)
+            }
+        }
+        if (!keepManualCleanupEditor) {
+            manualCleanupApplyJob?.cancel()
+            val result = mutableState.value as? ScreenState.Result
+            if (result?.manualCleanupEditor != null) {
+                mutableState.value = result.copy(manualCleanupEditor = null)
             }
         }
         resultSaveGate.invalidate()
@@ -3398,6 +3577,44 @@ internal class ScanViewModel(
             entryId = current.scan.cached.entryId,
             selectedPageIndex = current.selectedPageIndex,
         ) && current.visualMarkEditor?.source == source
+    }
+
+    private fun isManualCleanupSourceCurrent(source: MarkEditorSource): Boolean {
+        val current = mutableState.value as? ScreenState.Result ?: return false
+        return source.isCurrent(
+            cacheId = current.scan.cached.baseName,
+            entryId = current.scan.cached.entryId,
+            selectedPageIndex = current.selectedPageIndex,
+        ) && current.manualCleanupEditor?.source == source
+    }
+
+    private suspend fun restoreManualCleanupApplyFailure(
+        source: MarkEditorSource,
+        generation: Long,
+        candidate: CachedScan?,
+    ) {
+        candidate?.let { discardAppearanceVariantUnlessActive(it) }
+        routeMutationMutex.withLock {
+            if (!routeMutationGate.isCurrent(generation)) return@withLock
+            val current = mutableState.value as? ScreenState.Result ?: return@withLock
+            val editor = current.manualCleanupEditor ?: return@withLock
+            if (editor.source != source || !source.isCurrent(
+                    current.scan.cached.baseName,
+                    current.scan.cached.entryId,
+                    current.selectedPageIndex,
+                )
+            ) {
+                return@withLock
+            }
+            mutableState.value =
+                current.copy(
+                    manualCleanupEditor =
+                        editor.copy(
+                            applying = false,
+                            message = UiMessage(R.string.manual_cleanup_failed),
+                        ),
+                )
+        }
     }
 
     private suspend fun restoreVisualMarkApplyFailure(

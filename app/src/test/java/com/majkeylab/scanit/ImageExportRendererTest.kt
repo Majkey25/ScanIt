@@ -38,6 +38,20 @@ class ImageExportRendererTest {
     }
 
     @Test
+    fun forcedOrientationRequiresRenderedOutput() {
+        val original = ResolvedImageExport(ImageExportFormat.Original, null, null)
+
+        assertTrue(isExactImageExportCopy(original, EncodedImageFormat.Jpeg, null))
+        assertFalse(
+            isExactImageExportCopy(
+                original,
+                EncodedImageFormat.Jpeg,
+                ImageExifOrientation.Rotate180,
+            ),
+        )
+    }
+
+    @Test
     fun presetAndCustomDimensionsScaleWithoutUpscaling() {
         assertEquals(
             ImageExportDimensions(3840, 2160),

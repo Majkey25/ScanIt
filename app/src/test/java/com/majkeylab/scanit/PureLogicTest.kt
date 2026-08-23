@@ -187,6 +187,7 @@ class PureLogicTest {
                 DocumentAction.SafeShare,
                 DocumentAction.RedactDocument,
                 DocumentAction.CleanWhiteboard,
+                DocumentAction.ManualCleanup,
             ),
             inventory.flatMap(DocumentActionSection::actions),
         )
@@ -206,6 +207,19 @@ class PureLogicTest {
             listOf(DocumentAction.SafeShare, DocumentAction.RedactDocument),
             documentActionInventory()
                 .single { it.title == DocumentActionSectionTitle.Protect }
+                .actions,
+        )
+    }
+
+    @Test
+    fun documentActionsExposeAutomaticAndManualCleanupSeparately() {
+        assertEquals(
+            listOf(
+                DocumentAction.CleanWhiteboard,
+                DocumentAction.ManualCleanup,
+            ),
+            documentActionInventory()
+                .single { it.title == DocumentActionSectionTitle.Improve }
                 .actions,
         )
     }

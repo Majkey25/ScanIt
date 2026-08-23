@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "23"
+$expectedVersionCode = "24"
 $expectedMinSdk = "33"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
@@ -41,7 +41,7 @@ $forbiddenPublicPermissions = @(
     "com.google.android.gms.permission.AD_ID"
 )
 
-function Test-IsForbiddenPermissionLine {
+function Test-IsPermissionLine {
     param(
         [Parameter(Mandatory)][string]$Line,
         [Parameter(Mandatory)][string]$Permission
@@ -86,10 +86,10 @@ function Assert-ReleasePolicyConfiguration {
             throw "Verifier policy does not inspect permission element: $elementName"
         }
     }
-    if (-not (Test-IsForbiddenPermissionLine -Line "uses-permission-sdk-23: name='android.permission.INTERNET'" -Permission "android.permission.INTERNET")) {
+    if (-not (Test-IsPermissionLine -Line "uses-permission-sdk-23: name='android.permission.INTERNET'" -Permission "android.permission.INTERNET")) {
         throw "Verifier policy does not inspect APK uses-permission-sdk-23 lines."
     }
-    if (Test-IsForbiddenPermissionLine -Line "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'" -Permission "android.permission.INTERNET") {
+    if (Test-IsPermissionLine -Line "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'" -Permission "android.permission.INTERNET") {
         throw "Verifier permission policy rejects an unrelated APK permission."
     }
 }
@@ -99,15 +99,15 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.4.0-beta.1-internal"
+        $expectedVersionName = "1.4.0-internal"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "1.4.0-beta.1"
+        $expectedVersionName = "1.4.0"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "1.4.0-beta.1"
+        $expectedVersionName = "1.4.0"
     }
 }
 
@@ -414,7 +414,7 @@ if ($artifactType -eq "apk") {
         throw "Public release APK must not be debuggable."
     }
     foreach ($permission in $forbiddenPublicPermissions) {
-        $permissionLines = $badging | Where-Object { Test-IsForbiddenPermissionLine -Line $_ -Permission $permission }
+        $permissionLines = $badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission $permission }
         if ($publicFlavor -and $permissionLines) {
             throw "Public release APK requests forbidden permission: $permission"
         }
