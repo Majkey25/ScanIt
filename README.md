@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img alt="Latest stable release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt"></a>
-  <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-111111">
+  <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-111111">
   <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
 
@@ -43,7 +43,7 @@ after each change, survive navigation and updates, and default to deleting saved
 PDFs after sharing while retaining saved images. Visual signatures and stamps
 can be moved directly on a larger preview, resized and rotated with gestures, or
 fine-tuned from the collapsed Manual position panel.
-ScanIt now supports Android 13 and newer while keeping the same Google scanner,
+ScanIt supports Android 10 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
 
 ScanIt now corrects page orientation from recognized line angles, with a portrait
@@ -125,20 +125,28 @@ source, release artifacts, and real-device workflows.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.
-- No ScanIt account, subscription, first-party analytics, advertising SDK, or cloud document library.
+- Stable variants have no ScanIt account, subscription, first-party analytics, advertising SDK, or cloud document library.
 - No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
 
 ## Install
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
+The currently published v1.5.0 stable binary requires Android 13; Android 10
+support starts with the VIP Ads prerelease and the next stable release.
+
+The optional
+[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.1)
+installs separately and intentionally contains ads after a completed scan. If
+you do not want ads, install the stable version. LOL.
 
 Google Play services may download the scanner and recognition modules before
-their first use. The public ScanIt app declares no app-owned Internet permission.
+their first use. Stable ScanIt declares no app-owned Internet permission; the
+separate VIP Ads beta uses Internet access only for Google ads and consent.
 
 Requirements for the current public code:
 
-- Android 13 or newer (`minSdk 33`, `targetSdk 36`).
+- Android 10 or newer (`minSdk 29`, `targetSdk 36`).
 - At least 1.7 GB total device RAM, required by ML Kit Document Scanner.
 - Google Play services for the scanner module.
 - A connection when Google Play services needs to download or update a scanner or recognition module.

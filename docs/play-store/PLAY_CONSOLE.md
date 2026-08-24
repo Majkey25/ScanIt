@@ -182,7 +182,7 @@ and does not unlock app features.
 
 Reviewer note:
 
-> ScanIt requires no account. Opening it starts the Google ML Kit document scanner. Finish a scan to reach Result, or cancel to reach Recent scans. The camera and editing flow is supplied by Google Play services. Settings is available from the gear icon. The app supports Android 13 and newer, requires Google Play services, and ML Kit requires at least 1.7 GB total device RAM.
+> ScanIt requires no account. Opening it starts the Google ML Kit document scanner. Finish a scan to reach Result, or cancel to reach Recent scans. The camera and editing flow is supplied by Google Play services. Settings is available from the gear icon. The app supports Android 10 and newer, requires Google Play services, and ML Kit requires at least 1.7 GB total device RAM.
 
 ### Ads
 

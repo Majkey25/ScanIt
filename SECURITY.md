@@ -23,7 +23,8 @@ credentials.
 
 - Ordinary scanning, OCR, barcode detection, redaction, and file creation remain on-device.
 - Smart cleanup and Manual cleanup remain on-device, preserve the parent revision, bound selection geometry and memory, and support cancellation.
-- Public variants declare no app-owned Internet permission and contain no generative-AI client, advertising SDK, billing SDK, first-party analytics SDK, broad storage permission, or maintainer-operated document backend.
+- Stable Play and GitHub variants declare no app-owned Internet permission and contain no generative-AI client, advertising SDK, billing SDK, first-party analytics SDK, broad storage permission, or maintainer-operated document backend.
+- The separate VIP Ads beta contains GMA Next-Gen and UMP, requests consent before ad loading, and never passes document content to the advertising SDK. It contains no Billing or Gemini client.
 - Google Play services supplies the ML Kit scanner UI and may download modules and process diagnostic telemetry under Google's terms.
 - Scans are held in a bounded app-private cache and exposed for sharing only through scoped content URIs.
 - Saved-output replacement verifies destination identity, size, dimensions, and SHA-256 before metadata activation and exact old-output cleanup.

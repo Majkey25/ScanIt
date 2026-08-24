@@ -5,8 +5,8 @@ The ScanIt GitHub Pages Privacy Policy target is
 before that URL is used in Google Play. The full policy source is currently in
 [`docs/privacy.html`](docs/privacy.html).
 
-The public ScanIt app has no account system, advertising SDK, first-party
-analytics, or maintainer-operated document server. Ordinary scanning, OCR,
+The stable Play and GitHub ScanIt variants have no account system, advertising
+SDK, first-party analytics, or maintainer-operated document server. Ordinary scanning, OCR,
 barcode detection, redaction, and file creation run on-device. Google Play services and ML Kit process limited
 diagnostic and usage telemetry as described in the canonical policy and
 [Google's ML Kit disclosure](https://developers.google.com/ml-kit/android-data-disclosure).
@@ -16,6 +16,15 @@ before first use. ScanIt does not upload their input or results to a
 maintainer-operated service. Text is
 exported only to a document destination the user selects. Copying a recognition
 result places it on Android's clipboard with the sensitive-content flag.
+
+The separate `ScanIt VIP Ads` GitHub prerelease includes Google Mobile Ads and
+Google User Messaging Platform only in its `.beta` package. After the user
+reaches the Result screen, those SDKs may process IP address, product
+interactions, diagnostics, Android advertising ID, app set ID, and related
+device identifiers for advertising, analytics, and fraud prevention. Google
+states that this data is encrypted in transit. ScanIt does not send document
+pages, OCR text, saved files, or email content to the advertising SDK. UMP asks
+for consent where required and exposes Privacy options in App info.
 
 Smart cleanup and Manual cleanup run locally. Manual cleanup processes only the
 bounded regions that the user draws and keeps the parent revision in the bounded
@@ -32,4 +41,4 @@ after a user action.
 For privacy questions, email [majkeylab@gmail.com](mailto:majkeylab@gmail.com).
 Do not send private documents or credentials.
 
-Last updated: 2026-08-23.
+Last updated: 2026-08-24.

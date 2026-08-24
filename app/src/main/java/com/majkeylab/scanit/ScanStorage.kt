@@ -4679,13 +4679,7 @@ internal class ScanStorage(
         if (address.collection != expectedCollection) {
             throw IOException("MediaStore item belongs to the wrong collection")
         }
-        val canonical =
-            when (expectedCollection) {
-                MediaOutputCollection.Images ->
-                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
-                MediaOutputCollection.Downloads ->
-                    MediaStore.Downloads.getContentUri(address.volume, address.id)
-            }
+        val canonical = mediaItemContentUri(address)
         if (canonical != uri) throw IOException("MediaStore item URI is not canonical")
         val cursor =
             resolver.query(uri, MEDIA_IDENTITY_PROJECTION, null, null, null)

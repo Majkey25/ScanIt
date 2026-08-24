@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.1] - 2026-08-24
+
+### Added
+
+- Added a separate `ScanIt VIP Ads` prerelease package with one adaptive banner on the completed Result screen.
+- Added consent-gated fullscreen ads after returning from Settings and before sharing on every fifth completed scan.
+- Expanded current builds to Android 10 and newer (`minSdk 29`).
+
+### Changed
+
+- Limited fullscreen ads to one per three minutes, one Settings-return ad per app session, and no delayed display when an ad is unavailable.
+
+### Privacy
+
+- Added Google Mobile Ads and UMP only to the beta flavor. Stable Play and GitHub variants remain ad-free and without app-owned Internet access.
+
 ## [1.5.0] - 2026-08-24
 
 ### Added

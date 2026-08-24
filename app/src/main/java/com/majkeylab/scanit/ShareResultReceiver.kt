@@ -59,9 +59,16 @@ private fun Intent.allowsShareCleanup(): Boolean =
     } else {
         chooserResultAllowsCleanup(
             resultType = null,
-            selectedComponentPresent =
-                getParcelableExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName::class.java) != null,
+            selectedComponentPresent = chosenComponentExtra() != null,
         )
+    }
+
+@Suppress("DEPRECATION")
+private fun Intent.chosenComponentExtra(): ComponentName? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableExtra(Intent.EXTRA_CHOSEN_COMPONENT, ComponentName::class.java)
+    } else {
+        getParcelableExtra(Intent.EXTRA_CHOSEN_COMPONENT)
     }
 
 internal fun retryPendingShareCleanup(context: Context): OutputDeleteOperationResult? {

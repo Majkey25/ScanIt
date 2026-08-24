@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
+import android.os.Build
 import androidx.core.graphics.createBitmap
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
@@ -27,6 +28,14 @@ private const val MAX_IMAGE_EXPORT_TILE_BITMAP_BYTES =
     MAX_IMAGE_EXPORT_TILE_PIXELS * IMAGE_EXPORT_BITMAP_BYTES_PER_PIXEL
 private const val MAX_IMAGE_EXPORT_VERIFICATION_PIXELS = 2_000_000L
 private const val PNG_ENCODER_IGNORED_QUALITY = 100
+
+@Suppress("DEPRECATION")
+private fun newBitmapRegionDecoder(source: File): BitmapRegionDecoder? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        BitmapRegionDecoder.newInstance(source.path)
+    } else {
+        BitmapRegionDecoder.newInstance(source.path, false)
+    }
 
 internal enum class EncodedImageFormat(
     val mimeType: String,
@@ -611,7 +620,7 @@ private fun renderTiledImageExport(
 ): Bitmap =
     withImageExportRegionResources(
         createDecoder = {
-            val decoder: BitmapRegionDecoder? = BitmapRegionDecoder.newInstance(source.path)
+            val decoder = newBitmapRegionDecoder(source)
             decoder ?: throw IOException("Source image region decoder could not be created")
         },
         createOutput = {

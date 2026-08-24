@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet("internal", "play", "github")]
+    [ValidateSet("internal", "play", "github", "beta")]
     [string]$Flavor,
 
     [Parameter(Mandatory, Position = 1)]
@@ -21,12 +21,20 @@ $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
 $expectedVersionCode = "26"
-$expectedMinSdk = "33"
+$expectedMinSdk = "29"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
+$adFreeFlavor = $Flavor -in @("play", "github")
+$adsFlavor = $Flavor -eq "beta"
 $sdkRootWasExplicit = $PSBoundParameters.ContainsKey("SdkRoot")
 $blockedPublicCodePattern =
-    '(?i)(gemini|generativelanguage\.googleapis\.com|com[./]android[./]billingclient|com[./]google[./]android[./]gms[./]ads|com[./]google[./]android[./]ump|googlemobileads|admob|user-messaging-platform)'
+    '(?i)(gemini|generativelanguage\.googleapis\.com|com[./]android[./]billingclient|com[./]google[./]android[./](?:gms|libraries)[./]ads|com[./]google[./]android[./]ump|googlemobileads|admob|user-messaging-platform)'
+$blockedBetaCodePattern =
+    '(?i)(gemini|generativelanguage\.googleapis\.com|com[./]android[./]billingclient)'
+$requiredBetaAdsPattern =
+    '(?i)(com[./]google[./]android[./]libraries[./]ads|googlemobileads|admob)'
+$requiredBetaConsentPattern =
+    '(?i)(com[./]google[./]android[./]ump|user-messaging-platform)'
 $usesPermissionElementPattern = '^uses-permission(?:-sdk-(?:\d+|m))?$'
 $forbiddenPublicPermissions = @(
     "android.permission.INTERNET"
@@ -61,6 +69,7 @@ function Assert-ReleasePolicyConfiguration {
     foreach ($fixture in @(
         "com/google/android/ump/UserMessagingPlatform"
         "com.google.android.gms.ads.MobileAds"
+        "com.google.android.libraries.ads.mobile.sdk.MobileAds"
         "com/android/billingclient/api/BillingClient"
         "generativelanguage.googleapis.com"
         "GeminiActivity"
@@ -109,6 +118,11 @@ switch ($Flavor) {
         $expectedPackage = "com.majkeylab.scanit.github"
         $expectedVersionName = "1.5.0"
     }
+    "beta" {
+        $expectedPackage = "com.majkeylab.scanit.beta"
+        $expectedVersionCode = "27"
+        $expectedVersionName = "1.6.0-vip-ads.1"
+    }
 }
 
 if (-not (Test-Path -LiteralPath $ArtifactPath -PathType Leaf)) {
@@ -121,6 +135,9 @@ if ($artifactType -notin @("apk", "aab")) {
 }
 if ($Flavor -eq "internal" -and $artifactType -ne "apk") {
     throw "The internal flavor must be verified as an APK."
+}
+if ($Flavor -eq "beta" -and $artifactType -ne "apk") {
+    throw "The beta flavor must be verified as an APK."
 }
 if ($Flavor -eq "play" -and $artifactType -ne "aab") {
     throw "The Play flavor must be verified as an AAB."
@@ -250,6 +267,9 @@ function Get-ArchiveFacts {
     try {
         $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         $hasBlockedText = $false
+        $hasBlockedBetaText = $false
+        $hasRequiredBetaAdsText = $false
+        $hasRequiredBetaConsentText = $false
         foreach ($entry in $archive.Entries) {
             if (-not $names.Add($entry.FullName)) {
                 throw "Archive contains a duplicate entry: $($entry.FullName)"
@@ -265,8 +285,18 @@ function Get-ArchiveFacts {
                 try {
                     $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::ASCII, $false)
                     try {
-                        if ($reader.ReadToEnd() -match $blockedPublicCodePattern) {
+                        $entryText = $reader.ReadToEnd()
+                        if ($entryText -match $blockedPublicCodePattern) {
                             $hasBlockedText = $true
+                        }
+                        if ($adsFlavor -and $entryText -match $blockedBetaCodePattern) {
+                            $hasBlockedBetaText = $true
+                        }
+                        if ($adsFlavor -and $entryText -match $requiredBetaAdsPattern) {
+                            $hasRequiredBetaAdsText = $true
+                        }
+                        if ($adsFlavor -and $entryText -match $requiredBetaConsentPattern) {
+                            $hasRequiredBetaConsentText = $true
                         }
                     } finally {
                         $reader.Dispose()
@@ -287,8 +317,17 @@ function Get-ArchiveFacts {
                 throw "Archive is missing required entry: $requiredEntry"
             }
         }
-        if ($publicFlavor -and $hasBlockedText) {
+        if ($adFreeFlavor -and $hasBlockedText) {
             throw "Public release artifact contains blocked Gemini, Ads, Billing, or consent SDK residue."
+        }
+        if ($adsFlavor -and $hasBlockedBetaText) {
+            throw "Beta release artifact contains blocked Gemini or Billing residue."
+        }
+        if ($adsFlavor -and -not $hasRequiredBetaAdsText) {
+            throw "Beta release artifact contains no detectable GMA Next-Gen SDK residue."
+        }
+        if ($adsFlavor -and -not $hasRequiredBetaConsentText) {
+            throw "Beta release artifact contains no detectable UMP consent SDK residue."
         }
         if ($publicFlavor) {
             $legalPrefix = if ($artifactType -eq "apk") { "assets" } else { "base/assets" }
@@ -350,6 +389,9 @@ function Get-ArchiveFacts {
         $hasSignatureBlock = [bool]($names | Where-Object { $_ -match '(?i)^META-INF/.+\.(RSA|DSA|EC)$' })
         return [pscustomobject]@{
             HasBlockedText = $hasBlockedText
+            HasBlockedBetaText = $hasBlockedBetaText
+            HasRequiredBetaAdsText = $hasRequiredBetaAdsText
+            HasRequiredBetaConsentText = $hasRequiredBetaConsentText
             HasManifestSignature = $hasManifestSignature
             HasSignatureFile = $hasSignatureFile
             HasSignatureBlock = $hasSignatureBlock
@@ -415,16 +457,38 @@ if ($artifactType -eq "apk") {
     }
     foreach ($permission in $forbiddenPublicPermissions) {
         $permissionLines = $badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission $permission }
-        if ($publicFlavor -and $permissionLines) {
+        if ($adFreeFlavor -and $permissionLines) {
             throw "Public release APK requests forbidden permission: $permission"
         }
+    }
+    if (
+        $adsFlavor -and
+        -not ($badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission "android.permission.INTERNET" })
+    ) {
+        throw "Beta release APK is missing android.permission.INTERNET."
     }
     $resources = @(& $aapt2 dump resources $artifact 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "aapt2 could not inspect APK resources."
     }
-    if ($publicFlavor -and (($resources -join [Environment]::NewLine) -match $blockedPublicCodePattern)) {
+    if ($adFreeFlavor -and (($resources -join [Environment]::NewLine) -match $blockedPublicCodePattern)) {
         throw "Public release APK contains blocked Gemini, Ads, Billing, or consent SDK resources."
+    }
+    if ($adsFlavor -and (($resources -join [Environment]::NewLine) -match $blockedBetaCodePattern)) {
+        throw "Beta release APK contains blocked Gemini or Billing resources."
+    }
+    if ($adsFlavor) {
+        $manifestTree = @(& $aapt2 dump xmltree --file AndroidManifest.xml $artifact 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "aapt2 could not inspect the beta APK manifest."
+        }
+        $manifestTreeText = $manifestTree -join [Environment]::NewLine
+        if (
+            $manifestTreeText -notmatch 'com\.google\.android\.gms\.ads\.APPLICATION_ID' -or
+            $manifestTreeText -notmatch 'ca-app-pub-6991329209066655~2916806906'
+        ) {
+            throw "Beta release APK has no valid ScanIt AdMob application ID."
+        }
     }
     if ($publicFlavor) {
         $apkanalyzer = Get-AndroidSdkTool -Name "apkanalyzer"
@@ -479,7 +543,7 @@ if ($artifactType -eq "apk") {
             continue
         }
         $permissionName = $permissionElement.GetAttribute("name", $androidNamespace)
-        if ($publicFlavor -and $permissionName -in $forbiddenPublicPermissions) {
+        if ($adFreeFlavor -and $permissionName -in $forbiddenPublicPermissions) {
             throw "Public release AAB requests forbidden permission: $permissionName"
         }
     }
@@ -487,7 +551,7 @@ if ($artifactType -eq "apk") {
     if ($LASTEXITCODE -ne 0) {
         throw "bundletool could not inspect AAB resources."
     }
-    if ($publicFlavor -and (($resources -join [Environment]::NewLine) -match $blockedPublicCodePattern)) {
+    if ($adFreeFlavor -and (($resources -join [Environment]::NewLine) -match $blockedPublicCodePattern)) {
         throw "Public release AAB contains blocked Gemini, Ads, Billing, or consent SDK resources."
     }
 

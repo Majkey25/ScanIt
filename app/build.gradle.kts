@@ -17,7 +17,7 @@ android {
 
     defaultConfig {
         applicationId = "com.majkeylab.scanit"
-        minSdk = 33
+        minSdk = 29
         targetSdk = 36
         versionCode = 26
         versionName = "1.5.0"
@@ -49,7 +49,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+        }
         release {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-6991329209066655~2916806906"
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
@@ -77,10 +81,22 @@ android {
             applicationIdSuffix = ".internal"
             versionNameSuffix = "-internal"
         }
+        create("beta") {
+            dimension = "distribution"
+            applicationIdSuffix = ".beta"
+            versionCode = 27
+            versionName = "1.6.0-vip-ads.1"
+        }
     }
 
     buildFeatures {
         compose = true
+    }
+
+    sourceSets {
+        for (name in listOf("play", "github", "internal")) {
+            getByName(name).kotlin.directories.add("src/noAds/java")
+        }
     }
 
     bundle {
@@ -101,6 +117,8 @@ androidComponents {
             "playRelease",
             "githubRelease",
             "internalDebug",
+            "betaDebug",
+            "betaRelease",
         )
     }
 }
@@ -117,6 +135,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("com.google.android.gms:play-services-mlkit-face-detection:17.1.0")
+    "betaImplementation"("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0")
+    "betaImplementation"("com.google.android.ump:user-messaging-platform:4.0.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
 }

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
 import android.print.PrintManager
@@ -25,6 +26,7 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.Lifecycle
@@ -50,6 +52,23 @@ private const val OUTPUT_TREE_INTENT_FLAGS =
     PDF_TREE_FLAGS or
         Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
         Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+private const val LEGACY_APP_LANGUAGE_PREFS = "legacy_app_language"
+private const val LEGACY_APP_LANGUAGE = "language_tag"
+
+private fun localizedLegacyContext(context: Context): Context {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return context
+    val languageTag =
+        context.getSharedPreferences(LEGACY_APP_LANGUAGE_PREFS, Context.MODE_PRIVATE)
+            .getString(LEGACY_APP_LANGUAGE, null)
+    val locale =
+        languageTag?.let(Locale::forLanguageTag)
+            ?: context.resources.configuration.locales.get(0)
+    Locale.setDefault(locale)
+    if (languageTag == null) return context
+    val configuration = Configuration(context.resources.configuration)
+    configuration.setLocale(locale)
+    return context.createConfigurationContext(configuration)
+}
 
 internal fun isAcceptedScanPageCount(pageCount: Int): Boolean = pageCount in 1..MAX_SCAN_PAGES
 
@@ -152,6 +171,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             handleDocumentTextExportResult(it)
         }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedLegacyContext(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -697,6 +720,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
                 return
             }
+            recordDistributionDocumentScan(this)
             viewModel.processScan(pages.map { it.imageUri })
         } catch (_: RuntimeException) {
             viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
@@ -764,11 +788,41 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun currentAppLanguage(): AppLanguage {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            val languageTag =
+                getSharedPreferences(LEGACY_APP_LANGUAGE_PREFS, Context.MODE_PRIVATE)
+                    .getString(LEGACY_APP_LANGUAGE, null)
+            return appLanguageForTag(languageTag)
+        }
+        return currentPlatformAppLanguage()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun currentPlatformAppLanguage(): AppLanguage {
         val localeManager = getSystemService(LocaleManager::class.java) ?: return AppLanguage.System
         return appLanguageForTag(localeManager.applicationLocales.get(0)?.toLanguageTag())
     }
 
     private fun setAppLanguage(language: AppLanguage) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (currentAppLanguage() == language) return
+            getSharedPreferences(LEGACY_APP_LANGUAGE_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .apply {
+                    if (language.languageTag == null) {
+                        remove(LEGACY_APP_LANGUAGE)
+                    } else {
+                        putString(LEGACY_APP_LANGUAGE, language.languageTag)
+                    }
+                }.apply()
+            recreate()
+            return
+        }
+        setPlatformAppLanguage(language)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun setPlatformAppLanguage(language: AppLanguage) {
         val locales =
             language.languageTag?.let(LocaleList::forLanguageTags)
                 ?: LocaleList.getEmptyLocaleList()
