@@ -7,6 +7,8 @@ internal enum class DistributionInterstitialTrigger {
     Share,
 }
 
+internal fun shouldShowRecentBanner(scanCount: Int): Boolean = scanCount > 0
+
 internal fun isInterstitialCooldownElapsed(
     nowMillis: Long,
     lastShownMillis: Long?,

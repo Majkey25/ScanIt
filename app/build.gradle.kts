@@ -84,8 +84,8 @@ android {
         create("beta") {
             dimension = "distribution"
             applicationIdSuffix = ".beta"
-            versionCode = 27
-            versionName = "1.6.0-vip-ads.1"
+            versionCode = 28
+            versionName = "1.6.0-vip-ads.2"
         }
     }
 

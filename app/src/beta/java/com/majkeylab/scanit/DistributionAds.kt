@@ -227,7 +227,7 @@ private suspend fun ensureAdsReady(
 }
 
 @Composable
-internal fun DistributionBannerAd() {
+internal fun DistributionBannerAd(inline: Boolean = false) {
     val activity = LocalActivity.current ?: return
     LaunchedEffect(activity) { BetaConsentCoordinator.ensureRequested(activity) }
     if (!BetaConsentCoordinator.gate.canRequestAds) return
@@ -242,16 +242,26 @@ internal fun DistributionBannerAd() {
     BoxWithConstraints(
         modifier =
             Modifier.fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars),
+                .then(
+                    if (inline) {
+                        Modifier
+                    } else {
+                        Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+                    },
+                ),
         contentAlignment = Alignment.Center,
     ) {
         val widthDp = maxWidth.value.toInt().coerceAtLeast(1)
         val adSize =
-            remember(activity, widthDp) {
-                AdSize.getLargeAnchoredAdaptiveBannerAdSize(activity, widthDp)
+            remember(activity, inline, widthDp) {
+                if (inline) {
+                    AdSize.getInlineAdaptiveBannerAdSize(widthDp, 120)
+                } else {
+                    AdSize.getLargeAnchoredAdaptiveBannerAdSize(activity, widthDp)
+                }
             }
         val adView =
-            remember(activity, widthDp, description) {
+            remember(activity, inline, widthDp, description) {
                 AdView(activity).apply {
                     contentDescription = description
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -290,13 +300,15 @@ internal fun DistributionBannerAd() {
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column {
                     HorizontalDivider()
+                    val height =
+                        if (inline) adSize.height.coerceIn(50, 120).dp else adSize.height.dp
                     if (adLoaded) {
                         AndroidView(
                             factory = { adView },
-                            modifier = Modifier.fillMaxWidth().height(adSize.height.dp),
+                            modifier = Modifier.fillMaxWidth().height(height),
                         )
                     } else {
-                        Spacer(Modifier.fillMaxWidth().height(adSize.height.dp))
+                        Spacer(Modifier.fillMaxWidth().height(height))
                     }
                 }
             }

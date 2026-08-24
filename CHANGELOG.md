@@ -2,6 +2,12 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.2] - 2026-08-24
+
+### Added
+
+- Added an inline adaptive banner after a non-empty Recent scans list; the empty state remains ad-free.
+
 ## [1.6.0-vip-ads.1] - 2026-08-24
 
 ### Added

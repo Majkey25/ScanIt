@@ -6,6 +6,12 @@ import org.junit.Test
 
 class DistributionAdsPolicyTest {
     @Test
+    fun recentBannerRequiresAtLeastOneScan() {
+        assertFalse(shouldShowRecentBanner(0))
+        assertTrue(shouldShowRecentBanner(1))
+    }
+
+    @Test
     fun shareInterstitialIsDueOnceOnEveryFifthScan() {
         assertFalse(isShareInterstitialDue(4, null, 300_000, null))
         assertTrue(isShareInterstitialDue(5, 5, 300_000, null))

@@ -3180,6 +3180,9 @@ private fun RecentScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (shouldShowRecentBanner(state.scans.size)) {
+                item { DistributionBannerAd(inline = true) }
+            }
             item { Spacer(Modifier.height(4.dp)) }
         }
     }

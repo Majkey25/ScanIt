@@ -120,8 +120,8 @@ switch ($Flavor) {
     }
     "beta" {
         $expectedPackage = "com.majkeylab.scanit.beta"
-        $expectedVersionCode = "27"
-        $expectedVersionName = "1.6.0-vip-ads.1"
+        $expectedVersionCode = "28"
+        $expectedVersionName = "1.6.0-vip-ads.2"
     }
 }
 

@@ -136,7 +136,7 @@ The currently published v1.5.0 stable binary requires Android 13; Android 10
 support starts with the VIP Ads prerelease and the next stable release.
 
 The optional
-[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.1)
+[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.2)
 installs separately and intentionally contains ads after a completed scan. If
 you do not want ads, install the stable version. LOL.
 

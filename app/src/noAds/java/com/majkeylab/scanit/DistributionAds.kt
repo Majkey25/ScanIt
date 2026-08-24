@@ -5,7 +5,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 
 @Composable
-internal fun DistributionBannerAd() = Unit
+internal fun DistributionBannerAd(inline: Boolean = false) = Unit
 
 internal fun recordDistributionDocumentScan(context: Context) = Unit
 
