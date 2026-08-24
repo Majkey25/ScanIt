@@ -28,7 +28,7 @@
     <p>This policy describes the public ScanIt Android app and this ScanIt website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
 
     <div class="notice">
-      <strong>Short version:</strong> scanning and document actions stay on-device. Stable ScanIt has no accounts, ads, first-party analytics, maintainer-operated document server, or generative-AI client. The separate ScanIt VIP Ads prerelease contains Google advertising and consent SDKs but does not send document content to them.
+      <strong>Short version:</strong> scanning and document processing stay on-device. Stable ScanIt has no accounts, ads, first-party analytics, maintainer-operated document server, or generative-AI client. The ScanIt VIP Ads prerelease contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
     </div>
 
     <h2>Information the app handles locally</h2>
@@ -57,14 +57,17 @@
     <p>ScanIt sends a selected PDF or image to another app or print service only after you tap a share or print action and choose a recipient. That recipient processes the file under its own privacy terms. Review the destination before sending sensitive material.</p>
 
     <h2>ScanIt VIP Ads prerelease</h2>
-    <p>The separate <code>com.majkeylab.scanit.beta</code> GitHub prerelease includes Google Mobile Ads and Google User Messaging Platform. The SDKs are not present in the stable Play or GitHub variants. ScanIt requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
+    <p>The VIP Ads GitHub prerelease uses the same <code>com.majkeylab.scanit</code> package as the Play app and includes Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are not present in the stable Play or GitHub variants. ScanIt requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
 
     <p>Google states that its current Mobile Ads SDK automatically collects and shares IP address, product interactions such as app launches, taps, and video views, diagnostic information such as launch time, hangs, and energy use, and device or account identifiers including Android advertising ID and app set ID. Google uses this information for advertising, analytics, and fraud prevention and encrypts it in transit using TLS. See Google's <a href="https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure">GMA Next-Gen data disclosure</a> and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 
     <p>ScanIt does not intentionally pass scanned pages, OCR text, generated PDFs, saved images, email defaults, or selected recipients to the advertising SDK. Advertising begins only after a completed scan reaches Result. The stable scanning, cleanup, OCR, saving, and sharing code continues to process document content locally.</p>
 
+    <h3>Premium purchases</h3>
+    <p>Google Play Billing returns the Premium product identifier, purchase state, acknowledgement state, and purchase token needed to buy or restore Premium for the current Google Play account. ScanIt does not receive payment-card details, does not log purchase tokens, and does not persist a local Premium entitlement. Only a confirmed purchase of the matching product unlocks Document Actions and removes ads. A pending purchase grants nothing until Google Play confirms it.</p>
+
     <h2>Information ScanIt does not request</h2>
-    <p>The stable Play and GitHub variants have no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The VIP Ads beta adds Internet access and Google advertising components only to its separate package. No variant requests its own camera permission because the scanner uses the Google Play services camera flow, and no variant requests broad legacy storage access.</p>
+    <p>The stable Play and GitHub variants have no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The VIP Ads beta adds Internet access plus Google advertising, consent, and Play Billing components to the Play-compatible package. No variant requests its own camera permission because the scanner uses the Google Play services camera flow, and no variant requests broad legacy storage access.</p>
 
     <h2>Support email and GitHub issues</h2>
     <p>If you email support or create a GitHub issue, the information you choose to submit is used to respond, investigate a report, and maintain the project. Public GitHub issues are visible to everyone. Support correspondence is retained only while reasonably needed for support, security, or record-keeping, then deleted when no longer needed. You may request deletion of support correspondence by emailing the support address, subject to legal or security retention needs.</p>

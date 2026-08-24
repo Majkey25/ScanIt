@@ -17,14 +17,22 @@ maintainer-operated service. Text is
 exported only to a document destination the user selects. Copying a recognition
 result places it on Android's clipboard with the sensitive-content flag.
 
-The separate `ScanIt VIP Ads` GitHub prerelease includes Google Mobile Ads and
-Google User Messaging Platform only in its `.beta` package. After the user
+The `ScanIt VIP Ads` GitHub prerelease uses the same `com.majkeylab.scanit`
+package as the Play app and includes Google Mobile Ads, Google User Messaging
+Platform, and Google Play Billing. After the user
 reaches the Result screen, those SDKs may process IP address, product
 interactions, diagnostics, Android advertising ID, app set ID, and related
 device identifiers for advertising, analytics, and fraud prevention. Google
 states that this data is encrypted in transit. ScanIt does not send document
 pages, OCR text, saved files, or email content to the advertising SDK. UMP asks
 for consent where required and exposes Privacy options in App info.
+
+Google Play Billing returns the Premium product identifier, purchase state,
+acknowledgement state, and purchase token needed to buy or restore Premium for
+the current Google Play account. ScanIt does not receive payment-card details,
+does not log purchase tokens, and does not persist a local Premium entitlement.
+Confirmed Premium removes ads and unlocks Document Actions. The stable Play and
+GitHub variants do not include Billing or Premium purchase code.
 
 Smart cleanup and Manual cleanup run locally. Manual cleanup processes only the
 bounded regions that the user draws and keeps the parent revision in the bounded

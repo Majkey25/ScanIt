@@ -136,13 +136,16 @@ The currently published v1.5.0 stable binary requires Android 13; Android 10
 support starts with the VIP Ads prerelease and the next stable release.
 
 The optional
-[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.2)
-installs separately and intentionally contains ads after a completed scan. If
+[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.3)
+uses the Play-compatible package and replaces an installed stable ScanIt. It
+contains ads after a completed scan and a prepared Google Play Premium flow. If
 you do not want ads, install the stable version. LOL.
 
 Google Play services may download the scanner and recognition modules before
 their first use. Stable ScanIt declares no app-owned Internet permission; the
-separate VIP Ads beta uses Internet access only for Google ads and consent.
+VIP Ads beta uses Internet access for Google ads, consent, and Play Billing.
+Premium purchase remains unavailable until the merchant account and
+`scanit_premium` one-time product are active in Play Console.
 
 Requirements for the current public code:
 

@@ -17,7 +17,7 @@ inspected for ScanIt on 2026-08-24. Their direct runtime dependencies are:
 - Google Play services ML Kit Text Recognition 19.0.1, Chinese Text Recognition 16.0.1, and their runtime dependencies.
 - Google Play services ML Kit Barcode Scanning 18.3.1 and its runtime dependencies.
 - Google Play services ML Kit Face Detection 17.1.0 and its runtime dependencies.
-- The separate VIP Ads beta also includes GMA Next-Gen SDK 1.4.0 and Google User Messaging Platform 4.0.0.
+- The VIP Ads beta also includes GMA Next-Gen SDK 1.4.0, Google User Messaging Platform 4.0.0, and Google Play Billing Library 9.1.0.
 
 ## Apache License 2.0 components
 
@@ -41,6 +41,14 @@ VIP Ads beta. Their published Maven metadata declares the
 Google Mobile Ads and AdMob also operate under Google's applicable APIs,
 advertising, and privacy terms. The stable Play and GitHub variants do not
 package these components.
+
+## Google Play Billing beta component
+
+`com.android.billingclient:billing:9.1.0` is included only in the VIP Ads beta.
+It is distributed under the
+[Android Software Development Kit License](https://developer.android.com/studio/terms.html)
+and connects to Google Play for product details, purchases, restoration, and
+acknowledgement. The stable Play and GitHub variants do not package it.
 
 ## Google ML Kit
 

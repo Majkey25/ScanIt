@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.3] - 2026-08-24
+
+### Added
+
+- Restored a Play-account-based lifetime Premium flow that removes ads and unlocks all Document Actions.
+- Added a visible lock and purchase prompt to every Document Action while Premium is not confirmed.
+
+### Security
+
+- Google Play purchase queries are the entitlement authority; ScanIt stores no local Premium boolean or purchase token.
+- Pending, unknown, wrong-product, unavailable, and failed purchase states grant no Premium access.
+
+### Known limitation
+
+- The merchant account and `scanit_premium` product are not configured in Play Console yet, so real purchase and restore remain unavailable until that external setup is complete.
+
 ## [1.6.0-vip-ads.2] - 2026-08-24
 
 ### Added
