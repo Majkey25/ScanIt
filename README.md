@@ -146,8 +146,13 @@ you do not want ads, install the stable version. LOL.
 Google Play services may download the scanner and recognition modules before
 their first use. Stable SeliaScan declares no app-owned Internet permission; the
 VIP Ads beta uses Internet access for Google ads, consent, and Play Billing.
-Premium purchase remains unavailable until the merchant account and
-`seliascan_premium` one-time product are active in Play Console.
+Premium purchase in the existing `.3` prerelease remains unavailable until its
+matching Google Play product is active.
+
+The current `.5` source prepares an Internal-testing-only choice between a
+49 CZK monthly subscription (`seliascan_premium_monthly`) and a 299 CZK
+lifetime purchase (`seliascan_premium`). Both remove ads and unlock all
+Document Actions. Neither product is available to production users yet.
 
 Requirements for the current public code:
 

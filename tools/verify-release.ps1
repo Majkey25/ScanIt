@@ -36,7 +36,7 @@ $requiredBetaAdsPattern =
 $requiredBetaConsentPattern =
     '(?i)(com[./]google[./]android[./]ump|user-messaging-platform)'
 $requiredBetaBillingPattern =
-    '(?i)(com[./]android[./]billingclient|seliascan_premium)'
+    '(?i)(com[./]android[./]billingclient|seliascan_premium(?:_monthly)?)'
 $usesPermissionElementPattern = '^uses-permission(?:-sdk-(?:\d+|m))?$'
 $forbiddenPublicPermissions = @(
     "android.permission.INTERNET"
@@ -49,6 +49,10 @@ $forbiddenPublicPermissions = @(
     "android.permission.READ_MEDIA_AUDIO"
     "android.permission.GET_ACCOUNTS"
     "com.google.android.gms.permission.AD_ID"
+    "com.android.vending.BILLING"
+)
+$requiredBetaPermissions = @(
+    "android.permission.INTERNET"
     "com.android.vending.BILLING"
 )
 
@@ -129,8 +133,8 @@ switch ($Flavor) {
     }
     "beta" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionCode = "30"
-        $expectedVersionName = "1.6.0-vip-ads.4"
+        $expectedVersionCode = "31"
+        $expectedVersionName = "1.6.0-vip-ads.5"
     }
 }
 
@@ -144,9 +148,6 @@ if ($artifactType -notin @("apk", "aab")) {
 }
 if ($Flavor -eq "internal" -and $artifactType -ne "apk") {
     throw "The internal flavor must be verified as an APK."
-}
-if ($Flavor -eq "beta" -and $artifactType -ne "apk") {
-    throw "The beta flavor must be verified as an APK."
 }
 if ($Flavor -eq "play" -and $artifactType -ne "aab") {
     throw "The Play flavor must be verified as an AAB."
@@ -478,17 +479,13 @@ if ($artifactType -eq "apk") {
             throw "Public release APK requests forbidden permission: $permission"
         }
     }
-    if (
-        $adsFlavor -and
-        -not ($badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission "android.permission.INTERNET" })
-    ) {
-        throw "Beta release APK is missing android.permission.INTERNET."
-    }
-    if (
-        $adsFlavor -and
-        -not ($badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission "com.android.vending.BILLING" })
-    ) {
-        throw "Beta release APK is missing com.android.vending.BILLING."
+    foreach ($permission in $requiredBetaPermissions) {
+        if (
+            $adsFlavor -and
+            -not ($badging | Where-Object { Test-IsPermissionLine -Line $_ -Permission $permission })
+        ) {
+            throw "Beta release APK is missing $permission."
+        }
     }
     $resources = @(& $aapt2 dump resources $artifact 2>&1)
     if ($LASTEXITCODE -ne 0) {
@@ -561,6 +558,7 @@ if ($artifactType -eq "apk") {
     if ($publicFlavor -and $application.GetAttribute("debuggable", $androidNamespace) -match '^(true|0xffffffff)$') {
         throw "Public release AAB must not be debuggable."
     }
+    $foundBetaPermissions = @()
     foreach ($permissionElement in $manifest.ChildNodes) {
         if ($permissionElement.NodeType -ne [Xml.XmlNodeType]::Element -or -not (Test-IsUsesPermissionElement -Name $permissionElement.LocalName)) {
             continue
@@ -568,6 +566,33 @@ if ($artifactType -eq "apk") {
         $permissionName = $permissionElement.GetAttribute("name", $androidNamespace)
         if ($adFreeFlavor -and $permissionName -in $forbiddenPublicPermissions) {
             throw "Public release AAB requests forbidden permission: $permissionName"
+        }
+        if ($adsFlavor -and $permissionName -in $requiredBetaPermissions) {
+            $foundBetaPermissions += $permissionName
+        }
+    }
+    foreach ($permission in $requiredBetaPermissions) {
+        if ($adsFlavor -and $permission -notin $foundBetaPermissions) {
+            throw "Beta release AAB is missing $permission."
+        }
+    }
+    if ($adsFlavor) {
+        $hasBetaAdMobApplicationId = $false
+        foreach ($applicationChild in $application.ChildNodes) {
+            if (
+                $applicationChild.NodeType -eq [Xml.XmlNodeType]::Element -and
+                $applicationChild.LocalName -eq "meta-data" -and
+                $applicationChild.GetAttribute("name", $androidNamespace) -eq
+                    "com.google.android.gms.ads.APPLICATION_ID" -and
+                $applicationChild.GetAttribute("value", $androidNamespace) -eq
+                    "ca-app-pub-6991329209066655~2916806906"
+            ) {
+                $hasBetaAdMobApplicationId = $true
+                break
+            }
+        }
+        if (-not $hasBetaAdMobApplicationId) {
+            throw "Beta release AAB has no valid SeliaScan AdMob application ID."
         }
     }
     $resources = @(& $java -jar $bundletool dump resources "--bundle=$artifact" 2>&1)

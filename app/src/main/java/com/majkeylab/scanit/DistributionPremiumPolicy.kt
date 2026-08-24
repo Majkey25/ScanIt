@@ -5,8 +5,10 @@ internal data class DistributionPremiumState(
     val entitlementVerified: Boolean = false,
     val checking: Boolean = true,
     val pending: Boolean = false,
-    val formattedPrice: String? = null,
-    val purchaseAvailable: Boolean = false,
+    val monthlyPrice: String? = null,
+    val monthlyPurchaseAvailable: Boolean = false,
+    val lifetimePrice: String? = null,
+    val lifetimePurchaseAvailable: Boolean = false,
     val error: Boolean = false,
 )
 

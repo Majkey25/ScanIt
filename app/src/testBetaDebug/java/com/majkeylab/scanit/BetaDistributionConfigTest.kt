@@ -46,8 +46,36 @@ class BetaDistributionConfigTest {
     }
 
     @Test
-    fun premiumUsesStablePlayProductId() {
-        assertEquals("seliascan_premium", BetaPremiumConfig.productId)
+    fun premiumUsesStablePlayProductIds() {
+        assertEquals("seliascan_premium", BetaPremiumConfig.lifetimeProductId)
+        assertEquals("seliascan_premium_monthly", BetaPremiumConfig.monthlyProductId)
+        assertEquals("monthly", BetaPremiumConfig.monthlyBasePlanId)
+        assertEquals(
+            setOf("seliascan_premium", "seliascan_premium_monthly"),
+            BetaPremiumConfig.productIds,
+        )
+        assertEquals(
+            BetaPremiumConfig.monthlyProductId,
+            premiumProductId(BetaPremiumPlan.Monthly),
+        )
+        assertEquals(
+            BetaPremiumConfig.lifetimeProductId,
+            premiumProductId(BetaPremiumPlan.Lifetime),
+        )
+    }
+
+    @Test
+    fun premiumOffersRemainIndependentlyAvailable() {
+        val state =
+            DistributionPremiumState(
+                monthlyPrice = "CZK 49.00",
+                monthlyPurchaseAvailable = true,
+                lifetimePrice = "CZK 299.00",
+                lifetimePurchaseAvailable = true,
+            )
+
+        assertTrue(state.monthlyPurchaseAvailable)
+        assertTrue(state.lifetimePurchaseAvailable)
     }
 
     @Test
@@ -62,11 +90,31 @@ class BetaDistributionConfigTest {
                 ),
             ),
         )
+        assertTrue(
+            hasPremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("seliascan_premium_monthly"),
+                        state = BetaPremiumPurchaseState.Purchased,
+                    ),
+                ),
+            ),
+        )
         assertFalse(
             hasPremiumEntitlement(
                 listOf(
                     BetaPremiumPurchase(
                         productIds = setOf("seliascan_premium"),
+                        state = BetaPremiumPurchaseState.Pending,
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            hasPremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("seliascan_premium_monthly"),
                         state = BetaPremiumPurchaseState.Pending,
                     ),
                 ),
@@ -89,7 +137,7 @@ class BetaDistributionConfigTest {
         val pending =
             listOf(
                 BetaPremiumPurchase(
-                    productIds = setOf("seliascan_premium"),
+                    productIds = setOf("seliascan_premium_monthly"),
                     state = BetaPremiumPurchaseState.Pending,
                 ),
             )

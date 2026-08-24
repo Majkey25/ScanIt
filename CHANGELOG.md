@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.5] - 2026-08-24
+
+### Added
+
+- Added a 49 CZK monthly Premium subscription alongside the 299 CZK lifetime purchase.
+- Added separate monthly and lifetime purchase buttons using prices returned by Google Play.
+
+### Security
+
+- Combined one-time and subscription purchase queries before publishing entitlement, so one product type cannot overwrite the other.
+- Kept pending, unknown, unrelated, and failed purchases locked. No local Premium flag or purchase token is stored.
+
+### Distribution
+
+- Prepared version code 31 only for Google Play Internal testing. Public and closed-testing releases remain unchanged.
+
 ## [1.6.0-vip-ads.4] - 2026-08-24
 
 ### Changed

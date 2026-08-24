@@ -4,11 +4,14 @@
     <string name="beta_advertisement">广告</string>
     <string name="beta_privacy_options">隐私选项</string>
     <string name="beta_premium_title">SeliaScan Premium</string>
-    <string name="beta_premium_body">一次购买即可移除广告并解锁所有文档操作。Google Play 会在你的其他设备上恢复购买。</string>
+    <string name="beta_premium_body">选择按月使用或一次性永久购买。两种方式都会移除广告并解锁所有文档操作。</string>
     <string name="beta_premium_active">Premium 已启用。广告已隐藏，所有文档操作均已解锁。</string>
     <string name="beta_premium_account">Premium 与购买它的 Google Play 帐号关联。</string>
-    <string name="beta_premium_buy">获取 Premium</string>
-    <string name="beta_premium_buy_price">以 %1$s 获取 Premium</string>
+    <string name="beta_premium_monthly">按月 Premium</string>
+    <string name="beta_premium_monthly_price">每月 · %1$s</string>
+    <string name="beta_premium_monthly_notice">每月自动续订，直到你在 Google Play 中取消。</string>
+    <string name="beta_premium_lifetime">永久 Premium</string>
+    <string name="beta_premium_lifetime_price">永久 · 一次性支付 %1$s</string>
     <string name="beta_premium_restore">恢复购买</string>
     <string name="beta_premium_pending">付款正在处理。只有 Google Play 确认后才会解锁 Premium。</string>
     <string name="beta_premium_unavailable">此版本或 Google Play 帐号暂时无法使用 Premium。</string>

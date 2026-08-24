@@ -83,14 +83,34 @@ private fun PremiumContent(
         )
         if (!state.premium && activity != null) {
             Button(
-                onClick = { BetaPremiumController.launchPurchase(activity) },
-                enabled = state.purchaseAvailable && !state.checking,
+                onClick = {
+                    BetaPremiumController.launchPurchase(activity, BetaPremiumPlan.Monthly)
+                },
+                enabled = state.monthlyPurchaseAvailable && !state.checking,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    state.formattedPrice?.let {
-                        stringResource(R.string.beta_premium_buy_price, it)
-                    } ?: stringResource(R.string.beta_premium_buy),
+                    state.monthlyPrice?.let {
+                        stringResource(R.string.beta_premium_monthly_price, it)
+                    } ?: stringResource(R.string.beta_premium_monthly),
+                )
+            }
+            Text(
+                stringResource(R.string.beta_premium_monthly_notice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = {
+                    BetaPremiumController.launchPurchase(activity, BetaPremiumPlan.Lifetime)
+                },
+                enabled = state.lifetimePurchaseAvailable && !state.checking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    state.lifetimePrice?.let {
+                        stringResource(R.string.beta_premium_lifetime_price, it)
+                    } ?: stringResource(R.string.beta_premium_lifetime),
                 )
             }
             TextButton(
@@ -104,12 +124,17 @@ private fun PremiumContent(
         when {
             state.checking -> CircularProgressIndicator()
             state.pending -> Text(stringResource(R.string.beta_premium_pending))
-            !state.premium && state.error ->
+            !state.premium &&
+                state.error &&
+                !state.monthlyPurchaseAvailable &&
+                !state.lifetimePurchaseAvailable ->
                 Text(
                     stringResource(R.string.beta_premium_error),
                     color = MaterialTheme.colorScheme.error,
                 )
-            !state.premium && !state.purchaseAvailable ->
+            !state.premium &&
+                !state.monthlyPurchaseAvailable &&
+                !state.lifetimePurchaseAvailable ->
                 Text(stringResource(R.string.beta_premium_unavailable))
         }
     }

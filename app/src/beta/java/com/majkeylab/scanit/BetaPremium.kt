@@ -20,8 +20,19 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 
 internal object BetaPremiumConfig {
-    const val productId = "seliascan_premium"
+    const val lifetimeProductId = "seliascan_premium"
+    const val monthlyProductId = "seliascan_premium_monthly"
+    const val monthlyBasePlanId = "monthly"
+    val productIds = setOf(lifetimeProductId, monthlyProductId)
 }
+
+internal enum class BetaPremiumPlan { Monthly, Lifetime }
+
+internal fun premiumProductId(plan: BetaPremiumPlan): String =
+    when (plan) {
+        BetaPremiumPlan.Monthly -> BetaPremiumConfig.monthlyProductId
+        BetaPremiumPlan.Lifetime -> BetaPremiumConfig.lifetimeProductId
+    }
 
 internal enum class BetaPremiumPurchaseState {
     Pending,
@@ -37,13 +48,13 @@ internal data class BetaPremiumPurchase(
 internal fun hasPremiumEntitlement(purchases: List<BetaPremiumPurchase>): Boolean =
     purchases.any {
         it.state == BetaPremiumPurchaseState.Purchased &&
-            BetaPremiumConfig.productId in it.productIds
+            it.productIds.any(BetaPremiumConfig.productIds::contains)
     }
 
 internal fun hasPendingPremiumPurchase(purchases: List<BetaPremiumPurchase>): Boolean =
     purchases.any {
         it.state == BetaPremiumPurchaseState.Pending &&
-            BetaPremiumConfig.productId in it.productIds
+            it.productIds.any(BetaPremiumConfig.productIds::contains)
     }
 
 internal data class BetaPremiumEntitlement(
@@ -62,7 +73,8 @@ internal fun resolvePremiumEntitlement(
 internal object BetaPremiumController : PurchasesUpdatedListener {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var billingClient: BillingClient? = null
-    private var productDetails: ProductDetails? = null
+    private var monthlyProductDetails: ProductDetails? = null
+    private var lifetimeProductDetails: ProductDetails? = null
     private var connectionStarted = false
 
     var state by mutableStateOf(DistributionPremiumState())
@@ -78,18 +90,31 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
                 .build()
                 .also { billingClient = it }
         if (client.isReady) {
-            queryProduct(client)
+            queryProducts(client)
             queryPurchases(client)
         } else if (!connectionStarted) {
             startConnection(client)
         }
     }
 
-    fun launchPurchase(activity: Activity) {
+    fun launchPurchase(activity: Activity, plan: BetaPremiumPlan) {
         val client = billingClient
-        val details = productDetails
-        val offer = details?.oneTimePurchaseOfferDetailsList?.firstOrNull()
-        val offerToken = offer?.offerToken
+        val details =
+            when (plan) {
+                BetaPremiumPlan.Monthly -> monthlyProductDetails
+                BetaPremiumPlan.Lifetime -> lifetimeProductDetails
+            }
+        val offerToken =
+            when (plan) {
+                BetaPremiumPlan.Monthly ->
+                    details?.subscriptionOfferDetails
+                        ?.firstOrNull {
+                            it.basePlanId == BetaPremiumConfig.monthlyBasePlanId &&
+                                it.offerId == null
+                        }?.offerToken
+                BetaPremiumPlan.Lifetime ->
+                    details?.oneTimePurchaseOfferDetailsList?.firstOrNull()?.offerToken
+            }
         if (client == null || !client.isReady || details == null || offerToken == null) {
             updateState { it.copy(error = true) }
             return
@@ -113,7 +138,14 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: List<Purchase>?) {
         when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK -> processPurchases(purchases.orEmpty())
+            BillingClient.BillingResponseCode.OK -> {
+                val client = billingClient
+                if (client != null && client.isReady) {
+                    queryPurchases(client)
+                } else {
+                    processPurchases(purchases.orEmpty())
+                }
+            }
             BillingClient.BillingResponseCode.USER_CANCELED -> Unit
             else -> updateState { it.copy(checking = false, error = true) }
         }
@@ -127,7 +159,7 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
                 override fun onBillingSetupFinished(result: BillingResult) {
                     connectionStarted = false
                     if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                        queryProduct(client)
+                        queryProducts(client)
                         queryPurchases(client)
                     } else {
                         updateState { it.copy(checking = false, error = true) }
@@ -142,53 +174,121 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
         )
     }
 
-    private fun queryProduct(client: BillingClient) {
+    private fun queryProducts(client: BillingClient) {
+        queryProduct(client, BetaPremiumPlan.Monthly, BillingClient.ProductType.SUBS)
+        queryProduct(client, BetaPremiumPlan.Lifetime, BillingClient.ProductType.INAPP)
+    }
+
+    private fun queryProduct(
+        client: BillingClient,
+        plan: BetaPremiumPlan,
+        productType: String,
+    ) {
+        val productId = premiumProductId(plan)
         val product =
             QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(BetaPremiumConfig.productId)
-                .setProductType(BillingClient.ProductType.INAPP)
+                .setProductId(productId)
+                .setProductType(productType)
                 .build()
         client.queryProductDetailsAsync(
             QueryProductDetailsParams.newBuilder().setProductList(listOf(product)).build(),
         ) { result, detailsResult ->
             if (result.responseCode != BillingClient.BillingResponseCode.OK) {
-                productDetails = null
-                updateState {
-                    it.copy(formattedPrice = null, purchaseAvailable = false, error = true)
+                when (plan) {
+                    BetaPremiumPlan.Monthly -> monthlyProductDetails = null
+                    BetaPremiumPlan.Lifetime -> lifetimeProductDetails = null
+                }
+                updateState { current ->
+                    when (plan) {
+                        BetaPremiumPlan.Monthly ->
+                            current.copy(
+                                monthlyPrice = null,
+                                monthlyPurchaseAvailable = false,
+                                error = true,
+                            )
+                        BetaPremiumPlan.Lifetime ->
+                            current.copy(
+                                lifetimePrice = null,
+                                lifetimePurchaseAvailable = false,
+                                error = true,
+                            )
+                    }
                 }
                 return@queryProductDetailsAsync
             }
             val details =
                 detailsResult.productDetailsList.firstOrNull {
-                    it.productId == BetaPremiumConfig.productId
+                    it.productId == productId
                 }
-            val offer = details?.oneTimePurchaseOfferDetailsList?.firstOrNull()
-            productDetails = details
-            updateState {
-                it.copy(
-                    formattedPrice = offer?.formattedPrice,
-                    purchaseAvailable = offer?.offerToken != null,
-                )
+            when (plan) {
+                BetaPremiumPlan.Monthly -> {
+                    val offer =
+                        details?.subscriptionOfferDetails
+                            ?.firstOrNull {
+                                it.basePlanId == BetaPremiumConfig.monthlyBasePlanId &&
+                                    it.offerId == null
+                            }
+                    monthlyProductDetails = details
+                    updateState {
+                        it.copy(
+                            monthlyPrice =
+                                offer?.pricingPhases?.pricingPhaseList?.firstOrNull()
+                                    ?.formattedPrice,
+                            monthlyPurchaseAvailable = offer?.offerToken != null,
+                        )
+                    }
+                }
+                BetaPremiumPlan.Lifetime -> {
+                    val offer = details?.oneTimePurchaseOfferDetailsList?.firstOrNull()
+                    lifetimeProductDetails = details
+                    updateState {
+                        it.copy(
+                            lifetimePrice = offer?.formattedPrice,
+                            lifetimePurchaseAvailable = offer?.offerToken != null,
+                        )
+                    }
+                }
             }
         }
     }
 
     private fun queryPurchases(client: BillingClient) {
+        updateState { it.copy(checking = true, error = false) }
         client.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.INAPP)
                 .build(),
         ) { result, purchases ->
-            if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                processPurchases(purchases)
-            } else {
+            if (result.responseCode != BillingClient.BillingResponseCode.OK) {
                 updateState { it.copy(checking = false, error = true) }
+                return@queryPurchasesAsync
+            }
+            val ownsLifetime =
+                purchases.any {
+                    BetaPremiumConfig.lifetimeProductId in it.products &&
+                        it.purchaseState == Purchase.PurchaseState.PURCHASED
+                }
+            if (ownsLifetime) {
+                processPurchases(purchases)
+                return@queryPurchasesAsync
+            }
+            client.queryPurchasesAsync(
+                QueryPurchasesParams.newBuilder()
+                    .setProductType(BillingClient.ProductType.SUBS)
+                    .build(),
+            ) { subscriptionResult, subscriptions ->
+                if (subscriptionResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                    processPurchases(purchases + subscriptions)
+                } else {
+                    updateState { it.copy(checking = false, error = true) }
+                }
             }
         }
     }
 
     private fun processPurchases(purchases: List<Purchase>) {
-        val premiumPurchases = purchases.filter { BetaPremiumConfig.productId in it.products }
+        val premiumPurchases =
+            purchases.filter { it.products.any(BetaPremiumConfig.productIds::contains) }
         val entitlement =
             resolvePremiumEntitlement(
                 premiumPurchases.map {

@@ -83,8 +83,8 @@ android {
         }
         create("beta") {
             dimension = "distribution"
-            versionCode = 30
-            versionName = "1.6.0-vip-ads.4"
+            versionCode = 31
+            versionName = "1.6.0-vip-ads.5"
         }
     }
 

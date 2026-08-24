@@ -27,11 +27,13 @@ states that this data is encrypted in transit. SeliaScan does not send document
 pages, OCR text, saved files, or email content to the advertising SDK. UMP asks
 for consent where required and exposes Privacy options in App info.
 
-Google Play Billing returns the Premium product identifier, purchase state,
-acknowledgement state, and purchase token needed to buy or restore Premium for
-the current Google Play account. SeliaScan does not receive payment-card details,
+Google Play Billing returns the monthly subscription or lifetime Premium product
+identifier, purchase state, acknowledgement state, and purchase token needed to
+buy or restore Premium for the current Google Play account. SeliaScan does not
+receive payment-card details,
 does not log purchase tokens, and does not persist a local Premium entitlement.
-Confirmed Premium removes ads and unlocks Document Actions. The stable Play and
+Either confirmed Premium product removes ads and unlocks Document Actions. A
+monthly subscription renews until canceled in Google Play. The stable Play and
 GitHub variants do not include Billing or Premium purchase code.
 
 Smart cleanup and Manual cleanup run locally. Manual cleanup processes only the

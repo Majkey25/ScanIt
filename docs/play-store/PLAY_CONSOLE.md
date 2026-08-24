@@ -30,6 +30,20 @@ submitted declarations:
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
 | Ads | No |
 
+## Internal testing Premium setup
+
+Version code 31 (`1.6.0-vip-ads.5`) is for Internal testing only. It must not
+replace the production, closed-testing, or open-testing releases.
+
+| Product | Type | Price | Benefit |
+|---|---|---:|---|
+| `seliascan_premium_monthly` | Auto-renewing subscription, base plan `monthly` | 49 CZK per month | Remove ads and unlock all Document Actions while subscribed |
+| `seliascan_premium` | One-time buy option | 299 CZK | Remove ads and unlock all Document Actions forever |
+
+Neither product uses a trial, introductory offer, discount, or prepaid plan.
+Only license testers may use test payment methods. Regular Internal testers can
+be charged real money.
+
 Do not invent a legal developer name, address, phone number, organization, or
 other account-holder detail here. Use only the verified values already held by
 the Play developer account.
