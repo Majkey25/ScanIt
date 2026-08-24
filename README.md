@@ -13,10 +13,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.4.1"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.4.1 update
+## v1.5.0 update
+
+Manual redaction now defaults to a professional straight-line tool and keeps the
+freehand brush as an option. Both share adjustable thickness, undo, redo, clear,
+and permanent rasterization into a protected child revision.
+
+Document Actions now recognize Latin text, including Czech, or Chinese text.
+Read all pages can use Auto, Czech, English, German, Spanish, or Chinese speech.
+Settings are grouped into collapsible General, Saving, Scanning, Sharing, and
+Advanced sections; action-language controls live under Advanced.
 
 Manual redaction now works like a black marker: draw directly over text, adjust
 the brush thickness, and use undo, redo, or clear. Applying the redaction burns
@@ -61,7 +70,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, ScanIt opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.4.1](https://github.com/Majkey25/ScanIt/releases/tag/v1.4.1)
+[Download ScanIt v1.5.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

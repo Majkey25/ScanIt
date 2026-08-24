@@ -18,6 +18,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResult
@@ -219,6 +220,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onDeleteSafeShareRegion = viewModel::deleteSafeShareRegion,
                 onAddManualRedactionStroke = viewModel::addManualRedactionStroke,
                 onChangeManualRedactionBrushWidth = viewModel::changeManualRedactionBrushWidth,
+                onChangeManualRedactionTool = viewModel::changeManualRedactionTool,
                 onUndoManualRedaction = viewModel::undoManualRedaction,
                 onRedoManualRedaction = viewModel::redoManualRedaction,
                 onClearManualRedactionPage = viewModel::clearManualRedactionPage,
@@ -631,6 +633,26 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun speak(engine: TextToSpeech, text: String) {
+        val systemLanguageTag =
+            LocaleList.getDefault().get(0)?.toLanguageTag() ?: Locale.getDefault().toLanguageTag()
+        val languageTag =
+            resolveReadAloudLanguageTag(
+                viewModel.currentSettings().readAloudLanguage,
+                currentAppLanguage().languageTag,
+                systemLanguageTag,
+            )
+        val locale = Locale.forLanguageTag(languageTag)
+        val languageReady =
+            try {
+                engine.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE &&
+                    engine.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
+            } catch (_: RuntimeException) {
+                false
+            }
+        if (!languageReady) {
+            showToast(R.string.tts_language_unavailable)
+            return
+        }
         val result =
             try {
                 engine.speak(

@@ -19,8 +19,8 @@ android {
         applicationId = "com.majkeylab.scanit"
         minSdk = 33
         targetSdk = 36
-        versionCode = 25
-        versionName = "1.4.1"
+        versionCode = 26
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -114,6 +114,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("com.google.android.gms:play-services-mlkit-face-detection:17.1.0")
     testImplementation("junit:junit:4.13.2")

@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [1.5.0] - 2026-08-24
+
+### Added
+
+- Added a straight-line redaction tool alongside the freehand brush; straight line is the default and both share adjustable thickness, undo, redo, and clear-page controls.
+- Added Chinese text recognition alongside the Latin model, which includes Czech, English, German, and Spanish.
+- Added selectable read-all-pages languages with Auto, Czech, English, German, Spanish, and Simplified Chinese choices.
+
+### Changed
+
+- Grouped Settings into collapsible General, Saving, Scanning, Sharing, and Advanced categories while keeping Support and App info separate.
+
+### Security
+
+- Kept OCR script settings bounded and scoped cached OCR to the selected resolved script.
+
 ## [1.4.1] - 2026-08-23
 
 ### Changed
@@ -250,6 +266,7 @@ Historical copies retain the license supplied with them. See
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
+[1.5.0]: https://github.com/Majkey25/ScanIt/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/Majkey25/ScanIt/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Majkey25/ScanIt/compare/v1.3.8...v1.4.0
 [1.1.0]: https://github.com/Majkey25/ScanIt/compare/v1.0.0...v1.1.0

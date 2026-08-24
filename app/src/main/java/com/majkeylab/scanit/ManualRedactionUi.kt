@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -30,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -72,6 +74,7 @@ internal fun ManualRedactionReview(
     onSelectPage: (Int) -> Unit,
     onAddStroke: (RedactionStroke) -> Unit,
     onBrushWidthChange: (Float) -> Unit,
+    onToolChange: (RedactionTool) -> Unit,
     onUndoStroke: () -> Unit,
     onRedoStroke: () -> Unit,
     onClearPage: () -> Unit,
@@ -110,6 +113,18 @@ internal fun ManualRedactionReview(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(stringResource(R.string.redact_document), style = MaterialTheme.typography.titleLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = state.redactionTool == RedactionTool.Line,
+                    onClick = { onToolChange(RedactionTool.Line) },
+                    label = { Text(stringResource(R.string.redaction_tool_line)) },
+                )
+                FilterChip(
+                    selected = state.redactionTool == RedactionTool.Brush,
+                    onClick = { onToolChange(RedactionTool.Brush) },
+                    label = { Text(stringResource(R.string.redaction_tool_brush)) },
+                )
+            }
             Text(
                 stringResource(R.string.redaction_draw_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -119,6 +134,7 @@ internal fun ManualRedactionReview(
                 bitmap = preview.bitmap.takeIf { previewReady },
                 strokes = pageStrokes,
                 brushWidthFraction = state.brushWidthFraction,
+                tool = state.redactionTool,
                 totalStrokeCount = totalStrokes,
                 totalPointCount = totalPoints,
                 onStroke = onAddStroke,
@@ -201,6 +217,7 @@ private fun ManualRedactionCanvas(
     bitmap: Bitmap?,
     strokes: List<RedactionStroke>,
     brushWidthFraction: Float,
+    tool: RedactionTool,
     totalStrokeCount: Int,
     totalPointCount: Int,
     onStroke: (RedactionStroke) -> Unit,
@@ -208,8 +225,10 @@ private fun ManualRedactionCanvas(
 ) {
     val activePoints = remember(bitmap) { mutableStateListOf<MarkPoint>() }
     var activeWidth by remember(bitmap) { mutableFloatStateOf(brushWidthFraction) }
+    var activeTool by remember(bitmap) { mutableStateOf(tool) }
     val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG) }
     val currentBrushWidth by rememberUpdatedState(brushWidthFraction)
+    val currentTool by rememberUpdatedState(tool)
     val currentStrokeCount by rememberUpdatedState(totalStrokeCount)
     val currentPointCount by rememberUpdatedState(totalPointCount)
     val currentOnStroke by rememberUpdatedState(onStroke)
@@ -229,6 +248,7 @@ private fun ManualRedactionCanvas(
                             }
                             offset.normalizedRedactionPoint(size, page)?.let { point ->
                                 activeWidth = currentBrushWidth
+                                activeTool = currentTool
                                 activePoints.clear()
                                 activePoints.add(point)
                             }
@@ -241,11 +261,22 @@ private fun ManualRedactionCanvas(
                             ) {
                                 return@detectDragGestures
                             }
-                            change.position.normalizedRedactionPoint(size, page)?.let(activePoints::add)
+                            change.position.normalizedRedactionPoint(size, page)?.let { point ->
+                                if (activeTool == RedactionTool.Line && activePoints.size > 1) {
+                                    activePoints[1] = point
+                                } else {
+                                    activePoints.add(point)
+                                }
+                            }
                         },
                         onDragEnd = {
                             if (activePoints.isNotEmpty()) {
-                                currentOnStroke(RedactionStroke(activePoints.toList(), activeWidth))
+                                currentOnStroke(
+                                    RedactionStroke(
+                                        redactionStrokePoints(activeTool, activePoints),
+                                        activeWidth,
+                                    ),
+                                )
                                 activePoints.clear()
                             }
                         },
@@ -268,7 +299,14 @@ private fun ManualRedactionCanvas(
         clipRect(left, top, left + pageWidth, top + pageHeight) {
             strokes.forEach { drawRedactionStroke(it.points, it.widthFraction, left, top, pageWidth, pageHeight) }
             if (activePoints.isNotEmpty()) {
-                drawRedactionStroke(activePoints, activeWidth, left, top, pageWidth, pageHeight)
+                drawRedactionStroke(
+                    redactionStrokePoints(activeTool, activePoints),
+                    activeWidth,
+                    left,
+                    top,
+                    pageWidth,
+                    pageHeight,
+                )
             }
         }
     }

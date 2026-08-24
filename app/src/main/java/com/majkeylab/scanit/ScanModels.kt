@@ -500,6 +500,8 @@ internal data class AppSettings(
     val deleteImagesAfterShare: Boolean = false,
     val appearance: ScanAppearanceSettings = ScanAppearanceSettings(),
     val pdfSizeTarget: PdfSizeTarget = PdfSizeTarget.Original,
+    val ocrScript: OcrScript = OcrScript.Auto,
+    val readAloudLanguage: ReadAloudLanguage = ReadAloudLanguage.Auto,
 )
 
 internal enum class RecentDeleteTarget {
@@ -1218,6 +1220,21 @@ internal const val MIN_REDACTION_BRUSH_WIDTH_FRACTION = 0.01f
 internal const val MAX_REDACTION_BRUSH_WIDTH_FRACTION = 0.10f
 internal const val DEFAULT_REDACTION_BRUSH_WIDTH_FRACTION = 0.03f
 
+internal enum class RedactionTool {
+    Line,
+    Brush,
+}
+
+internal fun redactionStrokePoints(
+    tool: RedactionTool,
+    points: List<MarkPoint>,
+): List<MarkPoint> =
+    if (tool == RedactionTool.Line && points.size > 1) {
+        listOf(points.first(), points.last())
+    } else {
+        points.toList()
+    }
+
 internal data class RedactionStroke(
     val points: List<MarkPoint>,
     val widthFraction: Float,
@@ -1317,6 +1334,7 @@ internal sealed interface SafeShareState {
         val strokesByPage: Map<Int, List<RedactionStroke>> = emptyMap(),
         val undoneStrokesByPage: Map<Int, List<RedactionStroke>> = emptyMap(),
         val brushWidthFraction: Float = DEFAULT_REDACTION_BRUSH_WIDTH_FRACTION,
+        val redactionTool: RedactionTool = RedactionTool.Line,
     ) : SafeShareState {
         init {
             require(page in 0 until MAX_SCAN_PAGES) { "Safe Share review page is invalid" }

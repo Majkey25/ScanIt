@@ -163,6 +163,15 @@
     <string name="language_german">Deutsch</string>
     <string name="language_spanish">Español</string>
     <string name="language_simplified_chinese">简体中文</string>
+    <string name="language_auto">Auto</string>
+    <string name="general_settings">General</string>
+    <string name="advanced_settings">Advanced settings</string>
+    <string name="document_actions_settings">Document actions</string>
+    <string name="text_recognition_script">Text recognition</string>
+    <string name="ocr_script_latin">Latin · includes Czech</string>
+    <string name="ocr_script_chinese">Chinese</string>
+    <string name="text_recognition_script_hint">Auto uses Chinese with the Chinese app language; otherwise Latin. Czech, English, German, and Spanish use the Latin model.</string>
+    <string name="read_aloud_language">Read-all-pages language</string>
     <string name="default_email_subject">Scanned document</string>
 
     <string name="scanner_launch_error">Could not open the scanner. Try again.</string>
@@ -243,7 +252,7 @@
     <string name="clean_whiteboard_scope_title">Choose cleanup scope</string>
     <string name="clean_whiteboard_scope_body">Clean the selected page only, or every page in this document.</string>
     <string name="find_text">Find in document</string>
-    <string name="read_aloud">Read aloud</string>
+    <string name="read_aloud">Read all pages</string>
     <string name="receipt_details">Receipt / invoice details</string>
     <string name="create_contact">Create contact</string>
     <string name="selected_page_or_text">Selected page or extracted text</string>
@@ -263,6 +272,7 @@
     <string name="tts_disclosure_title">Before playback</string>
     <string name="tts_disclosure_message">Your selected system text-to-speech engine may process this document text online.</string>
     <string name="tts_reading_failed">Text-to-speech could not start.</string>
+    <string name="tts_language_unavailable">The selected reading language is not installed on this device.</string>
     <string name="no_candidates_found">No supported candidates found.</string>
     <string name="candidate_email">Email candidate</string>
     <string name="candidate_phone">Phone candidate</string>
@@ -315,7 +325,9 @@
     <string name="redact_document_scope_body">Choose the pages where you want to draw permanent redactions.</string>
     <string name="redaction_draw_hint">Drag over text or details to cover them permanently.</string>
     <string name="redaction_canvas_accessibility">Document redaction drawing area</string>
-    <string name="redaction_brush_thickness">Brush thickness</string>
+    <string name="redaction_brush_thickness">Thickness</string>
+    <string name="redaction_tool_line">Straight line</string>
+    <string name="redaction_tool_brush">Brush</string>
     <string name="safe_share_scope_title">Choose protection scope</string>
     <string name="safe_share_scope_body">Review the current page only, or review every page in this document.</string>
     <string name="selected_page_or_all_pages">Selected page or all pages</string>
