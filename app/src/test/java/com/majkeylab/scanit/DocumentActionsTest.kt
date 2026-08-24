@@ -562,13 +562,13 @@ class DocumentActionsTest {
         boundaries.forEach { boundary ->
             val owner = OcrSnapshotOwner()
             val generation = owner.begin()
-            assertTrue(owner.publish(generation, cacheId, entryId, snapshot))
-            assertEquals(snapshot, owner.current(cacheId, entryId))
+            assertTrue(owner.publish(generation, cacheId, entryId, OcrScript.Latin, snapshot))
+            assertEquals(snapshot, owner.current(cacheId, entryId, OcrScript.Latin))
 
             owner.invalidate(boundary)
 
-            assertNull(owner.current(cacheId, entryId))
-            assertFalse(owner.publish(generation, cacheId, entryId, snapshot))
+            assertNull(owner.current(cacheId, entryId, OcrScript.Latin))
+            assertFalse(owner.publish(generation, cacheId, entryId, OcrScript.Latin, snapshot))
         }
     }
 

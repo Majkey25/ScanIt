@@ -398,6 +398,68 @@ class PureLogicTest {
     }
 
     @Test
+    fun straightRedactionKeepsOnlyDragEndpointsWhileBrushKeepsSamples() {
+        val points =
+            listOf(
+                MarkPoint(0.1f, 0.2f),
+                MarkPoint(0.4f, 0.6f),
+                MarkPoint(0.8f, 0.9f),
+            )
+
+        assertEquals(
+            listOf(MarkPoint(0.1f, 0.2f), MarkPoint(0.8f, 0.9f)),
+            redactionStrokePoints(RedactionTool.Line, points),
+        )
+        val mutablePoints = points.toMutableList()
+        val brushPoints = redactionStrokePoints(RedactionTool.Brush, mutablePoints)
+        mutablePoints.clear()
+        assertEquals(points, brushPoints)
+    }
+
+    @Test
+    fun automaticOcrUsesChineseOnlyForChineseAppLanguage() {
+        assertEquals(OcrScript.Chinese, resolveOcrScript(OcrScript.Auto, "zh-Hans"))
+        assertEquals(OcrScript.Latin, resolveOcrScript(OcrScript.Auto, "cs"))
+        assertEquals(OcrScript.Latin, resolveOcrScript(OcrScript.Latin, "zh-Hans"))
+        assertEquals(OcrScript.Chinese, resolveOcrScript(OcrScript.Chinese, "en"))
+    }
+
+    @Test
+    fun cachedOcrIsReusedOnlyForTheSameScript() {
+        val owner = OcrSnapshotOwner()
+        val snapshot = DocumentOcrSnapshot(listOf("text"), emptyList(), truncated = false)
+        val generation = owner.begin()
+
+        assertTrue(
+            owner.publish(
+                generation,
+                CACHE_ID,
+                ENTRY_ID,
+                OcrScript.Latin,
+                snapshot,
+            ),
+        )
+        assertSame(snapshot, owner.current(CACHE_ID, ENTRY_ID, OcrScript.Latin))
+        assertNull(owner.current(CACHE_ID, ENTRY_ID, OcrScript.Chinese))
+    }
+
+    @Test
+    fun readAloudAutoUsesAppLanguageThenSystemLanguage() {
+        assertEquals(
+            "cs",
+            resolveReadAloudLanguageTag(ReadAloudLanguage.Auto, "cs", "de"),
+        )
+        assertEquals(
+            "de",
+            resolveReadAloudLanguageTag(ReadAloudLanguage.Auto, null, "de"),
+        )
+        assertEquals(
+            "es",
+            resolveReadAloudLanguageTag(ReadAloudLanguage.Spanish, "cs", "de"),
+        )
+    }
+
+    @Test
     fun safeShareMoveClampsWithoutChangingRegionSize() {
         val region =
             RedactionRegion(
@@ -1434,6 +1496,22 @@ class PureLogicTest {
         val restored = SettingsStore(preferences, "Scanned document").load()
         assertFalse(restored.deletePdfAfterShare)
         assertTrue(restored.deleteImagesAfterShare)
+    }
+
+    @Test
+    fun documentActionLanguagesSurviveStoreRecreation() {
+        val (preferences, _) = inMemoryPreferences()
+        SettingsStore(preferences, "Scanned document").save(
+            AppSettings(
+                ocrScript = OcrScript.Chinese,
+                readAloudLanguage = ReadAloudLanguage.Czech,
+            ),
+        )
+
+        val restored = SettingsStore(preferences, "Scanned document").load()
+
+        assertEquals(OcrScript.Chinese, restored.ocrScript)
+        assertEquals(ReadAloudLanguage.Czech, restored.readAloudLanguage)
     }
 
     @Test

@@ -223,6 +223,7 @@ internal fun ScanItApp(
     onDeleteSafeShareRegion: (String) -> Unit = {},
     onAddManualRedactionStroke: (RedactionStroke) -> Unit = {},
     onChangeManualRedactionBrushWidth: (Float) -> Unit = {},
+    onChangeManualRedactionTool: (RedactionTool) -> Unit = {},
     onUndoManualRedaction: () -> Unit = {},
     onRedoManualRedaction: () -> Unit = {},
     onClearManualRedactionPage: () -> Unit = {},
@@ -289,6 +290,7 @@ internal fun ScanItApp(
                 onDeleteRegion = onDeleteSafeShareRegion,
                 onAddStroke = onAddManualRedactionStroke,
                 onBrushWidthChange = onChangeManualRedactionBrushWidth,
+                onToolChange = onChangeManualRedactionTool,
                 onUndoStroke = onUndoManualRedaction,
                 onRedoStroke = onRedoManualRedaction,
                 onClearPage = onClearManualRedactionPage,
@@ -3480,11 +3482,20 @@ private fun SettingsScreen(
     var pdfSizeTargetWire by rememberSaveable {
         mutableStateOf(settings.pdfSizeTarget.wireValue)
     }
+    var ocrScriptWire by rememberSaveable { mutableStateOf(settings.ocrScript.wireValue) }
+    var readAloudLanguageWire by rememberSaveable {
+        mutableStateOf(settings.readAloudLanguage.wireValue)
+    }
     var languageDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeDialogOpen by rememberSaveable { mutableStateOf(false) }
     var customPdfSizeInput by rememberSaveable { mutableStateOf("") }
     var customPdfSizeUnit by rememberSaveable { mutableStateOf(PdfSizeUnit.Kilobytes) }
     var appInfoExpanded by rememberSaveable { mutableStateOf(false) }
+    var generalExpanded by rememberSaveable { mutableStateOf(true) }
+    var savingExpanded by rememberSaveable { mutableStateOf(false) }
+    var scanningExpanded by rememberSaveable { mutableStateOf(false) }
+    var sharingExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val context = LocalContext.current
@@ -3517,6 +3528,9 @@ private fun SettingsScreen(
                             deleteImagesAfterShare = deleteImagesAfterShare,
                             appearance = settings.appearance,
                             pdfSizeTarget = parsePdfSizeTarget(pdfSizeTargetWire),
+                            ocrScript = ocrScriptForWireValue(ocrScriptWire),
+                            readAloudLanguage =
+                                readAloudLanguageForWireValue(readAloudLanguageWire),
                         ),
                     )
                 settingsSaveFailed.takeUnless { saved }
@@ -3649,6 +3663,14 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.general_settings),
+                    expanded = generalExpanded,
+                    onToggle = { generalExpanded = !generalExpanded },
+                )
+            }
+            if (generalExpanded) {
+            item {
                 OutlinedButton(
                     onClick = { languageDialogOpen = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
@@ -3709,8 +3731,15 @@ private fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item { HorizontalDivider() }
-            item { SectionTitle(stringResource(R.string.saving)) }
+            }
+            item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.saving),
+                    expanded = savingExpanded,
+                    onToggle = { savingExpanded = !savingExpanded },
+                )
+            }
+            if (savingExpanded) {
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.save_pdf),
@@ -3796,7 +3825,15 @@ private fun SettingsScreen(
                 }
                 folderError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
             }
-            item { SectionTitle(stringResource(R.string.scanning)) }
+            }
+            item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.scanning),
+                    expanded = scanningExpanded,
+                    onToggle = { scanningExpanded = !scanningExpanded },
+                )
+            }
+            if (scanningExpanded) {
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.multiple_pages),
@@ -3817,7 +3854,15 @@ private fun SettingsScreen(
                     },
                 )
             }
-            item { SectionTitle(stringResource(R.string.sharing)) }
+            }
+            item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.sharing),
+                    expanded = sharingExpanded,
+                    onToggle = { sharingExpanded = !sharingExpanded },
+                )
+            }
+            if (sharingExpanded) {
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.delete_pdf_after_share),
@@ -3868,6 +3913,52 @@ private fun SettingsScreen(
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            }
+            item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.advanced_settings),
+                    expanded = advancedExpanded,
+                    onToggle = { advancedExpanded = !advancedExpanded },
+                )
+            }
+            if (advancedExpanded) {
+                item { SectionTitle(stringResource(R.string.document_actions_settings)) }
+                item {
+                    Text(stringResource(R.string.text_recognition_script))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(OcrScript.entries) { option ->
+                            FilterChip(
+                                selected = option.wireValue == ocrScriptWire,
+                                onClick = {
+                                    ocrScriptWire = option.wireValue
+                                    persistSettings()
+                                },
+                                label = { Text(ocrScriptLabel(option)) },
+                            )
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.text_recognition_script_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                item {
+                    Text(stringResource(R.string.read_aloud_language))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(ReadAloudLanguage.entries) { option ->
+                            FilterChip(
+                                selected = option.wireValue == readAloudLanguageWire,
+                                onClick = {
+                                    readAloudLanguageWire = option.wireValue
+                                    persistSettings()
+                                },
+                                label = { Text(readAloudLanguageLabel(option)) },
+                            )
+                        }
+                    }
+                }
             }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item {
@@ -4024,6 +4115,54 @@ private fun appLanguageLabel(language: AppLanguage): String =
             AppLanguage.SimplifiedChinese -> R.string.language_simplified_chinese
         },
     )
+
+@Composable
+private fun ocrScriptLabel(script: OcrScript): String =
+    stringResource(
+        when (script) {
+            OcrScript.Auto -> R.string.language_auto
+            OcrScript.Latin -> R.string.ocr_script_latin
+            OcrScript.Chinese -> R.string.ocr_script_chinese
+        },
+    )
+
+@Composable
+private fun readAloudLanguageLabel(language: ReadAloudLanguage): String =
+    stringResource(
+        when (language) {
+            ReadAloudLanguage.Auto -> R.string.language_auto
+            ReadAloudLanguage.English -> R.string.language_english
+            ReadAloudLanguage.Czech -> R.string.language_czech
+            ReadAloudLanguage.German -> R.string.language_german
+            ReadAloudLanguage.Spanish -> R.string.language_spanish
+            ReadAloudLanguage.SimplifiedChinese -> R.string.language_simplified_chinese
+        },
+    )
+
+@Composable
+private fun SettingsCategoryHeader(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Icon(
+                painter = painterResource(R.drawable.ic_expand_more),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp).rotate(if (expanded) 180f else 0f),
+            )
+        }
+    }
+}
 
 @Composable
 private fun SettingsSwitch(

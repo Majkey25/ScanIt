@@ -14,7 +14,7 @@ The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
 - AndroidX Compose Material 3 1.4.0 and Compose 1.11.4 modules selected by the Compose BOM 2026.06.01.
 - AndroidX Lifecycle ViewModel KTX 2.10.0.
 - Google Play services ML Kit Document Scanner 16.0.0 and its runtime dependencies.
-- Google Play services ML Kit Text Recognition 19.0.1 and its runtime dependencies.
+- Google Play services ML Kit Text Recognition 19.0.1, Chinese Text Recognition 16.0.1, and their runtime dependencies.
 - Google Play services ML Kit Barcode Scanning 18.3.1 and its runtime dependencies.
 - Google Play services ML Kit Face Detection 17.1.0 and its runtime dependencies.
 

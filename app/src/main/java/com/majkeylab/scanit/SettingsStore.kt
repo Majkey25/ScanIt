@@ -26,6 +26,8 @@ private const val KEY_APPEARANCE_BLACK_WHITE_INTENSITY = "appearance_black_white
 private const val KEY_APPEARANCE_WHITEBOARD_INTENSITY = "appearance_whiteboard_intensity"
 private const val KEY_APPEARANCE_SHADOWS = "appearance_shadows"
 private const val KEY_PDF_SIZE_TARGET = "pdf_size_target"
+private const val KEY_OCR_SCRIPT = "ocr_script"
+private const val KEY_READ_ALOUD_LANGUAGE = "read_aloud_language"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
 private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
@@ -293,6 +295,18 @@ internal class SettingsStore(
                         preferences.getString(KEY_PDF_SIZE_TARGET, null)
                     },
                 ),
+            ocrScript =
+                ocrScriptForWireValue(
+                    readPreferenceOrDefault<String?>(null) {
+                        preferences.getString(KEY_OCR_SCRIPT, null)
+                    },
+                ),
+            readAloudLanguage =
+                readAloudLanguageForWireValue(
+                    readPreferenceOrDefault<String?>(null) {
+                        preferences.getString(KEY_READ_ALOUD_LANGUAGE, null)
+                    },
+                ),
         )
     }
 
@@ -332,6 +346,8 @@ internal class SettingsStore(
             .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
             .putAppearance(settings.appearance)
             .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
+            .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
+            .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
             .apply()
     }
 

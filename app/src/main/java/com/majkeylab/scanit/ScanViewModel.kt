@@ -415,6 +415,7 @@ private fun DocumentActionState?.recycleWhiteboardPreview() {
 private data class OwnedOcrSnapshot(
     val cacheId: String,
     val entryId: String,
+    val script: OcrScript,
     val snapshot: DocumentOcrSnapshot,
 )
 
@@ -439,16 +440,17 @@ internal class OcrSnapshotOwner {
         requestGeneration: Long,
         cacheId: String,
         entryId: String,
+        script: OcrScript,
         snapshot: DocumentOcrSnapshot,
     ): Boolean {
         if (requestGeneration != generation) return false
-        active = OwnedOcrSnapshot(cacheId, entryId, snapshot)
+        active = OwnedOcrSnapshot(cacheId, entryId, script, snapshot)
         return true
     }
 
-    fun current(cacheId: String, entryId: String): DocumentOcrSnapshot? =
+    fun current(cacheId: String, entryId: String, script: OcrScript): DocumentOcrSnapshot? =
         active
-            ?.takeIf { it.cacheId == cacheId && it.entryId == entryId }
+            ?.takeIf { it.cacheId == cacheId && it.entryId == entryId && it.script == script }
             ?.snapshot
 
     fun invalidate(reason: OcrSnapshotInvalidation) {
@@ -574,6 +576,12 @@ internal class ScanViewModel(
     }
 
     fun currentSettings(): AppSettings = mutableSettings.value
+
+    private fun currentResolvedOcrScript(): OcrScript =
+        resolveOcrScript(
+            mutableSettings.value.ocrScript,
+            getApplication<Application>().resources.configuration.locales.get(0)?.toLanguageTag(),
+        )
 
     fun requestPdfLocationChange() {
         beginOutputTreePicker(OutputChangeKind.PdfLocation)
@@ -2010,7 +2018,8 @@ internal class ScanViewModel(
         }
         val analysisPages =
             safeShareAnalysisPages(current.scan.cached.pages, scope, selectedPage)
-        val ownedSnapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId)
+        val ocrScript = currentResolvedOcrScript()
+        val ownedSnapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript)
         val ocrSnapshotGeneration =
             if (ownedSnapshot == null && scope == SafeShareScope.AllPages) {
                 ocrSnapshotOwner.begin()
@@ -2039,7 +2048,9 @@ internal class ScanViewModel(
                                     }
                                         ?: extractSafeShareOcr(
                                             analysisPages,
-                                            documentActionProcessor::extractOcr,
+                                            extract = { pages ->
+                                                documentActionProcessor.extractOcr(pages, ocrScript)
+                                            },
                                         ).also {
                                             if (scope == SafeShareScope.AllPages) {
                                                 extractedSnapshot = it
@@ -2075,6 +2086,7 @@ internal class ScanViewModel(
                                 checkNotNull(ocrSnapshotGeneration),
                                 request.cacheId,
                                 request.entryId,
+                                ocrScript,
                                 checkNotNull(extractedSnapshot),
                             )
                     ) {
@@ -2161,6 +2173,12 @@ internal class ScanViewModel(
             } else {
                 review
             }
+        }
+    }
+
+    fun changeManualRedactionTool(tool: RedactionTool) {
+        updateSafeShareReview { request, review ->
+            if (request.mode == RedactionMode.Manual) review.copy(redactionTool = tool) else review
         }
     }
 
@@ -2377,11 +2395,12 @@ internal class ScanViewModel(
                 generation = nextDocumentActionGeneration(),
             )
         activeDocumentActionRequest = request
+        val ocrScript = currentResolvedOcrScript()
         val ownedSnapshot =
             if (action == DocumentAction.DetectCodes) {
                 null
             } else {
-                ocrSnapshotOwner.current(request.cacheId, request.entryId)
+                ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript)
             }
         val ocrSnapshotGeneration =
             if (action != DocumentAction.DetectCodes && ownedSnapshot == null) {
@@ -2419,6 +2438,7 @@ internal class ScanViewModel(
                                             ownedSnapshot
                                                 ?: documentActionProcessor.extractOcr(
                                                     current.scan.cached.pages,
+                                                    ocrScript,
                                                 ).also { extractedSnapshot = it }
                                         when (action) {
                                             DocumentAction.ExtractText -> documentText(snapshot)
@@ -2480,6 +2500,7 @@ internal class ScanViewModel(
                                 checkNotNull(ocrSnapshotGeneration),
                                 request.cacheId,
                                 request.entryId,
+                                ocrScript,
                                 checkNotNull(extractedSnapshot),
                             )
                     ) {
@@ -2764,7 +2785,10 @@ internal class ScanViewModel(
         ) {
             return emptyList()
         }
-        val snapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId) ?: return emptyList()
+        val ocrScript = currentResolvedOcrScript()
+        val snapshot =
+            ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript)
+                ?: return emptyList()
         val matches =
             try {
                 withContext(Dispatchers.Default) { findText(snapshot, query) }
@@ -2779,7 +2803,7 @@ internal class ScanViewModel(
                 isDocumentActionRequestCurrent(request, latest) &&
                 (latest.documentActionState as? DocumentActionState.Completed)?.output ==
                 DocumentActionOutput.FindReady &&
-                ocrSnapshotOwner.current(request.cacheId, request.entryId) === snapshot
+                ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript) === snapshot
         } ?: emptyList()
     }
 
@@ -2795,7 +2819,9 @@ internal class ScanViewModel(
         ) {
             return null
         }
-        val snapshot = ocrSnapshotOwner.current(request.cacheId, request.entryId) ?: return null
+        val ocrScript = currentResolvedOcrScript()
+        val snapshot =
+            ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript) ?: return null
         val text =
             withContext(Dispatchers.Default) {
                 validatedSpeechText(documentText(snapshot).value)
@@ -2805,7 +2831,7 @@ internal class ScanViewModel(
             activeDocumentActionRequest == request &&
                 isDocumentActionRequestCurrent(request, latest) &&
                 (latest.documentActionState as? DocumentActionState.Completed)?.output == speech &&
-                ocrSnapshotOwner.current(request.cacheId, request.entryId) === snapshot
+                ocrSnapshotOwner.current(request.cacheId, request.entryId, ocrScript) === snapshot
         }
     }
 

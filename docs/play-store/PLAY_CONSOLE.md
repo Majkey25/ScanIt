@@ -19,8 +19,8 @@ submitted declarations:
 |---|---|
 | App name | `ScanIt` |
 | Package | `com.majkeylab.scanit` |
-| Version code | `25` |
-| Version name | `1.4.1` |
+| Version code | `26` |
+| Version name | `1.5.0` |
 | Default language | English (United States) |
 | App or game | App |
 | Category | Productivity |
@@ -64,7 +64,8 @@ the Play developer account.
 > - per-document PDF size and folder changes from File details without changing saved defaults
 > - per-document image size, format, and folder changes from File details
 > - image size options for Original, 3840 px, 2560 px, 1600 px, or custom 320–6000 px
-> - on-device Latin-script text extraction across all pages, explicit text export, and selected-page QR/barcode detection
+> - on-device Latin text recognition, including Czech, or Chinese text recognition across all pages
+> - configurable Read all pages language with Auto, Czech, English, German, Spanish, and Chinese choices
 > - permanent freehand black redaction with adjustable brush thickness, undo, redo, and clear-page controls
 > - local Smart cleanup and lasso-based Manual cleanup with a preserved parent revision
 > - Recent scans with page previews and saved-output deletion
@@ -113,7 +114,8 @@ the Play developer account.
 > - změna velikosti a složky konkrétního PDF v detailech souboru bez změny uložených výchozích nastavení
 > - změna velikosti, formátu a složky obrázků v detailech souboru
 > - velikost obrázku Původní, 3840 px, 2560 px, 1600 px nebo vlastní 320–6000 px
-> - místní rozpoznání latinského textu ze všech stran, výslovný export textu a rozpoznání QR nebo čárových kódů na aktuální straně
+> - místní rozpoznání latinky včetně češtiny nebo čínského textu ze všech stran
+> - nastavitelný jazyk Čtení všech stránek: Auto, čeština, angličtina, němčina, španělština nebo čínština
 > - trvalé ruční začernění černým štětcem s nastavitelnou tloušťkou, krokem zpět, znovu a vymazáním stránky
 > - místní Chytré vyčištění a Ruční čistič s obtažením skvrn a zachovanou původní revizí
 > - Nedávné skeny s náhledy a mazáním uložených výstupů
@@ -132,29 +134,29 @@ the Play developer account.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
-## Release notes — version 25 / 1.4.1
+## Release notes — version 26 / 1.5.0
 
 Each block is below Google Play's 500-character per-language limit.
 
 ### English (United States)
 
-> Manual redaction now uses a permanent black freehand brush with adjustable thickness, undo, redo, and clear-page controls. Redacted pixels are burned into a protected child revision.
+> Added straight-line or brush redaction, Latin/Chinese text recognition, selectable read-all-pages languages, and collapsible Settings categories. Redactions remain permanently rasterized.
 
 ### Čeština
 
-> Ruční redakce nyní používá trvalý černý štětec s nastavitelnou tloušťkou, krokem zpět, znovu a vymazáním stránky. Tahy se vypálí do chráněné odvozené revize.
+> Přidána rovná čára nebo štětec pro redakci, rozpoznání latinky/čínštiny, jazyky Čtení všech stránek a skládací kategorie Nastavení. Redakce zůstává trvalá.
 
 ### Deutsch
 
-> Manuelle Schwärzung nutzt jetzt einen dauerhaften schwarzen Pinsel mit einstellbarer Stärke sowie Rückgängig-, Wiederholen- und Seitenleeren-Funktionen.
+> Neu: gerade Linie oder Pinsel für Schwärzungen, lateinische/chinesische Texterkennung, wählbare Vorlesesprache und einklappbare Einstellungen.
 
 ### Español
 
-> La censura manual usa ahora un pincel negro permanente con grosor ajustable y controles para deshacer, rehacer y borrar la página.
+> Se añadió censura con línea recta o pincel, reconocimiento latino/chino, idioma seleccionable para leer todas las páginas y ajustes plegables.
 
 ### 简体中文
 
-> 手动遮盖现在使用永久黑色画笔，可调粗细，并支持撤销、重做和清除当前页。遮盖会写入受保护的派生版本。
+> 新增直线或画笔遮盖、拉丁/中文识别、可选的全页朗读语言以及可折叠设置分类。遮盖仍会永久写入派生版本。
 
 The listing describes current implemented public behavior only. It does not
 claim certificate-backed signatures, guaranteed PDF compression, cloud
@@ -332,7 +334,7 @@ action, donation, unfinished feature, or device mockup in the feature graphic.
 
 ## Submission checklist
 
-- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 25, version `1.4.1`; verify after the final release build.
+- [ ] Signed AAB is exactly `com.majkeylab.scanit`, version code 26, version `1.5.0`; verify after the final release build.
 - [x] R8 mapping from the exact build is retained. The only native library is a prebuilt dependency without a separate symbol payload; no fake symbols are uploaded.
 - [ ] Public artifact contains no Gemini/cloud-cleanup code or app-owned `INTERNET` permission; verify before Play submission.
 - [x] Complete third-party license text and applicable notices are packaged with the APK/AAB distribution and verified in the exact artifact.

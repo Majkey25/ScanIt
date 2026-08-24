@@ -9,6 +9,8 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
 import java.io.IOException
@@ -830,9 +832,13 @@ private fun decodeStrictUtf8(bytes: ByteArray): String? =
     }
 
 internal class DocumentActionProcessor(private val context: Context) {
-    suspend fun extractOcr(pages: List<File>): DocumentOcrSnapshot {
+    suspend fun extractOcr(
+        pages: List<File>,
+        script: OcrScript = OcrScript.Auto,
+    ): DocumentOcrSnapshot {
         require(pages.size in 1..MAX_SCAN_PAGES) { "OCR page count is invalid" }
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val appLanguageTag = context.resources.configuration.locales.get(0)?.toLanguageTag()
+        val recognizer = textRecognizer(resolveOcrScript(script, appLanguageTag))
         return try {
             val pageTexts = ArrayList<String>(pages.size)
             val elements = ArrayList<OcrElement>()
@@ -879,6 +885,14 @@ internal class DocumentActionProcessor(private val context: Context) {
             recognizer.close()
         }
     }
+
+    private fun textRecognizer(script: OcrScript): TextRecognizer =
+        when (script) {
+            OcrScript.Auto -> error("OCR script must be resolved")
+            OcrScript.Latin -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            OcrScript.Chinese ->
+                TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        }
 
     suspend fun detectCodes(page: File): DocumentActionOutput.Codes {
         val scanner = BarcodeScanning.getClient()

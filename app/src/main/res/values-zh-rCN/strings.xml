@@ -161,6 +161,15 @@
     <string name="language_german">Deutsch</string>
     <string name="language_spanish">Español</string>
     <string name="language_simplified_chinese">简体中文</string>
+    <string name="language_auto">自动</string>
+    <string name="general_settings">常规</string>
+    <string name="advanced_settings">高级设置</string>
+    <string name="document_actions_settings">文档操作</string>
+    <string name="text_recognition_script">文字识别</string>
+    <string name="ocr_script_latin">拉丁文字 · 包含捷克语</string>
+    <string name="ocr_script_chinese">中文</string>
+    <string name="text_recognition_script_hint">自动模式在应用语言为中文时使用中文模型，否则使用拉丁文字模型。捷克语、英语、德语和西班牙语使用拉丁文字模型。</string>
+    <string name="read_aloud_language">所有页面的朗读语言</string>
     <string name="default_email_subject">扫描文档</string>
     <string name="scanner_launch_error">无法打开扫描器。请重试。</string>
     <string name="scanner_result_error">扫描器未返回有效文档。请重新扫描。</string>
@@ -240,7 +249,7 @@
     <string name="clean_whiteboard_scope_title">选择清理范围</string>
     <string name="clean_whiteboard_scope_body">仅清理所选页面，或清理此文档的所有页面。</string>
     <string name="find_text">在文档中查找</string>
-    <string name="read_aloud">大声朗读</string>
+    <string name="read_aloud">朗读所有页面</string>
     <string name="receipt_details">收据 / 发票详情</string>
     <string name="create_contact">创建联系人</string>
     <string name="selected_page_or_text">所选页面或已识别文本</string>
@@ -260,6 +269,7 @@
     <string name="tts_disclosure_title">播放前</string>
     <string name="tts_disclosure_message">您选择的系统文本转语音引擎可能会在线处理此文档文本。</string>
     <string name="tts_reading_failed">无法启动文本转语音。</string>
+    <string name="tts_language_unavailable">此设备未安装所选朗读语言。</string>
     <string name="no_candidates_found">未找到受支持的候选项。</string>
     <string name="candidate_email">电子邮件候选项</string>
     <string name="candidate_phone">电话候选项</string>
@@ -312,7 +322,9 @@
     <string name="redact_document_scope_body">选择要手绘永久遮盖的页面。</string>
     <string name="redaction_draw_hint">在文字或信息上拖动以永久遮盖。</string>
     <string name="redaction_canvas_accessibility">文档遮盖绘图区域</string>
-    <string name="redaction_brush_thickness">画笔粗细</string>
+    <string name="redaction_brush_thickness">粗细</string>
+    <string name="redaction_tool_line">直线</string>
+    <string name="redaction_tool_brush">画笔</string>
     <string name="safe_share_scope_title">选择保护范围</string>
     <string name="safe_share_scope_body">仅检查当前页面，或检查此文档的所有页面。</string>
     <string name="selected_page_or_all_pages">所选页面或所有页面</string>
