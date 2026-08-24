@@ -15,19 +15,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun rememberDistributionPremiumState(): DistributionPremiumState {
-    val context = LocalContext.current
-    val state = BetaPremiumController.state
-    LaunchedEffect(context) { refreshDistributionPremium(context) }
-    return state
-}
+internal fun rememberDistributionPremiumState(): DistributionPremiumState =
+    BetaPremiumController.state
 
 @Composable
 internal fun DistributionPremiumPaywall(onDismiss: () -> Unit) {

@@ -236,7 +236,6 @@ private suspend fun ensureAdsReady(
 internal fun DistributionBannerAd(inline: Boolean = false) {
     val activity = LocalActivity.current ?: return
     val premiumState = BetaPremiumController.state
-    LaunchedEffect(activity) { refreshDistributionPremium(activity) }
     LaunchedEffect(activity, premiumState.premium, premiumState.entitlementVerified) {
         if (premiumState.entitlementVerified && !premiumState.premium) {
             BetaConsentCoordinator.ensureRequested(activity)
