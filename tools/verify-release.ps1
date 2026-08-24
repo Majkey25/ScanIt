@@ -104,6 +104,12 @@ function Assert-ReleasePolicyConfiguration {
     if (Test-IsPermissionLine -Line "uses-permission: name='android.permission.ACCESS_NETWORK_STATE'" -Permission "android.permission.INTERNET") {
         throw "Verifier permission policy rejects an unrelated APK permission."
     }
+    if ("com/android/billingclient/api/BillingClient" -match $blockedBetaCodePattern) {
+        throw "Verifier policy blocks Billing in the beta flavor."
+    }
+    if ("GeminiActivity" -notmatch $blockedBetaCodePattern) {
+        throw "Verifier policy does not block Gemini in the beta flavor."
+    }
 }
 
 Assert-ReleasePolicyConfiguration
@@ -120,12 +126,6 @@ switch ($Flavor) {
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
         $expectedVersionName = "1.5.0"
-    }
-    if ("com/android/billingclient/api/BillingClient" -match $blockedBetaCodePattern) {
-        throw "Verifier policy blocks Billing in the beta flavor."
-    }
-    if ("GeminiActivity" -notmatch $blockedBetaCodePattern) {
-        throw "Verifier policy does not block Gemini in the beta flavor."
     }
     "beta" {
         $expectedPackage = "com.majkeylab.scanit"
