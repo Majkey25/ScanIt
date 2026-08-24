@@ -7,7 +7,7 @@
     "mode": "RGB",
     "bytes": 1235827,
     "sha256": "E77B7811FB87973F69A67751B89E3E85BEB067BD0603830B7BFF7C0F87716FBD",
-    "altText": "ScanIt detects the edges of an original music practice sheet."
+    "altText": "SeliaScan detects the edges of an original music practice sheet."
   },
   {
     "locale": "en-US",
@@ -27,7 +27,7 @@
     "mode": "RGB",
     "bytes": 336979,
     "sha256": "578904DECDCF1B15835604E45E17A531D99154983420E0748F47487F542D9125",
-    "altText": "ScanIt result screen with clear buttons for rescanning, signing, document actions, and sharing."
+    "altText": "SeliaScan result screen with clear buttons for rescanning, signing, document actions, and sharing."
   },
   {
     "locale": "en-US",
@@ -87,7 +87,7 @@
     "mode": "RGB",
     "bytes": 1237671,
     "sha256": "F6BCF4DA90609883EBE04BFF90063EB4ED040DD872C1469EFC079E16FAB459AE",
-    "altText": "ScanIt rozpoznává okraje původního notového cvičení."
+    "altText": "SeliaScan rozpoznává okraje původního notového cvičení."
   },
   {
     "locale": "cs-CZ",

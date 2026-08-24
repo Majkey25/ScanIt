@@ -747,7 +747,7 @@ class PureLogicTest {
         assertTrue(manifest.contains("tools:replace=\"android:label\""))
         assertTrue(
             strings.contains(
-                "<string name=\"internal_app_name\" translatable=\"false\">ScanIt.test</string>",
+                "<string name=\"internal_app_name\" translatable=\"false\">SeliaScan.test</string>",
             ),
         )
     }

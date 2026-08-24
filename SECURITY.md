@@ -29,7 +29,7 @@ credentials.
 - Scans are held in a bounded app-private cache and exposed for sharing only through scoped content URIs.
 - Saved-output replacement verifies destination identity, size, dimensions, and SHA-256 before metadata activation and exact old-output cleanup.
 - OCR and barcode payloads are bounded, stale requests are rejected, clipboard copies are marked sensitive, and detected codes do not open automatically.
-- Android backup and device-to-device transfer are disabled for ScanIt app data.
+- Android backup and device-to-device transfer are disabled for SeliaScan app data.
 - Release signing keys and local signing properties are never stored in this repository.
 - The frozen GitHub preview APK is a historical debug-signed artifact, not the Google Play build.
 

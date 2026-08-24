@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ScanIt</string>
+    <string name="app_name">SeliaScan</string>
     <string name="try_again">Reintentar</string>
     <string name="preview_unavailable">Vista previa no disponible</string>
     <string name="page_position">Página %1$d de %2$d</string>
@@ -65,10 +65,10 @@
     <string name="image_format_jpeg">JPG · alta calidad</string>
     <string name="image_format_png">PNG · sin pérdida</string>
     <string name="unknown_output_title">El exportado necesita revisión</string>
-    <string name="unknown_output_warning">Una exportación interrumpida puede haber dejado un archivo externo sin identificar. ScanIt no intentará adivinarlo ni borrarlo.</string>
+    <string name="unknown_output_warning">Una exportación interrumpida puede haber dejado un archivo externo sin identificar. SeliaScan no intentará adivinarlo ni borrarlo.</string>
     <string name="review_output_warning">Revisar</string>
     <string name="unknown_output_confirm_title">¿Marcar la exportación como revisada?</string>
-    <string name="unknown_output_confirm_body">Revisa manualmente la carpeta seleccionada. Puede quedar un archivo externo sin identificar. Esto solo borra el aviso local de ScanIt; no elimina ningún archivo.</string>
+    <string name="unknown_output_confirm_body">Revisa manualmente la carpeta seleccionada. Puede quedar un archivo externo sin identificar. Esto solo borra el aviso local de SeliaScan; no elimina ningún archivo.</string>
     <string name="unknown_output_confirm">Ya lo revisé</string>
     <string name="save_now">Guardar ahora</string>
     <string name="saving_now">Guardando…</string>
@@ -82,10 +82,10 @@
     <string name="opening_document">Abriendo documento…</string>
     <string name="recent_scan_unavailable">Este escaneo reciente ya no está disponible.</string>
     <string name="recent_history_unavailable">No se pudieron cargar los escaneos recientes.</string>
-    <string name="state_update_failed">No se pudo actualizar ScanIt. Reinténtalo.</string>
+    <string name="state_update_failed">No se pudo actualizar SeliaScan. Reinténtalo.</string>
     <string name="recent_delete_failed">No se pudo eliminar el escaneo reciente.</string>
     <string name="recent_delete_partial">Se eliminaron algunos archivos seleccionados. Los restantes siguen en la lista. Reinténtalo.</string>
-    <string name="recent_delete_metadata_failed">Puede que se hayan eliminado archivos, pero ScanIt no pudo actualizar su registro. Reinténtalo.</string>
+    <string name="recent_delete_metadata_failed">Puede que se hayan eliminado archivos, pero SeliaScan no pudo actualizar su registro. Reinténtalo.</string>
     <string name="recent_delete_cache_failed">Se eliminaron los archivos seleccionados, pero no se pudo quitar el elemento de Recientes. Reinténtalo.</string>
     <string name="shared_output_delete_failed">No se pudo eliminar un archivo guardado. Reinténtalo desde Escaneos recientes.</string>
     <string name="output_create_cleanup_required">Hay que limpiar un archivo guardado incompleto antes de volver a cambiar esta salida.</string>
@@ -98,7 +98,7 @@
     <string name="delete_pdf_and_images">PDF e imágenes</string>
     <string name="remove_from_recent">Quitar de Recientes</string>
     <string name="recent_delete_saved_hint">Los archivos guardados seleccionados se eliminarán del dispositivo y después se quitará este escaneo de Recientes.</string>
-    <string name="recent_delete_legacy_hint">No hay detalles de los archivos guardados, así que ScanIt no adivinará cuáles eliminar. Solo se puede quitar esta vista previa reciente.</string>
+    <string name="recent_delete_legacy_hint">No hay detalles de los archivos guardados, así que SeliaScan no adivinará cuáles eliminar. Solo se puede quitar esta vista previa reciente.</string>
     <string name="recent_delete_pending_hint">Los archivos guardados seleccionados ya no existen. Reintenta quitar esta vista previa; no se eliminarán otros archivos guardados.</string>
     <string name="deleting_scan">Eliminando…</string>
     <string name="recent_scan_preview">Vista previa del escaneo reciente</string>
@@ -155,7 +155,7 @@
     <string name="pdf_size_unit_mb">MB</string>
     <string name="pdf_size_custom_hint">Usa 1–500.000 KB o 1–500 MB.</string>
     <string name="save">Guardar</string>
-    <string name="pdf_size_hint">Los límites usan versiones medidas y legibles. Si no se puede alcanzar un límite, ScanIt conserva el PDF legible más pequeño y muestra su tamaño real.</string>
+    <string name="pdf_size_hint">Los límites usan versiones medidas y legibles. Si no se puede alcanzar un límite, SeliaScan conserva el PDF legible más pequeño y muestra su tamaño real.</string>
     <string name="choose_language">Elegir idioma</string>
     <string name="language_system">Predeterminado del sistema</string>
     <string name="language_english">English</string>
@@ -178,7 +178,7 @@
     <string name="scanner_unexpected_error">El escaneo terminó de forma inesperada. Reinténtalo.</string>
     <string name="pdf_tree_release_warning">No se pudo liberar el permiso de la carpeta anterior.</string>
     <string name="opening_scanner">Abriendo escáner…</string>
-    <string name="starting_scanit">Abriendo ScanIt…</string>
+    <string name="starting_scanit">Abriendo SeliaScan…</string>
     <string name="saving_document">Guardando documento…</string>
     <string name="images_save_failed">No se pudieron guardar las imágenes en la Galería. El documento aún se puede compartir.</string>
     <string name="pdf_save_failed">No se pudo guardar el PDF. El documento aún se puede compartir.</string>
@@ -302,7 +302,7 @@
     <string name="document_action_truncated">El resultado se acortó para ajustarse.</string>
     <string name="document_action_failed">No se pudo completar la acción del documento.</string>
     <string name="document_action_model_unavailable">El modelo del dispositivo aún no está disponible. Es posible que los servicios de Google Play sigan descargándolo. Vuelve a intentarlo en breve.</string>
-    <string name="document_action_clip_label">Resultado del documento ScanIt</string>
+    <string name="document_action_clip_label">Resultado del documento SeliaScan</string>
     <string name="export_text">Exportar texto</string>
     <string name="exporting_text">Guardando texto…</string>
     <string name="text_export_saved">Texto guardado.</string>

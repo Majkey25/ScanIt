@@ -1,20 +1,20 @@
-ScanIt Source-Visible Proprietary License
+SeliaScan (formerly ScanIt) Source-Visible Proprietary License
 
 Copyright (c) 2026 Majkey25. All rights reserved.
 
 1. Scope
 
-This license applies to the ScanIt source code and other original ScanIt
+This license applies to the SeliaScan and ScanIt source code and other original
 material included in the repository revision that introduces this license, and
-to original ScanIt material published later with this license. It does not
+to original material published later with this license. It does not
 apply to third-party material. Earlier copies already distributed under the MIT
 License retain that license as explained in section 4.
 
 2. Official binary use
 
-You may download, install, and use an unmodified official ScanIt binary release
+You may download, install, and use an unmodified official SeliaScan or ScanIt binary release
 for any lawful purpose. An official binary release is one distributed by
-Majkey25 through the ScanIt GitHub Releases page, Google Play, or another
+Majkey25 through the existing GitHub Releases page, Google Play, or another
 channel explicitly identified by Majkey25.
 
 3. Source visibility
@@ -28,15 +28,15 @@ Additional permission requires prior written authorization from Majkey25.
 
 4. Historical MIT grants
 
-ScanIt material already distributed under the MIT License remains available
+Material previously distributed under the ScanIt name and MIT License remains available
 under that license for those historical copies. This license does not revoke or
 limit any earlier MIT grant. See HISTORICAL_MIT_RELEASES.md.
 
 5. Third-party material and names
 
 Third-party software, services, and marks remain subject to their own terms.
-See THIRD_PARTY_NOTICES.md. This license grants no right to use the ScanIt or
-Majkey25 names, logos, or other brand features except to identify an unmodified
+See THIRD_PARTY_NOTICES.md. This license grants no right to use the SeliaScan,
+ScanIt, or Majkey25 names, logos, or other brand features except to identify an unmodified
 official binary accurately.
 
 6. No warranty

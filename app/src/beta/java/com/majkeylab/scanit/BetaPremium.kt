@@ -20,7 +20,7 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 
 internal object BetaPremiumConfig {
-    const val productId = "scanit_premium"
+    const val productId = "seliascan_premium"
 }
 
 internal enum class BetaPremiumPurchaseState {

@@ -47,7 +47,7 @@ class BetaDistributionConfigTest {
 
     @Test
     fun premiumUsesStablePlayProductId() {
-        assertEquals("scanit_premium", BetaPremiumConfig.productId)
+        assertEquals("seliascan_premium", BetaPremiumConfig.productId)
     }
 
     @Test
@@ -56,7 +56,7 @@ class BetaDistributionConfigTest {
             hasPremiumEntitlement(
                 listOf(
                     BetaPremiumPurchase(
-                        productIds = setOf("scanit_premium"),
+                        productIds = setOf("seliascan_premium"),
                         state = BetaPremiumPurchaseState.Purchased,
                     ),
                 ),
@@ -66,7 +66,7 @@ class BetaDistributionConfigTest {
             hasPremiumEntitlement(
                 listOf(
                     BetaPremiumPurchase(
-                        productIds = setOf("scanit_premium"),
+                        productIds = setOf("seliascan_premium"),
                         state = BetaPremiumPurchaseState.Pending,
                     ),
                 ),
@@ -89,7 +89,7 @@ class BetaDistributionConfigTest {
         val pending =
             listOf(
                 BetaPremiumPurchase(
-                    productIds = setOf("scanit_premium"),
+                    productIds = setOf("seliascan_premium"),
                     state = BetaPremiumPurchaseState.Pending,
                 ),
             )
@@ -105,7 +105,7 @@ class BetaDistributionConfigTest {
             resolvePremiumEntitlement(
                 listOf(
                     BetaPremiumPurchase(
-                        productIds = setOf("scanit_premium"),
+                        productIds = setOf("seliascan_premium"),
                         state = BetaPremiumPurchaseState.Purchased,
                     ),
                 ),
@@ -123,7 +123,7 @@ class BetaDistributionConfigTest {
             resolvePremiumEntitlement(
                 listOf(
                     BetaPremiumPurchase(
-                        productIds = setOf("scanit_premium"),
+                        productIds = setOf("seliascan_premium"),
                         state = BetaPremiumPurchaseState.Unknown,
                     ),
                 ),

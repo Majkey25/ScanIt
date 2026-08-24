@@ -1,10 +1,10 @@
 # Third-party notices
 
-ScanIt's proprietary license covers only original ScanIt material. The public
+SeliaScan's proprietary license covers only original SeliaScan material. The public
 Android release includes third-party components under their own licenses and
 terms.
 
-The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
+The `playReleaseRuntimeClasspath` graph was inspected for SeliaScan
 `1.3.2` on 2026-08-16. Its direct runtime dependencies are:
 
 - Kotlin standard library 2.4.10.
@@ -36,12 +36,12 @@ changes to these libraries are represented by this notice.
 `com.google.android.gms:play-services-mlkit-document-scanner:16.0.0` declares
 the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms). Its
 scanner UI, models, and related resources are delivered through Google Play
-services. The public ScanIt build does not claim ownership of them.
+services. The public SeliaScan build does not claim ownership of them.
 
 `com.google.android.gms:play-services-mlkit-text-recognition:19.0.1`,
 `com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1`, and
 `com.google.android.gms:play-services-mlkit-face-detection:17.1.0` use on-device
-models delivered through Google Play services for ScanIt's local text,
+models delivered through Google Play services for SeliaScan's local text,
 QR/barcode, and face detection. A model may download before first use. Results
 remain on the device unless the user copies or shares them.
 

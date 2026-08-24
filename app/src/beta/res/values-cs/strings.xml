@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="beta_app_name">ScanIt VIP Ads</string>
+    <string name="beta_app_name">SeliaScan VIP Ads</string>
     <string name="beta_advertisement">Reklama</string>
     <string name="beta_privacy_options">Možnosti ochrany soukromí</string>
-    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_title">SeliaScan Premium</string>
     <string name="beta_premium_body">Jednorázový nákup odstraní reklamy a odemkne všechny Akce dokumentu. Google Play ho obnoví na vašich dalších zařízeních.</string>
     <string name="beta_premium_active">Premium je aktivní. Reklamy jsou skryté a všechny Akce dokumentu jsou odemčené.</string>
     <string name="beta_premium_account">Premium je propojené s účtem Google Play, který ho koupil.</string>

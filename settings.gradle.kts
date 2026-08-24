@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ScanIt"
+rootProject.name = "SeliaScan"
 include(":app")

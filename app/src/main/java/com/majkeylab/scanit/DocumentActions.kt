@@ -737,7 +737,7 @@ internal fun sanitizeTextExportFileName(baseName: String): String {
         previousUnderscore = safe == '_'
     }
     val cleaned = stem.toString().trim('_', '-')
-    return "${cleaned.ifEmpty { "ScanIt" }}$TEXT_EXPORT_SUFFIX"
+    return "${cleaned.ifEmpty { "SeliaScan" }}$TEXT_EXPORT_SUFFIX"
 }
 
 internal fun writeDocumentTextUtf8(

@@ -36,7 +36,7 @@ $requiredBetaAdsPattern =
 $requiredBetaConsentPattern =
     '(?i)(com[./]google[./]android[./]ump|user-messaging-platform)'
 $requiredBetaBillingPattern =
-    '(?i)(com[./]android[./]billingclient|scanit_premium)'
+    '(?i)(com[./]android[./]billingclient|seliascan_premium)'
 $usesPermissionElementPattern = '^uses-permission(?:-sdk-(?:\d+|m))?$'
 $forbiddenPublicPermissions = @(
     "android.permission.INTERNET"
@@ -129,8 +129,8 @@ switch ($Flavor) {
     }
     "beta" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionCode = "29"
-        $expectedVersionName = "1.6.0-vip-ads.3"
+        $expectedVersionCode = "30"
+        $expectedVersionName = "1.6.0-vip-ads.4"
     }
 }
 
@@ -510,7 +510,7 @@ if ($artifactType -eq "apk") {
             $manifestTreeText -notmatch 'com\.google\.android\.gms\.ads\.APPLICATION_ID' -or
             $manifestTreeText -notmatch 'ca-app-pub-6991329209066655~2916806906'
         ) {
-            throw "Beta release APK has no valid ScanIt AdMob application ID."
+            throw "Beta release APK has no valid SeliaScan AdMob application ID."
         }
     }
     if ($publicFlavor) {

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="beta_app_name">ScanIt VIP Ads</string>
+    <string name="beta_app_name">SeliaScan VIP Ads</string>
     <string name="beta_advertisement">Advertisement</string>
     <string name="beta_privacy_options">Privacy options</string>
-    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_title">SeliaScan Premium</string>
     <string name="beta_premium_body">One purchase removes ads and unlocks all Document Actions. Google Play restores it on your other devices.</string>
     <string name="beta_premium_active">Premium is active. Ads are hidden and all Document Actions are unlocked.</string>
     <string name="beta_premium_account">Premium is linked to the Google Play account that bought it.</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ScanIt</string>
+    <string name="app_name">SeliaScan</string>
     <string name="try_again">Try again</string>
     <string name="preview_unavailable">Preview unavailable</string>
     <string name="page_position">Page %1$d of %2$d</string>
@@ -64,10 +64,10 @@
     <string name="image_format_jpeg">JPG · high quality</string>
     <string name="image_format_png">PNG · lossless</string>
     <string name="unknown_output_title">Export needs review</string>
-    <string name="unknown_output_warning">An interrupted export may have left an unidentified external file. ScanIt will not guess or delete it.</string>
+    <string name="unknown_output_warning">An interrupted export may have left an unidentified external file. SeliaScan will not guess or delete it.</string>
     <string name="review_output_warning">Review</string>
     <string name="unknown_output_confirm_title">Mark export as reviewed?</string>
-    <string name="unknown_output_confirm_body">Check the selected folder manually. An unidentified external file may remain. This only clears ScanIt’s local warning; it does not delete any file.</string>
+    <string name="unknown_output_confirm_body">Check the selected folder manually. An unidentified external file may remain. This only clears SeliaScan’s local warning; it does not delete any file.</string>
     <string name="unknown_output_confirm">I checked</string>
     <string name="save_now">Save now</string>
     <string name="saving_now">Saving…</string>
@@ -81,10 +81,10 @@
     <string name="opening_document">Opening document…</string>
     <string name="recent_scan_unavailable">This recent scan is no longer available.</string>
     <string name="recent_history_unavailable">Recent scans could not be loaded.</string>
-    <string name="state_update_failed">Could not update ScanIt. Try again.</string>
+    <string name="state_update_failed">Could not update SeliaScan. Try again.</string>
     <string name="recent_delete_failed">The recent scan could not be deleted.</string>
     <string name="recent_delete_partial">Some selected files were deleted. The remaining files are still listed. Try again.</string>
-    <string name="recent_delete_metadata_failed">Files may have been deleted, but ScanIt could not update their record. Try again.</string>
+    <string name="recent_delete_metadata_failed">Files may have been deleted, but SeliaScan could not update their record. Try again.</string>
     <string name="recent_delete_cache_failed">Selected files were deleted, but the Recent item could not be removed. Try again.</string>
     <string name="shared_output_delete_failed">A saved file could not be deleted. Retry from Recent scans.</string>
     <string name="output_create_cleanup_required">An unfinished saved file needs cleanup before this output can be changed again.</string>
@@ -97,7 +97,7 @@
     <string name="delete_pdf_and_images">PDF and images</string>
     <string name="remove_from_recent">Remove from Recent</string>
     <string name="recent_delete_saved_hint">The selected saved files will be deleted from your device, then this scan will be removed from Recent.</string>
-    <string name="recent_delete_legacy_hint">Saved file details are unavailable, so ScanIt will not guess which files to delete. Only this recent preview can be removed.</string>
+    <string name="recent_delete_legacy_hint">Saved file details are unavailable, so SeliaScan will not guess which files to delete. Only this recent preview can be removed.</string>
     <string name="recent_delete_pending_hint">The selected saved files are already gone. Retry removing this Recent preview; no other saved files will be deleted.</string>
     <string name="deleting_scan">Deleting…</string>
     <string name="recent_scan_preview">Recent scan preview</string>
@@ -154,7 +154,7 @@
     <string name="pdf_size_unit_mb">MB</string>
     <string name="pdf_size_custom_hint">Use 1–500,000 KB or 1–500 MB.</string>
     <string name="save">Save</string>
-    <string name="pdf_size_hint">Size limits use measured, readable versions. If a limit cannot be reached, ScanIt keeps the smallest readable PDF and shows its actual size.</string>
+    <string name="pdf_size_hint">Size limits use measured, readable versions. If a limit cannot be reached, SeliaScan keeps the smallest readable PDF and shows its actual size.</string>
 
     <string name="choose_language">Choose language</string>
     <string name="language_system">System default</string>
@@ -179,7 +179,7 @@
     <string name="scanner_unexpected_error">Scanning ended unexpectedly. Try again.</string>
     <string name="pdf_tree_release_warning">The previous folder permission could not be released.</string>
     <string name="opening_scanner">Opening scanner…</string>
-    <string name="starting_scanit">Opening ScanIt…</string>
+    <string name="starting_scanit">Opening SeliaScan…</string>
     <string name="saving_document">Saving document…</string>
     <string name="images_save_failed">Images could not be saved to Gallery. The document can still be shared.</string>
     <string name="pdf_save_failed">The PDF could not be saved. The document can still be shared.</string>
@@ -303,7 +303,7 @@
     <string name="document_action_truncated">The result was shortened to fit.</string>
     <string name="document_action_failed">The document action could not be completed.</string>
     <string name="document_action_model_unavailable">The on-device model is not available yet. Google Play services may still be downloading it. Try again shortly.</string>
-    <string name="document_action_clip_label">ScanIt document result</string>
+    <string name="document_action_clip_label">SeliaScan document result</string>
     <string name="export_text">Export text</string>
     <string name="exporting_text">Saving text…</string>
     <string name="text_export_saved">Text saved.</string>

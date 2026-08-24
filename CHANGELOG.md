@@ -2,6 +2,22 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.4] - 2026-08-24
+
+### Changed
+
+- Renamed the user-facing app and current documentation to SeliaScan while preserving the existing `com.majkeylab.scanit` package and repository URLs.
+- Renamed the unopened lifetime Premium product ID to `seliascan_premium`.
+
+### Play Console
+
+- Completed the merchant profile with the `SELIASCAN` card statement descriptor.
+- Saved `SeliaScan: PDF Scanner` as an unpublished main store-listing draft.
+
+### Known limitation
+
+- Play Console will not allow creation of the one-time Premium product until an APK or AAB with Google Play Billing is uploaded. No app build or release track was changed for this preparation.
+
 ## [1.6.0-vip-ads.3] - 2026-08-24
 
 ### Added

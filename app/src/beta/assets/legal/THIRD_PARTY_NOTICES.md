@@ -1,6 +1,6 @@
 # Third-party notices
 
-ScanIt's proprietary license covers only original ScanIt material. The VIP Ads
+SeliaScan's proprietary license covers only original SeliaScan material. The VIP Ads
 beta includes third-party components under their own licenses and terms.
 
 The `betaReleaseRuntimeClasspath` graph was inspected on 2026-08-24. Its direct
@@ -52,7 +52,7 @@ under the
 `com.google.android.gms:play-services-mlkit-document-scanner:16.0.0` declares
 the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms). Its
 scanner UI, models, and related resources are delivered through Google Play
-services. ScanIt does not claim ownership of them.
+services. SeliaScan does not claim ownership of them.
 
 The text recognition, barcode scanning, and face detection dependencies use
 on-device models delivered through Google Play services. A model may download
