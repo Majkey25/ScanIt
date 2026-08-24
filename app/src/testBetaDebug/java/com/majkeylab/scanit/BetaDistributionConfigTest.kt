@@ -44,4 +44,89 @@ class BetaDistributionConfigTest {
         assertTrue(gate.canRequestAds)
         assertFalse(gate.privacyOptionsRequired)
     }
+
+    @Test
+    fun premiumUsesStablePlayProductId() {
+        assertEquals("scanit_premium", BetaPremiumConfig.productId)
+    }
+
+    @Test
+    fun onlyPurchasedMatchingProductGrantsPremium() {
+        assertTrue(
+            hasPremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("scanit_premium"),
+                        state = BetaPremiumPurchaseState.Purchased,
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            hasPremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("scanit_premium"),
+                        state = BetaPremiumPurchaseState.Pending,
+                    ),
+                ),
+            ),
+        )
+        assertFalse(
+            hasPremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("another_product"),
+                        state = BetaPremiumPurchaseState.Purchased,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun pendingMatchingProductStaysLocked() {
+        val pending =
+            listOf(
+                BetaPremiumPurchase(
+                    productIds = setOf("scanit_premium"),
+                    state = BetaPremiumPurchaseState.Pending,
+                ),
+            )
+
+        assertTrue(hasPendingPremiumPurchase(pending))
+        assertFalse(hasPremiumEntitlement(pending))
+    }
+
+    @Test
+    fun adsRequireVerifiedFreeEntitlementAndConsent() {
+        assertTrue(
+            shouldShowBetaAd(
+                premium = false,
+                entitlementVerified = true,
+                canRequestAds = true,
+            ),
+        )
+        assertFalse(
+            shouldShowBetaAd(
+                premium = true,
+                entitlementVerified = true,
+                canRequestAds = true,
+            ),
+        )
+        assertFalse(
+            shouldShowBetaAd(
+                premium = false,
+                entitlementVerified = false,
+                canRequestAds = true,
+            ),
+        )
+        assertFalse(
+            shouldShowBetaAd(
+                premium = false,
+                entitlementVerified = true,
+                canRequestAds = false,
+            ),
+        )
+    }
 }

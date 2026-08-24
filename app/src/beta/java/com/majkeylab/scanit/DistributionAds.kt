@@ -75,6 +75,12 @@ internal data class BetaAdIds(
     val interstitialAdUnitId: String,
 )
 
+internal fun shouldShowBetaAd(
+    premium: Boolean,
+    entitlementVerified: Boolean,
+    canRequestAds: Boolean,
+): Boolean = !premium && entitlementVerified && canRequestAds
+
 internal class BetaConsentGate {
     var canRequestAds by mutableStateOf(false)
         private set
