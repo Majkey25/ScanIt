@@ -99,6 +99,41 @@ class BetaDistributionConfigTest {
     }
 
     @Test
+    fun successfulPurchaseQueryResolvesVerifiedEntitlement() {
+        val free = resolvePremiumEntitlement(emptyList())
+        val premium =
+            resolvePremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("scanit_premium"),
+                        state = BetaPremiumPurchaseState.Purchased,
+                    ),
+                ),
+            )
+
+        assertFalse(free.premium)
+        assertFalse(free.pending)
+        assertTrue(premium.premium)
+        assertFalse(premium.pending)
+    }
+
+    @Test
+    fun unknownPurchaseStateGrantsNothing() {
+        val entitlement =
+            resolvePremiumEntitlement(
+                listOf(
+                    BetaPremiumPurchase(
+                        productIds = setOf("scanit_premium"),
+                        state = BetaPremiumPurchaseState.Unknown,
+                    ),
+                ),
+            )
+
+        assertFalse(entitlement.premium)
+        assertFalse(entitlement.pending)
+    }
+
+    @Test
     fun adsRequireVerifiedFreeEntitlementAndConsent() {
         assertTrue(
             shouldShowBetaAd(

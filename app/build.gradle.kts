@@ -137,6 +137,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-face-detection:17.1.0")
     "betaImplementation"("com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0")
     "betaImplementation"("com.google.android.ump:user-messaging-platform:4.0.0")
+    "betaImplementation"("com.android.billingclient:billing:9.1.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260719")
 }

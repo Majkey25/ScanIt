@@ -352,6 +352,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onResume() {
         super.onResume()
+        refreshDistributionPremium(this)
         viewModel.refreshAfterShareCleanup()
     }
 
