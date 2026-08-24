@@ -360,4 +360,5 @@
     <string name="safe_share_move_down">Mover hacia abajo</string>
     <string name="safe_share_grow">Ampliar área</string>
     <string name="safe_share_shrink">Reducir área</string>
+    <string name="premium_action_locked">Función Premium</string>
 </resources>

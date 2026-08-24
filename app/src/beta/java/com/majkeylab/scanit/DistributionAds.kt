@@ -235,8 +235,20 @@ private suspend fun ensureAdsReady(
 @Composable
 internal fun DistributionBannerAd(inline: Boolean = false) {
     val activity = LocalActivity.current ?: return
-    LaunchedEffect(activity) { BetaConsentCoordinator.ensureRequested(activity) }
-    if (!BetaConsentCoordinator.gate.canRequestAds) return
+    val premiumState = BetaPremiumController.state
+    LaunchedEffect(activity) { refreshDistributionPremium(activity) }
+    LaunchedEffect(activity, premiumState.premium, premiumState.entitlementVerified) {
+        if (premiumState.entitlementVerified && !premiumState.premium) {
+            BetaConsentCoordinator.ensureRequested(activity)
+        }
+    }
+    if (
+        !shouldShowBetaAd(
+            premium = premiumState.premium,
+            entitlementVerified = premiumState.entitlementVerified,
+            canRequestAds = BetaConsentCoordinator.gate.canRequestAds,
+        )
+    ) return
 
     val ads =
         remember(activity) {
@@ -334,6 +346,8 @@ internal fun showDistributionInterstitial(
     if (
         activity.isFinishing ||
         activity.isDestroyed ||
+        BetaPremiumController.state.premium ||
+        !BetaPremiumController.state.entitlementVerified ||
         !BetaConsentCoordinator.gate.canRequestAds
     ) {
         onComplete()
@@ -380,7 +394,11 @@ internal fun showDistributionInterstitial(
 @Composable
 internal fun DistributionPrivacyOptionsLink() {
     val activity = LocalActivity.current
-    if (activity != null && BetaConsentCoordinator.gate.privacyOptionsRequired) {
+    if (
+        !BetaPremiumController.state.premium &&
+        activity != null &&
+        BetaConsentCoordinator.gate.privacyOptionsRequired
+    ) {
         TextButton(
             onClick = { BetaConsentCoordinator.showPrivacyOptions(activity) },
             modifier = Modifier.fillMaxWidth(),

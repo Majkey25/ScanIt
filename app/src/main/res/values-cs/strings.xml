@@ -363,4 +363,5 @@
     <string name="safe_share_move_down">Posunout dolů</string>
     <string name="safe_share_grow">Zvětšit oblast</string>
     <string name="safe_share_shrink">Zmenšit oblast</string>
+    <string name="premium_action_locked">Prémiová funkce</string>
 </resources>

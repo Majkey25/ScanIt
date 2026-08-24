@@ -522,6 +522,7 @@ private fun ResultScreen(
     var showUnknownOutputDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showFullscreen by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showDocumentActions by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showPremiumPaywall by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showSafeShareScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showManualRedactionScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showCleanWhiteboardScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
@@ -541,6 +542,7 @@ private fun ResultScreen(
                 }
         }
     val actionsEnabled = !result.resultActionsBlocked
+    val premiumState = rememberDistributionPremiumState()
     val configuration = LocalConfiguration.current
     val availableWidthDp =
         with(LocalDensity.current) {
@@ -818,7 +820,12 @@ private fun ResultScreen(
     if (showDocumentActions) {
         DocumentActionPickerDialog(
             cleanWhiteboardAvailable = result.canCleanWhiteboard,
+            premium = premiumState.premium,
             onDismiss = { showDocumentActions = false },
+            onPremiumRequired = {
+                showDocumentActions = false
+                showPremiumPaywall = true
+            },
             onSafeShare = {
                 showDocumentActions = false
                 showSafeShareScope = true
@@ -840,6 +847,9 @@ private fun ResultScreen(
                 onRunDocumentAction(action)
             },
         )
+    }
+    if (showPremiumPaywall) {
+        DistributionPremiumPaywall(onDismiss = { showPremiumPaywall = false })
     }
     if (showSafeShareScope) {
         PageScopeDialog(
@@ -1084,7 +1094,9 @@ private fun ownedResultPreview(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DocumentActionPickerDialog(
     cleanWhiteboardAvailable: Boolean,
+    premium: Boolean,
     onDismiss: () -> Unit,
+    onPremiumRequired: () -> Unit,
     onSafeShare: () -> Unit,
     onRedactDocument: () -> Unit,
     onCleanWhiteboard: () -> Unit,
@@ -1163,18 +1175,29 @@ private fun DocumentActionPickerDialog(
                         ) {
                             Column {
                                 actions.forEachIndexed { index, action ->
+                                    val actionCallback =
+                                        when (action) {
+                                            DocumentAction.SafeShare -> onSafeShare
+                                            DocumentAction.RedactDocument -> onRedactDocument
+                                            DocumentAction.CleanWhiteboard -> onCleanWhiteboard
+                                            DocumentAction.ManualCleanup -> onManualCleanup
+                                            else -> { { onSelect(action) } }
+                                        }
                                     DocumentActionPickerRow(
                                         iconRes = documentActionIcon(action),
                                         labelRes = documentActionLabel(action),
                                         scopeRes = documentActionScope(action),
-                                        onClick =
-                                            when (action) {
-                                                DocumentAction.SafeShare -> onSafeShare
-                                                DocumentAction.RedactDocument -> onRedactDocument
-                                                DocumentAction.CleanWhiteboard -> onCleanWhiteboard
-                                                DocumentAction.ManualCleanup -> onManualCleanup
-                                                else -> { { onSelect(action) } }
-                                            },
+                                        locked =
+                                            !canRunDistributionDocumentActions(
+                                                premium = premium,
+                                            ),
+                                        onClick = {
+                                            if (canRunDistributionDocumentActions(premium)) {
+                                                actionCallback()
+                                            } else {
+                                                onPremiumRequired()
+                                            }
+                                        },
                                     )
                                     if (index < actions.lastIndex) {
                                         HorizontalDivider(modifier = Modifier.padding(start = 64.dp))
@@ -1276,6 +1299,7 @@ private fun DocumentActionPickerRow(
     iconRes: Int,
     labelRes: Int,
     scopeRes: Int,
+    locked: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -1307,6 +1331,13 @@ private fun DocumentActionPickerRow(
                     stringResource(scopeRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (locked) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lock),
+                    contentDescription = stringResource(R.string.premium_action_locked),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -3987,6 +4018,7 @@ private fun SettingsScreen(
                     }
                 }
             }
+            item { DistributionPremiumSettings() }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }

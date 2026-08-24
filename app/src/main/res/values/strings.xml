@@ -361,4 +361,5 @@
     <string name="safe_share_move_down">Move down</string>
     <string name="safe_share_grow">Grow area</string>
     <string name="safe_share_shrink">Shrink area</string>
+    <string name="premium_action_locked">Premium feature</string>
 </resources>

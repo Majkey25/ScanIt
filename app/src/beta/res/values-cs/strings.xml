@@ -3,4 +3,14 @@
     <string name="beta_app_name">ScanIt VIP Ads</string>
     <string name="beta_advertisement">Reklama</string>
     <string name="beta_privacy_options">Možnosti ochrany soukromí</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">Jednorázový nákup odstraní reklamy a odemkne všechny Akce dokumentu. Google Play ho obnoví na vašich dalších zařízeních.</string>
+    <string name="beta_premium_active">Premium je aktivní. Reklamy jsou skryté a všechny Akce dokumentu jsou odemčené.</string>
+    <string name="beta_premium_account">Premium je propojené s účtem Google Play, který ho koupil.</string>
+    <string name="beta_premium_buy">Získat Premium</string>
+    <string name="beta_premium_buy_price">Získat Premium za %1$s</string>
+    <string name="beta_premium_restore">Obnovit nákupy</string>
+    <string name="beta_premium_pending">Platba čeká na potvrzení. Premium se odemkne až po potvrzení službou Google Play.</string>
+    <string name="beta_premium_unavailable">Premium zatím není pro toto sestavení nebo účet Google Play dostupné.</string>
+    <string name="beta_premium_error">Platby Google Play jsou dočasně nedostupné. Zkuste nákupy obnovit znovu.</string>
 </resources>

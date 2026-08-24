@@ -359,4 +359,5 @@
     <string name="safe_share_move_down">Nach unten verschieben</string>
     <string name="safe_share_grow">Bereich vergrößern</string>
     <string name="safe_share_shrink">Bereich verkleinern</string>
+    <string name="premium_action_locked">Premium-Funktion</string>
 </resources>

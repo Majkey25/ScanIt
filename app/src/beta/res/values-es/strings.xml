@@ -3,4 +3,14 @@
     <string name="beta_app_name">ScanIt VIP Ads</string>
     <string name="beta_advertisement">Anuncio</string>
     <string name="beta_privacy_options">Opciones de privacidad</string>
+    <string name="beta_premium_title">ScanIt Premium</string>
+    <string name="beta_premium_body">Una compra elimina los anuncios y desbloquea todas las acciones del documento. Google Play la restaura en tus otros dispositivos.</string>
+    <string name="beta_premium_active">Premium está activo. Los anuncios están ocultos y todas las acciones del documento están desbloqueadas.</string>
+    <string name="beta_premium_account">Premium está vinculado a la cuenta de Google Play que lo compró.</string>
+    <string name="beta_premium_buy">Obtener Premium</string>
+    <string name="beta_premium_buy_price">Obtener Premium por %1$s</string>
+    <string name="beta_premium_restore">Restaurar compras</string>
+    <string name="beta_premium_pending">El pago está pendiente. Premium se desbloquea solo cuando Google Play lo confirme.</string>
+    <string name="beta_premium_unavailable">Premium aún no está disponible para esta versión o cuenta de Google Play.</string>
+    <string name="beta_premium_error">Google Play Billing no está disponible temporalmente. Intenta restaurar las compras de nuevo.</string>
 </resources>
