@@ -758,10 +758,10 @@ class PureLogicTest {
         val build = File(repository, "app/build.gradle.kts").readText()
         val verifier = File(repository, "tools/verify-release.ps1").readText()
 
-        assertTrue(build.contains("versionCode = 33"))
-        assertTrue(build.contains("versionName = \"1.6.0-vip-ads.7\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"33\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.6.0-vip-ads.7\""))
+        assertTrue(build.contains("versionCode = 34"))
+        assertTrue(build.contains("versionName = \"1.6.0-vip-ads.8\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"34\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.6.0-vip-ads.8\""))
         assertTrue(verifier.contains("\$requiredBetaPermissions = @("))
         assertFalse(
             verifier.contains(

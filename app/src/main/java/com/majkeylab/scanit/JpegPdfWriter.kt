@@ -237,5 +237,5 @@ private const val JPEG_BASE_OBJECT_COUNT = 2
 private const val JPEG_FIRST_PAGE_OBJECT = 3
 private const val JPEG_OBJECTS_PER_PAGE = 5
 private const val JPEG_COPY_BUFFER_SIZE = 8_192
-private const val JPEG_MAX_PAGE_SIDE = 6_000
-private const val JPEG_MAX_PAGE_PIXELS = 13_000_000L
+private const val JPEG_MAX_PAGE_SIDE = 20_000
+private const val JPEG_MAX_PAGE_PIXELS = 220_000_000L

@@ -85,7 +85,43 @@ class JpegPdfWriterTest {
     }
 
     @Test
-    fun rejectsPageAboveTheRaisedPixelSafetyBound() {
+    fun acceptsHuaweiCameraPageAboveThirtySixMegapixels() {
+        val root = Files.createTempDirectory("scanit-jpeg-pdf-huawei-page").toFile()
+        try {
+            val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
+            val pdf = File(root, "scan.pdf")
+
+            JpegPdfWriter.write(
+                pdf,
+                listOf(JpegPdfPage(jpeg, width = 5092, height = 7146)),
+            )
+
+            assertTrue(pdf.isFile)
+        } finally {
+            assertTrue(root.deleteRecursively())
+        }
+    }
+
+    @Test
+    fun acceptsTwoHundredMegapixelCameraPage() {
+        val root = Files.createTempDirectory("scanit-jpeg-pdf-200mp-page").toFile()
+        try {
+            val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
+            val pdf = File(root, "scan.pdf")
+
+            JpegPdfWriter.write(
+                pdf,
+                listOf(JpegPdfPage(jpeg, width = 16384, height = 12288)),
+            )
+
+            assertTrue(pdf.isFile)
+        } finally {
+            assertTrue(root.deleteRecursively())
+        }
+    }
+
+    @Test
+    fun rejectsPageAboveTheCameraSafetyBound() {
         val root = Files.createTempDirectory("scanit-jpeg-pdf-large-page").toFile()
         try {
             val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
@@ -94,7 +130,7 @@ class JpegPdfWriterTest {
             assertThrows(IllegalArgumentException::class.java) {
                 JpegPdfWriter.write(
                     pdf,
-                    listOf(JpegPdfPage(jpeg, width = 4000, height = 4000)),
+                    listOf(JpegPdfPage(jpeg, width = 20000, height = 20000)),
                 )
             }
             assertFalse(pdf.exists())

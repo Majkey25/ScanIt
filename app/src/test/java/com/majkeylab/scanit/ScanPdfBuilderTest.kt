@@ -159,6 +159,35 @@ class ScanPdfBuilderTest {
         }
 
     @Test
+    fun oversizedBitonalPageFallsBackToStreamingJpeg() =
+        withTempDirectory { directory ->
+            var bitonalRequested = false
+            val page =
+                ScanPdfBuildPage(
+                    longestEdge = 7146,
+                    renderJpeg = { workingDirectory, _ ->
+                        val jpeg = File(workingDirectory, "huawei.jpg").apply { writeBytes(byteArrayOf(1)) }
+                        JpegPdfPage(jpeg, width = 5092, height = 7146)
+                    },
+                    createBitonal = {
+                        bitonalRequested = true
+                        throw IllegalArgumentException("Oversized bitonal page must not be created")
+                    },
+                )
+
+            val result =
+                buildScanPdf(
+                    File(directory, "scan.pdf"),
+                    listOf(page),
+                    PdfSizeTarget.Original,
+                    bitonalEligible = true,
+                )
+
+            assertEquals(PdfEncoding.Jpeg, result.encoding)
+            assertFalse(bitonalRequested)
+        }
+
+    @Test
     fun impossibleTargetKeepsSmallestLegibleCandidateAndReportsActualSize() =
         withTempDirectory { directory ->
             val page =

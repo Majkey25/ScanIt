@@ -2,6 +2,17 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.8] - 2026-08-25
+
+### Fixed
+
+- Accepted streamed scanner JPEG pages up to common 200 MP dimensions, fixing Huawei camera scans that exceeded the previous PDF bound.
+- Kept oversized black-and-white pages on the streaming JPEG PDF path to avoid memory-heavy bitonal conversion.
+
+### Distribution
+
+- Prepared version code 34 for Play testing without changing an existing track.
+
 ## [1.6.0-vip-ads.7] - 2026-08-25
 
 ### Fixed
