@@ -28,7 +28,7 @@ submitted declarations:
 | Contact email | `majkeylab@gmail.com` |
 | Website | `https://majkey25.github.io/ScanIt/` |
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
-| Ads | No |
+| Ads | No in stable `playRelease`; yes in the version 32 Closed beta |
 
 ## Closed testing Premium setup
 
@@ -92,7 +92,7 @@ the Play developer account.
 > - monochrome light and dark interface
 > - system, English, Czech, German, Spanish, and Simplified Chinese language selection
 >
-> SeliaScan has no subscription, account, first-party analytics, ads, cloud document library, or generative-AI client. Scanning and cleanup stay on-device.
+> The free version includes ads. Optional monthly or lifetime Premium removes ads and unlocks all Document Actions. SeliaScan has no app account, first-party analytics, cloud document library, or generative-AI client. Scanning and cleanup stay on-device.
 >
 > Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, SeliaScan keeps the smallest readable result and shows its actual size.
 >
@@ -142,7 +142,7 @@ the Play developer account.
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický, český, německý, španělský a zjednodušený čínský jazyk
 >
-> SeliaScan neobsahuje předplatné, účet, vlastní analytické nástroje, reklamy, cloudovou knihovnu dokumentů ani generativní AI. Skenování i vyčištění zůstávají v zařízení.
+> Bezplatná verze obsahuje reklamy. Volitelné měsíční nebo doživotní Premium reklamy odstraní a odemkne všechny Akce dokumentu. SeliaScan nemá vlastní uživatelský účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani generativní AI. Skenování i vyčištění zůstávají v zařízení.
 >
 > Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, SeliaScan ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
 >
@@ -200,9 +200,9 @@ Reviewer note:
 
 ### Ads
 
-- Does the app contain ads? **No**.
-- Advertising SDK present? **No**.
-- Donation or payment prompt in the app or Play listing? **Yes: Settings contains an optional external Buy Me a Coffee support link. It does not unlock digital content or app features.**
+- Does the app contain ads? **Yes for the version 32 Closed beta; no for stable `playRelease`.**
+- Advertising SDK present? **Yes in the Closed beta: GMA Next-Gen SDK and UMP.**
+- Donation or payment prompt in the app or Play listing? **Yes: Settings contains optional monthly and lifetime Premium purchases plus an external Buy Me a Coffee donation link. The donation does not unlock features or remove ads.**
 
 ### Target audience and content
 
