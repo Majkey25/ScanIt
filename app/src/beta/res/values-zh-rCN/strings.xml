@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="beta_app_name">SeliaScan VIP Ads</string>
+    <string name="beta_app_name">SeliaScan</string>
     <string name="beta_advertisement">广告</string>
     <string name="beta_privacy_options">隐私选项</string>
     <string name="beta_premium_title">SeliaScan Premium</string>

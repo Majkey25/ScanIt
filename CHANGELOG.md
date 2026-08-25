@@ -2,6 +2,16 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.7] - 2026-08-25
+
+### Fixed
+
+- Renamed the launcher label from SeliaScan VIP Ads to SeliaScan in every supported app language.
+
+### Distribution
+
+- Released version code 33 to Closed testing with real Google Play payments for non-license testers.
+
 ## [1.6.0-vip-ads.6] - 2026-08-25
 
 ### Fixed
@@ -14,7 +24,7 @@ All notable changes are documented here.
 
 - Added an anchored banner to Settings.
 - Increased the scan interstitial cadence from every fifth to every third completed scan while preserving the three-minute cooldown.
-- Prepared version code 32 for Closed testing only.
+- Released version code 32 to Internal testing only.
 
 ## [1.6.0-vip-ads.5] - 2026-08-24
 

@@ -9,6 +9,20 @@ class DistributionAdsIntegrationTest {
     private val repository = File("..").canonicalFile
 
     @Test
+    fun betaLauncherUsesSeliaScanBrand() {
+        val stringFiles =
+            File(repository, "app/src/beta/res")
+                .walkTopDown()
+                .filter { it.isFile && it.name == "strings.xml" }
+                .toList()
+
+        assertTrue(stringFiles.isNotEmpty())
+        stringFiles.forEach { file ->
+            assertTrue(file.readText().contains("<string name=\"beta_app_name\">SeliaScan</string>"))
+        }
+    }
+
+    @Test
     fun betaAdsStayBehindDistributionHooks() {
         val appUi = File(repository, "app/src/main/java/com/majkeylab/scanit/AppUi.kt").readText()
         val activity = File(repository, "app/src/main/java/com/majkeylab/scanit/MainActivity.kt").readText()

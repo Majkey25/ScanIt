@@ -28,11 +28,11 @@ submitted declarations:
 | Contact email | `majkeylab@gmail.com` |
 | Website | `https://majkey25.github.io/ScanIt/` |
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
-| Ads | No in stable `playRelease`; yes in the version 32 Closed beta |
+| Ads | No in stable `playRelease`; yes in the version 33 Closed beta |
 
 ## Closed testing Premium setup
 
-Version code 32 (`1.6.0-vip-ads.6`) is the ads and Premium candidate for Closed
+Version code 33 (`1.6.0-vip-ads.7`) is the ads and Premium candidate for Closed
 testing. It must not replace the production or open-testing releases.
 
 | Product | Type | Price | Benefit |
@@ -200,7 +200,7 @@ Reviewer note:
 
 ### Ads
 
-- Does the app contain ads? **Yes for the version 32 Closed beta; no for stable `playRelease`.**
+- Does the app contain ads? **Yes for the version 33 Closed beta; no for stable `playRelease`.**
 - Advertising SDK present? **Yes in the Closed beta: GMA Next-Gen SDK and UMP.**
 - Donation or payment prompt in the app or Play listing? **Yes: Settings contains optional monthly and lifetime Premium purchases plus an external Buy Me a Coffee donation link. The donation does not unlock features or remove ads.**
 
