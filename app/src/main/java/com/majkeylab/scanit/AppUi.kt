@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.PersistableBundle
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -248,6 +249,7 @@ internal fun ScanItApp(
     onScanVisualMark: () -> Unit = {},
     onApplyVisualMark: () -> Unit = {},
 ) {
+    val activity = LocalActivity.current
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
     var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
@@ -257,6 +259,29 @@ internal fun ScanItApp(
             fileDetailsExpanded,
             state,
         )
+    val closeSettings = {
+        showSettings = false
+        if (state is ScreenState.Result && activity != null) {
+            showDistributionInterstitial(
+                activity,
+                DistributionInterstitialTrigger.SettingsReturn,
+            ) {}
+        }
+    }
+    fun withShareInterstitial(action: (() -> Unit)?): (() -> Unit)? =
+        action?.let { share ->
+            {
+                if (activity == null) {
+                    share()
+                } else {
+                    showDistributionInterstitial(
+                        activity,
+                        DistributionInterstitialTrigger.Share,
+                        share,
+                    )
+                }
+            }
+        }
     BackHandler {
         val visualMarkEditor = (state as? ScreenState.Result)?.visualMarkEditor
         val manualCleanupEditor = (state as? ScreenState.Result)?.manualCleanupEditor
@@ -267,7 +292,7 @@ internal fun ScanItApp(
             manualCleanupEditor != null -> onCloseManualCleanup()
             visualMarkEditor != null -> onCloseVisualMarkEditor()
             documentActionState != null -> onDismissDocumentAction()
-            backAction == AppBackAction.CloseSettings -> showSettings = false
+            backAction == AppBackAction.CloseSettings -> closeSettings()
             backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
             backAction == AppBackAction.ShowRecent -> onNavigateBack()
             backAction == AppBackAction.LaunchScanner -> onScan()
@@ -278,6 +303,7 @@ internal fun ScanItApp(
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
+        DistributionAdsWarmup()
         if (state is ScreenState.Result && state.safeShareState != null) {
             SafeShareScreen(
                 result = state,
@@ -327,9 +353,7 @@ internal fun ScanItApp(
                 settings = settings,
                 language = language,
                 defaultEmailSubjects = defaultEmailSubjects,
-                onClose = {
-                    showSettings = false
-                },
+                onClose = closeSettings,
                 onSave = onSaveSettings,
                 onLanguageChange = onLanguageChange,
                 onPdfFolderSelected = onPdfFolderSelected,
@@ -368,8 +392,8 @@ internal fun ScanItApp(
                             fileDetailsExpanded = false
                             showSettings = true
                         },
-                        onSharePdf = onSharePdf,
-                        onShareImages = onShareImages,
+                        onSharePdf = withShareInterstitial(onSharePdf),
+                        onShareImages = withShareInterstitial(onShareImages),
                         onPrint = onPrint,
                         fileDetailsExpanded = fileDetailsExpanded,
                         onFileDetailsChange = { expanded ->
@@ -499,6 +523,7 @@ private fun ResultScreen(
     var showUnknownOutputDialog by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showFullscreen by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showDocumentActions by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
+    var showPremiumPaywall by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showSafeShareScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showManualRedactionScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
     var showCleanWhiteboardScope by rememberSaveable(scan.cached.entryId) { mutableStateOf(false) }
@@ -518,6 +543,7 @@ private fun ResultScreen(
                 }
         }
     val actionsEnabled = !result.resultActionsBlocked
+    val premiumState = rememberDistributionPremiumState()
     val configuration = LocalConfiguration.current
     val availableWidthDp =
         with(LocalDensity.current) {
@@ -557,6 +583,7 @@ private fun ResultScreen(
                 actionsEnabled = actionsEnabled,
             )
         },
+        bottomBar = { DistributionBannerAd() },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
@@ -794,7 +821,11 @@ private fun ResultScreen(
     if (showDocumentActions) {
         DocumentActionPickerDialog(
             cleanWhiteboardAvailable = result.canCleanWhiteboard,
+            premium = premiumState.premium,
             onDismiss = { showDocumentActions = false },
+            onPremiumRequired = {
+                showPremiumPaywall = true
+            },
             onSafeShare = {
                 showDocumentActions = false
                 showSafeShareScope = true
@@ -816,6 +847,9 @@ private fun ResultScreen(
                 onRunDocumentAction(action)
             },
         )
+    }
+    if (showPremiumPaywall) {
+        DistributionPremiumPaywall(onDismiss = { showPremiumPaywall = false })
     }
     if (showSafeShareScope) {
         PageScopeDialog(
@@ -1060,7 +1094,9 @@ private fun ownedResultPreview(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DocumentActionPickerDialog(
     cleanWhiteboardAvailable: Boolean,
+    premium: Boolean,
     onDismiss: () -> Unit,
+    onPremiumRequired: () -> Unit,
     onSafeShare: () -> Unit,
     onRedactDocument: () -> Unit,
     onCleanWhiteboard: () -> Unit,
@@ -1139,18 +1175,29 @@ private fun DocumentActionPickerDialog(
                         ) {
                             Column {
                                 actions.forEachIndexed { index, action ->
+                                    val actionCallback =
+                                        when (action) {
+                                            DocumentAction.SafeShare -> onSafeShare
+                                            DocumentAction.RedactDocument -> onRedactDocument
+                                            DocumentAction.CleanWhiteboard -> onCleanWhiteboard
+                                            DocumentAction.ManualCleanup -> onManualCleanup
+                                            else -> { { onSelect(action) } }
+                                        }
                                     DocumentActionPickerRow(
                                         iconRes = documentActionIcon(action),
                                         labelRes = documentActionLabel(action),
                                         scopeRes = documentActionScope(action),
-                                        onClick =
-                                            when (action) {
-                                                DocumentAction.SafeShare -> onSafeShare
-                                                DocumentAction.RedactDocument -> onRedactDocument
-                                                DocumentAction.CleanWhiteboard -> onCleanWhiteboard
-                                                DocumentAction.ManualCleanup -> onManualCleanup
-                                                else -> { { onSelect(action) } }
-                                            },
+                                        locked =
+                                            !canRunDistributionDocumentActions(
+                                                premium = premium,
+                                            ),
+                                        onClick = {
+                                            if (canRunDistributionDocumentActions(premium)) {
+                                                actionCallback()
+                                            } else {
+                                                onPremiumRequired()
+                                            }
+                                        },
                                     )
                                     if (index < actions.lastIndex) {
                                         HorizontalDivider(modifier = Modifier.padding(start = 64.dp))
@@ -1252,6 +1299,7 @@ private fun DocumentActionPickerRow(
     iconRes: Int,
     labelRes: Int,
     scopeRes: Int,
+    locked: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -1283,6 +1331,13 @@ private fun DocumentActionPickerRow(
                     stringResource(scopeRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (locked) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_lock),
+                    contentDescription = stringResource(R.string.premium_action_locked),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -3096,6 +3151,9 @@ private fun RecentScreen(
         titleRes = R.string.recent_scans,
         onScan = onNewScan,
         actionsEnabled = !state.deletionInProgress,
+        bottomBar = {
+            if (shouldShowRecentBanner(state.scans.size)) DistributionBannerAd()
+        },
     ) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
@@ -3354,6 +3412,7 @@ private fun MainScaffold(
     titleRes: Int = R.string.app_name,
     onScan: (() -> Unit)? = null,
     actionsEnabled: Boolean = true,
+    bottomBar: @Composable () -> Unit = {},
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
@@ -3367,6 +3426,7 @@ private fun MainScaffold(
                 actionsEnabled = actionsEnabled,
             )
         },
+        bottomBar = bottomBar,
     ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }
 }
 
@@ -3653,6 +3713,7 @@ private fun SettingsScreen(
         topBar = {
             CompactTopBar(title = stringResource(R.string.settings), onBack = onClose)
         },
+        bottomBar = { DistributionBannerAd() },
     ) { padding ->
         LazyColumn(
             modifier =
@@ -3961,6 +4022,15 @@ private fun SettingsScreen(
                 }
             }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+            item { DistributionPremiumSettings() }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+            item {
+                Text(
+                    stringResource(R.string.support_scanit_no_benefits),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 Button(
@@ -4042,6 +4112,7 @@ private fun SettingsScreen(
                             ) {
                                 Text(stringResource(R.string.privacy_policy))
                             }
+                            DistributionPrivacyOptionsLink()
                             TextButton(
                                 onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
                                 modifier = Modifier.fillMaxWidth(),

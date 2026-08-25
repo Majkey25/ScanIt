@@ -61,6 +61,7 @@ class RedactionRendererTest {
                             RedactionPixelPoint(150f, 75f),
                         ),
                     width = 5f,
+                    tool = RedactionTool.Line,
                 ),
             ),
             redactionPixelStrokes(
@@ -71,6 +72,7 @@ class RedactionRendererTest {
                         RedactionStroke(
                             points = listOf(MarkPoint(0.25f, 0.25f), MarkPoint(0.75f, 0.75f)),
                             widthFraction = 0.05f,
+                            tool = RedactionTool.Line,
                         ),
                     ),
             ),

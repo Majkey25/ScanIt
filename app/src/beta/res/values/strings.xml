@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_app_name">SeliaScan</string>
+    <string name="beta_advertisement">Advertisement</string>
+    <string name="beta_privacy_options">Privacy options</string>
+    <string name="beta_premium_title">SeliaScan Premium</string>
+    <string name="beta_premium_body">Choose monthly access or one lifetime purchase. Both remove ads and unlock all Document Actions.</string>
+    <string name="beta_premium_active">Premium is active. Ads are hidden and all Document Actions are unlocked.</string>
+    <string name="beta_premium_account">Premium is linked to the Google Play account that bought it.</string>
+    <string name="beta_premium_monthly">Monthly Premium</string>
+    <string name="beta_premium_monthly_price">Monthly · %1$s</string>
+    <string name="beta_premium_monthly_notice">Renews every month until canceled in Google Play.</string>
+    <string name="beta_premium_lifetime">Lifetime Premium</string>
+    <string name="beta_premium_lifetime_price">Lifetime · %1$s once</string>
+    <string name="beta_premium_restore">Restore purchases</string>
+    <string name="beta_premium_pending">Payment is pending. Premium unlocks only after Google Play confirms it.</string>
+    <string name="beta_premium_unavailable">Premium is not available yet for this build or Google Play account.</string>
+    <string name="beta_premium_error">Google Play Billing is temporarily unavailable. Try restoring again.</string>
+</resources>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ScanIt</string>
+    <string name="app_name">SeliaScan</string>
     <string name="try_again">Zkusit znovu</string>
     <string name="preview_unavailable">Náhled není k dispozici</string>
     <string name="page_position">Stránka %1$d z %2$d</string>
@@ -66,10 +66,10 @@
     <string name="image_format_jpeg">JPG · vysoká kvalita</string>
     <string name="image_format_png">PNG · bezeztrátový</string>
     <string name="unknown_output_title">Export je potřeba zkontrolovat</string>
-    <string name="unknown_output_warning">Přerušený export mohl zanechat neidentifikovaný externí soubor. ScanIt nebude hádat ani jej mazat.</string>
+    <string name="unknown_output_warning">Přerušený export mohl zanechat neidentifikovaný externí soubor. SeliaScan nebude hádat ani jej mazat.</string>
     <string name="review_output_warning">Zkontrolovat</string>
     <string name="unknown_output_confirm_title">Označit export jako zkontrolovaný?</string>
-    <string name="unknown_output_confirm_body">Vybranou složku zkontrolujte ručně. Neidentifikovaný externí soubor v ní může zůstat. Tímto se smaže pouze místní upozornění ScanIt, žádný soubor se neodstraní.</string>
+    <string name="unknown_output_confirm_body">Vybranou složku zkontrolujte ručně. Neidentifikovaný externí soubor v ní může zůstat. Tímto se smaže pouze místní upozornění SeliaScan, žádný soubor se neodstraní.</string>
     <string name="unknown_output_confirm">Zkontrolováno</string>
     <string name="save_now">Uložit nyní</string>
     <string name="saving_now">Ukládám…</string>
@@ -83,10 +83,10 @@
     <string name="opening_document">Otevírám dokument…</string>
     <string name="recent_scan_unavailable">Tento nedávný sken už není dostupný.</string>
     <string name="recent_history_unavailable">Nedávné skeny se nepodařilo načíst.</string>
-    <string name="state_update_failed">ScanIt se nepodařilo aktualizovat. Zkuste to znovu.</string>
+    <string name="state_update_failed">SeliaScan se nepodařilo aktualizovat. Zkuste to znovu.</string>
     <string name="recent_delete_failed">Nedávný sken se nepodařilo smazat.</string>
     <string name="recent_delete_partial">Některé vybrané soubory byly smazány. Zbývající soubory jsou stále uvedeny. Zkuste to znovu.</string>
-    <string name="recent_delete_metadata_failed">Soubory mohly být smazány, ale ScanIt nemohl aktualizovat jejich záznam. Zkuste to znovu.</string>
+    <string name="recent_delete_metadata_failed">Soubory mohly být smazány, ale SeliaScan nemohl aktualizovat jejich záznam. Zkuste to znovu.</string>
     <string name="recent_delete_cache_failed">Vybrané soubory byly smazány, ale položku v Nedávných se nepodařilo odebrat. Zkuste to znovu.</string>
     <string name="shared_output_delete_failed">Uložený soubor se nepodařilo smazat. Zkuste to znovu v nedávných skenech.</string>
     <string name="output_create_cleanup_required">Před další změnou tohoto výstupu je nutné vyčistit nedokončený uložený soubor.</string>
@@ -99,7 +99,7 @@
     <string name="delete_pdf_and_images">PDF a obrázky</string>
     <string name="remove_from_recent">Odebrat z nedávných</string>
     <string name="recent_delete_saved_hint">Vybrané uložené soubory budou smazány ze zařízení a potom bude tento sken odebrán z nedávných.</string>
-    <string name="recent_delete_legacy_hint">Podrobnosti o uložených souborech nejsou dostupné, takže ScanIt nebude hádat, co smazat. Lze odebrat jen tento nedávný náhled.</string>
+    <string name="recent_delete_legacy_hint">Podrobnosti o uložených souborech nejsou dostupné, takže SeliaScan nebude hádat, co smazat. Lze odebrat jen tento nedávný náhled.</string>
     <string name="recent_delete_pending_hint">Vybrané uložené soubory už byly smazány. Zkuste znovu odebrat tento náhled z Nedávných; žádné další uložené soubory se nesmažou.</string>
     <string name="deleting_scan">Mazání…</string>
     <string name="recent_scan_preview">Náhled nedávného skenu</string>
@@ -137,6 +137,7 @@
     <string name="collapse_app_info">Skrýt informace o aplikaci</string>
     <string name="support_scanit">Podpořit tuto aplikaci → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Děkujeme za podporu této aplikace. Otevírá se Buy Me a Coffee.</string>
+    <string name="support_scanit_no_benefits">Buy Me a Coffee je dobrovolná podpora. Neodemkne funkce ani neodstraní reklamy. K tomu slouží SeliaScan Premium.</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
     <string name="apply_appearance">Použít</string>
     <string name="pdf_size">Velikost PDF</string>
@@ -156,7 +157,7 @@
     <string name="pdf_size_unit_mb">MB</string>
     <string name="pdf_size_custom_hint">Použijte 1–500 000 KB nebo 1–500 MB.</string>
     <string name="save">Uložit</string>
-    <string name="pdf_size_hint">Limit se vyhodnocuje podle skutečně vytvořených čitelných verzí. Pokud jej nelze dodržet, ScanIt ponechá nejmenší čitelné PDF a zobrazí jeho skutečnou velikost.</string>
+    <string name="pdf_size_hint">Limit se vyhodnocuje podle skutečně vytvořených čitelných verzí. Pokud jej nelze dodržet, SeliaScan ponechá nejmenší čitelné PDF a zobrazí jeho skutečnou velikost.</string>
 
     <string name="choose_language">Vybrat jazyk</string>
     <string name="language_system">Podle systému</string>
@@ -181,7 +182,7 @@
     <string name="scanner_unexpected_error">Skenování skončilo neočekávaně. Zkuste to znovu.</string>
     <string name="pdf_tree_release_warning">Původní oprávnění ke složce se nepodařilo uvolnit.</string>
     <string name="opening_scanner">Otevírám skener…</string>
-    <string name="starting_scanit">Otevírám ScanIt…</string>
+    <string name="starting_scanit">Otevírám SeliaScan…</string>
     <string name="saving_document">Dokument se ukládá…</string>
     <string name="images_save_failed">Obrázky se nepodařilo uložit do Galerie. Dokument lze stále odeslat.</string>
     <string name="pdf_save_failed">PDF se nepodařilo uložit. Dokument lze stále odeslat.</string>
@@ -305,7 +306,7 @@
     <string name="document_action_truncated">Výsledek byl zkrácen.</string>
     <string name="document_action_failed">Akci dokumentu se nepodařilo dokončit.</string>
     <string name="document_action_model_unavailable">Model v zařízení zatím není dostupný. Služby Google Play ho mohou stále stahovat. Zkuste to za chvíli znovu.</string>
-    <string name="document_action_clip_label">Výsledek dokumentu ScanIt</string>
+    <string name="document_action_clip_label">Výsledek dokumentu SeliaScan</string>
     <string name="export_text">Exportovat text</string>
     <string name="exporting_text">Ukládání textu…</string>
     <string name="text_export_saved">Text byl uložen.</string>
@@ -363,4 +364,5 @@
     <string name="safe_share_move_down">Posunout dolů</string>
     <string name="safe_share_grow">Zvětšit oblast</string>
     <string name="safe_share_shrink">Zmenšit oblast</string>
+    <string name="premium_action_locked">Prémiová funkce</string>
 </resources>

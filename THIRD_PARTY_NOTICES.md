@@ -4,8 +4,8 @@ ScanIt's proprietary license covers only original ScanIt material. The public
 Android release includes third-party components under their own licenses and
 terms.
 
-The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
-`1.3.2` on 2026-08-16. Its direct runtime dependencies are:
+The `playReleaseRuntimeClasspath` and `betaReleaseRuntimeClasspath` graphs were
+inspected for ScanIt on 2026-08-24. Their direct runtime dependencies are:
 
 - Kotlin standard library 2.4.10.
 - AndroidX Activity Compose 1.13.0.
@@ -17,6 +17,7 @@ The `playReleaseRuntimeClasspath` graph was inspected for ScanIt
 - Google Play services ML Kit Text Recognition 19.0.1, Chinese Text Recognition 16.0.1, and their runtime dependencies.
 - Google Play services ML Kit Barcode Scanning 18.3.1 and its runtime dependencies.
 - Google Play services ML Kit Face Detection 17.1.0 and its runtime dependencies.
+- The VIP Ads beta also includes GMA Next-Gen SDK 1.4.0, Google User Messaging Platform 4.0.0, and Google Play Billing Library 9.1.0.
 
 ## Apache License 2.0 components
 
@@ -30,6 +31,24 @@ The official reference is <https://www.apache.org/licenses/LICENSE-2.0>.
 
 Copyright notices remain with their respective authors and contributors. No
 changes to these libraries are represented by this notice.
+
+## Google Mobile Ads beta components
+
+`com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.4.0` and
+`com.google.android.ump:user-messaging-platform:4.0.0` are included only in the
+VIP Ads beta. Their published Maven metadata declares the
+[Android Software Development Kit License](https://developer.android.com/studio/terms.html).
+Google Mobile Ads and AdMob also operate under Google's applicable APIs,
+advertising, and privacy terms. The stable Play and GitHub variants do not
+package these components.
+
+## Google Play Billing beta component
+
+`com.android.billingclient:billing:9.1.0` is included only in the VIP Ads beta.
+It is distributed under the
+[Android Software Development Kit License](https://developer.android.com/studio/terms.html)
+and connects to Google Play for product details, purchases, restoration, and
+acknowledgement. The stable Play and GitHub variants do not package it.
 
 ## Google ML Kit
 

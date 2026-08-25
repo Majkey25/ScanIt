@@ -27,6 +27,7 @@ internal data class RedactionPixelPoint(
 internal data class RedactionPixelStroke(
     val points: List<RedactionPixelPoint>,
     val width: Float,
+    val tool: RedactionTool,
 )
 
 internal fun redactionPixelRects(
@@ -71,6 +72,7 @@ internal fun redactionPixelStrokes(
                     RedactionPixelPoint(point.x * width, point.y * height)
                 },
             width = (stroke.widthFraction * shortEdge).coerceAtLeast(1f),
+            tool = stroke.tool,
         )
     }
 }
@@ -123,12 +125,33 @@ internal fun renderRedactedJpeg(
                             throw CancellationException("Redaction render cancelled")
                         }
                         paint.strokeWidth = stroke.width
-                        paint.strokeCap = Paint.Cap.ROUND
-                        paint.strokeJoin = Paint.Join.ROUND
+                        paint.strokeCap =
+                            if (stroke.tool == RedactionTool.Line) {
+                                Paint.Cap.SQUARE
+                            } else {
+                                Paint.Cap.ROUND
+                            }
+                        paint.strokeJoin =
+                            if (stroke.tool == RedactionTool.Line) {
+                                Paint.Join.MITER
+                            } else {
+                                Paint.Join.ROUND
+                            }
                         if (stroke.points.size == 1) {
                             paint.style = Paint.Style.FILL
                             val point = stroke.points.single()
-                            canvas.drawCircle(point.x, point.y, stroke.width / 2f, paint)
+                            if (stroke.tool == RedactionTool.Line) {
+                                val radius = stroke.width / 2f
+                                canvas.drawRect(
+                                    point.x - radius,
+                                    point.y - radius,
+                                    point.x + radius,
+                                    point.y + radius,
+                                    paint,
+                                )
+                            } else {
+                                canvas.drawCircle(point.x, point.y, stroke.width / 2f, paint)
+                            }
                         } else {
                             paint.style = Paint.Style.STROKE
                             val path = Path().apply {

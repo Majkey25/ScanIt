@@ -414,6 +414,9 @@ class PureLogicTest {
         val brushPoints = redactionStrokePoints(RedactionTool.Brush, mutablePoints)
         mutablePoints.clear()
         assertEquals(points, brushPoints)
+        assertThrows(IllegalArgumentException::class.java) {
+            RedactionStroke(points, 0.03f, RedactionTool.Line)
+        }
     }
 
     @Test
@@ -747,7 +750,25 @@ class PureLogicTest {
         assertTrue(manifest.contains("tools:replace=\"android:label\""))
         assertTrue(
             strings.contains(
-                "<string name=\"internal_app_name\" translatable=\"false\">ScanIt.test</string>",
+                "<string name=\"internal_app_name\" translatable=\"false\">SeliaScan.test</string>",
+            ),
+        )
+    }
+
+    @Test
+    fun betaReleaseMetadataAndVerifierSupportAab() {
+        val repository = File("..").canonicalFile
+        val build = File(repository, "app/build.gradle.kts").readText()
+        val verifier = File(repository, "tools/verify-release.ps1").readText()
+
+        assertTrue(build.contains("versionCode = 35"))
+        assertTrue(build.contains("versionName = \"1.6.0-vip-ads.9\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"35\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.6.0-vip-ads.9\""))
+        assertTrue(verifier.contains("\$requiredBetaPermissions = @("))
+        assertFalse(
+            verifier.contains(
+                "if (\$Flavor -eq \"beta\" -and \$artifactType -ne \"apk\")",
             ),
         )
     }
@@ -1054,6 +1075,11 @@ class PureLogicTest {
         assertNull(exactImageDimensions(2, listOf(1600 to 2400, null), cached))
         assertNull(exactImageDimensions(2, emptyList(), listOf(2000 to 3000)))
         assertNull(exactImageDimensions(2, emptyList(), listOf(0 to 3000, 2000 to 3000)))
+        assertEquals(
+            listOf(5002 to 7091),
+            exactImageDimensions(1, listOf(5002 to 7091), null),
+        )
+        assertNull(exactImageDimensions(1, listOf(20_001 to 1), null))
     }
 
     @Test

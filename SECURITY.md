@@ -23,12 +23,13 @@ credentials.
 
 - Ordinary scanning, OCR, barcode detection, redaction, and file creation remain on-device.
 - Smart cleanup and Manual cleanup remain on-device, preserve the parent revision, bound selection geometry and memory, and support cancellation.
-- Public variants declare no app-owned Internet permission and contain no generative-AI client, advertising SDK, billing SDK, first-party analytics SDK, broad storage permission, or maintainer-operated document backend.
+- Stable Play and GitHub variants declare no app-owned Internet permission and contain no generative-AI client, advertising SDK, billing SDK, first-party analytics SDK, broad storage permission, or maintainer-operated document backend.
+- The separate VIP Ads beta contains GMA Next-Gen and UMP, requests consent before ad loading, and never passes document content to the advertising SDK. It contains no Billing or Gemini client.
 - Google Play services supplies the ML Kit scanner UI and may download modules and process diagnostic telemetry under Google's terms.
 - Scans are held in a bounded app-private cache and exposed for sharing only through scoped content URIs.
 - Saved-output replacement verifies destination identity, size, dimensions, and SHA-256 before metadata activation and exact old-output cleanup.
 - OCR and barcode payloads are bounded, stale requests are rejected, clipboard copies are marked sensitive, and detected codes do not open automatically.
-- Android backup and device-to-device transfer are disabled for ScanIt app data.
+- Android backup and device-to-device transfer are disabled for SeliaScan app data.
 - Release signing keys and local signing properties are never stored in this repository.
 - The frozen GitHub preview APK is a historical debug-signed artifact, not the Google Play build.
 

@@ -571,9 +571,7 @@ private fun ImageOutputRef.isValid(version: Int): Boolean {
     val actualWidth = width ?: return false
     val actualHeight = height ?: return false
     val actualMimeType = mimeType ?: return false
-    if (actualWidth <= 0 ||
-        actualHeight <= 0 ||
-        actualWidth.toLong() * actualHeight > MAX_IMAGE_EXPORT_PIXELS ||
+    if (!validSavedImageDimensions(actualWidth, actualHeight, sizePreset) ||
         actualMimeType !in IMAGE_MIME_TYPES ||
         actualFormat.mimeType?.let { it != actualMimeType } == true ||
         outputFingerprint() == null ||
@@ -644,9 +642,7 @@ internal fun upgradeLegacyImageReference(
             reference.ownerPackageName?.let { it != observedOwnerPackageName } == true ||
             reference.byteLength?.let { it != fingerprint.byteLength } == true ||
             reference.sha256?.let { it != fingerprint.sha256 } == true ||
-            width <= 0 ||
-            height <= 0 ||
-            width.toLong() * height > MAX_IMAGE_EXPORT_PIXELS
+            !validOriginalImageDimensions(width, height)
     ) return null
     return reference.copy(
         displayName = observedDisplayName,

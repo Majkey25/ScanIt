@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="beta_app_name">SeliaScan</string>
+    <string name="beta_advertisement">Werbung</string>
+    <string name="beta_privacy_options">Datenschutzoptionen</string>
+    <string name="beta_premium_title">SeliaScan Premium</string>
+    <string name="beta_premium_body">Wähle monatlichen Zugriff oder einen einmaligen Kauf auf Lebenszeit. Beide entfernen Werbung und schalten alle Dokumentaktionen frei.</string>
+    <string name="beta_premium_active">Premium ist aktiv. Werbung ist ausgeblendet und alle Dokumentaktionen sind freigeschaltet.</string>
+    <string name="beta_premium_account">Premium ist mit dem Google-Play-Konto verknüpft, das es gekauft hat.</string>
+    <string name="beta_premium_monthly">Premium monatlich</string>
+    <string name="beta_premium_monthly_price">Monatlich · %1$s</string>
+    <string name="beta_premium_monthly_notice">Verlängert sich monatlich bis zur Kündigung bei Google Play.</string>
+    <string name="beta_premium_lifetime">Premium auf Lebenszeit</string>
+    <string name="beta_premium_lifetime_price">Lebenszeit · einmalig %1$s</string>
+    <string name="beta_premium_restore">Käufe wiederherstellen</string>
+    <string name="beta_premium_pending">Die Zahlung ist ausstehend. Premium wird erst nach der Bestätigung durch Google Play freigeschaltet.</string>
+    <string name="beta_premium_unavailable">Premium ist für diesen Build oder dieses Google-Play-Konto noch nicht verfügbar.</string>
+    <string name="beta_premium_error">Google Play Billing ist vorübergehend nicht verfügbar. Stelle die Käufe erneut wieder her.</string>
+</resources>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ScanIt</string>
+    <string name="app_name">SeliaScan</string>
     <string name="try_again">Erneut versuchen</string>
     <string name="preview_unavailable">Vorschau nicht verfügbar</string>
     <string name="page_position">Seite %1$d von %2$d</string>
@@ -64,10 +64,10 @@
     <string name="image_format_jpeg">JPG · hohe Qualität</string>
     <string name="image_format_png">PNG · verlustfrei</string>
     <string name="unknown_output_title">Export muss geprüft werden</string>
-    <string name="unknown_output_warning">Ein unterbrochener Export könnte eine nicht identifizierte externe Datei hinterlassen haben. ScanIt wird sie weder erraten noch löschen.</string>
+    <string name="unknown_output_warning">Ein unterbrochener Export könnte eine nicht identifizierte externe Datei hinterlassen haben. SeliaScan wird sie weder erraten noch löschen.</string>
     <string name="review_output_warning">Prüfen</string>
     <string name="unknown_output_confirm_title">Export als geprüft markieren?</string>
-    <string name="unknown_output_confirm_body">Prüfe den ausgewählten Ordner manuell. Eine nicht identifizierte externe Datei kann verbleiben. Dadurch wird nur die lokale ScanIt-Warnung entfernt, keine Datei.</string>
+    <string name="unknown_output_confirm_body">Prüfe den ausgewählten Ordner manuell. Eine nicht identifizierte externe Datei kann verbleiben. Dadurch wird nur die lokale SeliaScan-Warnung entfernt, keine Datei.</string>
     <string name="unknown_output_confirm">Geprüft</string>
     <string name="save_now">Jetzt speichern</string>
     <string name="saving_now">Wird gespeichert…</string>
@@ -81,10 +81,10 @@
     <string name="opening_document">Dokument wird geöffnet…</string>
     <string name="recent_scan_unavailable">Dieser Scan ist nicht mehr verfügbar.</string>
     <string name="recent_history_unavailable">Die letzten Scans konnten nicht geladen werden.</string>
-    <string name="state_update_failed">ScanIt konnte nicht aktualisiert werden. Erneut versuchen.</string>
+    <string name="state_update_failed">SeliaScan konnte nicht aktualisiert werden. Erneut versuchen.</string>
     <string name="recent_delete_failed">Der letzte Scan konnte nicht gelöscht werden.</string>
     <string name="recent_delete_partial">Einige ausgewählte Dateien wurden gelöscht. Die übrigen Dateien werden weiterhin angezeigt. Erneut versuchen.</string>
-    <string name="recent_delete_metadata_failed">Dateien wurden möglicherweise gelöscht, aber ScanIt konnte den Eintrag nicht aktualisieren. Erneut versuchen.</string>
+    <string name="recent_delete_metadata_failed">Dateien wurden möglicherweise gelöscht, aber SeliaScan konnte den Eintrag nicht aktualisieren. Erneut versuchen.</string>
     <string name="recent_delete_cache_failed">Die ausgewählten Dateien wurden gelöscht, aber der Eintrag konnte nicht aus den letzten Scans entfernt werden. Erneut versuchen.</string>
     <string name="shared_output_delete_failed">Eine gespeicherte Datei konnte nicht gelöscht werden. Über „Letzte Scans“ erneut versuchen.</string>
     <string name="output_create_cleanup_required">Eine unvollständige gespeicherte Datei muss bereinigt werden, bevor diese Ausgabe erneut geändert werden kann.</string>
@@ -97,7 +97,7 @@
     <string name="delete_pdf_and_images">PDF und Bilder</string>
     <string name="remove_from_recent">Aus letzten Scans entfernen</string>
     <string name="recent_delete_saved_hint">Die ausgewählten gespeicherten Dateien werden vom Gerät gelöscht. Danach wird der Scan aus den letzten Scans entfernt.</string>
-    <string name="recent_delete_legacy_hint">Details zu gespeicherten Dateien fehlen. ScanIt errät nicht, welche Dateien gelöscht werden sollen. Nur diese Vorschau kann entfernt werden.</string>
+    <string name="recent_delete_legacy_hint">Details zu gespeicherten Dateien fehlen. SeliaScan errät nicht, welche Dateien gelöscht werden sollen. Nur diese Vorschau kann entfernt werden.</string>
     <string name="recent_delete_pending_hint">Die ausgewählten gespeicherten Dateien sind bereits gelöscht. Entferne diese Vorschau erneut; keine weiteren gespeicherten Dateien werden gelöscht.</string>
     <string name="deleting_scan">Wird gelöscht…</string>
     <string name="recent_scan_preview">Vorschau des letzten Scans</string>
@@ -135,6 +135,7 @@
     <string name="collapse_app_info">App-Informationen ausblenden</string>
     <string name="support_scanit">Diese App unterstützen → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Danke für deine Unterstützung dieser App. Buy Me a Coffee wird geöffnet.</string>
+    <string name="support_scanit_no_benefits">Buy Me a Coffee ist eine freiwillige Unterstützung. Dadurch werden keine Funktionen freigeschaltet und keine Anzeigen entfernt. Dafür ist SeliaScan Premium vorgesehen.</string>
     <string name="settings_save_failed">Einstellungen konnten nicht gespeichert werden.</string>
     <string name="apply_appearance">Anwenden</string>
     <string name="pdf_size">PDF-Größe</string>
@@ -154,7 +155,7 @@
     <string name="pdf_size_unit_mb">MB</string>
     <string name="pdf_size_custom_hint">Nutze 1–500.000 KB oder 1–500 MB.</string>
     <string name="save">Speichern</string>
-    <string name="pdf_size_hint">Größenlimits verwenden gemessene, lesbare Versionen. Kann ein Limit nicht erreicht werden, behält ScanIt die kleinste lesbare PDF und zeigt die tatsächliche Größe an.</string>
+    <string name="pdf_size_hint">Größenlimits verwenden gemessene, lesbare Versionen. Kann ein Limit nicht erreicht werden, behält SeliaScan die kleinste lesbare PDF und zeigt die tatsächliche Größe an.</string>
     <string name="choose_language">Sprache auswählen</string>
     <string name="language_system">Systemstandard</string>
     <string name="language_english">English</string>
@@ -177,7 +178,7 @@
     <string name="scanner_unexpected_error">Der Scan wurde unerwartet beendet. Erneut versuchen.</string>
     <string name="pdf_tree_release_warning">Die Berechtigung für den vorherigen Ordner konnte nicht aufgehoben werden.</string>
     <string name="opening_scanner">Scanner wird geöffnet…</string>
-    <string name="starting_scanit">ScanIt wird geöffnet…</string>
+    <string name="starting_scanit">SeliaScan wird geöffnet…</string>
     <string name="saving_document">Dokument wird gespeichert…</string>
     <string name="images_save_failed">Bilder konnten nicht in der Galerie gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
     <string name="pdf_save_failed">Die PDF konnte nicht gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
@@ -301,7 +302,7 @@
     <string name="document_action_truncated">Das Ergebnis wurde gekürzt.</string>
     <string name="document_action_failed">Die Dokumentaktion konnte nicht abgeschlossen werden.</string>
     <string name="document_action_model_unavailable">Das On-Device-Modell ist noch nicht verfügbar. Google Play-Dienste laden es möglicherweise noch herunter. Versuche es gleich noch einmal.</string>
-    <string name="document_action_clip_label">ScanIt-Dokumentergebnis</string>
+    <string name="document_action_clip_label">SeliaScan-Dokumentergebnis</string>
     <string name="export_text">Text exportieren</string>
     <string name="exporting_text">Text wird gespeichert…</string>
     <string name="text_export_saved">Text wurde gespeichert.</string>
@@ -359,4 +360,5 @@
     <string name="safe_share_move_down">Nach unten verschieben</string>
     <string name="safe_share_grow">Bereich vergrößern</string>
     <string name="safe_share_shrink">Bereich verkleinern</string>
+    <string name="premium_action_locked">Premium-Funktion</string>
 </resources>

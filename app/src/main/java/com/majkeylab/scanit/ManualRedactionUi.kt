@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,7 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -113,17 +117,25 @@ internal fun ManualRedactionReview(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(stringResource(R.string.redact_document), style = MaterialTheme.typography.titleLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = state.redactionTool == RedactionTool.Line,
-                    onClick = { onToolChange(RedactionTool.Line) },
-                    label = { Text(stringResource(R.string.redaction_tool_line)) },
-                )
-                FilterChip(
-                    selected = state.redactionTool == RedactionTool.Brush,
-                    onClick = { onToolChange(RedactionTool.Brush) },
-                    label = { Text(stringResource(R.string.redaction_tool_brush)) },
-                )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                RedactionTool.entries.forEachIndexed { index, tool ->
+                    SegmentedButton(
+                        selected = state.redactionTool == tool,
+                        onClick = { onToolChange(tool) },
+                        shape = SegmentedButtonDefaults.itemShape(index, RedactionTool.entries.size),
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (tool == RedactionTool.Line) {
+                                        R.string.redaction_tool_line
+                                    } else {
+                                        R.string.redaction_tool_brush
+                                    },
+                                ),
+                            )
+                        },
+                    )
+                }
             }
             Text(
                 stringResource(R.string.redaction_draw_hint),
@@ -140,8 +152,13 @@ internal fun ManualRedactionReview(
                 onStroke = onAddStroke,
                 modifier =
                     Modifier.fillMaxWidth().weight(1f).heightIn(min = 180.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.outline),
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant,
+                            MaterialTheme.shapes.medium,
+                        ),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -275,6 +292,7 @@ private fun ManualRedactionCanvas(
                                     RedactionStroke(
                                         redactionStrokePoints(activeTool, activePoints),
                                         activeWidth,
+                                        activeTool,
                                     ),
                                 )
                                 activePoints.clear()
@@ -297,11 +315,22 @@ private fun ManualRedactionCanvas(
             paint,
         )
         clipRect(left, top, left + pageWidth, top + pageHeight) {
-            strokes.forEach { drawRedactionStroke(it.points, it.widthFraction, left, top, pageWidth, pageHeight) }
+            strokes.forEach {
+                drawRedactionStroke(
+                    it.points,
+                    it.widthFraction,
+                    it.tool,
+                    left,
+                    top,
+                    pageWidth,
+                    pageHeight,
+                )
+            }
             if (activePoints.isNotEmpty()) {
                 drawRedactionStroke(
                     redactionStrokePoints(activeTool, activePoints),
                     activeWidth,
+                    activeTool,
                     left,
                     top,
                     pageWidth,
@@ -315,6 +344,7 @@ private fun ManualRedactionCanvas(
 private fun DrawScope.drawRedactionStroke(
     points: List<MarkPoint>,
     widthFraction: Float,
+    tool: RedactionTool,
     left: Float,
     top: Float,
     pageWidth: Float,
@@ -323,7 +353,16 @@ private fun DrawScope.drawRedactionStroke(
     val offsets = points.map { Offset(left + it.x * pageWidth, top + it.y * pageHeight) }
     val width = (widthFraction * min(pageWidth, pageHeight)).coerceAtLeast(1f)
     if (offsets.size == 1) {
-        drawCircle(Color.Black, width / 2f, offsets.single())
+        val point = offsets.single()
+        if (tool == RedactionTool.Line) {
+            drawRect(
+                Color.Black,
+                point - Offset(width / 2f, width / 2f),
+                Size(width, width),
+            )
+        } else {
+            drawCircle(Color.Black, width / 2f, point)
+        }
         return
     }
     if (offsets.isEmpty()) return
@@ -334,7 +373,12 @@ private fun DrawScope.drawRedactionStroke(
     drawPath(
         path,
         Color.Black,
-        style = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        style =
+            Stroke(
+                width = width,
+                cap = if (tool == RedactionTool.Line) StrokeCap.Square else StrokeCap.Round,
+                join = if (tool == RedactionTool.Line) StrokeJoin.Miter else StrokeJoin.Round,
+            ),
     )
 }
 

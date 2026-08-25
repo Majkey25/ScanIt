@@ -954,7 +954,7 @@ class DocumentActionsTest {
     @Test
     fun textExportFilenameCannotContainPathsOrControls() {
         assertEquals("My_scan_text.txt", sanitizeTextExportFileName("../../My scan\r\n\u0000"))
-        assertEquals("ScanIt_text.txt", sanitizeTextExportFileName("../.."))
+        assertEquals("SeliaScan_text.txt", sanitizeTextExportFileName("../.."))
         assertTrue(sanitizeTextExportFileName("a".repeat(500)).length <= MAX_TEXT_EXPORT_FILE_NAME_LENGTH)
     }
 

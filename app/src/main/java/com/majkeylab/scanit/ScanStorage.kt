@@ -4470,8 +4470,7 @@ internal class ScanStorage(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         input.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (
-            bounds.outWidth <= 0 || bounds.outHeight <= 0 ||
-                bounds.outWidth.toLong() * bounds.outHeight > MAX_IMAGE_EXPORT_PIXELS
+            !validOriginalImageDimensions(bounds.outWidth, bounds.outHeight)
         ) {
             throw IOException("Saved image dimensions are invalid")
         }
@@ -4679,13 +4678,7 @@ internal class ScanStorage(
         if (address.collection != expectedCollection) {
             throw IOException("MediaStore item belongs to the wrong collection")
         }
-        val canonical =
-            when (expectedCollection) {
-                MediaOutputCollection.Images ->
-                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
-                MediaOutputCollection.Downloads ->
-                    MediaStore.Downloads.getContentUri(address.volume, address.id)
-            }
+        val canonical = mediaItemContentUri(address)
         if (canonical != uri) throw IOException("MediaStore item URI is not canonical")
         val cursor =
             resolver.query(uri, MEDIA_IDENTITY_PROJECTION, null, null, null)

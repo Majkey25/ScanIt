@@ -179,14 +179,17 @@ private fun validateJpegPages(
         require(page.physicalWidthPixels > 0 && page.physicalHeightPixels > 0) {
             "Physical page dimensions must be positive"
         }
-        require(page.width <= JPEG_MAX_PAGE_SIDE && page.height <= JPEG_MAX_PAGE_SIDE) {
+        require(
+            page.width <= MAX_ORIGINAL_IMAGE_DIMENSION &&
+                page.height <= MAX_ORIGINAL_IMAGE_DIMENSION,
+        ) {
             "Page dimensions exceed the PDF bound"
         }
         require(
-            page.physicalWidthPixels <= JPEG_MAX_PAGE_SIDE &&
-                page.physicalHeightPixels <= JPEG_MAX_PAGE_SIDE,
+            page.physicalWidthPixels <= MAX_ORIGINAL_IMAGE_DIMENSION &&
+                page.physicalHeightPixels <= MAX_ORIGINAL_IMAGE_DIMENSION,
         ) { "Physical page dimensions exceed the PDF bound" }
-        require(page.width.toLong() * page.height <= JPEG_MAX_PAGE_PIXELS) {
+        require(page.width.toLong() * page.height <= MAX_ORIGINAL_IMAGE_PIXELS) {
             "Page pixel count exceeds the PDF bound"
         }
         require(page.file.isFile && page.file.length() > 0L) { "JPEG page is missing or empty" }
@@ -237,5 +240,3 @@ private const val JPEG_BASE_OBJECT_COUNT = 2
 private const val JPEG_FIRST_PAGE_OBJECT = 3
 private const val JPEG_OBJECTS_PER_PAGE = 5
 private const val JPEG_COPY_BUFFER_SIZE = 8_192
-private const val JPEG_MAX_PAGE_SIDE = 6_000
-private const val JPEG_MAX_PAGE_PIXELS = 13_000_000L

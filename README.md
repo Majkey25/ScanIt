@@ -1,4 +1,6 @@
-<h1 align="center">ScanIt</h1>
+<h1 align="center">SeliaScan</h1>
+
+SeliaScan is the new product name for ScanIt. The Android package and existing repository URLs remain unchanged for update and purchase continuity.
 
 <p align="center">
   <strong>Scan → save → share.</strong><br>
@@ -8,12 +10,12 @@
 <p align="center">
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img alt="Latest stable release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt"></a>
-  <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-111111">
+  <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-111111">
   <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="ScanIt workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
 ## v1.5.0 update
@@ -34,7 +36,7 @@ be moved or removed from that result.
 
 The current stable release keeps the full Google scan editor with page previews,
 crop and rotate, and Google's filter gallery, then continues directly to the
-ScanIt Result and sharing actions. The redundant ScanIt intensity/shadow screen
+SeliaScan Result and sharing actions. The redundant intensity/shadow screen
 has been removed. The APK also includes the Recent scans dashboard, reusable
 visual signatures and stamps, measured and custom PDF size targets, and six
 selectable language modes. Settings now include a localized Buy Me a Coffee
@@ -43,10 +45,10 @@ after each change, survive navigation and updates, and default to deleting saved
 PDFs after sharing while retaining saved images. Visual signatures and stamps
 can be moved directly on a larger preview, resized and rotated with gestures, or
 fine-tuned from the collapsed Manual position panel.
-ScanIt now supports Android 13 and newer while keeping the same Google scanner,
+SeliaScan supports Android 10 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
 
-ScanIt now corrects page orientation from recognized line angles, with a portrait
+SeliaScan now corrects page orientation from recognized line angles, with a portrait
 fallback for textless landscape scans, before creating the result. Document Actions
 also contain local Smart cleanup and Manual cleanup. Smart cleanup improves paper
 contrast and removes likely edge fingers; Manual cleanup replaces user-drawn spots
@@ -67,16 +69,16 @@ Rescan, Sign / stamp, and Actions are compact accessible buttons, while File det
 PDF and image changes into compact Size, Format, and Location controls.
 Externally deleted PDF and image outputs are shown as Deleted and can be recreated
 directly with Save without reusing stale provider locations.
-After a full app restart, ScanIt opens a fresh scanner session instead of reopening
+After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
 [Download ScanIt v1.5.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
-  <img src="docs/play-store/assets/en-US/phone/01-capture.png" width="23%" alt="ScanIt automatic document capture with edge detection.">
+  <img src="docs/play-store/assets/en-US/phone/01-capture.png" width="23%" alt="SeliaScan automatic document capture with edge detection.">
   <img src="docs/play-store/assets/en-US/phone/02-review.png" width="23%" alt="Google scan review with crop, enhancement, filters, rotation, and page controls.">
-  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="ScanIt result with rescan, signature, document actions, sharing, printing, and file details.">
+  <img src="docs/play-store/assets/en-US/phone/03-result.png" width="23%" alt="SeliaScan result with rescan, signature, document actions, sharing, printing, and file details.">
   <img src="docs/play-store/assets/en-US/phone/04-file-details.png" width="23%" alt="Expanded PDF and image details with inline renaming, size, format, and location controls.">
 </p>
 
@@ -89,17 +91,17 @@ or read the [full changelog](CHANGELOG.md).
 
 [See all English and Czech screenshots](docs/play-store/assets/).
 
-## Why ScanIt exists
+## Why SeliaScan exists
 
 Sending a scanned document should not require understanding folders, file
-managers, or export dialogs. Open ScanIt and the scanner starts. Capture one or
+managers, or export dialogs. Open SeliaScan and the scanner starts. Capture one or
 more pages, check the result, then share the PDF or images through Android.
 
 The interface is monochrome and follows the system language by default. English,
 Czech, German, Spanish, and Simplified Chinese can also be selected from one
 compact language picker in Settings.
 
-ScanIt was built with AI-assisted coding and design. The maintainer reviews the
+SeliaScan was built with AI-assisted coding and design. The maintainer reviews the
 source, release artifacts, and real-device workflows.
 
 ## Features
@@ -108,9 +110,9 @@ source, release artifacts, and real-device workflows.
 - Automatic capture, edge detection, crop, rotation, filters, shadow removal, and cleanup through the ML Kit scanner flow.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
-- Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before ScanIt creates the result.
+- Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before SeliaScan creates the result.
 - Automatic orientation correction from text-line angles, with a portrait fallback for textless landscape scans.
-- Measured PDF size goals of Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, or a custom 1 KB–500 MB target; ScanIt reports the actual size when a readable result cannot meet the selected goal.
+- Measured PDF size goals of Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, or a custom 1 KB–500 MB target; SeliaScan reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
 - Manual PDF, image, or combined saving from File details.
@@ -125,20 +127,36 @@ source, release artifacts, and real-device workflows.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.
-- No ScanIt account, subscription, first-party analytics, advertising SDK, or cloud document library.
-- No broad storage, camera, contacts, location, account, or notification permission requested by ScanIt.
+- Stable variants have no SeliaScan account, subscription, first-party analytics, advertising SDK, or cloud document library.
+- No broad storage, camera, contacts, location, account, or notification permission requested by SeliaScan.
 
 ## Install
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
+The currently published v1.5.0 stable binary requires Android 13; Android 10
+support starts with the VIP Ads prerelease and the next stable release.
+
+The optional
+[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.3)
+uses the Play-compatible package and replaces the installed Play-compatible app. It
+contains ads after a completed scan and a prepared Google Play Premium flow. If
+you do not want ads, install the stable version. LOL.
 
 Google Play services may download the scanner and recognition modules before
-their first use. The public ScanIt app declares no app-owned Internet permission.
+their first use. Stable SeliaScan declares no app-owned Internet permission; the
+VIP Ads beta uses Internet access for Google ads, consent, and Play Billing.
+Premium purchase in the existing `.3` prerelease remains unavailable until its
+matching Google Play product is active.
+
+The current `.5` source prepares an Internal-testing-only choice between a
+49 CZK monthly subscription (`seliascan_premium_monthly`) and a 299 CZK
+lifetime purchase (`seliascan_premium`). Both remove ads and unlock all
+Document Actions. Neither product is available to production users yet.
 
 Requirements for the current public code:
 
-- Android 13 or newer (`minSdk 33`, `targetSdk 36`).
+- Android 10 or newer (`minSdk 29`, `targetSdk 36`).
 - At least 1.7 GB total device RAM, required by ML Kit Document Scanner.
 - Google Play services for the scanner module.
 - A connection when Google Play services needs to download or update a scanner or recognition module.
@@ -147,7 +165,7 @@ Requirements for the current public code:
 
 ```mermaid
 flowchart LR
-    A["Open ScanIt"] --> B["ML Kit scanner"]
+    A["Open SeliaScan"] --> B["ML Kit scanner"]
     B --> C["Bounded local working copy"]
     C --> D["PDF / Gallery"]
     C --> E["Share / Print"]
@@ -155,7 +173,7 @@ flowchart LR
     C --> G["Local cleanup"]
 ```
 
-The scanner processes document content on-device. ScanIt keeps at most eight
+The scanner processes document content on-device. SeliaScan keeps at most eight
 temporary scan directories for Result and Recent scans. Android may clear these
 working copies. PDFs saved to Downloads or a selected folder and images saved to
 Gallery remain until the user deletes them.
@@ -165,11 +183,11 @@ Gallery remain until the user deletes them.
 - Ordinary scanning, OCR, barcode detection, redaction, and file creation remain on-device.
 - Smart cleanup and Manual cleanup process document pixels locally and preserve the parent revision.
 - Google Play services and ML Kit may process diagnostic and usage telemetry; scanned input remains on-device according to Google's ML Kit documentation.
-- ScanIt does not send scanned content to a maintainer-operated server.
+- SeliaScan does not send scanned content to a maintainer-operated server.
 - File sharing uses scoped content URIs with read access granted to the selected receiving app.
 - Saved-output changes are verified before activation and remove only the exact previously tracked output.
 - Copied OCR and barcode results are marked as sensitive; detected payloads never open automatically.
-- Android backup and device transfer are disabled for ScanIt app data.
+- Android backup and device transfer are disabled for SeliaScan app data.
 - Sharing and printing hand a user-selected document to another app or service under that recipient's terms.
 
 Read the [Privacy Policy source](docs/privacy.html),
@@ -229,14 +247,14 @@ accepted; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Current material is source-visible under the [ScanIt proprietary license](LICENSE),
+Current material is source-visible under the [SeliaScan proprietary license](LICENSE),
 not open source. Unmodified official binaries may be installed and used under
 that license. Earlier copies distributed under MIT remain MIT-licensed; see
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
 ## Support
 
-ScanIt is free to use. If it saves you time, an optional tip helps fund future
+SeliaScan is free to use. If it saves you time, an optional tip helps fund future
 maintenance. It does not unlock features or change support priority.
 
 <p>

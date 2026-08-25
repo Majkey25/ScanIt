@@ -17,7 +17,7 @@ submitted declarations:
 
 | Field | Value |
 |---|---|
-| App name | `ScanIt` |
+| App name | `SeliaScan` |
 | Package | `com.majkeylab.scanit` |
 | Version code | `26` |
 | Version name | `1.5.0` |
@@ -28,7 +28,21 @@ submitted declarations:
 | Contact email | `majkeylab@gmail.com` |
 | Website | `https://majkey25.github.io/ScanIt/` |
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
-| Ads | No |
+| Ads | No in stable `playRelease`; yes in the version 35 Closed beta |
+
+## Closed testing Premium setup
+
+Version code 35 (`1.6.0-vip-ads.9`) is the ads and Premium candidate for Closed
+testing. It must not replace the production or open-testing releases.
+
+| Product | Type | Price | Benefit |
+|---|---|---:|---|
+| `seliascan_premium_monthly` | Auto-renewing subscription, base plan `monthly` | 49 CZK per month | Remove ads and unlock all Document Actions while subscribed |
+| `seliascan_premium` | One-time buy option | 299 CZK | Remove ads and unlock all Document Actions forever |
+
+Neither product uses a trial, introductory offer, discount, or prepaid plan.
+Only license testers may use test payment methods. Regular Closed testers can
+be charged real money.
 
 Do not invent a legal developer name, address, phone number, organization, or
 other account-holder detail here. Use only the verified values already held by
@@ -38,7 +52,7 @@ the Play developer account.
 
 ### App name
 
-> ScanIt
+> SeliaScan
 
 ### Short description
 
@@ -48,7 +62,7 @@ the Play developer account.
 
 ### Full description
 
-> ScanIt removes the file-management work from document scanning.
+> SeliaScan removes the file-management work from document scanning.
 >
 > Open the app and the scanner starts immediately. Capture one or more pages, review the automatic crop and enhancement, then save, share, or print the result.
 >
@@ -78,9 +92,9 @@ the Play developer account.
 > - monochrome light and dark interface
 > - system, English, Czech, German, Spanish, and Simplified Chinese language selection
 >
-> ScanIt has no subscription, account, first-party analytics, ads, cloud document library, or generative-AI client. Scanning and cleanup stay on-device.
+> The free version includes ads. Optional monthly or lifetime Premium removes ads and unlocks all Document Actions. SeliaScan has no app account, first-party analytics, cloud document library, or generative-AI client. Scanning and cleanup stay on-device.
 >
-> Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, ScanIt keeps the smallest readable result and shows its actual size.
+> Visual marks are image annotations only. They are not digital or cryptographic signatures and do not verify identity or document integrity. PDF size limits are measured goals; if a readable file cannot meet the selected goal, SeliaScan keeps the smallest readable result and shows its actual size.
 >
 > The scanner is powered by Google ML Kit Document Scanner and requires Google Play services. Google Play services may download the scanner or recognition modules before first use and process limited diagnostic and usage telemetry.
 
@@ -88,7 +102,7 @@ the Play developer account.
 
 ### App name
 
-> ScanIt
+> SeliaScan
 
 ### Short description
 
@@ -98,7 +112,7 @@ the Play developer account.
 
 ### Full description
 
-> ScanIt usnadňuje skenování a odesílání dokumentů.
+> SeliaScan usnadňuje skenování a odesílání dokumentů.
 >
 > Po otevření aplikace se skener spustí okamžitě. Naskenujte jednu nebo více stran, zkontrolujte automatický ořez a vylepšení a výsledek uložte, sdílejte nebo vytiskněte.
 >
@@ -128,9 +142,9 @@ the Play developer account.
 > - černobílé světlé i tmavé rozhraní
 > - systémový, anglický, český, německý, španělský a zjednodušený čínský jazyk
 >
-> ScanIt neobsahuje předplatné, účet, vlastní analytické nástroje, reklamy, cloudovou knihovnu dokumentů ani generativní AI. Skenování i vyčištění zůstávají v zařízení.
+> Bezplatná verze obsahuje reklamy. Volitelné měsíční nebo doživotní Premium reklamy odstraní a odemkne všechny Akce dokumentu. SeliaScan nemá vlastní uživatelský účet, vlastní analytické nástroje, cloudovou knihovnu dokumentů ani generativní AI. Skenování i vyčištění zůstávají v zařízení.
 >
-> Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, ScanIt ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
+> Vizuální značky jsou pouze obrázkové anotace. Nejde o digitální ani kryptografické podpisy a nepotvrzují totožnost ani neporušenost dokumentu. Limity velikosti PDF jsou měřené cíle; pokud je nelze dodržet při zachování čitelnosti, SeliaScan ponechá nejmenší čitelný výsledek a zobrazí jeho skutečnou velikost.
 >
 > Skener používá Google ML Kit Document Scanner a vyžaduje služby Google Play. Služby Google Play mohou před prvním použitím stáhnout modul skeneru nebo rozpoznávání a zpracovávat omezené diagnostické a provozní údaje.
 
@@ -169,7 +183,7 @@ and does not unlock app features.
 
 - URL: `https://majkey25.github.io/ScanIt/privacy.html`
 - Publicly accessible without login: **Yes; verified HTTP 200 on 2026-08-09.**
-- Names ScanIt and provides privacy contact: Yes.
+- Names SeliaScan and provides privacy contact: Yes.
 - Covers SDK data, retention/deletion, sharing, and security: Yes.
 - GitHub Pages is enabled and the URL returns the policy without login.
 - The in-app link points to this same URL.
@@ -182,13 +196,13 @@ and does not unlock app features.
 
 Reviewer note:
 
-> ScanIt requires no account. Opening it starts the Google ML Kit document scanner. Finish a scan to reach Result, or cancel to reach Recent scans. The camera and editing flow is supplied by Google Play services. Settings is available from the gear icon. The app supports Android 13 and newer, requires Google Play services, and ML Kit requires at least 1.7 GB total device RAM.
+> SeliaScan requires no account. Opening it starts the Google ML Kit document scanner. Finish a scan to reach Result, or cancel to reach Recent scans. The camera and editing flow is supplied by Google Play services. Settings is available from the gear icon. The app supports Android 10 and newer, requires Google Play services, and ML Kit requires at least 1.7 GB total device RAM.
 
 ### Ads
 
-- Does the app contain ads? **No**.
-- Advertising SDK present? **No**.
-- Donation or payment prompt in the app or Play listing? **Yes: Settings contains an optional external Buy Me a Coffee support link. It does not unlock digital content or app features.**
+- Does the app contain ads? **Yes for the version 35 Closed beta; no for stable `playRelease`.**
+- Advertising SDK present? **Yes in the Closed beta: GMA Next-Gen SDK and UMP.**
+- Donation or payment prompt in the app or Play listing? **Yes: Settings contains optional monthly and lifetime Premium purchases plus an external Buy Me a Coffee donation link. The donation does not unlock features or remove ads.**
 
 ### Target audience and content
 
@@ -196,7 +210,7 @@ Reviewer note:
 - Designed for children: **No**.
 - Families program: **No**.
 - Social features or communication between users: **No**.
-- User-generated content published or exchanged inside ScanIt: **No**.
+- User-generated content published or exchanged inside SeliaScan: **No**.
 - Content rating: answer the current IARC questionnaire from the shipped app; the maintainer provides no violence, sexual content, gambling, controlled substances, profanity, or user communication.
 
 The app can scan user-owned documents, but it does not publish or distribute
@@ -230,9 +244,9 @@ Verify the final merged manifest again before submission.
 |---|---|
 | Does the app collect or share required user data types? | Collects: Yes, because Google Play services and ML Kit process diagnostic and usage telemetry. |
 | Is all transmitted data encrypted in transit? | Yes. Google states that ML Kit telemetry uses HTTPS. |
-| Can users request account deletion? | Not applicable; ScanIt has no accounts. |
+| Can users request account deletion? | Not applicable; SeliaScan has no accounts. |
 | Does the app provide an independent deletion-request mechanism for ML Kit telemetry? | No. Google processes that telemetry under Google's Privacy Policy. |
-| Does the app follow the Families policy? | Recheck against the selected target audience; ScanIt is not designed specifically for children. |
+| Does the app follow the Families policy? | Recheck against the selected target audience; SeliaScan is not designed specifically for children. |
 
 ### Data types to declare
 
@@ -253,22 +267,22 @@ device or per-installation identifiers, performance metrics, API configuration,
 input/output size, feature version, event type, and error codes for diagnostics
 and usage analytics. Google states that these metrics are encrypted in transit
 and are not transferred to third parties. “Required” and “not ephemeral” are the
-conservative choices because ScanIt provides no SDK telemetry toggle and Google
+conservative choices because SeliaScan provides no SDK telemetry toggle and Google
 does not state that all metrics are processed only in memory.
 
-### Data types not declared as collected by ScanIt
+### Data types not declared as collected by SeliaScan
 
 - Scanned pages, imported document images, generated PDFs, file names, and extracted text or code results: processed and stored on-device; explicit user-directed export or sharing to another app is not developer collection.
 - Email subject/message defaults and folder choices: local app settings only.
-- Contacts, location, payment information, health data, financial information, messages, audio, calendar, and browsing history: not accessed by ScanIt.
+- Contacts, location, payment information, health data, financial information, messages, audio, calendar, and browsing history: not accessed by SeliaScan.
 
 ### Local retention and deletion
 
 - App-private working copies: at most eight scan directories; Android may clear them; removing a Recent item removes its temporary working copy; uninstall removes the remaining app-private cache.
 - App settings: retained locally until changed, cleared, or the app is uninstalled; Android backup and transfer are disabled.
-- Gallery, Downloads, and selected-folder files: retained until the user deletes them through ScanIt or the corresponding storage provider. On a fresh install, PDF deletion after choosing a sharing app is enabled and image deletion is disabled; both settings are configurable. Uninstall does not delete saved files outside app-private storage.
+- Gallery, Downloads, and selected-folder files: retained until the user deletes them through SeliaScan or the corresponding storage provider. On a fresh install, PDF deletion after choosing a sharing app is enabled and image deletion is disabled; both settings are configurable. Uninstall does not delete saved files outside app-private storage.
 - External share/print destination: retention is controlled by the app or service selected by the user.
-- Google ML Kit telemetry: retention and deletion are controlled by Google under Google's policies, not by ScanIt.
+- Google ML Kit telemetry: retention and deletion are controlled by Google under Google's policies, not by SeliaScan.
 
 ### Final Data Safety gate
 
@@ -309,9 +323,9 @@ Recent scans, Sign / stamp, Actions, PDF size.
 
 English alt text:
 
-1. `ScanIt detects the edges of an original document before capture.`
+1. `SeliaScan detects the edges of an original document before capture.`
 2. `Review, crop, enhance, and filter scanned pages before saving.`
-3. `ScanIt result with rescan, signature, document actions, sharing, printing, and file details.`
+3. `SeliaScan result with rescan, signature, document actions, sharing, printing, and file details.`
 4. `Expanded PDF and image details with size, format, and location controls.`
 5. `Recent scans with document previews, page counts, file sizes, and one-tap opening.`
 6. `Signature and stamp editor with direct placement controls.`
@@ -320,9 +334,9 @@ English alt text:
 
 Czech alt text:
 
-1. `ScanIt rozpoznává okraje původního dokumentu před pořízením skenu.`
+1. `SeliaScan rozpoznává okraje původního dokumentu před pořízením skenu.`
 2. `Kontrola, ořez, vylepšení a filtrování naskenovaných stran před uložením.`
-3. `Výsledek ve ScanIt s novým skenem, podpisem, akcemi, sdílením, tiskem a podrobnostmi souborů.`
+3. `Výsledek v SeliaScan s novým skenem, podpisem, akcemi, sdílením, tiskem a podrobnostmi souborů.`
 4. `Rozbalené podrobnosti PDF a obrázků s ovládáním velikosti, formátu a umístění.`
 5. `Nedávné skeny s náhledy, počtem stran, velikostí a otevřením jedním klepnutím.`
 6. `Editor podpisu a razítka s přímým ovládáním umístění.`

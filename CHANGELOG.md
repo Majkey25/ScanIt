@@ -2,6 +2,132 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.9] - 2026-08-25
+
+### Fixed
+
+- Saved high-resolution original scanner JPEGs to Gallery on Android 10 devices instead of rejecting them with the 12 MP rendered-export limit.
+- Displayed the real resolution of saved high-resolution originals in File details.
+- Rendered Straight line redactions with square ends in both the editor preview and the permanent flattened image; Brush keeps round ends.
+- Applied a successful Google Play purchase callback immediately, closed the paywall, and returned to the still-open unlocked Document Actions.
+
+### Ads
+
+- Initialized GMA after consent before the first banner placement needs it.
+- Reused the loaded anchored adaptive banner for 60 seconds across Result, Recent scans, and Settings instead of requesting a new banner during quick navigation.
+- Replaced the large empty loading surface with a compact 50 dp progress slot; failed loads collapse completely.
+- Kept the Google-optimized large anchored adaptive size after verifying that larger eligible inventory can help performance but does not guarantee higher revenue by itself.
+
+### Changed
+
+- Replaced the Line / Brush chips with a Material 3 segmented control and rounded the redaction canvas surface.
+- Prepared version code 35 for Closed testing and the matching GitHub prerelease.
+
+## [1.6.0-vip-ads.8] - 2026-08-25
+
+### Fixed
+
+- Accepted streamed scanner JPEG pages up to common 200 MP dimensions, fixing Huawei camera scans that exceeded the previous PDF bound.
+- Kept oversized black-and-white pages on the streaming JPEG PDF path to avoid memory-heavy bitonal conversion.
+
+### Distribution
+
+- Prepared version code 34 for Play testing without changing an existing track.
+
+## [1.6.0-vip-ads.7] - 2026-08-25
+
+### Fixed
+
+- Renamed the launcher label from SeliaScan VIP Ads to SeliaScan in every supported app language.
+
+### Distribution
+
+- Released version code 33 to Closed testing with real Google Play payments for non-license testers.
+
+## [1.6.0-vip-ads.6] - 2026-08-25
+
+### Fixed
+
+- Kept the Recent scans banner composed while scrolling so it no longer reloads on every return.
+- Hid the visible empty banner surface while an ad is still loading.
+- Highlighted Premium separately from donations and clarified that Buy Me a Coffee does not remove ads or unlock features.
+
+### Changed
+
+- Added an anchored banner to Settings.
+- Increased the scan interstitial cadence from every fifth to every third completed scan while preserving the three-minute cooldown.
+- Released version code 32 to Internal testing only.
+
+## [1.6.0-vip-ads.5] - 2026-08-24
+
+### Added
+
+- Added a 49 CZK monthly Premium subscription alongside the 299 CZK lifetime purchase.
+- Added separate monthly and lifetime purchase buttons using prices returned by Google Play.
+
+### Security
+
+- Combined one-time and subscription purchase queries before publishing entitlement, so one product type cannot overwrite the other.
+- Kept pending, unknown, unrelated, and failed purchases locked. No local Premium flag or purchase token is stored.
+
+### Distribution
+
+- Prepared version code 31 only for Google Play Internal testing. Public and closed-testing releases remain unchanged.
+
+## [1.6.0-vip-ads.4] - 2026-08-24
+
+### Changed
+
+- Renamed the user-facing app and current documentation to SeliaScan while preserving the existing `com.majkeylab.scanit` package and repository URLs.
+- Renamed the unopened lifetime Premium product ID to `seliascan_premium`.
+
+### Play Console
+
+- Completed the merchant profile with the `SELIASCAN` card statement descriptor.
+- Saved `SeliaScan: PDF Scanner` as an unpublished main store-listing draft.
+
+### Known limitation
+
+- Play Console will not allow creation of the one-time Premium product until an APK or AAB with Google Play Billing is uploaded. No app build or release track was changed for this preparation.
+
+## [1.6.0-vip-ads.3] - 2026-08-24
+
+### Added
+
+- Restored a Play-account-based lifetime Premium flow that removes ads and unlocks all Document Actions.
+- Added a visible lock and purchase prompt to every Document Action while Premium is not confirmed.
+
+### Security
+
+- Google Play purchase queries are the entitlement authority; ScanIt stores no local Premium boolean or purchase token.
+- Pending, unknown, wrong-product, unavailable, and failed purchase states grant no Premium access.
+
+### Known limitation
+
+- The merchant account and `scanit_premium` product are not configured in Play Console yet, so real purchase and restore remain unavailable until that external setup is complete.
+
+## [1.6.0-vip-ads.2] - 2026-08-24
+
+### Added
+
+- Added an inline adaptive banner after a non-empty Recent scans list; the empty state remains ad-free.
+
+## [1.6.0-vip-ads.1] - 2026-08-24
+
+### Added
+
+- Added a separate `ScanIt VIP Ads` prerelease package with one adaptive banner on the completed Result screen.
+- Added consent-gated fullscreen ads after returning from Settings and before sharing on every fifth completed scan.
+- Expanded current builds to Android 10 and newer (`minSdk 29`).
+
+### Changed
+
+- Limited fullscreen ads to one per three minutes, one Settings-return ad per app session, and no delayed display when an ad is unavailable.
+
+### Privacy
+
+- Added Google Mobile Ads and UMP only to the beta flavor. Stable Play and GitHub variants remain ad-free and without app-owned Internet access.
+
 ## [1.5.0] - 2026-08-24
 
 ### Added

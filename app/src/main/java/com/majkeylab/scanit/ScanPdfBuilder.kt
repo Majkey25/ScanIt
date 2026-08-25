@@ -140,6 +140,9 @@ private fun writeBitonalCandidate(
     pages: List<ScanPdfBuildPage>,
     isCancelled: () -> Boolean,
 ): File? {
+    if (renderedPages.any { it.width.toLong() * it.height > MAX_BITONAL_PAGE_PIXELS }) {
+        return null
+    }
     val bitonal = File(profileDirectory, "bitonal.pdf")
     return try {
         val bitonalPages =
@@ -193,3 +196,5 @@ private data class ScanPdfCandidate(
     val encoding: PdfEncoding,
     val file: File,
 )
+
+private const val MAX_BITONAL_PAGE_PIXELS = 13_000_000L

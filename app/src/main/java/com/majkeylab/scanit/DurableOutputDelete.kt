@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,6 +27,17 @@ internal data class MediaItemAddress(
     val volume: String,
     val id: Long,
 )
+
+internal fun mediaItemContentUri(address: MediaItemAddress): Uri =
+    ContentUris.withAppendedId(
+        when (address.collection) {
+            MediaOutputCollection.Images ->
+                MediaStore.Images.Media.getContentUri(address.volume)
+            MediaOutputCollection.Downloads ->
+                MediaStore.Downloads.getContentUri(address.volume)
+        },
+        address.id,
+    )
 
 internal data class ExpectedMediaItem(
     val id: Long,
@@ -590,13 +602,7 @@ internal class ExactOutputDeleter(private val context: Context) {
         val address = parseMediaItemAddress(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
         if (address.collection != expectedCollection) return OutputDeleteStatus.IdentityMismatch
         val uri = uriValue.toUri()
-        val canonical =
-            when (expectedCollection) {
-                MediaOutputCollection.Images ->
-                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
-                MediaOutputCollection.Downloads ->
-                    MediaStore.Downloads.getContentUri(address.volume, address.id)
-            }
+        val canonical = mediaItemContentUri(address)
         if (uri != canonical) return OutputDeleteStatus.IdentityMismatch
         val expected =
             ExpectedMediaItem(address.id, marker.displayName, marker.mimeType, context.packageName)
@@ -745,13 +751,7 @@ internal class ExactOutputDeleter(private val context: Context) {
         val address = parseMediaItemAddress(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
         if (address.collection != collection) return OutputDeleteStatus.IdentityMismatch
         val uri = Uri.parse(uriValue)
-        val canonical =
-            when (collection) {
-                MediaOutputCollection.Images ->
-                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
-                MediaOutputCollection.Downloads ->
-                    MediaStore.Downloads.getContentUri(address.volume, address.id)
-            }
+        val canonical = mediaItemContentUri(address)
         if (canonical != uri) return OutputDeleteStatus.IdentityMismatch
         val owner = expectedIdentity.ownerPackageName ?: return OutputDeleteStatus.IdentityMismatch
         val expected =
@@ -783,13 +783,7 @@ internal class ExactOutputDeleter(private val context: Context) {
         val address = parseMediaItemAddress(uriValue) ?: return ExactItemQuery.IdentityMismatch
         if (address.collection != collection) return ExactItemQuery.IdentityMismatch
         val uri = Uri.parse(uriValue)
-        val canonical =
-            when (collection) {
-                MediaOutputCollection.Images ->
-                    MediaStore.Images.Media.getContentUri(address.volume, address.id)
-                MediaOutputCollection.Downloads ->
-                    MediaStore.Downloads.getContentUri(address.volume, address.id)
-            }
+        val canonical = mediaItemContentUri(address)
         if (canonical != uri) return ExactItemQuery.IdentityMismatch
         val owner = expectedIdentity.ownerPackageName ?: return ExactItemQuery.IdentityMismatch
         return queryMediaItem(
