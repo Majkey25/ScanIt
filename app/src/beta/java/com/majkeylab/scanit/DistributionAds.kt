@@ -3,9 +3,13 @@ package com.majkeylab.scanit
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.View
+import android.view.ViewGroup
 import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -13,9 +17,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,11 +81,123 @@ internal data class BetaAdIds(
     val interstitialAdUnitId: String,
 )
 
+private const val BANNER_LOADING_HEIGHT_DP = 50
+private const val BANNER_RETAIN_MILLIS = 60_000L
+private val bannerHandler by lazy { Handler(Looper.getMainLooper()) }
+
+private class BetaBannerSlot(
+    val activity: Activity,
+    val widthDp: Int,
+    val ads: BetaAdIds,
+    val adSize: AdSize,
+    description: String,
+) {
+    val adView =
+        AdView(activity).apply {
+            contentDescription = description
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        }
+    var loaded by mutableStateOf(false)
+        private set
+    var failed by mutableStateOf(false)
+        private set
+    var users = 0
+    var release: Runnable? = null
+    private var requestStarted = false
+
+    fun updateDescription(description: String) {
+        adView.contentDescription = description
+    }
+
+    suspend fun load() {
+        if (requestStarted || loaded || failed) return
+        requestStarted = true
+        try {
+            ensureAdsReady(activity.applicationContext, ads)
+            adView.loadAd(
+                BannerAdRequest.Builder(ads.bannerAdUnitId, adSize).build(),
+                object : AdLoadCallback<BannerAd> {
+                    override fun onAdLoaded(ad: BannerAd) {
+                        bannerHandler.post { loaded = true }
+                    }
+
+                    override fun onAdFailedToLoad(adError: LoadAdError) {
+                        bannerHandler.post { failed = true }
+                    }
+                },
+            )
+        } catch (cancelled: CancellationException) {
+            requestStarted = false
+            throw cancelled
+        } catch (_: RuntimeException) {
+            failed = true
+        }
+    }
+
+    fun destroy() {
+        release?.let(bannerHandler::removeCallbacks)
+        release = null
+        adView.destroy()
+    }
+}
+
+private object BetaBannerCoordinator {
+    private var current: BetaBannerSlot? = null
+
+    fun slot(
+        activity: Activity,
+        widthDp: Int,
+        description: String,
+        ads: BetaAdIds,
+        adSize: AdSize,
+    ): BetaBannerSlot {
+        val slot =
+            current?.takeIf {
+                it.activity === activity &&
+                    it.widthDp == widthDp &&
+                    it.ads == ads &&
+                    it.adSize == adSize
+            } ?: BetaBannerSlot(activity, widthDp, ads, adSize, description).also {
+                current?.destroy()
+                current = it
+            }
+        slot.updateDescription(description)
+        return slot
+    }
+
+    fun acquire(slot: BetaBannerSlot) {
+        if (current !== slot) return
+        slot.release?.let(bannerHandler::removeCallbacks)
+        slot.release = null
+        slot.users += 1
+    }
+
+    fun release(slot: BetaBannerSlot) {
+        if (current !== slot || slot.users <= 0) return
+        slot.users -= 1
+        if (slot.users > 0) return
+        val cleanup = Runnable {
+            if (current === slot && slot.users == 0) clear(slot.activity)
+        }
+        slot.release = cleanup
+        bannerHandler.postDelayed(cleanup, BANNER_RETAIN_MILLIS)
+    }
+
+    fun clear(activity: Activity) {
+        val slot = current?.takeIf { it.activity === activity } ?: return
+        current = null
+        slot.destroy()
+    }
+}
+
 internal fun shouldShowBetaAd(
     premium: Boolean,
     entitlementVerified: Boolean,
     canRequestAds: Boolean,
 ): Boolean = !premium && entitlementVerified && canRequestAds
+
+internal fun betaAdEntitlementVerified(verified: Boolean, debuggable: Boolean): Boolean =
+    verified || debuggable
 
 internal class BetaConsentGate {
     var canRequestAds by mutableStateOf(false)
@@ -233,18 +351,56 @@ private suspend fun ensureAdsReady(
 }
 
 @Composable
+internal fun DistributionAdsWarmup() {
+    val activity = LocalActivity.current ?: return
+    val premiumState = BetaPremiumController.state
+    val debuggable = activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    val entitlementVerified =
+        betaAdEntitlementVerified(premiumState.entitlementVerified, debuggable)
+    DisposableEffect(activity) {
+        onDispose { BetaBannerCoordinator.clear(activity) }
+    }
+    LaunchedEffect(activity, premiumState.premium, entitlementVerified) {
+        if (entitlementVerified && !premiumState.premium) {
+            BetaConsentCoordinator.ensureRequested(activity)
+        }
+        if (premiumState.premium) BetaBannerCoordinator.clear(activity)
+    }
+    val canRequestAds = BetaConsentCoordinator.gate.canRequestAds
+    val ads =
+        remember(activity) {
+            BetaDistributionConfig.adsForDebuggable(
+                debuggable,
+            )
+        }
+    LaunchedEffect(
+        activity,
+        premiumState.premium,
+        entitlementVerified,
+        canRequestAds,
+    ) {
+        if (
+            shouldShowBetaAd(
+                premium = premiumState.premium,
+                entitlementVerified = entitlementVerified,
+                canRequestAds = canRequestAds,
+            )
+        ) {
+            ensureAdsReady(activity.applicationContext, ads)
+        }
+    }
+}
+
+@Composable
 internal fun DistributionBannerAd() {
     val activity = LocalActivity.current ?: return
     val premiumState = BetaPremiumController.state
-    LaunchedEffect(activity, premiumState.premium, premiumState.entitlementVerified) {
-        if (premiumState.entitlementVerified && !premiumState.premium) {
-            BetaConsentCoordinator.ensureRequested(activity)
-        }
-    }
+    val debuggable = activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     if (
         !shouldShowBetaAd(
             premium = premiumState.premium,
-            entitlementVerified = premiumState.entitlementVerified,
+            entitlementVerified =
+                betaAdEntitlementVerified(premiumState.entitlementVerified, debuggable),
             canRequestAds = BetaConsentCoordinator.gate.canRequestAds,
         )
     ) return
@@ -252,7 +408,7 @@ internal fun DistributionBannerAd() {
     val ads =
         remember(activity) {
             BetaDistributionConfig.adsForDebuggable(
-                activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+                debuggable,
             )
         }
     val description = stringResource(R.string.beta_advertisement)
@@ -267,65 +423,53 @@ internal fun DistributionBannerAd() {
             remember(activity, widthDp) {
                 AdSize.getLargeAnchoredAdaptiveBannerAdSize(activity, widthDp)
             }
-        val adView =
-            remember(activity, widthDp, description) {
-                AdView(activity).apply {
-                    contentDescription = description
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                }
-            }
-        var adLoaded by remember(adView) { mutableStateOf(false) }
-        var adFailed by remember(adView) { mutableStateOf(false) }
-
-        LaunchedEffect(adView, adSize) {
-            try {
-                ensureAdsReady(activity.applicationContext, ads)
-                adView.loadAd(
-                    BannerAdRequest.Builder(ads.bannerAdUnitId, adSize).build(),
-                    object : AdLoadCallback<BannerAd> {
-                        override fun onAdLoaded(ad: BannerAd) {
-                            adLoaded = true
-                        }
-
-                        override fun onAdFailedToLoad(adError: LoadAdError) {
-                            adFailed = true
-                        }
-                    },
+        val slot =
+            remember(activity, widthDp, description, ads, adSize) {
+                BetaBannerCoordinator.slot(
+                    activity = activity,
+                    widthDp = widthDp,
+                    description = description,
+                    ads = ads,
+                    adSize = adSize,
                 )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: RuntimeException) {
-                adFailed = true
             }
-        }
+        val adLoaded = slot.loaded
+        val adFailed = slot.failed
+        val height by
+            animateDpAsState(
+                targetValue = if (adLoaded) adSize.height.dp else BANNER_LOADING_HEIGHT_DP.dp,
+                label = "banner height",
+            )
 
-        DisposableEffect(adView) {
-            onDispose { adView.destroy() }
+        LaunchedEffect(slot) { slot.load() }
+
+        DisposableEffect(slot) {
+            BetaBannerCoordinator.acquire(slot)
+            onDispose { BetaBannerCoordinator.release(slot) }
         }
 
         if (!adFailed) {
-            val height = adSize.height.dp
-            if (adLoaded) {
-                Surface(color = MaterialTheme.colorScheme.surface) {
-                    Column {
-                        HorizontalDivider()
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Column {
+                    HorizontalDivider()
+                    if (adLoaded) {
                         AndroidView(
-                            factory = { adView },
+                            factory = {
+                                (slot.adView.parent as? ViewGroup)?.removeView(slot.adView)
+                                slot.adView
+                            },
                             modifier = Modifier.fillMaxWidth().height(height),
                         )
-                    }
-                }
-            } else {
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(height),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(height),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
                     }
                 }
             }
@@ -342,11 +486,15 @@ internal fun showDistributionInterstitial(
     trigger: DistributionInterstitialTrigger,
     onComplete: () -> Unit,
 ) {
+    val debuggable = activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     if (
         activity.isFinishing ||
         activity.isDestroyed ||
         BetaPremiumController.state.premium ||
-        !BetaPremiumController.state.entitlementVerified ||
+        !betaAdEntitlementVerified(
+            BetaPremiumController.state.entitlementVerified,
+            debuggable,
+        ) ||
         !BetaConsentCoordinator.gate.canRequestAds
     ) {
         onComplete()
@@ -360,7 +508,7 @@ internal fun showDistributionInterstitial(
     BetaAdRuntime.consume(trigger)
     val ads =
         BetaDistributionConfig.adsForDebuggable(
-            activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+            debuggable,
         )
     val ad = InterstitialAdPreloader.pollAd(ads.interstitialAdUnitId)
     if (ad == null) {

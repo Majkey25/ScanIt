@@ -14,6 +14,8 @@ internal const val MAX_SCAN_PAGES = 20
 internal const val MIN_IMAGE_EXPORT_DIMENSION = 320
 internal const val MAX_IMAGE_EXPORT_DIMENSION = 6000
 internal const val MAX_IMAGE_EXPORT_PIXELS = 12_000_000L
+internal const val MAX_ORIGINAL_IMAGE_DIMENSION = 20_000
+internal const val MAX_ORIGINAL_IMAGE_PIXELS = 220_000_000L
 internal const val MAX_OUTPUT_BASE_NAME_LENGTH = 96
 private val STORAGE_VOLUME_NAME = Regex("[A-Za-z0-9_-]+")
 private val SUPPORTED_OUTPUT_EXTENSIONS = listOf(".jpeg", ".jpg", ".png", ".pdf")
@@ -47,6 +49,24 @@ internal data class ResolvedImageExport(
     val maxPixels: Long
         get() = MAX_IMAGE_EXPORT_PIXELS
 }
+
+internal fun validOriginalImageDimensions(width: Int, height: Int): Boolean =
+    width in 1..MAX_ORIGINAL_IMAGE_DIMENSION &&
+        height in 1..MAX_ORIGINAL_IMAGE_DIMENSION &&
+        width.toLong() * height <= MAX_ORIGINAL_IMAGE_PIXELS
+
+internal fun validSavedImageDimensions(
+    width: Int,
+    height: Int,
+    sizePreset: ImageSizePreset?,
+): Boolean =
+    if (sizePreset == ImageSizePreset.Original) {
+        validOriginalImageDimensions(width, height)
+    } else {
+        width in 1..MAX_IMAGE_EXPORT_DIMENSION &&
+            height in 1..MAX_IMAGE_EXPORT_DIMENSION &&
+            width.toLong() * height <= MAX_IMAGE_EXPORT_PIXELS
+    }
 
 internal sealed interface OutputChangeKind {
     data class PdfSize(val target: PdfSizeTarget) : OutputChangeKind
@@ -936,11 +956,7 @@ internal fun exactImageDimensions(
         }
     return dimensions?.takeIf { values ->
         values.size == pageCount &&
-            values.all { (width, height) ->
-                width > 0 &&
-                    height > 0 &&
-                    width.toLong() * height <= MAX_IMAGE_EXPORT_PIXELS
-            }
+            values.all { (width, height) -> validOriginalImageDimensions(width, height) }
     }
 }
 
@@ -1238,9 +1254,13 @@ internal fun redactionStrokePoints(
 internal data class RedactionStroke(
     val points: List<MarkPoint>,
     val widthFraction: Float,
+    val tool: RedactionTool = RedactionTool.Brush,
 ) {
     init {
         require(points.isNotEmpty()) { "Redaction stroke must contain a point" }
+        require(tool != RedactionTool.Line || points.size <= 2) {
+            "Straight redaction must contain only its endpoints"
+        }
         require(
             widthFraction.isFinite() &&
                 widthFraction in

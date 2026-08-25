@@ -596,6 +596,31 @@ class OutputMetadataTest {
     }
 
     @Test
+    fun v3AcceptsHighResolutionOriginalButNotHighResolutionRenderedExport() {
+        val highResolution =
+            exactImage(1, "content://media/external/images/current").copy(
+                width = 5092,
+                height = 7146,
+            )
+        val metadata =
+            OutputMetadata(
+                entryId = entryId,
+                cacheId = cacheId,
+                createdAtEpochMs = 1L,
+                images = listOf(highResolution.copy(sizePreset = ImageSizePreset.Original)),
+                version = 3,
+            )
+
+        assertEquals(metadata, decodeOutputMetadata(encodeOutputMetadata(metadata, 1), cacheId, 1))
+        assertThrows(IllegalArgumentException::class.java) {
+            encodeOutputMetadata(
+                metadata.copy(images = listOf(highResolution.copy(sizePreset = ImageSizePreset.High))),
+                1,
+            )
+        }
+    }
+
+    @Test
     fun v3EncodingRetainsTheStrict64KiBBound() {
         val metadata =
             OutputMetadata(

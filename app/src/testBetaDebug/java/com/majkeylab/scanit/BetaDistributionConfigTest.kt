@@ -212,4 +212,11 @@ class BetaDistributionConfigTest {
             ),
         )
     }
+
+    @Test
+    fun debuggableQaBuildCanUseDemoAdsWithoutPlayBilling() {
+        assertTrue(betaAdEntitlementVerified(verified = false, debuggable = true))
+        assertFalse(betaAdEntitlementVerified(verified = false, debuggable = false))
+        assertTrue(betaAdEntitlementVerified(verified = true, debuggable = false))
+    }
 }

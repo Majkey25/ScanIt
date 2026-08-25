@@ -4470,8 +4470,7 @@ internal class ScanStorage(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         input.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (
-            bounds.outWidth <= 0 || bounds.outHeight <= 0 ||
-                bounds.outWidth.toLong() * bounds.outHeight > MAX_IMAGE_EXPORT_PIXELS
+            !validOriginalImageDimensions(bounds.outWidth, bounds.outHeight)
         ) {
             throw IOException("Saved image dimensions are invalid")
         }

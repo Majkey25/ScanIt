@@ -2,6 +2,27 @@
 
 All notable changes are documented here.
 
+## [1.6.0-vip-ads.9] - 2026-08-25
+
+### Fixed
+
+- Saved high-resolution original scanner JPEGs to Gallery on Android 10 devices instead of rejecting them with the 12 MP rendered-export limit.
+- Displayed the real resolution of saved high-resolution originals in File details.
+- Rendered Straight line redactions with square ends in both the editor preview and the permanent flattened image; Brush keeps round ends.
+- Applied a successful Google Play purchase callback immediately, closed the paywall, and returned to the still-open unlocked Document Actions.
+
+### Ads
+
+- Initialized GMA after consent before the first banner placement needs it.
+- Reused the loaded anchored adaptive banner for 60 seconds across Result, Recent scans, and Settings instead of requesting a new banner during quick navigation.
+- Replaced the large empty loading surface with a compact 50 dp progress slot; failed loads collapse completely.
+- Kept the Google-optimized large anchored adaptive size after verifying that larger eligible inventory can help performance but does not guarantee higher revenue by itself.
+
+### Changed
+
+- Replaced the Line / Brush chips with a Material 3 segmented control and rounded the redaction canvas surface.
+- Prepared version code 35 for Closed testing and the matching GitHub prerelease.
+
 ## [1.6.0-vip-ads.8] - 2026-08-25
 
 ### Fixed

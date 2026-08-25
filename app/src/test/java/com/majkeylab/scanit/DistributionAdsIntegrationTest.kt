@@ -64,9 +64,13 @@ class DistributionAdsIntegrationTest {
         assertTrue(settingsScreen.contains("bottomBar = { DistributionBannerAd() }"))
         assertFalse(recentScreen.contains("inline = true"))
         assertTrue(betaAds.contains("getLargeAnchoredAdaptiveBannerAdSize"))
+        assertTrue(appUi.contains("DistributionAdsWarmup()"))
         assertTrue(betaAds.contains("if (adLoaded)"))
         assertFalse(betaAds.contains("if (slotVisible)"))
-        assertTrue(betaAds.contains("Surface(color = MaterialTheme.colorScheme.surfaceVariant)"))
+        assertTrue(betaAds.contains("BANNER_LOADING_HEIGHT_DP.dp"))
+        assertTrue(betaAds.contains("BetaBannerCoordinator.acquire"))
+        assertFalse(betaAds.contains("onDispose { adView.destroy() }"))
+        assertFalse(betaAds.contains("Surface(color = MaterialTheme.colorScheme.surfaceVariant)"))
         assertTrue(betaAds.contains("next.takeIf { it % 3 == 0 }"))
         assertFalse(betaAds.contains("next.takeIf { it % 5 == 0 }"))
     }
@@ -83,5 +87,34 @@ class DistributionAdsIntegrationTest {
 
         assertTrue(settingsScreen.contains("R.string.support_scanit_no_benefits"))
         assertTrue(premiumUi.contains("Color(0xFFFFDD00)"))
+    }
+
+    @Test
+    fun successfulPurchaseCallbackAppliesEntitlementBeforePlayRefresh() {
+        val callback =
+            File(repository, "app/src/beta/java/com/majkeylab/scanit/BetaPremium.kt")
+                .readText()
+                .substringAfter("override fun onPurchasesUpdated")
+                .substringBefore("private fun startConnection")
+
+        assertTrue(callback.contains("processPurchases(updatedPurchases)"))
+        assertTrue(
+            callback.indexOf("processPurchases(updatedPurchases)") <
+                callback.indexOf("queryPurchases(client)"),
+        )
+    }
+
+    @Test
+    fun successfulPurchaseReturnsToTheStillOpenUnlockedActions() {
+        val appUi = File(repository, "app/src/main/java/com/majkeylab/scanit/AppUi.kt").readText()
+        val premiumUi =
+            File(repository, "app/src/beta/java/com/majkeylab/scanit/DistributionPremiumUi.kt")
+                .readText()
+        val premiumRequired =
+            appUi.substringAfter("onPremiumRequired = {").substringBefore("},")
+
+        assertTrue(premiumRequired.contains("showPremiumPaywall = true"))
+        assertFalse(premiumRequired.contains("showDocumentActions = false"))
+        assertTrue(premiumUi.contains("LaunchedEffect(state.premium)"))
     }
 }

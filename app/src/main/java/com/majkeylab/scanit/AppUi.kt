@@ -303,6 +303,7 @@ internal fun ScanItApp(
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
     ) {
+        DistributionAdsWarmup()
         if (state is ScreenState.Result && state.safeShareState != null) {
             SafeShareScreen(
                 result = state,
@@ -823,7 +824,6 @@ private fun ResultScreen(
             premium = premiumState.premium,
             onDismiss = { showDocumentActions = false },
             onPremiumRequired = {
-                showDocumentActions = false
                 showPremiumPaywall = true
             },
             onSafeShare = {

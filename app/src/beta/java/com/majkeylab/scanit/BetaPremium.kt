@@ -139,11 +139,13 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
     override fun onPurchasesUpdated(result: BillingResult, purchases: List<Purchase>?) {
         when (result.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
+                val updatedPurchases = purchases.orEmpty()
+                if (updatedPurchases.isNotEmpty()) processPurchases(updatedPurchases)
                 val client = billingClient
                 if (client != null && client.isReady) {
                     queryPurchases(client)
-                } else {
-                    processPurchases(purchases.orEmpty())
+                } else if (updatedPurchases.isEmpty()) {
+                    updateState { it.copy(checking = false, error = true) }
                 }
             }
             BillingClient.BillingResponseCode.USER_CANCELED -> Unit

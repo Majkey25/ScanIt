@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -28,6 +29,9 @@ internal fun rememberDistributionPremiumState(): DistributionPremiumState =
 internal fun DistributionPremiumPaywall(onDismiss: () -> Unit) {
     val activity = LocalActivity.current
     val state = rememberDistributionPremiumState()
+    LaunchedEffect(state.premium) {
+        if (state.premium) onDismiss()
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.beta_premium_title)) },
