@@ -6,9 +6,9 @@ import android.content.pm.ApplicationInfo
 import android.os.SystemClock
 import android.view.View
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -166,7 +166,7 @@ private object BetaAdRuntime {
         val next = if (current == Int.MAX_VALUE) 1 else current + 1
         preferences.edit().putInt(COMPLETED_SCANS_KEY, next).apply()
         scanCompletedThisSession = true
-        shareDueScan = next.takeIf { it % 5 == 0 }
+        shareDueScan = next.takeIf { it % 3 == 0 }
     }
 
     fun shouldShow(
@@ -233,7 +233,7 @@ private suspend fun ensureAdsReady(
 }
 
 @Composable
-internal fun DistributionBannerAd(inline: Boolean = false) {
+internal fun DistributionBannerAd() {
     val activity = LocalActivity.current ?: return
     val premiumState = BetaPremiumController.state
     LaunchedEffect(activity, premiumState.premium, premiumState.entitlementVerified) {
@@ -259,33 +259,23 @@ internal fun DistributionBannerAd(inline: Boolean = false) {
     BoxWithConstraints(
         modifier =
             Modifier.fillMaxWidth()
-                .then(
-                    if (inline) {
-                        Modifier
-                    } else {
-                        Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-                    },
-                ),
+                .windowInsetsPadding(WindowInsets.navigationBars),
         contentAlignment = Alignment.Center,
     ) {
         val widthDp = maxWidth.value.toInt().coerceAtLeast(1)
         val adSize =
-            remember(activity, inline, widthDp) {
-                if (inline) {
-                    AdSize.getInlineAdaptiveBannerAdSize(widthDp, 120)
-                } else {
-                    AdSize.getLargeAnchoredAdaptiveBannerAdSize(activity, widthDp)
-                }
+            remember(activity, widthDp) {
+                AdSize.getLargeAnchoredAdaptiveBannerAdSize(activity, widthDp)
             }
         val adView =
-            remember(activity, inline, widthDp, description) {
+            remember(activity, widthDp, description) {
                 AdView(activity).apply {
                     contentDescription = description
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
                 }
             }
-        var slotVisible by remember(adView) { mutableStateOf(true) }
         var adLoaded by remember(adView) { mutableStateOf(false) }
+        var adFailed by remember(adView) { mutableStateOf(false) }
 
         LaunchedEffect(adView, adSize) {
             try {
@@ -298,14 +288,14 @@ internal fun DistributionBannerAd(inline: Boolean = false) {
                         }
 
                         override fun onAdFailedToLoad(adError: LoadAdError) {
-                            slotVisible = false
+                            adFailed = true
                         }
                     },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: RuntimeException) {
-                slotVisible = false
+                adFailed = true
             }
         }
 
@@ -313,19 +303,29 @@ internal fun DistributionBannerAd(inline: Boolean = false) {
             onDispose { adView.destroy() }
         }
 
-        if (slotVisible) {
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Column {
-                    HorizontalDivider()
-                    val height =
-                        if (inline) adSize.height.coerceIn(50, 120).dp else adSize.height.dp
-                    if (adLoaded) {
+        if (!adFailed) {
+            val height = adSize.height.dp
+            if (adLoaded) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    Column {
+                        HorizontalDivider()
                         AndroidView(
                             factory = { adView },
                             modifier = Modifier.fillMaxWidth().height(height),
                         )
-                    } else {
-                        Spacer(Modifier.fillMaxWidth().height(height))
+                    }
+                }
+            } else {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(height),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

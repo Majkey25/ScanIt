@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
@@ -44,8 +45,8 @@ internal fun DistributionPremiumSettings() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = Color(0xFFFFDD00),
+        border = BorderStroke(1.dp, Color(0xFF111111)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -54,8 +55,9 @@ internal fun DistributionPremiumSettings() {
             Text(
                 stringResource(R.string.beta_premium_title),
                 style = MaterialTheme.typography.titleLarge,
+                color = Color(0xFF111111),
             )
-            PremiumContent(state, activity)
+            PremiumContent(state, activity, Color(0xFF111111))
         }
     }
 }
@@ -64,6 +66,7 @@ internal fun DistributionPremiumSettings() {
 private fun PremiumContent(
     state: DistributionPremiumState,
     activity: Activity?,
+    textColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
@@ -74,12 +77,12 @@ private fun PremiumContent(
                     R.string.beta_premium_body
                 },
             ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
         )
         Text(
             stringResource(R.string.beta_premium_account),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = textColor,
         )
         if (!state.premium && activity != null) {
             Button(
@@ -98,7 +101,7 @@ private fun PremiumContent(
             Text(
                 stringResource(R.string.beta_premium_monthly_notice),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = textColor,
             )
             Button(
                 onClick = {
@@ -123,7 +126,7 @@ private fun PremiumContent(
         }
         when {
             state.checking -> CircularProgressIndicator()
-            state.pending -> Text(stringResource(R.string.beta_premium_pending))
+            state.pending -> Text(stringResource(R.string.beta_premium_pending), color = textColor)
             !state.premium &&
                 state.error &&
                 !state.monthlyPurchaseAvailable &&
@@ -135,7 +138,7 @@ private fun PremiumContent(
             !state.premium &&
                 !state.monthlyPurchaseAvailable &&
                 !state.lifetimePurchaseAvailable ->
-                Text(stringResource(R.string.beta_premium_unavailable))
+                Text(stringResource(R.string.beta_premium_unavailable), color = textColor)
         }
     }
 }

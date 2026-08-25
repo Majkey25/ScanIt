@@ -17,7 +17,7 @@ submitted declarations:
 
 | Field | Value |
 |---|---|
-| App name | `SeliaScan: PDF Scanner` |
+| App name | `SeliaScan` |
 | Package | `com.majkeylab.scanit` |
 | Version code | `26` |
 | Version name | `1.5.0` |
@@ -30,10 +30,10 @@ submitted declarations:
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
 | Ads | No |
 
-## Internal testing Premium setup
+## Closed testing Premium setup
 
-Version code 31 (`1.6.0-vip-ads.5`) is for Internal testing only. It must not
-replace the production, closed-testing, or open-testing releases.
+Version code 32 (`1.6.0-vip-ads.6`) is the ads and Premium candidate for Closed
+testing. It must not replace the production or open-testing releases.
 
 | Product | Type | Price | Benefit |
 |---|---|---:|---|
@@ -41,7 +41,7 @@ replace the production, closed-testing, or open-testing releases.
 | `seliascan_premium` | One-time buy option | 299 CZK | Remove ads and unlock all Document Actions forever |
 
 Neither product uses a trial, introductory offer, discount, or prepaid plan.
-Only license testers may use test payment methods. Regular Internal testers can
+Only license testers may use test payment methods. Regular Closed testers can
 be charged real money.
 
 Do not invent a legal developer name, address, phone number, organization, or
@@ -52,7 +52,7 @@ the Play developer account.
 
 ### App name
 
-> SeliaScan: PDF Scanner
+> SeliaScan
 
 ### Short description
 
@@ -102,7 +102,7 @@ the Play developer account.
 
 ### App name
 
-> SeliaScan: PDF Scanner
+> SeliaScan
 
 ### Short description
 

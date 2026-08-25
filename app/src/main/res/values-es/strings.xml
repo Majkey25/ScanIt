@@ -136,6 +136,7 @@
     <string name="collapse_app_info">Ocultar información de la aplicación</string>
     <string name="support_scanit">Apoya esta aplicación → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Gracias por apoyar esta aplicación. Se abrirá Buy Me a Coffee.</string>
+    <string name="support_scanit_no_benefits">Buy Me a Coffee es una donación. No desbloquea funciones ni elimina anuncios. Para eso está SeliaScan Premium.</string>
     <string name="settings_save_failed">No se pudieron guardar los ajustes.</string>
     <string name="apply_appearance">Aplicar</string>
     <string name="pdf_size">Tamaño del PDF</string>

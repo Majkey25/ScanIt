@@ -3151,6 +3151,9 @@ private fun RecentScreen(
         titleRes = R.string.recent_scans,
         onScan = onNewScan,
         actionsEnabled = !state.deletionInProgress,
+        bottomBar = {
+            if (shouldShowRecentBanner(state.scans.size)) DistributionBannerAd()
+        },
     ) { modifier ->
         LazyColumn(
             modifier = modifier.padding(horizontal = 16.dp),
@@ -3210,9 +3213,6 @@ private fun RecentScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            if (shouldShowRecentBanner(state.scans.size)) {
-                item { DistributionBannerAd(inline = true) }
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
@@ -3412,6 +3412,7 @@ private fun MainScaffold(
     titleRes: Int = R.string.app_name,
     onScan: (() -> Unit)? = null,
     actionsEnabled: Boolean = true,
+    bottomBar: @Composable () -> Unit = {},
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
@@ -3425,6 +3426,7 @@ private fun MainScaffold(
                 actionsEnabled = actionsEnabled,
             )
         },
+        bottomBar = bottomBar,
     ) { padding -> content(Modifier.fillMaxSize().padding(padding)) }
 }
 
@@ -3711,6 +3713,7 @@ private fun SettingsScreen(
         topBar = {
             CompactTopBar(title = stringResource(R.string.settings), onBack = onClose)
         },
+        bottomBar = { DistributionBannerAd() },
     ) { padding ->
         LazyColumn(
             modifier =
@@ -4018,8 +4021,16 @@ private fun SettingsScreen(
                     }
                 }
             }
+            item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item { DistributionPremiumSettings() }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
+            item {
+                Text(
+                    stringResource(R.string.support_scanit_no_benefits),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
                 Button(

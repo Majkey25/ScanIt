@@ -23,7 +23,7 @@ internal fun isShareInterstitialDue(
     lastShownMillis: Long?,
 ): Boolean =
     completedScans > 0 &&
-        completedScans % 5 == 0 &&
+        completedScans % 3 == 0 &&
         dueScan == completedScans &&
         isInterstitialCooldownElapsed(nowMillis, lastShownMillis)
 

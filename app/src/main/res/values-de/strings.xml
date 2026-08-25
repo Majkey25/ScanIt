@@ -135,6 +135,7 @@
     <string name="collapse_app_info">App-Informationen ausblenden</string>
     <string name="support_scanit">Diese App unterstützen → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Danke für deine Unterstützung dieser App. Buy Me a Coffee wird geöffnet.</string>
+    <string name="support_scanit_no_benefits">Buy Me a Coffee ist eine freiwillige Unterstützung. Dadurch werden keine Funktionen freigeschaltet und keine Anzeigen entfernt. Dafür ist SeliaScan Premium vorgesehen.</string>
     <string name="settings_save_failed">Einstellungen konnten nicht gespeichert werden.</string>
     <string name="apply_appearance">Anwenden</string>
     <string name="pdf_size">PDF-Größe</string>

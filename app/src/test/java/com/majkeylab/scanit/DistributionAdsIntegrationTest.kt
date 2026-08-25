@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,5 +32,42 @@ class DistributionAdsIntegrationTest {
         assertTrue(text.contains("android.permission.INTERNET"))
         assertTrue(text.contains("com.google.android.gms.ads.APPLICATION_ID"))
         assertTrue(text.contains("@string/beta_app_name"))
+    }
+
+    @Test
+    fun bannersStayAnchoredAndHideTheEmptyAdSurface() {
+        val appUi = File(repository, "app/src/main/java/com/majkeylab/scanit/AppUi.kt").readText()
+        val betaAds = File(repository, "app/src/beta/java/com/majkeylab/scanit/DistributionAds.kt").readText()
+        val recentScreen =
+            appUi.substringAfter("private fun RecentScreen(")
+                .substringBefore("private fun RecentScanRow(")
+        val settingsScreen =
+            appUi.substringAfter("private fun SettingsScreen(")
+                .substringBefore("private fun SettingsCategoryHeader(")
+
+        assertTrue(recentScreen.contains("bottomBar = {"))
+        assertTrue(recentScreen.contains("DistributionBannerAd()"))
+        assertTrue(settingsScreen.contains("bottomBar = { DistributionBannerAd() }"))
+        assertFalse(recentScreen.contains("inline = true"))
+        assertTrue(betaAds.contains("getLargeAnchoredAdaptiveBannerAdSize"))
+        assertTrue(betaAds.contains("if (adLoaded)"))
+        assertFalse(betaAds.contains("if (slotVisible)"))
+        assertTrue(betaAds.contains("Surface(color = MaterialTheme.colorScheme.surfaceVariant)"))
+        assertTrue(betaAds.contains("next.takeIf { it % 3 == 0 }"))
+        assertFalse(betaAds.contains("next.takeIf { it % 5 == 0 }"))
+    }
+
+    @Test
+    fun premiumAndSupportAreClearlySeparated() {
+        val appUi = File(repository, "app/src/main/java/com/majkeylab/scanit/AppUi.kt").readText()
+        val premiumUi =
+            File(repository, "app/src/beta/java/com/majkeylab/scanit/DistributionPremiumUi.kt")
+                .readText()
+        val settingsScreen =
+            appUi.substringAfter("private fun SettingsScreen(")
+                .substringBefore("private fun SettingsCategoryHeader(")
+
+        assertTrue(settingsScreen.contains("R.string.support_scanit_no_benefits"))
+        assertTrue(premiumUi.contains("Color(0xFFFFDD00)"))
     }
 }

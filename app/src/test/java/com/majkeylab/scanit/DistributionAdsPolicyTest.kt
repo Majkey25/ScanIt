@@ -12,12 +12,12 @@ class DistributionAdsPolicyTest {
     }
 
     @Test
-    fun shareInterstitialIsDueOnceOnEveryFifthScan() {
-        assertFalse(isShareInterstitialDue(4, null, 300_000, null))
-        assertTrue(isShareInterstitialDue(5, 5, 300_000, null))
-        assertFalse(isShareInterstitialDue(5, null, 300_000, null))
-        assertFalse(isShareInterstitialDue(6, 5, 300_000, null))
-        assertTrue(isShareInterstitialDue(10, 10, 300_000, null))
+    fun shareInterstitialIsDueOnceOnEveryThirdScan() {
+        assertFalse(isShareInterstitialDue(2, null, 300_000, null))
+        assertTrue(isShareInterstitialDue(3, 3, 300_000, null))
+        assertFalse(isShareInterstitialDue(3, null, 300_000, null))
+        assertFalse(isShareInterstitialDue(4, 3, 300_000, null))
+        assertTrue(isShareInterstitialDue(6, 6, 300_000, null))
     }
 
     @Test

@@ -137,6 +137,7 @@
     <string name="collapse_app_info">Skrýt informace o aplikaci</string>
     <string name="support_scanit">Podpořit tuto aplikaci → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Děkujeme za podporu této aplikace. Otevírá se Buy Me a Coffee.</string>
+    <string name="support_scanit_no_benefits">Buy Me a Coffee je dobrovolná podpora. Neodemkne funkce ani neodstraní reklamy. K tomu slouží SeliaScan Premium.</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
     <string name="apply_appearance">Použít</string>
     <string name="pdf_size">Velikost PDF</string>
