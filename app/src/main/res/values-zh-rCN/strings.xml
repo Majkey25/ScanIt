@@ -134,7 +134,6 @@
     <string name="collapse_app_info">隐藏应用信息</string>
     <string name="support_scanit">支持此应用 → Buy Me a Coffee</string>
     <string name="support_scanit_notice">感谢支持此应用。即将打开 Buy Me a Coffee。</string>
-    <string name="support_scanit_no_benefits">Buy Me a Coffee 属于自愿捐赠，不会解锁功能或移除广告。如需这些权益，请选择 SeliaScan Premium。</string>
     <string name="settings_save_failed">无法保存设置。</string>
     <string name="apply_appearance">应用</string>
     <string name="pdf_size">PDF 大小</string>
@@ -359,5 +358,4 @@
     <string name="safe_share_move_down">向下移动</string>
     <string name="safe_share_grow">扩大区域</string>
     <string name="safe_share_shrink">缩小区域</string>
-    <string name="premium_action_locked">Premium 功能</string>
 </resources>

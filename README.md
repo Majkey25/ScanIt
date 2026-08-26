@@ -15,10 +15,10 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.5.0 update
+## v1.6.0 update
 
 Manual redaction now defaults to a professional straight-line tool and keeps the
 freehand brush as an option. Both share adjustable thickness, undo, redo, clear,
@@ -72,7 +72,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download ScanIt v1.5.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.5.0)
+[Download SeliaScan v1.6.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -134,25 +134,12 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-The currently published v1.5.0 stable binary requires Android 13; Android 10
-support starts with the VIP Ads prerelease and the next stable release.
-
-The optional
-[ScanIt VIP Ads prerelease](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0-vip-ads.3)
-uses the Play-compatible package and replaces the installed Play-compatible app. It
-contains ads after a completed scan and a prepared Google Play Premium flow. If
-you do not want ads, install the stable version. LOL.
+SeliaScan v1.6.0 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
-their first use. Stable SeliaScan declares no app-owned Internet permission; the
-VIP Ads beta uses Internet access for Google ads, consent, and Play Billing.
-Premium purchase in the existing `.3` prerelease remains unavailable until its
-matching Google Play product is active.
-
-The current `.5` source prepares an Internal-testing-only choice between a
-49 CZK monthly subscription (`seliascan_premium_monthly`) and a 299 CZK
-lifetime purchase (`seliascan_premium`). Both remove ads and unlock all
-Document Actions. Neither product is available to production users yet.
+their first use. This repository builds only the full no-ads GitHub edition and
+declares no app-owned Internet permission. The separately maintained Google Play
+edition is not built from this checkout.
 
 Requirements for the current public code:
 
@@ -201,15 +188,13 @@ JDK 17 and Android SDK 36 are required.
 
 ```powershell
 .\gradlew.bat :app:testInternalDebugUnitTest :app:lintInternalDebug :app:assembleInternalDebug
-.\gradlew.bat :app:lintGithubRelease :app:assembleGithubRelease
-.\gradlew.bat :app:lintPlayRelease :app:bundlePlayRelease
+.\gradlew.bat :app:lintGithubRelease :app:assembleGithubRelease :app:bundleGithubRelease
 ```
 
 The public distributions share the same app features:
 
 | Distribution | Application ID | Artifact |
 |---|---|---|
-| Google Play | `com.majkeylab.scanit` | AAB |
 | GitHub | `com.majkeylab.scanit.github` | APK |
 
 The separate internal debug flavor is not a public release artifact. Release

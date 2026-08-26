@@ -756,7 +756,7 @@ class PureLogicTest {
     }
 
     @Test
-    fun betaReleaseMetadataAndVerifierSupportAab() {
+    fun githubReleaseMetadataAndVerifierSupportAab() {
         val repository = File("..").canonicalFile
         val build = File(repository, "app/build.gradle.kts").readText()
         val verifier = File(repository, "tools/verify-release.ps1").readText()
@@ -765,16 +765,8 @@ class PureLogicTest {
         assertTrue(build.contains("versionName = \"1.6.0\""))
         assertTrue(verifier.contains("\$expectedVersionCode = \"36\""))
         assertTrue(verifier.contains("\$expectedVersionName = \"1.6.0\""))
-        assertTrue(build.contains("versionCode = 35"))
-        assertTrue(build.contains("versionName = \"1.6.0-vip-ads.9\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"35\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.6.0-vip-ads.9\""))
-        assertTrue(verifier.contains("\$requiredBetaPermissions = @("))
-        assertFalse(
-            verifier.contains(
-                "if (\$Flavor -eq \"beta\" -and \$artifactType -ne \"apk\")",
-            ),
-        )
+        assertFalse(build.contains("create(\"beta\")"))
+        assertFalse(build.contains("create(\"play\")"))
     }
 
     @Test

@@ -38,11 +38,6 @@ $tasks = @(
     ":app:testInternalDebugUnitTest"
     ":app:lintInternalDebug"
     ":app:assembleInternalDebug"
-    ":app:testBetaDebugUnitTest"
-    ":app:lintBetaRelease"
-    ":app:assembleBetaRelease"
-    ":app:lintPlayRelease"
-    ":app:bundlePlayRelease"
     ":app:lintGithubRelease"
     ":app:assembleGithubRelease"
     ":app:bundleGithubRelease"
@@ -69,14 +64,7 @@ try {
     } else {
         "app/build/outputs/apk/github/release/app-github-release-unsigned.apk"
     }
-    $betaApk = if (Test-Path -LiteralPath "keystore.properties" -PathType Leaf) {
-        "app/build/outputs/apk/beta/release/app-beta-release.apk"
-    } else {
-        "app/build/outputs/apk/beta/release/app-beta-release-unsigned.apk"
-    }
     & $verify internal "app/build/outputs/apk/internal/debug/app-internal-debug.apk" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath
-    & $verify beta $betaApk -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
-    & $verify play "app/build/outputs/bundle/playRelease/app-play-release.aab" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
     & $verify github $githubApk -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
     & $verify github "app/build/outputs/bundle/githubRelease/app-github-release.aab" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
 } finally {
