@@ -86,12 +86,27 @@ class DistributionAdsIntegrationTest {
         assertTrue(appUi.contains("DistributionAdsWarmup()"))
         assertTrue(betaAds.contains("if (adLoaded)"))
         assertFalse(betaAds.contains("if (slotVisible)"))
-        assertTrue(betaAds.contains("BANNER_LOADING_HEIGHT_DP.dp"))
+        assertFalse(betaAds.contains("BANNER_LOADING_HEIGHT_DP"))
+        assertFalse(betaAds.contains("CircularProgressIndicator"))
         assertTrue(betaAds.contains("BetaBannerCoordinator.acquire"))
         assertFalse(betaAds.contains("onDispose { adView.destroy() }"))
         assertFalse(betaAds.contains("Surface(color = MaterialTheme.colorScheme.surfaceVariant)"))
+        assertTrue(betaAds.contains(".disableSdkCrashReporting()"))
         assertTrue(betaAds.contains("next.takeIf { it % 3 == 0 }"))
         assertFalse(betaAds.contains("next.takeIf { it % 5 == 0 }"))
+    }
+
+    @Test
+    fun premiumProductMetadataIsReusedWithinTheProcess() {
+        val premium =
+            File(repository, "app/src/beta/java/com/majkeylab/scanit/BetaPremium.kt")
+                .readText()
+        val productQueries =
+            premium.substringAfter("private fun queryProducts")
+                .substringBefore("private fun queryProduct")
+
+        assertTrue(productQueries.contains("if (monthlyProductDetails == null)"))
+        assertTrue(productQueries.contains("if (lifetimeProductDetails == null)"))
     }
 
     @Test

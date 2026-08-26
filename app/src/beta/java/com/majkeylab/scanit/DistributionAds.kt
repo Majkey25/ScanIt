@@ -9,19 +9,15 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.compose.LocalActivity
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,7 +77,6 @@ internal data class BetaAdIds(
     val interstitialAdUnitId: String,
 )
 
-private const val BANNER_LOADING_HEIGHT_DP = 50
 private const val BANNER_RETAIN_MILLIS = 60_000L
 private val bannerHandler by lazy { Handler(Looper.getMainLooper()) }
 
@@ -338,7 +333,9 @@ private suspend fun ensureAdsReady(
         if (!MobileAds.isInitialized) {
             MobileAds.initialize(
                 context,
-                InitializationConfig.Builder(ads.appId).build(),
+                InitializationConfig.Builder(ads.appId)
+                    .disableSdkCrashReporting()
+                    .build(),
             )
         }
     }
@@ -434,12 +431,6 @@ internal fun DistributionBannerAd() {
                 )
             }
         val adLoaded = slot.loaded
-        val adFailed = slot.failed
-        val height by
-            animateDpAsState(
-                targetValue = if (adLoaded) adSize.height.dp else BANNER_LOADING_HEIGHT_DP.dp,
-                label = "banner height",
-            )
 
         LaunchedEffect(slot) { slot.load() }
 
@@ -448,29 +439,17 @@ internal fun DistributionBannerAd() {
             onDispose { BetaBannerCoordinator.release(slot) }
         }
 
-        if (!adFailed) {
+        if (adLoaded) {
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column {
                     HorizontalDivider()
-                    if (adLoaded) {
-                        AndroidView(
-                            factory = {
-                                (slot.adView.parent as? ViewGroup)?.removeView(slot.adView)
-                                slot.adView
-                            },
-                            modifier = Modifier.fillMaxWidth().height(height),
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(height),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                    }
+                    AndroidView(
+                        factory = {
+                            (slot.adView.parent as? ViewGroup)?.removeView(slot.adView)
+                            slot.adView
+                        },
+                        modifier = Modifier.fillMaxWidth().height(adSize.height.dp),
+                    )
                 }
             }
         }

@@ -177,8 +177,12 @@ internal object BetaPremiumController : PurchasesUpdatedListener {
     }
 
     private fun queryProducts(client: BillingClient) {
-        queryProduct(client, BetaPremiumPlan.Monthly, BillingClient.ProductType.SUBS)
-        queryProduct(client, BetaPremiumPlan.Lifetime, BillingClient.ProductType.INAPP)
+        if (monthlyProductDetails == null) {
+            queryProduct(client, BetaPremiumPlan.Monthly, BillingClient.ProductType.SUBS)
+        }
+        if (lifetimeProductDetails == null) {
+            queryProduct(client, BetaPremiumPlan.Lifetime, BillingClient.ProductType.INAPP)
+        }
     }
 
     private fun queryProduct(
