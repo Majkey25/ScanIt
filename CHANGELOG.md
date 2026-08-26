@@ -2,6 +2,27 @@
 
 All notable changes are documented here.
 
+## [1.6.0] - 2026-08-26
+
+### Changed
+
+- Promoted the current document workflow, Actions tools, local cleanup, OCR languages, redaction, and high-resolution scan fixes to the stable GitHub build.
+- Kept every Document Action unlocked without a Premium purchase.
+- Removed advertising, consent, Billing, paywall, lock, and monetized flavor source from the public checkout.
+- Reduced public CI to the no-ads GitHub release and its isolated internal QA build.
+
+### Security and performance
+
+- Kept Android backup disabled, sharing limited to read-only scoped content URIs, and release dependency checksums pinned.
+- Verified that the GitHub artifact has no Internet, advertising ID, Billing, broad storage, camera, account, or media permission.
+- Measured the final no-ads build at 249–301 ms cold startup, 46.9 MB PSS, and 0–3.25% janky frames during repeated warm Settings scrolling on an Android 10 Huawei device.
+
+### Distribution
+
+- The stable GitHub APK and AAB contain no Ads SDK, consent SDK, Google Play Billing, Premium UI, paywall, ad slot, interstitial, or locked Action row.
+- Versioned only the `github` flavor as `1.6.0` code 36. The no-ads build will not be uploaded to Google Play.
+- The separately maintained ads and Premium build remains a distinct Google Play/GitHub binary and is not built from this checkout.
+
 ## [1.6.0-vip-ads.9] - 2026-08-25
 
 ### Fixed

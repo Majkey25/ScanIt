@@ -3,7 +3,7 @@ name: Android CI
 on:
   push:
     branches: [main]
-    tags: ["v*-vip-ads.*"]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -48,11 +48,7 @@ jobs:
           retention-days: 14
           path: |
             app/build/outputs/apk/internal/debug/app-internal-debug.apk
-            app/build/outputs/apk/beta/release/app-beta-release-unsigned.apk
             app/build/outputs/apk/github/release/app-github-release-unsigned.apk
-            app/build/outputs/bundle/playRelease/app-play-release.aab
             app/build/outputs/bundle/githubRelease/app-github-release.aab
             app/build/reports/lint-results-internalDebug.html
-            app/build/reports/lint-results-betaRelease.html
-            app/build/reports/lint-results-playRelease.html
             app/build/reports/lint-results-githubRelease.html

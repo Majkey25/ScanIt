@@ -135,7 +135,6 @@
     <string name="collapse_app_info">Hide app info</string>
     <string name="support_scanit">Support this app → Buy Me a Coffee</string>
     <string name="support_scanit_notice">Thank you for supporting this app. This opens Buy Me a Coffee.</string>
-    <string name="support_scanit_no_benefits">Buy Me a Coffee is a donation. It does not unlock features or remove ads. Choose SeliaScan Premium for that.</string>
     <string name="settings_save_failed">Could not save settings.</string>
     <string name="apply_appearance">Apply</string>
     <string name="pdf_size">PDF size</string>
@@ -362,5 +361,4 @@
     <string name="safe_share_move_down">Move down</string>
     <string name="safe_share_grow">Grow area</string>
     <string name="safe_share_shrink">Shrink area</string>
-    <string name="premium_action_locked">Premium feature</string>
 </resources>

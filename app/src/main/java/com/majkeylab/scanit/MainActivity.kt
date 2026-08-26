@@ -352,7 +352,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onResume() {
         super.onResume()
-        refreshDistributionPremium(this)
         viewModel.refreshAfterShareCleanup()
     }
 
@@ -721,7 +720,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
                 return
             }
-            recordDistributionDocumentScan(this)
             viewModel.processScan(pages.map { it.imageUri })
         } catch (_: RuntimeException) {
             viewModel.scannerResultFailed(UiMessage(R.string.scanner_result_error))
