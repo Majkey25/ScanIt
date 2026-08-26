@@ -2,6 +2,19 @@
 
 All notable changes are documented here.
 
+## [1.6.0] - 2026-08-26
+
+### Changed
+
+- Promoted the current document workflow, Actions tools, local cleanup, OCR languages, redaction, and high-resolution scan fixes to the stable GitHub build.
+- Kept every Document Action unlocked without a Premium purchase.
+
+### Distribution
+
+- The stable GitHub APK and AAB contain no Ads SDK, consent SDK, Google Play Billing, Premium UI, paywall, ad slot, interstitial, or locked Action row.
+- Versioned only the `github` flavor as `1.6.0` code 36. The no-ads build will not be uploaded to Google Play.
+- Kept the ads and Premium build at `1.6.0-vip-ads.9` code 35 for Google Play and the existing GitHub prerelease.
+
 ## [1.6.0-vip-ads.9] - 2026-08-25
 
 ### Fixed

@@ -28,12 +28,13 @@ submitted declarations:
 | Contact email | `majkeylab@gmail.com` |
 | Website | `https://majkey25.github.io/ScanIt/` |
 | Privacy Policy | `https://majkey25.github.io/ScanIt/privacy.html` |
-| Ads | No in stable `playRelease`; yes in the version 35 Closed beta |
+| Ads | Yes in Google Play version 35; no in the separate GitHub stable build |
 
 ## Closed testing Premium setup
 
-Version code 35 (`1.6.0-vip-ads.9`) is the ads and Premium candidate for Closed
-testing. It must not replace the production or open-testing releases.
+Version code 35 (`1.6.0-vip-ads.9`) is the ads and Premium candidate for the
+public Google Play release. The separate GitHub stable build is version `1.6.0`
+code 36 and must not be uploaded to a Google Play track.
 
 | Product | Type | Price | Benefit |
 |---|---|---:|---|
@@ -200,7 +201,7 @@ Reviewer note:
 
 ### Ads
 
-- Does the app contain ads? **Yes for the version 35 Closed beta; no for stable `playRelease`.**
+- Does the app contain ads? **Yes for Google Play version 35; the separate GitHub stable build has no ads.**
 - Advertising SDK present? **Yes in the Closed beta: GMA Next-Gen SDK and UMP.**
 - Donation or payment prompt in the app or Play listing? **Yes: Settings contains optional monthly and lifetime Premium purchases plus an external Buy Me a Coffee donation link. The donation does not unlock features or remove ads.**
 

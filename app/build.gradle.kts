@@ -75,6 +75,8 @@ android {
         create("github") {
             dimension = "distribution"
             applicationIdSuffix = ".github"
+            versionCode = 36
+            versionName = "1.6.0"
         }
         create("internal") {
             dimension = "distribution"

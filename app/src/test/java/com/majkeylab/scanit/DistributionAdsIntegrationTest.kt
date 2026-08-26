@@ -38,6 +38,25 @@ class DistributionAdsIntegrationTest {
     }
 
     @Test
+    fun noAdsBuildHasNoAdsPremiumUiPaywallOrActionLocks() {
+        val noAdsAds =
+            File(repository, "app/src/noAds/java/com/majkeylab/scanit/DistributionAds.kt")
+                .readText()
+        val noAdsPremium =
+            File(repository, "app/src/noAds/java/com/majkeylab/scanit/DistributionPremium.kt")
+                .readText()
+        val build = File(repository, "app/build.gradle.kts").readText()
+
+        assertTrue(build.contains("listOf(\"play\", \"github\", \"internal\")"))
+        assertFalse(noAdsAds.contains("com.google.android"))
+        assertFalse(noAdsPremium.contains("BillingClient"))
+        assertFalse(noAdsPremium.contains("launchPurchase"))
+        assertTrue(noAdsPremium.contains("premium = true"))
+        assertTrue(noAdsPremium.contains("DistributionPremiumPaywall(onDismiss: () -> Unit) = Unit"))
+        assertTrue(noAdsPremium.contains("DistributionPremiumSettings() = Unit"))
+    }
+
+    @Test
     fun betaManifestDeclaresOnlyRequiredAdIntegration() {
         val manifest = File(repository, "app/src/beta/AndroidManifest.xml")
 
