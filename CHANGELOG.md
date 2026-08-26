@@ -15,7 +15,7 @@ All notable changes are documented here.
 
 - Kept Android backup disabled, sharing limited to read-only scoped content URIs, and release dependency checksums pinned.
 - Verified that the GitHub artifact has no Internet, advertising ID, Billing, broad storage, camera, account, or media permission.
-- Measured the no-ads build at 173–243 ms startup, 53.6 MB PSS, and 1.27% janky frames during repeated Settings scrolling on an Android 10 Huawei device.
+- Measured the final no-ads build at 249–301 ms cold startup, 46.9 MB PSS, and 0–3.25% janky frames during repeated warm Settings scrolling on an Android 10 Huawei device.
 
 ### Distribution
 
