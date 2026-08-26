@@ -100,11 +100,16 @@ class DistributionAdsIntegrationTest {
         val premiumUi =
             File(repository, "app/src/beta/java/com/majkeylab/scanit/DistributionPremiumUi.kt")
                 .readText()
+        val noAdsPremium =
+            File(repository, "app/src/noAds/java/com/majkeylab/scanit/DistributionPremium.kt")
+                .readText()
         val settingsScreen =
             appUi.substringAfter("private fun SettingsScreen(")
                 .substringBefore("private fun SettingsCategoryHeader(")
 
-        assertTrue(settingsScreen.contains("R.string.support_scanit_no_benefits"))
+        assertTrue(settingsScreen.contains("if (distributionShowsPremiumSupportDisclaimer)"))
+        assertTrue(premiumUi.contains("distributionShowsPremiumSupportDisclaimer = true"))
+        assertTrue(noAdsPremium.contains("distributionShowsPremiumSupportDisclaimer = false"))
         assertTrue(premiumUi.contains("Color(0xFFFFDD00)"))
     }
 

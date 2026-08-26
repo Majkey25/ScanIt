@@ -3,6 +3,8 @@ package com.majkeylab.scanit
 import android.content.Context
 import androidx.compose.runtime.Composable
 
+internal const val distributionShowsPremiumSupportDisclaimer = false
+
 private val unlockedPremiumState =
     DistributionPremiumState(
         premium = true,

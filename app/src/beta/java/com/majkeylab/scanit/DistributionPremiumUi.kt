@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+internal const val distributionShowsPremiumSupportDisclaimer = true
+
 @Composable
 internal fun rememberDistributionPremiumState(): DistributionPremiumState =
     BetaPremiumController.state

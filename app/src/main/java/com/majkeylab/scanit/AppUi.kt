@@ -4024,12 +4024,14 @@ private fun SettingsScreen(
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
             item { DistributionPremiumSettings() }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
-            item {
-                Text(
-                    stringResource(R.string.support_scanit_no_benefits),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            if (distributionShowsPremiumSupportDisclaimer) {
+                item {
+                    Text(
+                        stringResource(R.string.support_scanit_no_benefits),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             item {
                 settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
