@@ -129,8 +129,8 @@ switch ($Flavor) {
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionCode = "36"
-        $expectedVersionName = "1.6.0"
+        $expectedVersionCode = "39"
+        $expectedVersionName = "1.7.0"
     }
     "beta" {
         $expectedPackage = "com.majkeylab.scanit"

@@ -68,8 +68,8 @@ android {
         create("github") {
             dimension = "distribution"
             applicationIdSuffix = ".github"
-            versionCode = 36
-            versionName = "1.6.0"
+            versionCode = 39
+            versionName = "1.7.0"
         }
         create("internal") {
             dimension = "distribution"
