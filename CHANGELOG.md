@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## [1.7.0] - 2026-08-30
+
+### Changed
+
+- Published the complete SeliaScan feature set as the stable GitHub edition.
+- Kept every scan, signing, file-editing, cleanup, OCR, redaction, and Document Action feature unlocked.
+- Removed advertising, consent, Billing, Premium, paywalls, locks, and monetization from the source and release artifacts.
+- Licensed the public source under the MIT License; Buy Me a Coffee remains optional and unlocks nothing.
+
+### Distribution
+
+- Versioned the `github` flavor as `1.7.0` code 39 for Android 10 and newer.
+- Kept the separately maintained Google Play ads and Premium build unchanged.
+
 ## [1.6.0] - 2026-08-26
 
 ### Changed

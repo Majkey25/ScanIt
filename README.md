@@ -11,14 +11,20 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://github.com/Majkey25/ScanIt/actions/workflows/android-ci.yml/badge.svg"></a>
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img alt="Latest stable release" src="https://img.shields.io/github/v/release/Majkey25/ScanIt"></a>
   <img alt="Android 10+" src="https://img.shields.io/badge/Android-10%2B-111111">
-  <a href="LICENSE"><img alt="Source-visible proprietary license" src="https://img.shields.io/badge/License-Proprietary-111111"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-111111"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.7.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.6.0 update
+## v1.7.0 update
+
+The stable GitHub edition is fully open source under the MIT License. It has no
+ads, consent flow, Billing, Premium tier, paywall, or feature locks. Every scan,
+signing, file-editing, cleanup, OCR, redaction, and Document Action feature is
+available immediately. Buy Me a Coffee remains an optional donation and does
+not change app functionality.
 
 Manual redaction now defaults to a professional straight-line tool and keeps the
 freehand brush as an option. Both share adjustable thickness, undo, redo, clear,
@@ -72,7 +78,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.6.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.6.0)
+[Download SeliaScan v1.7.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.7.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -134,7 +140,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.6.0 supports Android 10 and newer.
+SeliaScan v1.7.0 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and
