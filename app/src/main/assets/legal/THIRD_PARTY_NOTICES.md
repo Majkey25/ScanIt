@@ -27,6 +27,8 @@ Kotlin, KotlinX, JetBrains annotations, AndroidX, JSpecify, Guava
 encoder components in the resolved graph are distributed under the Apache
 License 2.0. The complete text is in `LICENSES/Apache-2.0.txt`.
 
+The complete MIT License for SeliaScan is in `LICENSES/MIT.txt`.
+
 Copyright notices remain with their authors and contributors.
 
 ## Google ML Kit

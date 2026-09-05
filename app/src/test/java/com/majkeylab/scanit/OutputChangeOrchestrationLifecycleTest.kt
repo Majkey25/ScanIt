@@ -142,6 +142,28 @@ class OutputChangeOrchestrationLifecycleTest {
     }
 
     @Test
+    fun editedDocumentCommitPersistsConfiguredOutputsBeforePublication() {
+        val source =
+            File("..").canonicalFile
+                .resolve("app/src/main/java/com/majkeylab/scanit/ScanViewModel.kt")
+                .readText()
+        val editedSave =
+            source.substringAfter("private suspend fun saveEditedReviewOutputs(")
+                .substringBefore("private suspend fun saveAutomaticInitialOutputs(")
+        val derivedCommit =
+            source.substringAfter("private suspend fun completeDerivedCandidate(")
+                .substringBefore("private suspend fun saveEditedReviewOutputs(")
+        val whiteboardApply =
+            source.substringAfter("private fun applyCleanWhiteboard(")
+                .substringBefore("private suspend fun restoreWhiteboardApplyFailure(")
+
+        assertTrue(editedSave.contains("automaticOutputTarget(settings)"))
+        assertTrue(editedSave.contains("saveCurrentOutputs(scan, target, settings)"))
+        assertTrue(derivedCommit.contains("saveEditedReviewOutputs"))
+        assertTrue(whiteboardApply.contains("completeEditedAppearanceCandidate"))
+    }
+
+    @Test
     fun preparedImageShareCannotClaimAfterRouteMutation() {
         val gate = RecentActionGate()
         val action = gate.begin(CACHE_ID, ENTRY_ID)

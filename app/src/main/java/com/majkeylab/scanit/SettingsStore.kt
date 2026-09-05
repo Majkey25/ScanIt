@@ -310,6 +310,7 @@ internal class SettingsStore(
         )
     }
 
+    @Throws(IOException::class)
     fun save(settings: AppSettings) {
         saveLocked(settings)
     }
@@ -333,22 +334,11 @@ internal class SettingsStore(
     }
 
     private fun saveLocked(settings: AppSettings) {
-        preferences
-            .edit()
-            .putBoolean(KEY_SAVE_PDF, settings.savePdf)
-            .putBoolean(KEY_SAVE_IMAGES, settings.saveImages)
-            .putString(KEY_ALBUM_NAME, normalizeAlbumName(settings.albumName))
-            .putBoolean(KEY_MULTIPAGE, settings.multipage)
-            .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
-            .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
-            .putString(KEY_EMAIL_BODY, settings.emailBody)
-            .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
-            .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
-            .putAppearance(settings.appearance)
-            .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
-            .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
-            .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
-            .apply()
+        val previous = load()
+        if (!preferences.edit().putSettings(settings).commit()) {
+            preferences.edit().putSettings(previous).apply()
+            throw IOException("Settings could not be stored")
+        }
     }
 
     internal fun saveEmailSubject(subject: String) {
@@ -597,6 +587,23 @@ internal class SettingsStore(
         }
 
 }
+
+private fun SharedPreferences.Editor.putSettings(
+    settings: AppSettings,
+): SharedPreferences.Editor =
+    putBoolean(KEY_SAVE_PDF, settings.savePdf)
+        .putBoolean(KEY_SAVE_IMAGES, settings.saveImages)
+        .putString(KEY_ALBUM_NAME, normalizeAlbumName(settings.albumName))
+        .putBoolean(KEY_MULTIPAGE, settings.multipage)
+        .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
+        .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
+        .putString(KEY_EMAIL_BODY, settings.emailBody)
+        .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
+        .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
+        .putAppearance(settings.appearance)
+        .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
+        .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
+        .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
 
 private fun SharedPreferences.Editor.putAppearance(
     appearance: ScanAppearanceSettings,

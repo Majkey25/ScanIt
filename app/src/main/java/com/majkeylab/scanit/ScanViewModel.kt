@@ -2715,7 +2715,7 @@ internal class ScanViewModel(
                     withContext(NonCancellable) {
                         val saved =
                             withContext(Dispatchers.IO) {
-                                completeAppearanceCandidate(build.cached, warnings)
+                                completeEditedAppearanceCandidate(build.cached, warnings)
                             }
                         routeMutationMutex.withLock {
                             publishResult(
@@ -2785,7 +2785,7 @@ internal class ScanViewModel(
                 try {
                     withContext(Dispatchers.IO) {
                         candidate?.let {
-                            completeAppearanceCandidate(
+                            completeEditedAppearanceCandidate(
                                 it,
                                 warnings + UiMessage(R.string.state_update_failed),
                             )
@@ -3940,7 +3940,36 @@ internal class ScanViewModel(
         val saved =
             storage.openSavedScan(activated.baseName)
                 ?: throw IOException("Cached marked scan metadata is unavailable")
-        return saved.copy(warnings = (initialWarnings + saved.warnings).distinct())
+        return saveEditedReviewOutputs(
+            saved.copy(warnings = (initialWarnings + saved.warnings).distinct()),
+        )
+    }
+
+    private suspend fun completeEditedAppearanceCandidate(
+        candidate: CachedScan,
+        initialWarnings: List<UiMessage>,
+    ): SavedScan =
+        saveEditedReviewOutputs(completeAppearanceCandidate(candidate, initialWarnings))
+
+    private suspend fun saveEditedReviewOutputs(
+        scan: SavedScan,
+        settings: AppSettings = currentSettings(),
+    ): SavedScan {
+        val target = automaticOutputTarget(settings) ?: return scan
+        val result = saveCurrentOutputs(scan, target, settings)
+        val refreshed = result.scan
+        val warnings =
+            mergeSaveNowWarnings(
+                existing = scan.warnings,
+                successful = result.successful,
+                reloadSucceeded = refreshed != null,
+                added =
+                    result.warnings +
+                        listOfNotNull(
+                            UiMessage(R.string.state_update_failed).takeIf { refreshed == null },
+                        ),
+            )
+        return (refreshed ?: scan).copy(warnings = warnings)
     }
 
     private suspend fun saveAutomaticInitialOutputs(

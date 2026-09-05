@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "26"
+$expectedVersionCode = "40"
 $expectedMinSdk = "29"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -eq "github"
@@ -210,7 +210,7 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.5.0-internal"
+        $expectedVersionName = "1.8.0-internal"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
@@ -407,11 +407,30 @@ function Get-ArchiveFacts {
             foreach ($legalEntry in @(
                 "$legalPrefix/legal/THIRD_PARTY_NOTICES.md"
                 "$legalPrefix/legal/LICENSES/Apache-2.0.txt"
+                "$legalPrefix/legal/LICENSES/MIT.txt"
             )) {
                 $packagedEntry = $archive.GetEntry($legalEntry)
                 if ($null -eq $packagedEntry -or $packagedEntry.Length -eq 0) {
                     throw "Public artifact is missing packaged legal content: $legalEntry"
                 }
+            }
+            $mitEntry = $archive.GetEntry("$legalPrefix/legal/LICENSES/MIT.txt")
+            $mitStream = $mitEntry.Open()
+            try {
+                $mitReader = [IO.StreamReader]::new($mitStream, [Text.Encoding]::UTF8, $true)
+                try {
+                    $mitText = $mitReader.ReadToEnd()
+                } finally {
+                    $mitReader.Dispose()
+                }
+            } finally {
+                $mitStream.Dispose()
+            }
+            if (
+                $mitText -notmatch 'Permission is hereby granted' -or
+                $mitText -notmatch 'THE SOFTWARE IS PROVIDED "AS IS"'
+            ) {
+                throw "Public artifact contains an incomplete MIT license."
             }
             $versionControlPath = if ($artifactType -eq "apk") {
                 "META-INF/version-control-info.textproto"

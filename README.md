@@ -15,7 +15,7 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document-to-share mark."></a>
 </p>
 
 ## v1.8.0 update

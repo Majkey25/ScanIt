@@ -11,6 +11,7 @@ All notable changes are documented here.
 - Saved automatic PDFs to the selected folder and rejected failed durable settings writes.
 - Kept ambiguous or unreadable orientation unchanged instead of guessing.
 - Flushed PDF staging files before publication and reduced Manual cleanup memory use.
+- Persisted configured PDF and Gallery outputs after cleanup, redaction, signing, or appearance edits.
 
 ### Changed
 

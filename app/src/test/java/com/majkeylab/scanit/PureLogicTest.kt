@@ -783,6 +783,8 @@ class PureLogicTest {
         assertTrue(verifier.contains("Assert-ExactUsesPermissions"))
         assertTrue(verifier.contains("Assert-ArchiveEntryCount"))
         assertTrue(verifier.contains("Add-ScannedArchiveBytes"))
+        assertTrue(verifier.contains("legal/LICENSES/MIT.txt"))
+        assertTrue(verifier.contains("incomplete MIT license"))
         assertFalse(build.contains("create(\"beta\")"))
         assertFalse(build.contains("create(\"play\")"))
     }
@@ -1851,6 +1853,17 @@ class PureLogicTest {
 
     @Test
     fun falseCommitReturnRejectsAuthorityMutationEvenWhenVolatileReadbackMatches() {
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val previous = store.load()
+            val changed =
+                previous.copy(deletePdfAfterShare = !previous.deletePdfAfterShare)
+            assertThrows(IOException::class.java) {
+                store.trySave(changed, store.authoritySnapshot().owner)
+            }
+            assertEquals(previous, store.load())
+        }
         run {
             val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
             val store = SettingsStore(preferences, "Scanned document")
