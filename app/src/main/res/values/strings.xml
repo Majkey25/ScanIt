@@ -120,9 +120,7 @@
     <string name="multiple_pages">Multiple pages in one document</string>
     <string name="allow_gallery">Allow import from Gallery</string>
     <string name="sharing">Sharing</string>
-    <string name="delete_pdf_after_share">Delete saved PDF after sharing</string>
-    <string name="delete_images_after_share">Delete saved images after sharing</string>
-    <string name="delete_after_share_hint">Files are deleted only after you choose a sharing app. Opening or closing the share menu does not delete them.</string>
+    <string name="shared_files_kept_for_safety">Shared files are kept for safety. Delete saved copies yourself from Recent scans.</string>
     <string name="email_subject">Default email subject</string>
     <string name="email_body">Default message text</string>
     <string name="cancel">Cancel</string>
@@ -134,7 +132,7 @@
     <string name="expand_app_info">Show app info</string>
     <string name="collapse_app_info">Hide app info</string>
     <string name="support_scanit">Support this app → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Thank you for supporting this app. This opens Buy Me a Coffee.</string>
+    <string name="support_scanit_notice">Opening Buy Me a Coffee.</string>
     <string name="settings_save_failed">Could not save settings.</string>
     <string name="apply_appearance">Apply</string>
     <string name="pdf_size">PDF size</string>
@@ -337,7 +335,7 @@
     <string name="apply_protection">Apply protection</string>
     <string name="safe_share_preview">Page preview with protection areas</string>
     <string name="safe_share_no_regions">No protection areas on this page.</string>
-    <string name="safe_share_selected_count">Selected: %1$d</string>
+    <string name="safe_share_selected_count">Selected on this page: %1$d</string>
     <string name="safe_share_kind_email">Email</string>
     <string name="safe_share_kind_phone">Phone</string>
     <string name="safe_share_kind_url">Web link</string>
@@ -353,7 +351,6 @@
     <string name="safe_share_delete_area">Delete manual area %1$d</string>
     <string name="safe_share_previous_page">Previous page</string>
     <string name="safe_share_next_page">Next page</string>
-    <string name="safe_share_resize_handle">Resize manual area %1$d</string>
     <string name="safe_share_move_left">Move left</string>
     <string name="safe_share_move_right">Move right</string>
     <string name="safe_share_move_up">Move up</string>

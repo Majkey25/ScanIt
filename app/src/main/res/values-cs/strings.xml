@@ -122,9 +122,7 @@
     <string name="multiple_pages">Více stránek v jednom dokumentu</string>
     <string name="allow_gallery">Povolit import z Galerie</string>
     <string name="sharing">Sdílení</string>
-    <string name="delete_pdf_after_share">Po sdílení smazat uložené PDF</string>
-    <string name="delete_images_after_share">Po sdílení smazat uložené obrázky</string>
-    <string name="delete_after_share_hint">Soubory se smažou až po výběru aplikace pro sdílení. Pouhé otevření nebo zavření nabídky je nesmaže.</string>
+    <string name="shared_files_kept_for_safety">Sdílené soubory se kvůli bezpečnosti nemažou automaticky. Uložené kopie smažte ručně v Nedávných skenech.</string>
     <string name="email_subject">Výchozí předmět e-mailu</string>
     <string name="email_body">Výchozí text zprávy</string>
     <string name="cancel">Zrušit</string>
@@ -136,7 +134,7 @@
     <string name="expand_app_info">Zobrazit informace o aplikaci</string>
     <string name="collapse_app_info">Skrýt informace o aplikaci</string>
     <string name="support_scanit">Podpořit tuto aplikaci → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Děkujeme za podporu této aplikace. Otevírá se Buy Me a Coffee.</string>
+    <string name="support_scanit_notice">Otevírá se Buy Me a Coffee.</string>
     <string name="settings_save_failed">Nastavení se nepodařilo uložit.</string>
     <string name="apply_appearance">Použít</string>
     <string name="pdf_size">Velikost PDF</string>
@@ -339,7 +337,7 @@
     <string name="apply_protection">Použít ochranu</string>
     <string name="safe_share_preview">Náhled stránky s oblastmi ochrany</string>
     <string name="safe_share_no_regions">Na této stránce nejsou žádné oblasti ochrany.</string>
-    <string name="safe_share_selected_count">Vybráno: %1$d</string>
+    <string name="safe_share_selected_count">Vybráno na této stránce: %1$d</string>
     <string name="safe_share_kind_email">E-mail</string>
     <string name="safe_share_kind_phone">Telefon</string>
     <string name="safe_share_kind_url">Webový odkaz</string>
@@ -355,7 +353,6 @@
     <string name="safe_share_delete_area">Odstranit ruční oblast %1$d</string>
     <string name="safe_share_previous_page">Předchozí stránka</string>
     <string name="safe_share_next_page">Následující stránka</string>
-    <string name="safe_share_resize_handle">Změnit velikost ruční oblasti %1$d</string>
     <string name="safe_share_move_left">Posunout doleva</string>
     <string name="safe_share_move_right">Posunout doprava</string>
     <string name="safe_share_move_up">Posunout nahoru</string>

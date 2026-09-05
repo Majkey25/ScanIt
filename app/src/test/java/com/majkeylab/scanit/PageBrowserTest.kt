@@ -30,8 +30,15 @@ class PageBrowserTest {
     @Test
     fun resultActionsStackOnlyWhenWidthOrTextNeedsIt() {
         assertFalse(stackResultActions(fontScale = 1f, availableWidthDp = 360))
-        assertTrue(stackResultActions(fontScale = 1.3f, availableWidthDp = 320))
-        assertTrue(stackResultActions(fontScale = 1f, availableWidthDp = 319))
+        assertTrue(stackResultActions(fontScale = 1.3f, availableWidthDp = 360))
+        assertTrue(stackResultActions(fontScale = 1f, availableWidthDp = 359))
+    }
+
+    @Test
+    fun redactionCanvasHeightStaysUsefulAndBounded() {
+        assertEquals(180, boundedRedactionCanvasHeightDp(320))
+        assertEquals(360, boundedRedactionCanvasHeightDp(800))
+        assertEquals(420, boundedRedactionCanvasHeightDp(1_200))
     }
 
     @Test

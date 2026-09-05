@@ -38,6 +38,7 @@ $tasks = @(
     ":app:testInternalDebugUnitTest"
     ":app:lintInternalDebug"
     ":app:assembleInternalDebug"
+    ":app:assembleInternalDebugAndroidTest"
     ":app:lintGithubRelease"
     ":app:assembleGithubRelease"
     ":app:bundleGithubRelease"

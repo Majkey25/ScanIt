@@ -189,7 +189,7 @@ internal fun ScanItApp(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onScan: () -> Unit,
-    onSaveSettings: (AppSettings) -> Boolean,
+    onSaveSettings: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
@@ -1239,19 +1239,30 @@ private fun PageScopeDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(titleRes)) },
-        text = { Text(stringResource(bodyRes)) },
-        confirmButton = {
-            TextButton(onClick = { onSelect(SafeShareScope.AllPages) }) {
-                Text(stringResource(R.string.all_pages))
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-                TextButton(onClick = { onSelect(SafeShareScope.SelectedPage) }) {
+        text = {
+            Column(
+                modifier =
+                    Modifier.heightIn(max = dialogContentMaxHeight())
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(stringResource(bodyRes))
+                OutlinedButton(
+                    onClick = { onSelect(SafeShareScope.SelectedPage) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
                     Text(stringResource(R.string.selected_page))
                 }
+                OutlinedButton(
+                    onClick = { onSelect(SafeShareScope.AllPages) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.all_pages))
+                }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
@@ -3485,7 +3496,7 @@ private fun SettingsScreen(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onClose: () -> Unit,
-    onSave: (AppSettings) -> Boolean,
+    onSave: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
     onPdfFolderCleared: () -> UiMessage?,
@@ -3537,7 +3548,10 @@ private fun SettingsScreen(
             }
         }
 
-    fun restoreLocalSettings() {
+    val latestSavedSettings by rememberUpdatedState(settings)
+    var settingsSaveRevision by remember { mutableStateOf(0L) }
+
+    fun restoreLocalSettings(settings: AppSettings = latestSavedSettings) {
         savePdf = settings.savePdf
         saveImages = settings.saveImages
         albumName = settings.albumName
@@ -3554,10 +3568,9 @@ private fun SettingsScreen(
     }
 
     fun persistSettings() {
-        settingsError =
-            try {
-                val saved =
-                    onSave(
+        val revision = ++settingsSaveRevision
+        try {
+            onSave(
                         AppSettings(
                             savePdf = savePdf,
                             saveImages = saveImages,
@@ -3575,13 +3588,16 @@ private fun SettingsScreen(
                             readAloudLanguage =
                                 readAloudLanguageForWireValue(readAloudLanguageWire),
                         ),
-                    )
-                if (!saved) restoreLocalSettings()
-                settingsSaveFailed.takeUnless { saved }
-            } catch (_: RuntimeException) {
-                restoreLocalSettings()
-                settingsSaveFailed
+            ) { saved ->
+                if (revision == settingsSaveRevision) {
+                    if (!saved) restoreLocalSettings()
+                    settingsError = settingsSaveFailed.takeUnless { saved }
+                }
             }
+        } catch (_: RuntimeException) {
+            restoreLocalSettings()
+            settingsError = settingsSaveFailed
+        }
     }
 
     if (languageDialogOpen) {
@@ -3913,28 +3929,8 @@ private fun SettingsScreen(
             }
             if (sharingExpanded) {
             item {
-                SettingsSwitch(
-                    label = stringResource(R.string.delete_pdf_after_share),
-                    checked = deletePdfAfterShare,
-                    onCheckedChange = {
-                        deletePdfAfterShare = it
-                        persistSettings()
-                    },
-                )
-            }
-            item {
-                SettingsSwitch(
-                    label = stringResource(R.string.delete_images_after_share),
-                    checked = deleteImagesAfterShare,
-                    onCheckedChange = {
-                        deleteImagesAfterShare = it
-                        persistSettings()
-                    },
-                )
-            }
-            item {
                 Text(
-                    stringResource(R.string.delete_after_share_hint),
+                    stringResource(R.string.shared_files_kept_for_safety),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

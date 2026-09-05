@@ -291,10 +291,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         viewModel.resumeScannerPreparation()
         lifecycleScope.launch(Dispatchers.IO) {
-            val result = retryPendingShareCleanup(applicationContext)
-            if (result != null && shareCleanupCompletionPolicy(result).warn) {
-                showShareCleanupFailure(applicationContext)
-            }
+            retryPendingShareCleanup(applicationContext)
         }
     }
 
@@ -478,28 +475,30 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startDocumentTextExport() {
-        val request = viewModel.beginDocumentTextExport()
-        if (request == null) {
-            showToast(R.string.text_export_failed)
-            return
-        }
-        launchedDocumentTextExportRequest = request
-        val intent =
-            Intent(Intent.ACTION_CREATE_DOCUMENT)
-                .addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("text/plain")
-                .putExtra(
-                    Intent.EXTRA_TITLE,
-                    sanitizeTextExportFileName(request.cacheId),
-                ).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        try {
-            documentTextExportLauncher.launch(intent)
-        } catch (_: RuntimeException) {
-            clearLaunchedDocumentTextExportRequest(
-                request,
-                viewModel.documentTextExportDestinationCancelled(request),
-            )
-            showToast(R.string.text_export_failed)
+        lifecycleScope.launch {
+            val request = viewModel.beginDocumentTextExport()
+            if (request == null) {
+                showToast(R.string.text_export_failed)
+                return@launch
+            }
+            launchedDocumentTextExportRequest = request
+            val intent =
+                Intent(Intent.ACTION_CREATE_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("text/plain")
+                    .putExtra(
+                        Intent.EXTRA_TITLE,
+                        sanitizeTextExportFileName(request.cacheId),
+                    ).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try {
+                documentTextExportLauncher.launch(intent)
+            } catch (_: RuntimeException) {
+                clearLaunchedDocumentTextExportRequest(
+                    request,
+                    viewModel.documentTextExportDestinationCancelled(request),
+                )
+                showToast(R.string.text_export_failed)
+            }
         }
     }
 
@@ -841,7 +840,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
 
     private fun shareCurrentPdf() {
-        shareCurrentScan(ShareCleanupKind.Pdf, ::pdfShareIntent)
+        shareCurrentScan(::pdfShareIntent)
     }
 
     private fun shareRecentPdf(cacheId: String) {
@@ -856,12 +855,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 try {
                     withContext(Dispatchers.IO) {
                         val scan = viewModel.recentScanForShare(action) ?: return@withContext null
-                        pdfShareIntent(this@MainActivity, scan.cached, settings) to
-                            shareCleanupRequest(
-                                scan,
-                                ShareCleanupKind.Pdf,
-                                settings.deletePdfAfterShare,
-                            )
+                        pdfShareIntent(this@MainActivity, scan.cached, settings)
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -878,7 +872,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 return@launch
             }
             try {
-                if (!launchShareChooser(prepared.first, prepared.second)) {
+                if (!launchShareChooser(prepared)) {
                     showToast(R.string.share_failed)
                 }
             } catch (_: RuntimeException) {
@@ -916,12 +910,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                             prepared.privateCopies?.let { copies ->
                                 imageShareIntent(this@MainActivity, copies, settings)
                             } ?: imageShareIntent(this@MainActivity, prepared.scan.cached, settings)
-                        intent to
-                            shareCleanupRequest(
-                                prepared.scan,
-                                ShareCleanupKind.Images,
-                                settings.deleteImagesAfterShare,
-                            )
+                        if (
+                            prepared.privateCopies != null &&
+                                !markPreparedImageShareLaunched(prepared.privateCopies)
+                        ) {
+                            error("Prepared image share could not be leased")
+                        }
+                        intent
                     }
                 } catch (cancellation: CancellationException) {
                     prepared.privateCopies?.let { copies ->
@@ -947,7 +942,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             val chooserLaunched =
                 try {
-                    launchShareChooser(payload.first, payload.second)
+                    launchShareChooser(payload)
                 } catch (_: RuntimeException) {
                     false
                 }
@@ -961,7 +956,6 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun shareCurrentScan(
-        cleanupKind: ShareCleanupKind,
         createIntent: (Context, CachedScan, AppSettings) -> Intent,
     ) {
         val result = viewModel.state.value as? ScreenState.Result
@@ -971,18 +965,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             return
         }
         val settings = viewModel.currentSettings()
-        val cleanupEnabled =
-            when (cleanupKind) {
-                ShareCleanupKind.Pdf -> settings.deletePdfAfterShare
-                ShareCleanupKind.Images -> settings.deleteImagesAfterShare
-            }
         try {
-            if (
-                !launchShareChooser(
-                    createIntent(this, scan.cached, settings),
-                    shareCleanupRequest(scan, cleanupKind, cleanupEnabled),
-                )
-            ) {
+            val shareIntent = createIntent(this, scan.cached, settings)
+            if (!launchShareChooser(shareIntent)) {
                 showToast(R.string.share_failed)
             }
         } catch (_: Exception) {

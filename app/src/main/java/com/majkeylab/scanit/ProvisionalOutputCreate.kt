@@ -92,8 +92,26 @@ internal fun updateProvisionalOutputCreateUri(
     expected: ProvisionalOutputCreate,
     returnedUri: String,
     pageCount: Int,
+): ProvisionalOutputCreate =
+    updateProvisionalOutputCreateIdentity(
+        directory,
+        expected,
+        returnedUri,
+        expected.displayName,
+        pageCount,
+    )
+
+internal fun updateProvisionalOutputCreateIdentity(
+    directory: File,
+    expected: ProvisionalOutputCreate,
+    returnedUri: String,
+    displayName: String,
+    pageCount: Int,
 ): ProvisionalOutputCreate {
-    val updated = expected.copy(returnedUri = returnedUri)
+    if (expected.returnedUri != null && expected.returnedUri != returnedUri) {
+        throw IOException("Provisional output URI changed")
+    }
+    val updated = expected.copy(returnedUri = returnedUri, displayName = displayName)
     writeProvisionalOutputCreate(directory, updated, pageCount, expected)
     return updated
 }

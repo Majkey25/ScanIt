@@ -5,12 +5,16 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.annotation.MainThread
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import java.util.UUID
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -40,6 +44,14 @@ private const val OUTPUT_TREE_SELECTION_REQUEST_KEY = "output_tree_selection_req
 private const val OUTPUT_TREE_SELECTION_URI_KEY = "output_tree_selection_uri"
 private const val OUTPUT_TREE_SELECTION_FLAGS_KEY = "output_tree_selection_flags"
 private const val SAFE_SHARE_ACTIVE_KEY = "safe_share_active"
+private const val DOCUMENT_TEXT_EXPORT_ACTIVE_KEY = "document_text_export_active"
+private const val DOCUMENT_TEXT_EXPORT_BYTES_KEY = "document_text_export_bytes"
+private const val DOCUMENT_TEXT_EXPORT_TRUNCATED_KEY = "document_text_export_truncated"
+private const val DOCUMENT_TEXT_EXPORT_FILE_KEY = "document_text_export_file"
+private const val DOCUMENT_TEXT_EXPORT_SELECTION_URI_KEY = "document_text_export_selection_uri"
+private const val DOCUMENT_TEXT_EXPORT_SELECTION_FLAGS_KEY = "document_text_export_selection_flags"
+internal const val VISUAL_MARK_SCAN_SOURCE_KEY = "visual_mark_scan_source"
+private const val DOCUMENT_TEXT_EXPORT_FILE_NAME = ".pending-text-export"
 private const val RESULT_PREVIEW_SIZE = 1024
 private const val PAGE_THUMBNAIL_SIZE = 256
 internal const val PDF_TREE_FLAGS =
@@ -143,6 +155,225 @@ internal class OutputTreeSavedState(private val handle: SavedStateHandle) {
         } catch (_: IllegalArgumentException) {
             null
         }
+    }
+}
+
+internal data class PendingDocumentTextExport(
+    val request: DocumentActionRequest,
+    val output: DocumentActionOutput.Text,
+)
+
+internal data class DocumentTextExportSelection(
+    val request: DocumentActionRequest,
+    val uri: String,
+    val grantFlags: Int,
+) {
+    init {
+        require(request.action == DocumentAction.ExtractText) { "Text export action is invalid" }
+        require(isContentUri(uri)) { "Text export URI is invalid" }
+        require(grantFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0) {
+            "Text export write grant is missing"
+        }
+    }
+}
+
+internal class DocumentTextExportSavedState(
+    private val handle: SavedStateHandle,
+    root: File,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) {
+    private val root = root.absoluteFile
+    private var stagingToken: UUID? = null
+    private val callbackGate = ScannerCallbackGate()
+
+    fun activeRequest(): DocumentActionRequest? {
+        val request = decodeDocumentActionRequest(handle[DOCUMENT_TEXT_EXPORT_ACTIVE_KEY]) ?: return null
+        val bytes = handle.get<Long>(DOCUMENT_TEXT_EXPORT_BYTES_KEY) ?: return null
+        if (request.action != DocumentAction.ExtractText ||
+            bytes !in 1..MAX_DOCUMENT_TEXT_CHARACTERS.toLong() * 4L ||
+            handle.get<Boolean>(DOCUMENT_TEXT_EXPORT_TRUNCATED_KEY) == null
+        ) return null
+        val selectionUri = handle.get<String>(DOCUMENT_TEXT_EXPORT_SELECTION_URI_KEY)
+        val selectionFlags = handle.get<Int>(DOCUMENT_TEXT_EXPORT_SELECTION_FLAGS_KEY)
+        if ((selectionUri == null) != (selectionFlags == null)) return null
+        return request
+    }
+
+    @MainThread
+    suspend fun pendingExport(): PendingDocumentTextExport? {
+        val request = activeRequest() ?: return null
+        val expectedBytes = handle.get<Long>(DOCUMENT_TEXT_EXPORT_BYTES_KEY) ?: return null
+        val truncated = handle.get<Boolean>(DOCUMENT_TEXT_EXPORT_TRUNCATED_KEY) ?: return null
+        val stagedFile = stagedFile() ?: return null
+        val bytes = try {
+            withContext(ioDispatcher) {
+                if (!safeStagedFile(stagedFile) || !stagedFile.isFile || stagedFile.length() != expectedBytes) {
+                    return@withContext null
+                }
+                stagedFile.readBytes()
+            } ?: return null
+        } catch (_: IOException) {
+            return null
+        }
+        if (activeRequest() != request || stagedFile() != stagedFile || bytes.size.toLong() != expectedBytes) return null
+        val text = bytes.toString(Charsets.UTF_8)
+        if (text.isEmpty() || text.length > MAX_DOCUMENT_TEXT_CHARACTERS ||
+            !text.toByteArray(Charsets.UTF_8).contentEquals(bytes)
+        ) return null
+        return PendingDocumentTextExport(
+            request,
+            DocumentActionOutput.Text(
+                text,
+                truncated = truncated,
+            ),
+        )
+    }
+
+    @MainThread
+    suspend fun saveLaunch(request: DocumentActionRequest, output: DocumentActionOutput.Text): Boolean {
+        if (activeRequest() != null || request.action != DocumentAction.ExtractText ||
+            output.value.isEmpty() || output.value.length > MAX_DOCUMENT_TEXT_CHARACTERS
+        ) return false
+        val bytes = output.value.toByteArray(Charsets.UTF_8)
+        if (bytes.isEmpty() || bytes.size.toLong() > MAX_DOCUMENT_TEXT_CHARACTERS.toLong() * 4L) {
+            return false
+        }
+        val token = UUID.randomUUID()
+        stagingToken = token
+        val stagedFile = File(root, "$DOCUMENT_TEXT_EXPORT_FILE_NAME-$token")
+        var created = false
+        var committed = false
+        return try {
+            val written = withContext(ioDispatcher) {
+                if (!safeStagedFile(stagedFile)) return@withContext false
+                if (!root.isDirectory && !root.mkdir() && !root.isDirectory) return@withContext false
+                if (!stagedFile.createNewFile()) return@withContext false
+                created = true
+                FileOutputStream(stagedFile).use { target ->
+                    target.write(bytes)
+                    target.fd.sync()
+                }
+                stagedFile.length() == bytes.size.toLong()
+            }
+            if (!written || stagingToken != token || activeRequest() != null) return false
+            handle[DOCUMENT_TEXT_EXPORT_ACTIVE_KEY] = encodeDocumentActionRequest(request)
+            handle[DOCUMENT_TEXT_EXPORT_BYTES_KEY] = bytes.size.toLong()
+            handle[DOCUMENT_TEXT_EXPORT_TRUNCATED_KEY] = output.truncated
+            handle[DOCUMENT_TEXT_EXPORT_FILE_KEY] = stagedFile.name
+            clearSelection()
+            committed = true
+            true
+        } catch (_: IOException) {
+            false
+        } finally {
+            if (stagingToken == token) stagingToken = null
+            if (!committed && created) {
+                withContext(NonCancellable + ioDispatcher) { stagedFile.delete() }
+            }
+        }
+    }
+
+    fun submitResult(
+        request: DocumentActionRequest,
+        callback: () -> DocumentTextExportDisposition,
+    ): DocumentTextExportDisposition {
+        var disposition = DocumentTextExportDisposition.Accepted
+        if (activeRequest() != request || !callbackGate.submit {
+                disposition = if (activeRequest() == request) callback() else DocumentTextExportDisposition.DefiniteStale
+            }
+        ) return DocumentTextExportDisposition.DefiniteStale
+        return disposition
+    }
+
+    fun completeRestore(deliver: Boolean) {
+        callbackGate.complete(deliver)
+    }
+
+    fun saveSelection(selection: DocumentTextExportSelection): Boolean {
+        if (activeRequest() != selection.request || pendingSelection() != null) return false
+        handle[DOCUMENT_TEXT_EXPORT_SELECTION_URI_KEY] = selection.uri
+        handle[DOCUMENT_TEXT_EXPORT_SELECTION_FLAGS_KEY] = selection.grantFlags
+        return true
+    }
+
+    fun pendingSelection(): DocumentTextExportSelection? {
+        val request = activeRequest() ?: return null
+        val uri = handle.get<String>(DOCUMENT_TEXT_EXPORT_SELECTION_URI_KEY) ?: return null
+        val flags = handle.get<Int>(DOCUMENT_TEXT_EXPORT_SELECTION_FLAGS_KEY) ?: return null
+        return try {
+            DocumentTextExportSelection(request, uri, flags)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    fun clear(request: DocumentActionRequest): Boolean {
+        if (activeRequest() != request) return false
+        clearAll()
+        return true
+    }
+
+    fun clearAll() {
+        stagingToken = null
+        val stagedFile = stagedFile()
+        handle[DOCUMENT_TEXT_EXPORT_ACTIVE_KEY] = null
+        handle[DOCUMENT_TEXT_EXPORT_BYTES_KEY] = null
+        handle[DOCUMENT_TEXT_EXPORT_TRUNCATED_KEY] = null
+        handle[DOCUMENT_TEXT_EXPORT_FILE_KEY] = null
+        clearSelection()
+        if (stagedFile != null && safeStagedFile(stagedFile)) stagedFile.delete()
+    }
+
+    private fun clearSelection() {
+        handle[DOCUMENT_TEXT_EXPORT_SELECTION_URI_KEY] = null
+        handle[DOCUMENT_TEXT_EXPORT_SELECTION_FLAGS_KEY] = null
+    }
+
+    private fun stagedFile(): File? {
+        val name = handle.get<String>(DOCUMENT_TEXT_EXPORT_FILE_KEY) ?: DOCUMENT_TEXT_EXPORT_FILE_NAME
+        if (name != DOCUMENT_TEXT_EXPORT_FILE_NAME &&
+            (!name.startsWith("$DOCUMENT_TEXT_EXPORT_FILE_NAME-") ||
+                !isCanonicalUuid(name.removePrefix("$DOCUMENT_TEXT_EXPORT_FILE_NAME-")))
+        ) return null
+        return File(root, name)
+    }
+
+    private fun safeStagedFile(stagedFile: File): Boolean =
+        root.canonicalFile == root && stagedFile.parentFile == root && stagedFile.canonicalFile == stagedFile
+}
+
+internal class VisualMarkScanSavedState(private val handle: SavedStateHandle) {
+    fun activeSource(): MarkEditorSource? = decodeMarkEditorSource(handle[VISUAL_MARK_SCAN_SOURCE_KEY])
+
+    fun save(source: MarkEditorSource): Boolean {
+        if (activeSource() != null || source.pageIndex !in 0 until MAX_SCAN_PAGES) return false
+        handle[VISUAL_MARK_SCAN_SOURCE_KEY] = encodeMarkEditorSource(source)
+        return true
+    }
+
+    fun clear(source: MarkEditorSource): Boolean {
+        if (activeSource() != source) return false
+        handle[VISUAL_MARK_SCAN_SOURCE_KEY] = null
+        return true
+    }
+
+    fun clearAll() {
+        handle[VISUAL_MARK_SCAN_SOURCE_KEY] = null
+    }
+}
+
+private fun encodeMarkEditorSource(source: MarkEditorSource): String =
+    listOf(source.cacheId, source.entryId, source.pageIndex.toString()).joinToString("\t")
+
+private fun decodeMarkEditorSource(value: String?): MarkEditorSource? {
+    if (value == null || value.length > 512) return null
+    val parts = value.split('\t')
+    if (parts.size != 3) return null
+    val page = parts[2].toIntOrNull()?.takeIf { it in 0 until MAX_SCAN_PAGES } ?: return null
+    return try {
+        MarkEditorSource(parts[0], parts[1], page)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }
 
@@ -550,6 +781,10 @@ internal class ScanViewModel(
         OutputChangeGate(restoredOutputChangeGeneration, restoredOutputTreeRequest)
     private val outputTreePickerGate =
         OutputTreePickerGate(outputTreeSavedState.pendingLaunch())
+    private val documentTextExportSavedState =
+        DocumentTextExportSavedState(savedStateHandle, File(application.cacheDir, "text-export"))
+    private val visualMarkScanSavedState = VisualMarkScanSavedState(savedStateHandle)
+    private val visualMarkScannerCallbackGate = ScannerCallbackGate()
     private val resultImageShareGate = RecentActionGate()
     private val routeMutationGate = RouteMutationGate()
     private val shareRefreshGate = DirtyRefreshGate()
@@ -564,7 +799,8 @@ internal class ScanViewModel(
     private var outputSaveJob: Job? = null
     private var outputChangeJob: Job? = null
     private var documentActionJob: Job? = null
-    private var documentActionGeneration = 0L
+    private var documentActionGeneration =
+        documentTextExportSavedState.activeRequest()?.generation ?: 0L
     private var activeDocumentActionRequest: DocumentActionRequest? = null
     private var activeSafeShareRequest: SafeShareRequest? = null
     private var activeCleanWhiteboardRequest: CleanWhiteboardRequest? = null
@@ -574,7 +810,7 @@ internal class ScanViewModel(
     private var manualCleanupApplyJob: Job? = null
     private var visualMarkTemplateJob: Job? = null
     private var visualMarkApplyJob: Job? = null
-    private var visualMarkScanSource: MarkEditorSource? = null
+    private var visualMarkScanSource: MarkEditorSource? = visualMarkScanSavedState.activeSource()
     private var resultPreviewJob: Job? = null
     private var recentScans: List<RecentScan> = emptyList()
     private var navigationInitialized = false
@@ -1115,7 +1351,18 @@ internal class ScanViewModel(
         }
     }
 
-    fun saveSettings(settings: AppSettings): Boolean {
+    private val settingsSaveMutex = Mutex()
+
+    fun saveSettings(settings: AppSettings, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val saved = settingsSaveMutex.withLock {
+                saveSettingsNow(settings)
+            }
+            onComplete(saved)
+        }
+    }
+
+    private suspend fun saveSettingsNow(settings: AppSettings): Boolean {
         if (!settingsSaveAllowed(mutableState.value) || !activeResultAuthorityKnown) return false
         val owner = activeResultOwner ?: return false
         val normalized =
@@ -1125,13 +1372,16 @@ internal class ScanViewModel(
             )
         val saved =
             try {
-                settingsStore.trySave(normalized, owner)
+                withContext(Dispatchers.IO) { settingsStore.trySave(normalized, owner) }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (_: IOException) {
                 return false
             } catch (_: RuntimeException) {
                 return false
             }
         if (!settingsSaveApplied(saved)) return false
+        if (activeResultOwner != owner) return false
         mutableSettings.value = normalized
         return true
     }
@@ -1833,6 +2083,7 @@ internal class ScanViewModel(
         val current = mutableState.value as? ScreenState.Result ?: return null
         val editor = current.visualMarkEditor ?: return null
         if (editor.busy || !isVisualMarkSourceCurrent(editor.source)) return null
+        if (!visualMarkScanSavedState.save(editor.source)) return null
         visualMarkScanSource = editor.source
         mutableState.value =
             current.copy(visualMarkEditor = editor.copy(busy = true, message = null))
@@ -1842,14 +2093,23 @@ internal class ScanViewModel(
     fun currentVisualMarkScanSource(): MarkEditorSource? = visualMarkScanSource
 
     fun visualMarkScannerCancelled(source: MarkEditorSource) {
-        finishVisualMarkScanner(source, null)
+        visualMarkScannerCallbackGate.submit { finishVisualMarkScanner(source, null) }
     }
 
     fun visualMarkScannerFailed(source: MarkEditorSource) {
-        finishVisualMarkScanner(source, UiMessage(R.string.visual_mark_scanner_failed))
+        visualMarkScannerCallbackGate.submit {
+            finishVisualMarkScanner(source, UiMessage(R.string.visual_mark_scanner_failed))
+        }
     }
 
     fun importScannedVisualMark(
+        source: MarkEditorSource,
+        uri: Uri,
+    ) {
+        visualMarkScannerCallbackGate.submit { importScannedVisualMarkNow(source, uri) }
+    }
+
+    private fun importScannedVisualMarkNow(
         source: MarkEditorSource,
         uri: Uri,
     ) {
@@ -1863,6 +2123,7 @@ internal class ScanViewModel(
         ) {
             return
         }
+        visualMarkScanSavedState.clear(source)
         visualMarkScanSource = null
         startVisualMarkTemplateJob(source) { markTemplateStore.import(uri) }
     }
@@ -2885,7 +3146,7 @@ internal class ScanViewModel(
             },
         )
 
-    fun beginDocumentTextExport(): DocumentActionRequest? {
+    suspend fun beginDocumentTextExport(): DocumentActionRequest? {
         val current = mutableState.value as? ScreenState.Result ?: return null
         val completed = current.documentActionState as? DocumentActionState.Completed ?: return null
         val output = completed.output as? DocumentActionOutput.Text ?: return null
@@ -2897,12 +3158,42 @@ internal class ScanViewModel(
         ) {
             return null
         }
-        documentTextExportWriteStarted = false
         mutableState.value = current.copy(documentActionState = DocumentActionState.Exporting(output))
+        val staged =
+            try {
+                documentTextExportSavedState.saveLaunch(request, output)
+            } catch (cancellation: CancellationException) {
+                val latest = mutableState.value as? ScreenState.Result
+                if (activeDocumentActionRequest == request &&
+                    latest?.documentActionState == DocumentActionState.Exporting(output)
+                ) {
+                    mutableState.value = latest.copy(documentActionState = completed)
+                }
+                throw cancellation
+            }
+        val latest = mutableState.value as? ScreenState.Result
+        if (!staged || activeDocumentActionRequest != request ||
+            latest?.documentActionState != DocumentActionState.Exporting(output)
+        ) {
+            if (staged) documentTextExportSavedState.clear(request)
+            if (activeDocumentActionRequest == request &&
+                latest?.documentActionState == DocumentActionState.Exporting(output)
+            ) {
+                mutableState.value = latest.copy(documentActionState = completed)
+            }
+            return null
+        }
+        documentTextExportWriteStarted = false
         return request
     }
 
     fun documentTextExportDestinationCancelled(
+        request: DocumentActionRequest,
+    ): DocumentTextExportDisposition = documentTextExportSavedState.submitResult(request) {
+        cancelDocumentTextExportNow(request)
+    }
+
+    private fun cancelDocumentTextExportNow(
         request: DocumentActionRequest,
     ): DocumentTextExportDisposition {
         val current = mutableState.value as? ScreenState.Result
@@ -2918,11 +3209,20 @@ internal class ScanViewModel(
         }
         mutableState.value =
             current.copy(documentActionState = DocumentActionState.Completed(exporting.output))
+        documentTextExportSavedState.clear(request)
         clearOcrSnapshot(OcrSnapshotInvalidation.Cancellation)
         return DocumentTextExportDisposition.Accepted
     }
 
     fun exportDocumentText(
+        request: DocumentActionRequest,
+        destination: Uri,
+        returnedFlags: Int,
+    ): DocumentTextExportDisposition = documentTextExportSavedState.submitResult(request) {
+        exportDocumentTextNow(request, destination, returnedFlags)
+    }
+
+    private fun exportDocumentTextNow(
         request: DocumentActionRequest,
         destination: Uri,
         returnedFlags: Int,
@@ -2938,6 +3238,42 @@ internal class ScanViewModel(
         ) {
             return DocumentTextExportDisposition.DefiniteStale
         }
+        val selection =
+            try {
+                DocumentTextExportSelection(request, destination.toString(), returnedFlags)
+            } catch (_: IllegalArgumentException) {
+                documentTextExportSavedState.clear(request)
+                mutableState.value =
+                    current.copy(documentActionState = completedDocumentTextExport(exporting.output, false))
+                return DocumentTextExportDisposition.Accepted
+            }
+        if (!documentTextExportSavedState.saveSelection(selection)) {
+            documentTextExportSavedState.clear(request)
+            mutableState.value =
+                current.copy(documentActionState = completedDocumentTextExport(exporting.output, false))
+            return DocumentTextExportDisposition.Accepted
+        }
+        startDocumentTextExportWrite(PendingDocumentTextExport(request, exporting.output), selection)
+        return DocumentTextExportDisposition.Accepted
+    }
+
+    private fun resumePendingDocumentTextExportSelection() {
+        val selection = documentTextExportSavedState.pendingSelection() ?: return
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val exporting = current.documentActionState as? DocumentActionState.Exporting ?: return
+        val pending = PendingDocumentTextExport(selection.request, exporting.output)
+        if (documentTextExportWriteStarted || activeDocumentActionRequest != pending.request ||
+            current.documentActionState != DocumentActionState.Exporting(pending.output) ||
+            !isDocumentActionRequestCurrent(pending.request, current)
+        ) return
+        startDocumentTextExportWrite(pending, selection)
+    }
+
+    private fun startDocumentTextExportWrite(
+        pending: PendingDocumentTextExport,
+        selection: DocumentTextExportSelection,
+    ) {
+        val request = pending.request
         documentTextExportWriteStarted = true
         documentActionJob =
             viewModelScope.launch {
@@ -2945,6 +3281,7 @@ internal class ScanViewModel(
                     try {
                         withContext(Dispatchers.IO) {
                             val resolver = getApplication<Application>().contentResolver
+                            val destination = Uri.parse(selection.uri)
                             val mimeType = resolver.getType(destination)
                             if (
                                 !isSafeTextExportDestination(
@@ -2956,7 +3293,7 @@ internal class ScanViewModel(
                                     uriLength = destination.toString().length,
                                     mimeType = mimeType,
                                     writeGranted =
-                                        returnedFlags and
+                                        selection.grantFlags and
                                             Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0,
                                 )
                             ) {
@@ -2964,7 +3301,7 @@ internal class ScanViewModel(
                             } else {
                                 val operationContext = currentCoroutineContext()
                                 writeDocumentTextToDestination(
-                                    text = exporting.output.value,
+                                    text = pending.output.value,
                                     openOutputStream = { mode ->
                                         resolver.openOutputStream(destination, mode)
                                     },
@@ -2985,12 +3322,12 @@ internal class ScanViewModel(
                 ) {
                     mutableState.value =
                         latest.copy(
-                            documentActionState = completedDocumentTextExport(exporting.output, saved),
+                            documentActionState = completedDocumentTextExport(pending.output, saved),
                         )
                 }
+                documentTextExportSavedState.clear(request)
                 if (activeDocumentActionRequest == request) documentActionJob = null
             }
-        return DocumentTextExportDisposition.Accepted
     }
 
     fun dismissDocumentAction() {
@@ -3255,7 +3592,11 @@ internal class ScanViewModel(
             restoredOutputTreeRequest != null &&
                 savedRoute == ROUTE_RESULT &&
                 savedCacheId == restoredOutputTreeRequest.cacheId
-        val generation = beginRouteMutation(keepOutputChange = restoreOutputChange)
+        val generation =
+            beginRouteMutation(
+                keepOutputChange = restoreOutputChange,
+                keepExternalActivityState = true,
+            )
         recentJob =
             viewModelScope.launch {
                 try {
@@ -3273,11 +3614,19 @@ internal class ScanViewModel(
                             activeCheckpoint?.cacheId,
                             restoredSafeShareActive || authoritativeWasProvisional,
                         )
+                    if (destination.route != RestoredRoute.Result) {
+                        documentTextExportSavedState.clearAll()
+                        visualMarkScanSavedState.clearAll()
+                        visualMarkScanSource = null
+                    }
                     when (destination.route) {
                     RestoredRoute.Result -> {
                         val cacheId = checkNotNull(destination.cacheId)
                         val result = loadCachedResult(cacheId)
                         if (result == null) {
+                            documentTextExportSavedState.clearAll()
+                            visualMarkScanSavedState.clearAll()
+                            visualMarkScanSource = null
                             if (restoreOutputChange) invalidateOutputChange()
                             if (
                                 keepCheckpointAfterRestoreFailure(
@@ -3348,7 +3697,13 @@ internal class ScanViewModel(
                 } finally {
                     if (currentCoroutineContext().isActive) {
                         if (recentJob === currentCoroutineContext()[Job]) recentJob = null
+                        if (!activeResultAuthorityKnown) {
+                            visualMarkScanSavedState.clearAll()
+                            visualMarkScanSource = null
+                        }
                         scannerCallbackGate.complete(deliver = activeResultAuthorityKnown)
+                        visualMarkScannerCallbackGate.complete(deliver = activeResultAuthorityKnown)
+                        documentTextExportSavedState.completeRestore(deliver = activeResultAuthorityKnown)
                     }
                 }
             }
@@ -3361,7 +3716,7 @@ internal class ScanViewModel(
         val savedResultCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
         val savedPageIndex = savedStateHandle.get<Int>(RESULT_PAGE_INDEX_KEY)
         return try {
-            withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 var saved = storage.openSavedScan(cacheId) ?: return@withContext null
                 if (storage.isProvisionalCacheEntry(saved.cached)) {
                     saved =
@@ -3388,11 +3743,50 @@ internal class ScanViewModel(
                     selectedPageIndex = pageIndex,
                 )
             }
+            result?.let { restoreExternalActivityState(it) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
             null
         }
+    }
+
+    private suspend fun restoreExternalActivityState(result: ScreenState.Result): ScreenState.Result {
+        val pendingText =
+            documentTextExportSavedState.pendingExport()?.takeIf { pending ->
+                pending.request.matches(
+                    result.scan.cached.baseName,
+                    result.scan.cached.entryId,
+                    result.selectedPageIndex,
+                    DocumentAction.ExtractText,
+                    pending.request.generation,
+                )
+            }
+        if (documentTextExportSavedState.activeRequest() != null && pendingText == null) {
+            documentTextExportSavedState.clearAll()
+        }
+        val markSource =
+            visualMarkScanSavedState.activeSource()?.takeIf { source ->
+                source.isCurrent(
+                    result.scan.cached.baseName,
+                    result.scan.cached.entryId,
+                    result.selectedPageIndex,
+                )
+            }
+        if (visualMarkScanSavedState.activeSource() != null && markSource == null) {
+            visualMarkScanSavedState.clearAll()
+            visualMarkScanSource = null
+        }
+        if (pendingText != null && markSource != null) {
+            visualMarkScanSavedState.clearAll()
+            visualMarkScanSource = null
+        }
+        return result.copy(
+            documentActionState = pendingText?.let { DocumentActionState.Exporting(it.output) },
+            visualMarkEditor =
+                markSource?.takeIf { pendingText == null }
+                    ?.let { VisualMarkEditorState(source = it, busy = true) },
+        )
     }
 
     private suspend fun activateCachedResult(
@@ -3469,6 +3863,17 @@ internal class ScanViewModel(
     private fun publishResult(result: ScreenState.Result) {
         clearOcrSnapshot(OcrSnapshotInvalidation.ResultMutation)
         val cacheId = result.scan.cached.baseName
+        val restoredTextRequest =
+            documentTextExportSavedState.activeRequest()
+                ?.takeIf { result.documentActionState is DocumentActionState.Exporting }
+        if (restoredTextRequest != null) {
+            activeDocumentActionRequest = restoredTextRequest
+            documentActionGeneration = maxOf(documentActionGeneration, restoredTextRequest.generation)
+            documentTextExportWriteStarted = false
+        }
+        visualMarkScanSource =
+            visualMarkScanSavedState.activeSource()
+                ?.takeIf { result.visualMarkEditor?.busy == true && result.visualMarkEditor.source == it }
         val request = outputChangeGate.active
         val outputChangeRestored =
             request != null &&
@@ -3485,6 +3890,9 @@ internal class ScanViewModel(
             } else {
                 mutableOutputTreePickerRequest.value = outputTreePickerGate.pending
             }
+        }
+        if (restoredTextRequest != null && documentTextExportSavedState.pendingSelection() != null) {
+            resumePendingDocumentTextExportSelection()
         }
         savedStateHandle[RESULT_PAGE_INDEX_KEY] = result.selectedPageIndex
         persistRoute(ROUTE_RESULT, cacheId)
@@ -3555,12 +3963,17 @@ internal class ScanViewModel(
         keepVisualMarkEditor: Boolean = false,
         keepManualCleanupEditor: Boolean = false,
         keepOutputChange: Boolean = false,
+        keepExternalActivityState: Boolean = false,
     ): Long {
-        invalidateDocumentAction(OcrSnapshotInvalidation.RouteMutation)
+        invalidateDocumentAction(
+            OcrSnapshotInvalidation.RouteMutation,
+            keepTextExport = keepExternalActivityState,
+        )
         visualMarkTemplateJob?.cancel()
-        if (!keepVisualMarkEditor) {
+        if (!keepVisualMarkEditor && !keepExternalActivityState) {
             visualMarkApplyJob?.cancel()
             visualMarkScanSource = null
+            visualMarkScanSavedState.clearAll()
             val result = mutableState.value as? ScreenState.Result
             if (result?.visualMarkEditor != null) {
                 mutableState.value = result.copy(visualMarkEditor = null)
@@ -3584,7 +3997,10 @@ internal class ScanViewModel(
         return routeMutationGate.begin()
     }
 
-    private fun invalidateDocumentAction(reason: OcrSnapshotInvalidation) {
+    private fun invalidateDocumentAction(
+        reason: OcrSnapshotInvalidation,
+        keepTextExport: Boolean = false,
+    ) {
         (mutableState.value as? ScreenState.Result)
             ?.documentActionState
             .recycleWhiteboardPreview()
@@ -3595,7 +4011,10 @@ internal class ScanViewModel(
         activeCleanWhiteboardRequest = null
         savedStateHandle[SAFE_SHARE_ACTIVE_KEY] = false
         documentTextExportWriteStarted = false
-        nextDocumentActionGeneration()
+        if (!keepTextExport) {
+            documentTextExportSavedState.clearAll()
+            nextDocumentActionGeneration()
+        }
         clearOcrSnapshot(reason)
     }
 
@@ -3686,6 +4105,7 @@ internal class ScanViewModel(
         val current = mutableState.value as? ScreenState.Result ?: return
         val editor = current.visualMarkEditor ?: return
         if (visualMarkScanSource != source || editor.source != source) return
+        visualMarkScanSavedState.clear(source)
         visualMarkScanSource = null
         mutableState.value =
             current.copy(visualMarkEditor = editor.copy(busy = false, message = message))

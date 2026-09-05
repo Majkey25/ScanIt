@@ -53,8 +53,8 @@ has been removed. The APK also includes the Recent scans dashboard, reusable
 visual signatures and stamps, measured and custom PDF size targets, and six
 selectable language modes. Settings now include a localized Buy Me a Coffee
 button; support remains optional and does not unlock features. Settings now save
-after each change, survive navigation and updates, and default to deleting saved
-PDFs after sharing while retaining saved images. Visual signatures and stamps
+after each change and survive navigation and updates. Shared files stay saved;
+delete exact copies explicitly from Recent scans. Visual signatures and stamps
 can be moved directly on a larger preview, resized and rotated with gestures, or
 fine-tuned from the collapsed Manual position panel.
 SeliaScan supports Android 10 and newer while keeping the same Google scanner,
@@ -135,7 +135,7 @@ source, release artifacts, and real-device workflows.
 - Local Smart cleanup and lasso-based Manual cleanup with a preserved parent revision.
 - Optional PDF destination selected with Android's Storage Access Framework.
 - PDF/image sharing with configurable email subject and message.
-- Optional exact deletion of saved PDFs or Gallery images from Recent scans or after a sharing app is chosen.
+- Exact deletion of saved PDFs or Gallery images from Recent scans after explicit confirmation.
 - Reusable drawn, imported, or scanned signatures and stamps, dragged directly into place on a selected page. These are image annotations, not digital or cryptographic signatures.
 - Android system printing with page-range support.
 - Monochrome light/dark UI with system, English, Czech, German, Spanish, and Simplified Chinese language selection.

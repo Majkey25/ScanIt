@@ -32,8 +32,8 @@ Premium entitlement. A confirmed purchase removes ads and unlocks all features.
 
 Temporary scan working copies are kept in a bounded app-private cache. Durable
 PDFs and images are stored only according to the user's settings and actions.
-SeliaScan can delete exact tracked outputs after explicit Recent-screen
-confirmation or, when enabled, after a sharing app is selected. Android backup
+SeliaScan deletes exact tracked outputs only after explicit Recent-screen
+confirmation. Selecting a sharing app never deletes the saved copy. Android backup
 and device transfer are disabled for app settings and private data.
 
 Sharing, printing, email, external links, and selected storage providers receive

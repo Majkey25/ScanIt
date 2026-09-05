@@ -33,6 +33,18 @@ $scannedArchiveEntryPattern = '(?i)\.(dex|xml|pb|arsc|txt|md)$'
 $maxArchiveEntries = 10000
 $maxScannedArchiveEntryBytes = 32MB
 $maxScannedArchiveTotalBytes = 128MB
+$expectedReleaseCertificateSha256 = "cdb4e8c548cc5ed547397a19c6a194749253cde23d5659af9e08b9a708ac7b1a"
+
+$projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+if ($publicFlavor) {
+    $worktreeStatus = @(& git -C $projectRoot status --porcelain=v1 --untracked-files=all 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Git could not inspect the source worktree state."
+    }
+    if ($worktreeStatus.Count -ne 0) {
+        throw "Release verification requires a clean source worktree."
+    }
+}
 
 function Test-IsPermissionLine {
     param(
@@ -203,6 +215,15 @@ function Add-ScannedArchiveBytes {
         throw "Archive scanned content is too large."
     }
     return $CurrentBytes + $EntryBytes
+}
+
+function Assert-ReleaseCertificateDigest {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Digests)
+
+    $unique = @($Digests | ForEach-Object { $_.Replace(":", "").ToLowerInvariant() } | Sort-Object -Unique)
+    if ($unique.Count -ne 1 -or $unique[0] -ne $expectedReleaseCertificateSha256) {
+        throw "Release artifact signing certificate does not match the pinned upload key."
+    }
 }
 
 Assert-ReleasePolicyConfiguration
@@ -584,6 +605,15 @@ if ($artifactType -eq "apk") {
         } else {
             throw "APK signature verification failed: $($signatureOutput -join [Environment]::NewLine)"
         }
+    } elseif ($publicFlavor) {
+        $certificateMatches =
+            [regex]::Matches(
+                $signatureOutput -join [Environment]::NewLine,
+                '(?im)certificate SHA-256 digest:\s*([0-9a-f]{64})'
+            )
+        Assert-ReleaseCertificateDigest @(
+            $certificateMatches | ForEach-Object { $_.Groups[1].Value }
+        )
     }
 } else {
     $java = (Get-Command java -ErrorAction Stop).Source
@@ -635,6 +665,19 @@ if ($artifactType -eq "apk") {
             $signatureSummary = ($signatureOutput | Select-Object -First 12) -join [Environment]::NewLine
             throw "AAB signature verification failed with exit code ${signatureExitCode}: $signatureSummary"
         }
+        $keytool = (Get-Command keytool -ErrorAction Stop).Source
+        $certificateOutput = @(& $keytool -printcert -jarfile $artifact 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "AAB signing certificate could not be inspected."
+        }
+        $certificateMatches =
+            [regex]::Matches(
+                $certificateOutput -join [Environment]::NewLine,
+                '(?im)^\s*SHA256:\s*([0-9A-F:]+)\s*$'
+            )
+        Assert-ReleaseCertificateDigest @(
+            $certificateMatches | ForEach-Object { $_.Groups[1].Value }
+        )
     } elseif ($publicFlavor -and $AllowUnsigned -and $env:CI -eq "true") {
         $signatureStatus = "unsigned (explicitly allowed)"
     } else {

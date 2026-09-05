@@ -38,6 +38,7 @@ class Android10CompatibilityTest {
         assertTrue(renderer.contains("newBitmapRegionDecoder(source)"))
         assertTrue(activity.contains("Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU"))
         assertTrue(activity.contains("LEGACY_APP_LANGUAGE"))
-        assertTrue(receiver.contains("chosenComponentExtra()"))
+        assertFalse(receiver.contains("deleteDurableOutputs"))
+        assertTrue(receiver.contains("discardPendingShareCleanups"))
     }
 }

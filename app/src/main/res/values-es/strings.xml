@@ -121,9 +121,7 @@
     <string name="multiple_pages">Varias páginas en un documento</string>
     <string name="allow_gallery">Permitir importar desde la Galería</string>
     <string name="sharing">Compartir</string>
-    <string name="delete_pdf_after_share">Eliminar el PDF guardado después de compartir</string>
-    <string name="delete_images_after_share">Eliminar las imágenes guardadas después de compartir</string>
-    <string name="delete_after_share_hint">Los archivos solo se eliminan después de elegir una aplicación para compartir. Abrir o cerrar el menú no los elimina.</string>
+    <string name="shared_files_kept_for_safety">Por seguridad, los archivos compartidos no se eliminan automáticamente. Elimina las copias guardadas manualmente desde Escaneos recientes.</string>
     <string name="email_subject">Asunto predeterminado del correo</string>
     <string name="email_body">Texto predeterminado del mensaje</string>
     <string name="cancel">Cancelar</string>
@@ -135,7 +133,7 @@
     <string name="expand_app_info">Mostrar información de la aplicación</string>
     <string name="collapse_app_info">Ocultar información de la aplicación</string>
     <string name="support_scanit">Apoya esta aplicación → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Gracias por apoyar esta aplicación. Se abrirá Buy Me a Coffee.</string>
+    <string name="support_scanit_notice">Abriendo Buy Me a Coffee.</string>
     <string name="settings_save_failed">No se pudieron guardar los ajustes.</string>
     <string name="apply_appearance">Aplicar</string>
     <string name="pdf_size">Tamaño del PDF</string>
@@ -336,7 +334,7 @@
     <string name="apply_protection">Aplicar protección</string>
     <string name="safe_share_preview">Vista previa de la página con áreas de protección</string>
     <string name="safe_share_no_regions">No hay áreas de protección en esta página.</string>
-    <string name="safe_share_selected_count">Seleccionadas: %1$d</string>
+    <string name="safe_share_selected_count">Seleccionadas en esta página: %1$d</string>
     <string name="safe_share_kind_email">Correo</string>
     <string name="safe_share_kind_phone">Teléfono</string>
     <string name="safe_share_kind_url">Enlace web</string>
@@ -352,7 +350,6 @@
     <string name="safe_share_delete_area">Eliminar área manual %1$d</string>
     <string name="safe_share_previous_page">Página anterior</string>
     <string name="safe_share_next_page">Página siguiente</string>
-    <string name="safe_share_resize_handle">Cambiar tamaño del área manual %1$d</string>
     <string name="safe_share_move_left">Mover a la izquierda</string>
     <string name="safe_share_move_right">Mover a la derecha</string>
     <string name="safe_share_move_up">Mover hacia arriba</string>

@@ -91,6 +91,7 @@ internal fun ManualCleanupEditorScreen(
                 enabled = !editor.applying,
                 pointCount = pointCount,
                 onPointAdded = { pointCount++ },
+                onPointsDiscarded = { pointCount = (pointCount - it).coerceAtLeast(0) },
                 onDraftCommitted = { onStrokesChange(strokes.toCleanupStrokes()) },
                 modifier =
                     Modifier.fillMaxWidth().weight(1f)
@@ -188,12 +189,14 @@ private fun ManualCleanupCanvas(
     enabled: Boolean,
     pointCount: Int,
     onPointAdded: () -> Unit,
+    onPointsDiscarded: (Int) -> Unit,
     onDraftCommitted: () -> Unit,
     modifier: Modifier,
 ) {
     val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG) }
     val currentPointCount by rememberUpdatedState(pointCount)
     val currentOnPointAdded by rememberUpdatedState(onPointAdded)
+    val currentOnPointsDiscarded by rememberUpdatedState(onPointsDiscarded)
     val currentOnDraftCommitted by rememberUpdatedState(onDraftCommitted)
     val description = stringResource(R.string.manual_cleanup_canvas_accessibility)
     Canvas(
@@ -203,6 +206,13 @@ private fun ManualCleanupCanvas(
                     val pageBitmap = page ?: return@pointerInput
                     if (!enabled) return@pointerInput
                     var active: SnapshotStateList<MarkPoint>? = null
+                    fun discardShortCleanupStroke() {
+                        val stroke = active
+                        if (stroke != null && stroke.size < 3 && strokes.remove(stroke)) {
+                            currentOnPointsDiscarded(stroke.size)
+                        }
+                        active = null
+                    }
                     detectDragGestures(
                         onDragStart = { offset ->
                             if (
@@ -227,11 +237,11 @@ private fun ManualCleanupCanvas(
                             }
                         },
                         onDragEnd = {
-                            active = null
+                            discardShortCleanupStroke()
                             currentOnDraftCommitted()
                         },
                         onDragCancel = {
-                            active = null
+                            discardShortCleanupStroke()
                             currentOnDraftCommitted()
                         },
                     )

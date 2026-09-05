@@ -6,12 +6,17 @@ All notable changes are documented here.
 
 ### Fixed
 
+- Journaled first-time PDF and image saves, accepted provider-assigned names, and preserved existing image formats on repeated saves.
+- Preserved text export and signature scan requests across process recreation.
+- Moved settings disk writes off the UI thread and kept redaction controls reachable with large text.
+
 - Preserved early scanner results until startup restoration completes.
 - Accepted high-resolution source scans while bounding OCR, barcode, and orientation decode memory.
 - Saved automatic PDFs to the selected folder and rejected failed durable settings writes.
 - Kept ambiguous or unreadable orientation unchanged instead of guessing.
 - Flushed PDF staging files before publication and reduced Manual cleanup memory use.
 - Persisted configured PDF and Gallery outputs after cleanup, redaction, signing, or appearance edits.
+- Removed automatic deletion from Android share callbacks; saved files now require explicit deletion from Recent scans.
 
 ### Changed
 
