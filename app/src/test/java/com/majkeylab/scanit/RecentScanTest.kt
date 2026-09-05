@@ -1922,11 +1922,13 @@ class RecentScanTest {
         }
 
     @Test
-    fun pruningNeverDeletesDurableOutputsOutsideTheCache() = withShareRoot { root ->
-        val durableOutput = File(root.parentFile, "durable-output.pdf").apply {
-            writeBytes(byteArrayOf(1, 2, 3))
-        }
+    fun pruningNeverDeletesDurableOutputsOutsideTheCache() {
+        val parent = Files.createTempDirectory("recent-scans-durable").toFile()
         try {
+            val root = File(parent, "share").also { assertTrue(it.mkdir()) }
+            val durableOutput = File(parent, "durable-output.pdf").apply {
+                writeBytes(byteArrayOf(1, 2, 3))
+            }
             createManagedEntry(root, "Scan_old", 1L)
             createManagedEntry(root, "Scan_new", 2L)
 
@@ -1935,7 +1937,7 @@ class RecentScanTest {
             assertTrue(durableOutput.isFile)
             assertEquals(3L, durableOutput.length())
         } finally {
-            assertTrue(durableOutput.delete())
+            assertTrue(parent.deleteRecursively())
         }
     }
 

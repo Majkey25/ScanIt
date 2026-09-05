@@ -310,6 +310,7 @@ internal class SettingsStore(
         )
     }
 
+    @Throws(IOException::class)
     fun save(settings: AppSettings) {
         saveLocked(settings)
     }
@@ -333,22 +334,11 @@ internal class SettingsStore(
     }
 
     private fun saveLocked(settings: AppSettings) {
-        preferences
-            .edit()
-            .putBoolean(KEY_SAVE_PDF, settings.savePdf)
-            .putBoolean(KEY_SAVE_IMAGES, settings.saveImages)
-            .putString(KEY_ALBUM_NAME, normalizeAlbumName(settings.albumName))
-            .putBoolean(KEY_MULTIPAGE, settings.multipage)
-            .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
-            .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
-            .putString(KEY_EMAIL_BODY, settings.emailBody)
-            .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
-            .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
-            .putAppearance(settings.appearance)
-            .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
-            .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
-            .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
-            .apply()
+        val previous = load()
+        if (!preferences.edit().putSettings(settings).commit()) {
+            preferences.edit().putSettings(previous).apply()
+            throw IOException("Settings could not be stored")
+        }
     }
 
     internal fun saveEmailSubject(subject: String) {
@@ -365,14 +355,21 @@ internal class SettingsStore(
             if (!ownerMatchesLocked(expectedOwner)) {
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
+            val expectedOwnerSettings = load()
             val normalized = normalizeAppearanceSettings(appearance)
-            preferences
-                .edit()
-                .putAppearance(normalized)
-                .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
-                .commit()
+            val stored =
+                preferences
+                    .edit()
+                    .putAppearance(normalized)
+                    .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
+                    .commit()
             val loaded = load()
-            if (loaded.appearance != normalized || loaded.pdfSizeTarget != pdfSizeTarget) {
+            if (!stored || loaded.appearance != normalized || loaded.pdfSizeTarget != pdfSizeTarget) {
+                preferences
+                    .edit()
+                    .putAppearance(expectedOwnerSettings.appearance)
+                    .putString(KEY_PDF_SIZE_TARGET, expectedOwnerSettings.pdfSizeTarget.wireValue)
+                    .apply()
                 throw IOException("Appearance authority could not be restored")
             }
             AuthorityMutationResult.Applied
@@ -437,12 +434,14 @@ internal class SettingsStore(
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
             val encoded = encodeActiveResultCheckpoint(cacheId)
-            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
+            val stored =
+                preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
             val verified =
                 readPreferenceOrDefault<String?>(null) {
                     preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
                 } == encoded
-            if (!verified) {
+            if (!stored || !verified) {
+                restoreActiveResultCheckpointInMemory(expectedOwner.checkpoint)
                 throw IOException("Active result could not be stored")
             }
             AuthorityMutationResult.Applied
@@ -459,12 +458,28 @@ internal class SettingsStore(
             if (expectedOwner.checkpoint == null) {
                 return@withActiveResultAuthority AuthorityMutationResult.Applied
             }
-            preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
-            if (activeResultCheckpointLocked() != null) {
+            val stored = preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
+            if (!stored || activeResultCheckpointLocked() != null) {
+                restoreActiveResultCheckpointInMemory(expectedOwner.checkpoint)
                 throw IOException("Active result could not be cleared")
             }
             AuthorityMutationResult.Applied
         }
+
+    private fun restoreActiveResultCheckpointInMemory(
+        checkpoint: ActiveResultCheckpoint?,
+    ) {
+        preferences.edit().apply {
+            if (checkpoint == null) {
+                remove(KEY_ACTIVE_RESULT_CHECKPOINT)
+            } else {
+                putString(
+                    KEY_ACTIVE_RESULT_CHECKPOINT,
+                    encodeActiveResultCheckpoint(checkpoint.cacheId),
+                )
+            }
+        }.apply()
+    }
 
     internal fun pendingPdfTreeUri(): String? =
         withStorageTransaction {
@@ -572,6 +587,23 @@ internal class SettingsStore(
         }
 
 }
+
+private fun SharedPreferences.Editor.putSettings(
+    settings: AppSettings,
+): SharedPreferences.Editor =
+    putBoolean(KEY_SAVE_PDF, settings.savePdf)
+        .putBoolean(KEY_SAVE_IMAGES, settings.saveImages)
+        .putString(KEY_ALBUM_NAME, normalizeAlbumName(settings.albumName))
+        .putBoolean(KEY_MULTIPAGE, settings.multipage)
+        .putBoolean(KEY_ALLOW_GALLERY, settings.allowGallery)
+        .putString(KEY_EMAIL_SUBJECT, settings.emailSubject)
+        .putString(KEY_EMAIL_BODY, settings.emailBody)
+        .putBoolean(KEY_DELETE_PDF_AFTER_SHARE, settings.deletePdfAfterShare)
+        .putBoolean(KEY_DELETE_IMAGES_AFTER_SHARE, settings.deleteImagesAfterShare)
+        .putAppearance(settings.appearance)
+        .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
+        .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
+        .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
 
 private fun SharedPreferences.Editor.putAppearance(
     appearance: ScanAppearanceSettings,

@@ -120,9 +120,7 @@
     <string name="multiple_pages">Mehrere Seiten in einem Dokument</string>
     <string name="allow_gallery">Import aus der Galerie erlauben</string>
     <string name="sharing">Teilen</string>
-    <string name="delete_pdf_after_share">Gespeicherte PDF nach dem Teilen löschen</string>
-    <string name="delete_images_after_share">Gespeicherte Bilder nach dem Teilen löschen</string>
-    <string name="delete_after_share_hint">Dateien werden erst gelöscht, nachdem eine App zum Teilen ausgewählt wurde. Das Öffnen oder Schließen des Menüs löscht nichts.</string>
+    <string name="shared_files_kept_for_safety">Geteilte Dateien werden aus Sicherheitsgründen nicht automatisch gelöscht. Lösche gespeicherte Kopien manuell unter Letzte Scans.</string>
     <string name="email_subject">Standardbetreff der E-Mail</string>
     <string name="email_body">Standardnachricht</string>
     <string name="cancel">Abbrechen</string>
@@ -134,7 +132,7 @@
     <string name="expand_app_info">App-Informationen anzeigen</string>
     <string name="collapse_app_info">App-Informationen ausblenden</string>
     <string name="support_scanit">Diese App unterstützen → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">Danke für deine Unterstützung dieser App. Buy Me a Coffee wird geöffnet.</string>
+    <string name="support_scanit_notice">Buy Me a Coffee wird geöffnet.</string>
     <string name="settings_save_failed">Einstellungen konnten nicht gespeichert werden.</string>
     <string name="apply_appearance">Anwenden</string>
     <string name="pdf_size">PDF-Größe</string>
@@ -181,7 +179,6 @@
     <string name="saving_document">Dokument wird gespeichert…</string>
     <string name="images_save_failed">Bilder konnten nicht in der Galerie gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
     <string name="pdf_save_failed">Die PDF konnte nicht gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
-    <string name="pdf_auto_save_deferred">Der ausgewählte Ordner muss bestätigt werden. Die PDF über die Dateidetails speichern.</string>
     <string name="pdf_size_target_not_met">Die PDF konnte nicht unter %1$d MB verkleinert werden, ohne die Seiten zu klein zu machen. Tatsächliche Größe: %2$.2f MB.</string>
     <string name="pdf_size_target_not_met_kb">Die PDF konnte nicht unter %1$d KB verkleinert werden, ohne die Seiten zu klein zu machen. Tatsächliche Größe: %2$.1f KB.</string>
     <string name="document_save_failed">Das Dokument konnte nicht gespeichert werden. Erneut versuchen.</string>
@@ -239,10 +236,10 @@
     <string name="manual_cleanup">Manuelle Bereinigung</string>
     <string name="manual_cleanup_scope">Ausgewählte Seite · Auf dem Gerät</string>
     <string name="manual_cleanup_working">Bereinigung wird angewendet…</string>
-    <string name="manual_cleanup_hint">Umranden Sie jeden Fleck, den Sie entfernen möchten.</string>
+    <string name="manual_cleanup_hint">Umrunde jeden Fleck, den du entfernen möchtest.</string>
     <string name="manual_cleanup_canvas_accessibility">Zeichenfläche zur Dokumentbereinigung</string>
     <string name="manual_cleanup_apply">Bereinigung anwenden</string>
-    <string name="manual_cleanup_failed">Bereinigung fehlgeschlagen. Wählen Sie einen kleineren Bereich.</string>
+    <string name="manual_cleanup_failed">Bereinigung fehlgeschlagen. Wähle einen kleineren Bereich.</string>
     <string name="clean_whiteboard_preparing">Bereinigungsvorschau wird vorbereitet…</string>
     <string name="clean_whiteboard_before">Vorher</string>
     <string name="clean_whiteboard_after">Nachher</string>
@@ -336,7 +333,7 @@
     <string name="apply_protection">Schutz anwenden</string>
     <string name="safe_share_preview">Seitenvorschau mit Schutzbereichen</string>
     <string name="safe_share_no_regions">Auf dieser Seite gibt es keine Schutzbereiche.</string>
-    <string name="safe_share_selected_count">Ausgewählt: %1$d</string>
+    <string name="safe_share_selected_count">Auf dieser Seite ausgewählt: %1$d</string>
     <string name="safe_share_kind_email">E-Mail</string>
     <string name="safe_share_kind_phone">Telefon</string>
     <string name="safe_share_kind_url">Weblink</string>
@@ -352,7 +349,6 @@
     <string name="safe_share_delete_area">Manuellen Bereich %1$d löschen</string>
     <string name="safe_share_previous_page">Vorherige Seite</string>
     <string name="safe_share_next_page">Nächste Seite</string>
-    <string name="safe_share_resize_handle">Größe des manuellen Bereichs %1$d ändern</string>
     <string name="safe_share_move_left">Nach links verschieben</string>
     <string name="safe_share_move_right">Nach rechts verschieben</string>
     <string name="safe_share_move_up">Nach oben verschieben</string>

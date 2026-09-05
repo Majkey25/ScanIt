@@ -34,8 +34,12 @@ internal object JpegPdfWriter {
         val staging = Files.createTempFile(parent.toPath(), ".scanit-pdf-", ".part")
         var failure: Throwable? = null
         try {
-            BufferedOutputStream(FileOutputStream(staging.toFile())).use { stream ->
-                writeJpegPdf(JpegPdfOutput(stream), pages, isCancelled)
+            FileOutputStream(staging.toFile()).use { file ->
+                BufferedOutputStream(file).use { stream ->
+                    writeJpegPdf(JpegPdfOutput(stream), pages, isCancelled)
+                    stream.flush()
+                    file.fd.sync()
+                }
             }
             publishStagedFileNoReplace(staging, target.toPath())
         } catch (throwable: Throwable) {

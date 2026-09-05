@@ -2,7 +2,8 @@ package com.majkeylab.scanit
 
 import android.content.ClipDescription
 import android.content.Context
-import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -47,7 +48,6 @@ private const val MAX_DETECTED_CODE_TOTAL_CHARACTERS = 65_536
 private const val MAX_DETECTED_CODE_BYTES = MAX_DETECTED_CODE_CHARACTERS * 4
 private const val MAX_TYPED_CODE_SHORT_CHARACTERS = 256
 private const val MAX_TYPED_CODE_LIST_ITEMS = 16
-private const val MAX_DOCUMENT_ACTION_IMAGE_BYTES = 64L * 1024L * 1024L
 private const val MAX_OPENABLE_HTTP_URL_CHARACTERS = 4_096
 private const val TEXT_EXPORT_SUFFIX = "_text.txt"
 private const val MAX_ENTITY_SOURCE_CHARACTERS = MAX_DOCUMENT_TEXT_CHARACTERS
@@ -847,35 +847,36 @@ internal class DocumentActionProcessor(private val context: Context) {
             var truncated = false
             for ((index, page) in pages.withIndex()) {
                 currentCoroutineContext().ensureActive()
-                val image = inputImage(page)
-                val result = recognizer.process(image).awaitResult()
-                if (strictUtf8Bytes(result.text) == null) throw IOException("OCR text is invalid")
-                val pageText =
-                    boundedTextPrefix(result.text, MAX_DOCUMENT_TEXT_CHARACTERS - textCharacters)
-                pageTexts += pageText
-                textCharacters += pageText.length
-                if (pageText.length != result.text.length) truncated = true
-                for (block in result.textBlocks) {
-                    for (line in block.lines) {
-                        for (element in line.elements) {
-                            val value = element.text
-                            if (value.isBlank() || strictUtf8Bytes(value) == null) continue
-                            if (value.length > MAX_DOCUMENT_TEXT_CHARACTERS - elementCharacters) {
-                                truncated = true
-                                continue
+                withInputImage(page) { image ->
+                    val result = recognizer.process(image).awaitResult()
+                    if (strictUtf8Bytes(result.text) == null) throw IOException("OCR text is invalid")
+                    val pageText =
+                        boundedTextPrefix(result.text, MAX_DOCUMENT_TEXT_CHARACTERS - textCharacters)
+                    pageTexts += pageText
+                    textCharacters += pageText.length
+                    if (pageText.length != result.text.length) truncated = true
+                    for (block in result.textBlocks) {
+                        for (line in block.lines) {
+                            for (element in line.elements) {
+                                val value = element.text
+                                if (value.isBlank() || strictUtf8Bytes(value) == null) continue
+                                if (value.length > MAX_DOCUMENT_TEXT_CHARACTERS - elementCharacters) {
+                                    truncated = true
+                                    continue
+                                }
+                                val box = element.boundingBox ?: continue
+                                val bounds =
+                                    normalizedRect(
+                                        box.left,
+                                        box.top,
+                                        box.right,
+                                        box.bottom,
+                                        image.width,
+                                        image.height,
+                                    ) ?: continue
+                                elements += OcrElement(index, value, bounds)
+                                elementCharacters += value.length
                             }
-                            val box = element.boundingBox ?: continue
-                            val bounds =
-                                normalizedRect(
-                                    box.left,
-                                    box.top,
-                                    box.right,
-                                    box.bottom,
-                                    image.width,
-                                    image.height,
-                                ) ?: continue
-                            elements += OcrElement(index, value, bounds)
-                            elementCharacters += value.length
                         }
                     }
                 }
@@ -897,40 +898,86 @@ internal class DocumentActionProcessor(private val context: Context) {
     suspend fun detectCodes(page: File): DocumentActionOutput.Codes {
         val scanner = BarcodeScanning.getClient()
         return try {
-            val image = inputImage(page)
-            buildDetectedCodes(
-                scanner.process(image).awaitResult().asSequence().mapNotNull { barcode ->
-                    val box = barcode.boundingBox
-                    validatedDetectedCode(
-                        rawValue = barcode.rawValue,
-                        displayValue = barcode.displayValue,
-                        rawBytes = barcode.rawBytes,
-                        isQrCode = barcode.format == Barcode.FORMAT_QR_CODE,
-                        typedUrl = null,
-                        bounds =
-                            box?.let {
-                                normalizedRect(
-                                    it.left,
-                                    it.top,
-                                    it.right,
-                                    it.bottom,
-                                    image.width,
-                                    image.height,
-                                )
-                            },
-                        typedAction = validatedBarcodeAction(barcode),
-                    )
-                },
-            )
+            withInputImage(page) { image ->
+                buildDetectedCodes(
+                    scanner.process(image).awaitResult().asSequence().mapNotNull { barcode ->
+                        val box = barcode.boundingBox
+                        validatedDetectedCode(
+                            rawValue = barcode.rawValue,
+                            displayValue = barcode.displayValue,
+                            rawBytes = barcode.rawBytes,
+                            isQrCode = barcode.format == Barcode.FORMAT_QR_CODE,
+                            typedUrl = null,
+                            bounds =
+                                box?.let {
+                                    normalizedRect(
+                                        it.left,
+                                        it.top,
+                                        it.right,
+                                        it.bottom,
+                                        image.width,
+                                        image.height,
+                                    )
+                                },
+                            typedAction = validatedBarcodeAction(barcode),
+                        )
+                    },
+                )
+            }
         } finally {
             scanner.close()
         }
     }
 
-    private fun inputImage(file: File): InputImage {
-        val page = validatedDocumentActionPage(file)
-        return InputImage.fromFilePath(context, Uri.fromFile(page))
+    private suspend fun <T> withInputImage(
+        file: File,
+        operation: suspend (InputImage) -> T,
+    ): T {
+        val bitmap = decodeDocumentActionBitmap(file)
+        return try {
+            operation(InputImage.fromBitmap(bitmap, 0))
+        } finally {
+            bitmap.recycle()
+        }
     }
+
+    private fun decodeDocumentActionBitmap(file: File): Bitmap {
+        val page = validatedDocumentActionPage(file)
+        val dimensions = readJpegDimensions(page)
+        val bitmap =
+            BitmapFactory.decodeFile(
+                page.path,
+                BitmapFactory.Options().apply {
+                    inSampleSize = documentActionSampleSize(dimensions.width, dimensions.height)
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inScaled = false
+                },
+            ) ?: throw IOException("Scan page could not be decoded")
+        if (
+            bitmap.width.toLong() * bitmap.height > MAX_IMAGE_EXPORT_PIXELS ||
+            bitmap.width > MAX_IMAGE_EXPORT_DIMENSION ||
+            bitmap.height > MAX_IMAGE_EXPORT_DIMENSION
+        ) {
+            bitmap.recycle()
+            throw IOException("Scan page exceeds the analysis bound")
+        }
+        return bitmap
+    }
+}
+
+internal fun validDocumentActionSourceDimensions(width: Int, height: Int): Boolean =
+    validOriginalImageDimensions(width, height)
+
+internal fun documentActionSampleSize(width: Int, height: Int): Int {
+    require(validDocumentActionSourceDimensions(width, height)) {
+        "Scan page dimensions are invalid"
+    }
+    return appearanceDecodeSampleSize(
+        width = width,
+        height = height,
+        maxPixels = MAX_IMAGE_EXPORT_PIXELS,
+        maxEdge = MAX_IMAGE_EXPORT_DIMENSION,
+    )
 }
 
 internal fun validatedDocumentActionPage(file: File): File {
@@ -938,16 +985,12 @@ internal fun validatedDocumentActionPage(file: File): File {
     if (
         page.canonicalFile != page ||
             !page.isFile ||
-            page.length() !in 1..MAX_DOCUMENT_ACTION_IMAGE_BYTES
+            page.length() !in 1..MAX_SCAN_SOURCE_PAGE_BYTES
     ) {
         throw IOException("Scan page is unavailable")
     }
     val dimensions = readJpegDimensions(page)
-    if (
-        dimensions.width > MAX_IMAGE_EXPORT_DIMENSION ||
-            dimensions.height > MAX_IMAGE_EXPORT_DIMENSION ||
-            dimensions.width.toLong() * dimensions.height > MAX_IMAGE_EXPORT_PIXELS
-    ) {
+    if (!validDocumentActionSourceDimensions(dimensions.width, dimensions.height)) {
         throw IOException("Scan page dimensions are invalid")
     }
     return page
@@ -975,19 +1018,30 @@ internal suspend fun <T> Task<T>.awaitResult(): T {
         suspendCoroutine<Result<T>> { continuation ->
             addOnCompleteListener(taskCompletionExecutor) { completed ->
                 continuation.resume(
-                    when {
-                        completed.isCanceled ->
-                            Result.failure(CancellationException("ML task cancelled"))
-                        completed.isSuccessful -> Result.success(completed.result)
-                        else ->
-                            Result.failure(
-                                completed.exception
-                                    ?: IllegalStateException("ML task failed without an exception"),
-                            )
-                    },
+                    completedTaskResult(
+                        cancelled = completed.isCanceled,
+                        successful = completed.isSuccessful,
+                        result = { completed.result },
+                        exception = { completed.exception },
+                    ),
                 )
             }
         }
     currentCoroutineContext().ensureActive()
     return outcome.getOrThrow()
 }
+
+internal fun <T> completedTaskResult(
+    cancelled: Boolean,
+    successful: Boolean,
+    result: () -> T,
+    exception: () -> Exception?,
+): Result<T> =
+    when {
+        cancelled -> Result.failure(IOException("ML task cancelled"))
+        successful -> Result.success(result())
+        else ->
+            Result.failure(
+                exception() ?: IllegalStateException("ML task failed without an exception"),
+            )
+    }

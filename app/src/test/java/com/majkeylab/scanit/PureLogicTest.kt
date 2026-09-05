@@ -758,13 +758,33 @@ class PureLogicTest {
     @Test
     fun githubReleaseMetadataAndVerifierSupportAab() {
         val repository = File("..").canonicalFile
+        val rootBuild = File(repository, "build.gradle.kts").readText()
         val build = File(repository, "app/build.gradle.kts").readText()
         val verifier = File(repository, "tools/verify-release.ps1").readText()
+        val buildTool = File(repository, "tools/build.ps1").readText()
+        val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 39"))
-        assertTrue(build.contains("versionName = \"1.7.0\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"39\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.7.0\""))
+        assertTrue(build.contains("versionCode = 40"))
+        assertTrue(build.contains("versionName = \"1.8.0\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"40\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.8.0\""))
+        assertTrue(rootBuild.contains("version \"9.3.2\""))
+        assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
+        assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))
+        assertTrue(build.contains("compileSdk = 37"))
+        assertTrue(build.contains("androidx.compose:compose-bom:2026.08.00"))
+        assertTrue(build.contains("androidx.core:core-ktx:1.19.0"))
+        assertTrue(build.contains("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0"))
+        assertTrue(build.contains("org.json:json:20260814"))
+        assertTrue(build.contains("seliaScanKeystoreProperties"))
+        assertTrue(build.contains(".android/scanit/keystore.properties"))
+        assertTrue(buildTool.contains("Get-BuiltReleaseApk"))
+        assertTrue(verifier.contains("ValidateSet(\"internal\", \"github\")"))
+        assertTrue(verifier.contains("Assert-ExactUsesPermissions"))
+        assertTrue(verifier.contains("Assert-ArchiveEntryCount"))
+        assertTrue(verifier.contains("Add-ScannedArchiveBytes"))
+        assertTrue(verifier.contains("legal/LICENSES/MIT.txt"))
+        assertTrue(verifier.contains("incomplete MIT license"))
         assertFalse(build.contains("create(\"beta\")"))
         assertFalse(build.contains("create(\"play\")"))
     }
@@ -1405,7 +1425,7 @@ class PureLogicTest {
                 emailSubject = "Scanned document",
                 emailBody = "",
                 pdfTreeUri = null,
-                deletePdfAfterShare = true,
+                deletePdfAfterShare = false,
                 deleteImagesAfterShare = false,
                 appearance = ScanAppearanceSettings(),
                 pdfSizeTarget = PdfSizeTarget.Original,
@@ -1415,9 +1435,16 @@ class PureLogicTest {
     }
 
     @Test
-    fun automaticPdfSaveDefersCustomSafUntilExplicitSave() {
-        assertTrue(automaticPdfUsesDownloads(null))
-        assertFalse(automaticPdfUsesDownloads("content://documents/tree/scanit"))
+    fun automaticPdfSaveUsesConfiguredDestination() {
+        val source =
+            File("..").canonicalFile
+                .resolve("app/src/main/java/com/majkeylab/scanit/ScanViewModel.kt")
+                .readText()
+                .substringAfter("private suspend fun saveAutomaticInitialOutputs(")
+                .substringBefore("private suspend fun saveAutomaticReviewOutputs(")
+
+        assertTrue(source.contains("pdfTreeUri = settings.pdfTreeUri"))
+        assertFalse(source.contains("pdf_auto_save_deferred"))
     }
 
     @Test
@@ -1497,7 +1524,7 @@ class PureLogicTest {
         values["delete_pdf_after_share"] = "wrong"
         values["delete_images_after_share"] = 1
 
-        assertTrue(store.load().deletePdfAfterShare)
+        assertFalse(store.load().deletePdfAfterShare)
         assertFalse(store.load().deleteImagesAfterShare)
     }
 
@@ -1537,51 +1564,19 @@ class PureLogicTest {
     }
 
     @Test
-    fun selectedShareCleanupQueueRetriesTransientFailureAndDrainsTerminalResults() {
+    fun legacyShareCleanupQueueDrainsWithoutOutputDeletion() {
         val (preferences, _) = inMemoryPreferences()
         val store = SettingsStore(preferences, "Scanned document")
         val first = ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf)
         val second = ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Images)
-        var attempts = 0
-        var refreshes = 0
 
         store.savePendingShareCleanup(first)
         assertTrue(store.canSavePendingShareCleanup(second))
         store.savePendingShareCleanup(second)
         store.savePendingShareCleanup(first)
         assertEquals(listOf(first, second), store.pendingShareCleanups())
-        assertEquals(
-            OutputDeleteOperationResult.Failed,
-            processPendingShareCleanup(
-                store,
-                delete = { attempts++; OutputDeleteOperationResult.Failed },
-                afterDelete = { refreshes++ },
-            )?.result,
-        )
-        assertEquals(listOf(first, second), store.pendingShareCleanups())
-        assertEquals(
-            OutputDeleteOperationResult.IdentityMismatch,
-            processPendingShareCleanup(
-                store,
-                delete = { attempts++; OutputDeleteOperationResult.IdentityMismatch },
-                afterDelete = { refreshes++ },
-            )?.result,
-        )
-        assertEquals(listOf(second), store.pendingShareCleanups())
-        assertEquals(
-            OutputDeleteOperationResult.Completed,
-            processPendingShareCleanup(
-                store,
-                delete = { attempts++; OutputDeleteOperationResult.Completed },
-                afterDelete = { refreshes++ },
-            )?.result,
-        )
+        discardPendingShareCleanups(store)
         assertTrue(store.pendingShareCleanups().isEmpty())
-        assertEquals(3, attempts)
-        assertEquals(3, refreshes)
-        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.Failed).warn)
-        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.IdentityMismatch).clear)
-        assertTrue(shareCleanupCompletionPolicy(OutputDeleteOperationResult.IdentityMismatch).warn)
     }
 
     @Test
@@ -1617,6 +1612,22 @@ class PureLogicTest {
         }
         values["pending_share_cleanup"] = "1:$longCacheId:$ENTRY_ID:pdf"
         assertNull(store.pendingShareCleanup())
+    }
+
+    @Test
+    fun legacyShareCleanupQueueIsDiscardedWithoutDeletingOutputs() {
+        val (preferences, _) = inMemoryPreferences()
+        val store = SettingsStore(preferences, "Scanned document")
+        store.savePendingShareCleanup(
+            ShareCleanupRequest(CACHE_ID, ENTRY_ID, ShareCleanupKind.Pdf),
+        )
+        store.savePendingShareCleanup(
+            ShareCleanupRequest(CACHE_ID, OTHER_ENTRY_ID, ShareCleanupKind.Images),
+        )
+
+        discardPendingShareCleanups(store)
+
+        assertTrue(store.pendingShareCleanups().isEmpty())
     }
 
     @Test
@@ -1825,28 +1836,63 @@ class PureLogicTest {
     }
 
     @Test
-    fun falseCommitReturnStillSucceedsWhenEveryExactReadbackMatches() {
-        val (preferences, _) = inMemoryPreferences(commitResults = listOf(false, false, false))
-        val store = SettingsStore(preferences, "Scanned document")
-        val initialOwner = store.authoritySnapshot().owner
-
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.saveActiveResult("Scan_candidate", initialOwner),
-        )
-        val candidateOwner =
-            initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
-        val appearance = ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale)
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.restoreAppearanceAuthority(appearance, PdfSizeTarget.Mb5, candidateOwner),
-        )
-        assertEquals(appearance, store.load().appearance)
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.clearActiveResult(candidateOwner),
-        )
-        assertNull(store.activeResultCheckpoint())
+    fun falseCommitReturnRejectsAuthorityMutationEvenWhenVolatileReadbackMatches() {
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val previous = store.load()
+            val changed =
+                previous.copy(deletePdfAfterShare = !previous.deletePdfAfterShare)
+            assertThrows(IOException::class.java) {
+                store.trySave(changed, store.authoritySnapshot().owner)
+            }
+            assertEquals(previous, store.load())
+        }
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
+            val store = SettingsStore(preferences, "Scanned document")
+            assertThrows(IOException::class.java) {
+                store.saveActiveResult("Scan_candidate", store.authoritySnapshot().owner)
+            }
+            assertNull(store.activeResultCheckpoint())
+        }
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(true, false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val previousSettings = store.load()
+            val initialOwner = store.authoritySnapshot().owner
+            assertEquals(
+                AuthorityMutationResult.Applied,
+                store.saveActiveResult("Scan_candidate", initialOwner),
+            )
+            val candidateOwner =
+                initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+            assertThrows(IOException::class.java) {
+                store.restoreAppearanceAuthority(
+                    ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale),
+                    PdfSizeTarget.Mb5,
+                    candidateOwner,
+                )
+            }
+            assertEquals(previousSettings.appearance, store.load().appearance)
+            assertEquals(previousSettings.pdfSizeTarget, store.load().pdfSizeTarget)
+        }
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(true, false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val initialOwner = store.authoritySnapshot().owner
+            assertEquals(
+                AuthorityMutationResult.Applied,
+                store.saveActiveResult("Scan_candidate", initialOwner),
+            )
+            val candidateOwner =
+                initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+            assertThrows(IOException::class.java) { store.clearActiveResult(candidateOwner) }
+            assertEquals(
+                ActiveResultCheckpoint("Scan_candidate"),
+                store.activeResultCheckpoint(),
+            )
+        }
     }
 
     @Test

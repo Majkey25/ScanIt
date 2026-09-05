@@ -119,9 +119,7 @@
     <string name="multiple_pages">一个文档包含多页</string>
     <string name="allow_gallery">允许从图库导入</string>
     <string name="sharing">分享</string>
-    <string name="delete_pdf_after_share">分享后删除已保存的 PDF</string>
-    <string name="delete_images_after_share">分享后删除已保存的图像</string>
-    <string name="delete_after_share_hint">只有选择分享应用后才会删除文件。打开或关闭分享菜单不会删除文件。</string>
+    <string name="shared_files_kept_for_safety">为安全起见，分享的文件不会自动删除。请在“最近扫描”中手动删除已保存的副本。</string>
     <string name="email_subject">默认电子邮件主题</string>
     <string name="email_body">默认消息文本</string>
     <string name="cancel">取消</string>
@@ -133,7 +131,7 @@
     <string name="expand_app_info">显示应用信息</string>
     <string name="collapse_app_info">隐藏应用信息</string>
     <string name="support_scanit">支持此应用 → Buy Me a Coffee</string>
-    <string name="support_scanit_notice">感谢支持此应用。即将打开 Buy Me a Coffee。</string>
+    <string name="support_scanit_notice">正在打开 Buy Me a Coffee。</string>
     <string name="settings_save_failed">无法保存设置。</string>
     <string name="apply_appearance">应用</string>
     <string name="pdf_size">PDF 大小</string>
@@ -180,7 +178,6 @@
     <string name="saving_document">正在保存文档…</string>
     <string name="images_save_failed">无法将图像保存到图库。文档仍可分享。</string>
     <string name="pdf_save_failed">无法保存 PDF。文档仍可分享。</string>
-    <string name="pdf_auto_save_deferred">所选文件夹需要确认。请在“文件详情”中保存 PDF。</string>
     <string name="pdf_size_target_not_met">如果不让页面过小，PDF 无法压缩到 %1$d MB 以下。实际大小：%2$.2f MB。</string>
     <string name="pdf_size_target_not_met_kb">如果不让页面过小，PDF 无法压缩到 %1$d KB 以下。实际大小：%2$.1f KB。</string>
     <string name="document_save_failed">无法保存文档。请重试。</string>
@@ -335,7 +332,7 @@
     <string name="apply_protection">应用保护</string>
     <string name="safe_share_preview">带保护区域的页面预览</string>
     <string name="safe_share_no_regions">此页面没有保护区域。</string>
-    <string name="safe_share_selected_count">已选择：%1$d</string>
+    <string name="safe_share_selected_count">本页已选择：%1$d</string>
     <string name="safe_share_kind_email">电子邮件</string>
     <string name="safe_share_kind_phone">电话</string>
     <string name="safe_share_kind_url">网页链接</string>
@@ -351,7 +348,6 @@
     <string name="safe_share_delete_area">删除手动区域 %1$d</string>
     <string name="safe_share_previous_page">上一页</string>
     <string name="safe_share_next_page">下一页</string>
-    <string name="safe_share_resize_handle">调整手动区域 %1$d 的大小</string>
     <string name="safe_share_move_left">向左移动</string>
     <string name="safe_share_move_right">向右移动</string>
     <string name="safe_share_move_up">向上移动</string>

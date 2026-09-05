@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -393,7 +394,8 @@ private fun SafeShareReview(
             value = SafeSharePreviewState(state.page, page, bitmap)
         }
     val pageRegions = state.regions.filter { it.page == state.page }
-    val selectedCount = state.regions.count(RedactionRegion::selected)
+    val selectedCount = pageRegions.count(RedactionRegion::selected)
+    val totalSelectedCount = state.regions.count(RedactionRegion::selected)
     val previewReady =
         safeSharePreviewReady(
             previewPage = preview.page,
@@ -403,7 +405,7 @@ private fun SafeShareReview(
             currentFile = page,
         )
     val ownedBitmap = preview.bitmap.takeIf { previewReady }
-    val canApply = safeShareCanApply(previewReady, selectedCount)
+    val canApply = safeShareCanApply(previewReady, totalSelectedCount)
     val wide =
         with(LocalDensity.current) {
             LocalWindowInfo.current.containerSize.width.toDp() >= 720.dp
@@ -679,8 +681,6 @@ private fun SafeShareRegionOutline(
                 ),
     ) {}
     if (region.kind != SensitiveRegionKind.Manual) return
-    val resizeDescription =
-        stringResource(R.string.safe_share_resize_handle, position)
     val resizeTargetPx = touchTargetPx
     val resizeLeftPx =
         (leftPx + widthPx - resizeTargetPx / 2)
@@ -693,7 +693,7 @@ private fun SafeShareRegionOutline(
             Modifier
                 .offset { IntOffset(resizeLeftPx, resizeTopPx) }
                 .size(with(density) { resizeTargetPx.toDp() })
-                .semantics { contentDescription = resizeDescription }
+                .clearAndSetSemantics {}
                 .pointerInput(region.id, previewWidthPx, previewHeightPx) {
                     detectDragGestures { change, dragAmount ->
                         change.consume()

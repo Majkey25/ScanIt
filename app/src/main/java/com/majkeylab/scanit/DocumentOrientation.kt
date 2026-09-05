@@ -18,7 +18,7 @@ private const val MIN_ORIENTATION_CHARACTERS = 6
 private const val MIN_ORIENTATION_CHARACTER_ADVANTAGE = 4
 private const val MIN_ORIENTATION_CHARACTER_RATIO = 0.65f
 private const val MAX_LINE_ANGLE_ERROR = 30f
-private const val MAX_ORIENTATION_ANALYSIS_PIXELS = 1_048_576L
+internal const val MAX_ORIENTATION_ANALYSIS_PIXELS = 1_048_576L
 private val PHYSICAL_DOCUMENT_ORIENTATIONS =
     setOf(
         ImageExifOrientation.Normal,
@@ -61,11 +61,7 @@ internal fun selectDocumentOrientation(
                 best.value >= totalCharacters * MIN_ORIENTATION_CHARACTER_RATIO
         } ?: ImageExifOrientation.Normal
     }
-    return if (imageWidth > imageHeight) {
-        ImageExifOrientation.Rotate270
-    } else {
-        ImageExifOrientation.Normal
-    }
+    return ImageExifOrientation.Normal
 }
 
 private fun lineCorrection(angleDegrees: Float): ImageExifOrientation? =
@@ -152,20 +148,11 @@ internal class DocumentOrientationProcessor(private val context: Context) {
         if (
             bounds.outWidth <= 0 ||
                 bounds.outHeight <= 0 ||
-                bounds.outWidth > MAX_IMAGE_EXPORT_DIMENSION ||
-                bounds.outHeight > MAX_IMAGE_EXPORT_DIMENSION ||
-                bounds.outWidth.toLong() * bounds.outHeight > MAX_IMAGE_EXPORT_PIXELS
+            !validOriginalImageDimensions(bounds.outWidth, bounds.outHeight)
         ) {
             throw IOException("Scanner page dimensions are unsafe for orientation")
         }
-        var sampleSize = 1
-        while (
-            sampledOrientationPixels(bounds.outWidth, bounds.outHeight, sampleSize) >
-                MAX_ORIENTATION_ANALYSIS_PIXELS
-        ) {
-            check(sampleSize <= Int.MAX_VALUE / 2) { "Orientation sample size is too large" }
-            sampleSize *= 2
-        }
+        val sampleSize = documentOrientationSampleSize(bounds.outWidth, bounds.outHeight)
         val options =
             BitmapFactory.Options().apply {
                 inSampleSize = sampleSize
@@ -178,9 +165,17 @@ internal class DocumentOrientationProcessor(private val context: Context) {
     }
 }
 
-private fun sampledOrientationPixels(width: Int, height: Int, sampleSize: Int): Long =
-    ((width.toLong() + sampleSize - 1L) / sampleSize) *
-        ((height.toLong() + sampleSize - 1L) / sampleSize)
+internal fun documentOrientationSampleSize(width: Int, height: Int): Int {
+    require(validOriginalImageDimensions(width, height)) {
+        "Scanner page dimensions are unsafe for orientation"
+    }
+    return appearanceDecodeSampleSize(
+        width = width,
+        height = height,
+        maxPixels = MAX_ORIENTATION_ANALYSIS_PIXELS,
+        maxEdge = MAX_ORIGINAL_IMAGE_DIMENSION,
+    )
+}
 
 private fun orientationEvidence(text: Text): List<DocumentLineOrientationEvidence> =
     text.textBlocks.flatMap(Text.TextBlock::getLines).mapNotNull { line ->

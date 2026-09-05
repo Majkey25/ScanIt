@@ -338,6 +338,19 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun taskCancellationIsOrdinaryFailureWhileOwnerCoroutineIsActive() {
+        val outcome =
+            completedTaskResult(
+                cancelled = true,
+                successful = false,
+                result = { error("Cancelled task has no result") },
+                exception = { null },
+            )
+
+        assertTrue(outcome.exceptionOrNull() is IOException)
+    }
+
+    @Test
     fun faceModelBoundaryWaitsForDeferredInstallTerminalOnCancellation() = runBlocking {
         val deferred = TaskCompletionSource<Unit>()
         val module = RecordingSafeShareFaceModule(listOf(false), deferred.task)
@@ -365,6 +378,28 @@ class DocumentActionsTest {
                 sampledDimensionUpperBound(2_000, sample) <=
                 MAX_SAFE_SHARE_ANALYSIS_PIXELS,
         )
+    }
+
+    @Test
+    fun supportedLargeScannerPagesUseBoundedAnalysisSamples() {
+        listOf(3060 to 4080, 5092 to 7146, 16384 to 12288).forEach { (width, height) ->
+            assertTrue(validDocumentActionSourceDimensions(width, height))
+
+            val actionSample = documentActionSampleSize(width, height)
+            assertTrue(
+                sampledDimensionUpperBound(width, actionSample).toLong() *
+                    sampledDimensionUpperBound(height, actionSample) <= MAX_IMAGE_EXPORT_PIXELS,
+            )
+
+            val safeShareSample = safeShareSampleSize(width, height)
+            assertTrue(
+                sampledDimensionUpperBound(width, safeShareSample).toLong() *
+                    sampledDimensionUpperBound(height, safeShareSample) <=
+                    MAX_SAFE_SHARE_ANALYSIS_PIXELS,
+            )
+        }
+        assertEquals(128L * 1024L * 1024L, MAX_SCAN_SOURCE_PAGE_BYTES)
+        assertFalse(validDocumentActionSourceDimensions(MAX_ORIGINAL_IMAGE_DIMENSION + 1, 1))
     }
 
     @Test

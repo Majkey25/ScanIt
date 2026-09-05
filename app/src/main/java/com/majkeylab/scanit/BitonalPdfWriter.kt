@@ -36,8 +36,12 @@ internal object BitonalPdfWriter {
         val staging = Files.createTempFile(parent.toPath(), ".scanit-pdf-", ".part")
         var failure: Throwable? = null
         try {
-            BufferedOutputStream(FileOutputStream(staging.toFile())).use { stream ->
-                writePdf(PdfOutput(stream), pages, isCancelled)
+            FileOutputStream(staging.toFile()).use { file ->
+                BufferedOutputStream(file).use { stream ->
+                    writePdf(PdfOutput(stream), pages, isCancelled)
+                    stream.flush()
+                    file.fd.sync()
+                }
             }
             throwIfBitonalPdfCancelled(isCancelled)
             publishStagedFileNoReplace(staging, target.toPath())

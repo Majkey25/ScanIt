@@ -8,12 +8,12 @@ import android.graphics.Path
 import androidx.core.graphics.createBitmap
 import java.io.File
 import java.io.IOException
-import java.util.Arrays
 import java.util.concurrent.CancellationException
 import kotlin.math.ceil
 import kotlin.math.floor
 
 internal const val MAX_MANUAL_CLEANUP_PIXELS = 2_000_000
+private const val ARGB_CHANNEL_VALUES = 256
 private const val MANUAL_CLEANUP_BACKGROUND_PADDING = 24
 private const val MANUAL_CLEANUP_MASK_STROKE_FRACTION = 0.02f
 private const val MIN_MANUAL_CLEANUP_MASK_STROKE = 16f
@@ -167,7 +167,10 @@ internal fun inpaintMaskedPixels(
     if (maskAlpha.none { it > 0 }) return pixels.copyOf()
     require(maskAlpha.any { it == 0 }) { "Cleanup selection has no surrounding background" }
 
-    val boundary = IntArray(pixels.size)
+    val alphaHistogram = IntArray(ARGB_CHANNEL_VALUES)
+    val redHistogram = IntArray(ARGB_CHANNEL_VALUES)
+    val greenHistogram = IntArray(ARGB_CHANNEL_VALUES)
+    val blueHistogram = IntArray(ARGB_CHANNEL_VALUES)
     var boundarySize = 0
     for (index in pixels.indices) {
         if (index and 0xFFF == 0) throwIfManualCleanupCancelled(isCancelled)
@@ -175,13 +178,25 @@ internal fun inpaintMaskedPixels(
             maskAlpha[index] == 0 &&
                 hasMaskedNeighbor(maskAlpha, width, height, index)
         ) {
-            boundary[boundarySize++] = pixels[index]
+            val pixel = pixels[index]
+            alphaHistogram[pixel ushr 24]++
+            redHistogram[pixel ushr 16 and 0xFF]++
+            greenHistogram[pixel ushr 8 and 0xFF]++
+            blueHistogram[pixel and 0xFF]++
+            boundarySize++
         }
     }
     require(boundarySize > 0) { "Cleanup mask cannot reach its background" }
 
     // ponytail: ring median assumes a paper-like local background; add gradient fitting only if real scans show patches.
-    val replacement = medianArgb(boundary, boundarySize)
+    val replacement =
+        medianArgb(
+            alphaHistogram,
+            redHistogram,
+            greenHistogram,
+            blueHistogram,
+            boundarySize,
+        )
     val output = pixels.copyOf()
     for (index in output.indices) {
         if (index and 0xFFF == 0) throwIfManualCleanupCancelled(isCancelled)
@@ -209,18 +224,29 @@ private fun hasMaskedNeighbor(
     return found
 }
 
-private fun medianArgb(pixels: IntArray, size: Int): Int {
-    val channels = IntArray(size)
-    fun median(shift: Int): Int {
-        for (index in 0 until size) channels[index] = pixels[index] ushr shift and 0xFF
-        Arrays.sort(channels, 0, size)
-        val middle = size / 2
-        return if (size % 2 == 1) channels[middle] else (channels[middle - 1] + channels[middle]) / 2
+private fun medianArgb(
+    alpha: IntArray,
+    red: IntArray,
+    green: IntArray,
+    blue: IntArray,
+    size: Int,
+): Int {
+    fun median(histogram: IntArray): Int {
+        val lowerRank = (size - 1) / 2
+        val upperRank = size / 2
+        var cumulative = 0
+        var lower = -1
+        for (value in histogram.indices) {
+            cumulative += histogram[value]
+            if (lower < 0 && cumulative > lowerRank) lower = value
+            if (cumulative > upperRank) return (lower + value) / 2
+        }
+        error("Cleanup boundary histogram is incomplete")
     }
-    return (median(24) shl 24) or
-        (median(16) shl 16) or
-        (median(8) shl 8) or
-        median(0)
+    return (median(alpha) shl 24) or
+        (median(red) shl 16) or
+        (median(green) shl 8) or
+        median(blue)
 }
 
 private inline fun forEachNeighbor(

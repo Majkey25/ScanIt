@@ -1,71 +1,51 @@
-# Reddit v1.1.0 update package
+# Reddit release announcement draft
 
-Use this to update the existing ScanIt promotion post. The GitHub release is
-stable; Google Play remains in closed testing.
+Publish only after the Google Play production listing is publicly available.
 
 ## Title
 
-Update: ScanIt v1.2.1 is out — dashboard, visual signatures, and custom PDF sizes
+I built SeliaScan for people who just want to scan and email a document
 
 ## Body
 
-**Update — August 13, 2026:** ScanIt v1.2.1 is now available on GitHub.
+Hi everyone — this is my third update about the scanner app I have been building.
+It is now called **SeliaScan**, and version 1.8.0 is the release I finally feel
+comfortable calling finished.
 
-Thanks to the person who asked for a dashboard in the comments: ScanIt now has
-a Recent scans dashboard with previews, page counts, file sizes, open/share
-actions, and exact deletion of saved outputs that ScanIt can verify it created.
+The goal is simple: photograph a document, let the app crop and clean it up,
+then send the PDF without digging through folders.
 
-You can also draw, import, or scan a reusable visual signature or stamp, place
-it directly on a selected page, and adjust its position and size. PDF size
-goals now include Original, 5 MB, 10 MB, 20 MB, or a custom 1–500 MB target.
-The full Google review editor remains available for page previews, crop and
-rotate, and Original, Auto, Color, Grayscale, B&W, and Shadows filters. After
-that, ScanIt continues directly to Result and sharing without another intensity
-screen. Settings also has a compact language picker for System, English, Czech,
-German, Spanish, and Simplified Chinese.
+SeliaScan also has multi-page scans, Recent scans, OCR, QR/barcode detection,
+read-aloud, permanent brush or straight-line redaction, local smart/manual
+cleanup, PDF and image size controls, signatures/stamps, printing, and automatic
+saving to Gallery or a selected folder. Document processing stays on-device.
 
-The signature/stamp is a visual image annotation. It is not a certificate-backed
-digital or cryptographic signature and does not verify identity or document
-integrity. PDF size options are measured goals, not a lossless-compression
-promise; if a readable result cannot meet the target, ScanIt shows the actual
-size.
+There are two editions:
 
-The public build has no ScanIt account, subscription, first-party analytics,
-ads, cloud document library, or generative-AI client. Scanning and cleanup stay
-on-device. The scanner uses Google ML Kit Document Scanner through Google Play
-services.
-
-The source is visible for review, but current material is proprietary rather
-than open source. Historical MIT releases keep their original MIT license. The
-old Reddit title cannot be edited, so this note corrects its outdated
-"open-source" wording.
+- **Google Play:** easiest installation. The free sponsored mode shows restrained
+  ads and unlocks the standard editing tools; Document Actions remain Premium.
+  A no-ads free mode is also available, with editing limited to scan and share.
+  Premium removes ads and unlocks everything.
+- **GitHub:** fully unlocked, no ads, no Premium, no paywalls. It is open source
+  under MIT for people comfortable installing an APK directly.
 
 GitHub release:
-https://github.com/Majkey25/ScanIt/releases/tag/v1.2.1
+https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0
 
-Google Play closed test:
-https://play.google.com/apps/testing/com.majkeylab.scanit
+Google Play:
+https://play.google.com/store/apps/details?id=com.majkeylab.scanit
 
-Feedback is useful, especially around the dashboard, signature placement,
-multi-page scans, PDF size goals, and device-specific sharing or printing.
-Please do not send private documents in bug reports.
+If you test it, I would especially value feedback about high-resolution scans,
+rotation, saving on older Android devices, and sharing to different mail apps.
+Please never attach a private document to a bug report.
 
-## Dashboard-request reply
+## Suggested gallery order
 
-`u/Overall-Fox-3289 — you asked for a dashboard in the original thread. It is now in ScanIt v1.2.1: Recent scans has previews, page counts, file sizes, open/share actions, and safe saved-output deletion. Thanks for the useful suggestion.`
-
-## Gallery order
-
-1. `../play-store/assets/en-US/phone/01-capture.png`
-2. `../play-store/assets/en-US/phone/02-review.png`
-3. `../play-store/assets/en-US/phone/03-result.png`
-4. `../play-store/assets/en-US/phone/04-file-details.png`
-5. `../play-store/assets/en-US/phone/05-recent.png`
-6. `../play-store/assets/en-US/phone/06-sign-stamp.png`
-7. `../play-store/assets/en-US/phone/07-actions.png`
-8. `../play-store/assets/en-US/phone/08-pdf-size.png`
-
-All phone panels use real current UI captures and an original QA document. The
-marketing frame adds only restrained headings around the unchanged app UI. Do
-not add a private document, personal signature, price claim, ranking, or Google
-branding.
+1. Capture and automatic crop
+2. Review and enhancement
+3. Result and sharing
+4. File details
+5. Recent scans
+6. Signature and stamp
+7. Document Actions
+8. PDF size controls

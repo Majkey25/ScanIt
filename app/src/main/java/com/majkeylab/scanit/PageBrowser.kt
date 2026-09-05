@@ -14,7 +14,7 @@ internal fun resultPageStatus(currentIndex: Int, pageCount: Int): Pair<Int, Int>
     resolvedPageIndex(currentIndex, pageCount) + 1 to pageCount
 
 internal fun stackResultActions(fontScale: Float, availableWidthDp: Int): Boolean =
-    availableWidthDp < 320 || (availableWidthDp < 360 && fontScale >= 1.3f)
+    fontScale >= 1.3f || availableWidthDp < 360
 
 internal fun restoredResultPageIndex(
     savedCacheId: String?,

@@ -23,12 +23,22 @@ class Android10CompatibilityTest {
         val receiver =
             File(repository, "app/src/main/java/com/majkeylab/scanit/ShareResultReceiver.kt")
                 .readText()
+        val manifest = File(repository, "app/src/main/AndroidManifest.xml").readText()
 
+        assertTrue(activity.contains("enableEdgeToEdge()"))
+        assertTrue(manifest.contains("android:windowSoftInputMode=\"adjustResize\""))
+        assertTrue(
+            manifest.contains(
+                "android:name=\"com.google.mlkit.vision.documentscanner.internal.GmsDocumentScanningDelegateActivity\"",
+            ),
+        )
+        assertTrue(manifest.contains("tools:remove=\"android:screenOrientation\""))
         assertFalse(sources.contains("getContentUri(address.volume, address.id)"))
         assertTrue(sources.contains("mediaItemContentUri(address)"))
         assertTrue(renderer.contains("newBitmapRegionDecoder(source)"))
         assertTrue(activity.contains("Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU"))
         assertTrue(activity.contains("LEGACY_APP_LANGUAGE"))
-        assertTrue(receiver.contains("chosenComponentExtra()"))
+        assertFalse(receiver.contains("deleteDurableOutputs"))
+        assertTrue(receiver.contains("discardPendingShareCleanups"))
     }
 }

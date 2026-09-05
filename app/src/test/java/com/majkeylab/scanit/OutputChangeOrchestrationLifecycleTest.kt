@@ -37,6 +37,37 @@ class OutputChangeOrchestrationLifecycleTest {
     }
 
     @Test
+    fun scannerCallbacksWaitForBootstrapAndRunExactlyOnce() {
+        listOf("ok", "cancel", "error").forEach { callback ->
+            val gate = ScannerCallbackGate()
+            val events = mutableListOf<String>()
+
+            assertTrue(gate.submit { events += callback })
+            assertFalse(gate.submit { events += "duplicate" })
+            assertTrue(events.isEmpty())
+
+            gate.complete(deliver = true)
+
+            assertEquals(listOf(callback), events)
+            assertTrue(gate.submit { events += "after" })
+            assertEquals(listOf(callback, "after"), events)
+        }
+    }
+
+    @Test
+    fun failedBootstrapDropsQueuedScannerCallback() {
+        val gate = ScannerCallbackGate()
+        var calls = 0
+
+        assertTrue(gate.submit { calls++ })
+        gate.complete(deliver = false)
+
+        assertEquals(0, calls)
+        assertFalse(gate.submit { calls++ })
+        assertEquals(0, calls)
+    }
+
+    @Test
     fun outputTreeAttemptValidatesBeforeGrantAndAlwaysReconciles() = runBlocking {
         val validationFailureEvents = mutableListOf<String>()
         try {
@@ -108,6 +139,28 @@ class OutputChangeOrchestrationLifecycleTest {
             )
         assertEquals(7, result)
         assertEquals(listOf("validate", "grant", "replace", "reconcile"), successEvents)
+    }
+
+    @Test
+    fun editedDocumentCommitPersistsConfiguredOutputsBeforePublication() {
+        val source =
+            File("..").canonicalFile
+                .resolve("app/src/main/java/com/majkeylab/scanit/ScanViewModel.kt")
+                .readText()
+        val editedSave =
+            source.substringAfter("private suspend fun saveEditedReviewOutputs(")
+                .substringBefore("private suspend fun saveAutomaticInitialOutputs(")
+        val derivedCommit =
+            source.substringAfter("private suspend fun completeDerivedCandidate(")
+                .substringBefore("private suspend fun saveEditedReviewOutputs(")
+        val whiteboardApply =
+            source.substringAfter("private fun applyCleanWhiteboard(")
+                .substringBefore("private suspend fun restoreWhiteboardApplyFailure(")
+
+        assertTrue(editedSave.contains("automaticOutputTarget(settings)"))
+        assertTrue(editedSave.contains("saveCurrentOutputs(scan, target, settings)"))
+        assertTrue(derivedCommit.contains("saveEditedReviewOutputs"))
+        assertTrue(whiteboardApply.contains("completeEditedAppearanceCandidate"))
     }
 
     @Test

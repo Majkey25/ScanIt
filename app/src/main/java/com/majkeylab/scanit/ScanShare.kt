@@ -1,7 +1,6 @@
 package com.majkeylab.scanit
 
 import android.app.Activity
-import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
@@ -27,6 +26,7 @@ internal const val PREPARED_IMAGE_SHARE_TTL_MS = 24L * 60L * 60L * 1000L
 private const val MAX_PREPARED_IMAGE_SHARES = 64
 private const val MAX_PREPARED_IMAGE_SHARE_ROOT_BYTES = 256L * 1024L * 1024L
 private const val PREPARED_IMAGE_SHARE_LEASE_FILE = ".lease"
+private const val PREPARED_IMAGE_SHARE_LAUNCHED_FILE = ".launched"
 private val preparedImageShareLock = Any()
 
 internal data class PreparedImageShare(
@@ -221,6 +221,7 @@ internal fun prepareImageShareCopies(
     open: (String) -> InputStream,
     isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     operationId: String = UUID.randomUUID().toString(),
+    nowMillis: Long = System.currentTimeMillis(),
 ): PreparedImageShare {
     if (outputs.isEmpty() || outputs.size > MAX_SCAN_PAGES || !isCanonicalUuid(operationId)) {
         throw IOException("Image share request is invalid")
@@ -246,7 +247,7 @@ internal fun prepareImageShareCopies(
     val mimeTypes = outputs.map(PreparedImageSource::mimeType)
     val mimeType = activeImageShareMimeType(mimeTypes)
     val root = shareRoot.absoluteFile
-    val directory = reservePreparedImageShareDirectory(root, operationId, totalBytes)
+    val directory = reservePreparedImageShareDirectory(root, operationId, totalBytes, nowMillis)
     val prepared = PreparedImageShare(root, directory, emptyList(), mimeType)
     try {
         val files =
@@ -280,6 +281,28 @@ internal fun cleanupPreparedImageShare(prepared: PreparedImageShare): Boolean {
     }
 }
 
+internal fun markPreparedImageShareLaunched(
+    prepared: PreparedImageShare,
+    nowMillis: Long = System.currentTimeMillis(),
+): Boolean =
+    synchronized(preparedImageShareLock) {
+        if (nowMillis <= 0L) return@synchronized false
+        try {
+            validatePreparedImageShareLocked(prepared)
+            val marker = File(prepared.directory, PREPARED_IMAGE_SHARE_LAUNCHED_FILE).absoluteFile
+            if (marker.parentFile != prepared.directory || marker.canonicalFile != marker || marker.exists()) {
+                return@synchronized false
+            }
+            FileOutputStream(marker).use { output ->
+                output.write(nowMillis.toString().toByteArray(Charsets.US_ASCII))
+                output.fd.sync()
+            }
+            true
+        } catch (_: IOException) {
+            false
+        }
+    }
+
 private fun cleanupPreparedImageShareLocked(prepared: PreparedImageShare): Boolean {
     val root = prepared.shareRoot.absoluteFile
     val directory = prepared.directory.absoluteFile
@@ -296,12 +319,13 @@ private fun reservePreparedImageShareDirectory(
     root: File,
     operationId: String,
     expectedBytes: Long,
+    now: Long,
 ): File =
     synchronized(preparedImageShareLock) {
         if (root.canonicalFile != root || !root.isDirectory) {
             throw IOException("Prepared image share root is unavailable")
         }
-        val now = System.currentTimeMillis()
+        if (now <= 0L) throw IOException("Prepared image share timestamp is invalid")
         preparedImageShareDirectories(root).forEach { directory ->
             if (directory.lastModified() <= 0L || directory.lastModified() > now) {
                 throw IOException("Prepared image share timestamp is invalid")
@@ -318,7 +342,14 @@ private fun reservePreparedImageShareDirectory(
                 return@forEach
             }
             validatePreparedImageShareDirectory(directory)
-            if (now - directory.lastModified() > PREPARED_IMAGE_SHARE_TTL_MS &&
+            val launchedAt = readPreparedImageShareLaunch(directory)
+            if (launchedAt != null && launchedAt > now) {
+                throw IOException("Prepared image share launch is in the future")
+            }
+            // No callback proves the receiver has finished reading. Keep launched copies;
+            // the quota can reject new shares, and Android may still evict cache files.
+            val expired = launchedAt == null && now - directory.lastModified() > PREPARED_IMAGE_SHARE_TTL_MS
+            if (expired &&
                 !deleteTreeWithoutFollowingLinks(directory)
             ) throw IOException("Expired image share could not be cleaned")
         }
@@ -365,20 +396,34 @@ private fun preparedImageShareDirectories(root: File): List<File> {
 private fun validatePreparedImageShareDirectory(directory: File) {
     val children = directory.listFiles()
     if (directory.canonicalFile != directory || children == null ||
-        children.size > MAX_SCAN_PAGES + 1 ||
+        children.size > MAX_SCAN_PAGES + 2 ||
         children.all { child ->
             child.canonicalFile == child.absoluteFile && child.isFile &&
                 (child.name == PREPARED_IMAGE_SHARE_LEASE_FILE ||
+                    child.name == PREPARED_IMAGE_SHARE_LAUNCHED_FILE ||
                     child.name.matches(PREPARED_IMAGE_FILE_NAME))
         }.not()
     ) throw IOException("Prepared image share directory is unsafe")
     val expectedBytes = readPreparedImageShareLease(directory)
-    children.filterNot { it.name == PREPARED_IMAGE_SHARE_LEASE_FILE }.fold(0L) { total, file ->
+    children.filterNot {
+        it.name == PREPARED_IMAGE_SHARE_LEASE_FILE ||
+            it.name == PREPARED_IMAGE_SHARE_LAUNCHED_FILE
+    }.fold(0L) { total, file ->
         if (file.length() > expectedBytes - total) {
             throw IOException("Prepared image share directory is too large")
         }
         total + file.length()
     }
+}
+
+private fun readPreparedImageShareLaunch(directory: File): Long? {
+    val marker = File(directory, PREPARED_IMAGE_SHARE_LAUNCHED_FILE).absoluteFile
+    if (!marker.exists()) return null
+    if (marker.parentFile != directory || marker.canonicalFile != marker || !marker.isFile ||
+        marker.length() !in 1..20
+    ) throw IOException("Prepared image share launch is invalid")
+    return marker.readText(Charsets.US_ASCII).toLongOrNull()?.takeIf { it > 0L }
+        ?: throw IOException("Prepared image share launch is invalid")
 }
 
 private fun readPreparedImageShareLease(directory: File): Long {
@@ -438,51 +483,13 @@ private fun throwIfOutputCopyCancelled(isCancelled: () -> Boolean) {
 
 internal fun Activity.launchShareChooser(
     shareIntent: Intent,
-    cleanupRequest: ShareCleanupRequest? = null,
 ): Boolean =
     try {
-        if (
-            cleanupRequest != null &&
-                !SettingsStore(applicationContext).canSavePendingShareCleanup(cleanupRequest)
-        ) {
-            return false
-        }
-        val chooser =
-            if (cleanupRequest == null) {
-                Intent.createChooser(shareIntent, getString(R.string.app_name))
-            } else {
-                Intent.createChooser(
-                    shareIntent,
-                    getString(R.string.app_name),
-                    shareResultPendingIntent(this, cleanupRequest).intentSender,
-                )
-            }
-        startActivity(chooser)
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.app_name)))
         true
     } catch (_: ActivityNotFoundException) {
         false
-    } catch (_: IOException) {
-        false
     }
-
-private fun shareResultPendingIntent(
-    context: Context,
-    request: ShareCleanupRequest,
-): PendingIntent {
-    val callback =
-        Intent(context, ShareResultReceiver::class.java).apply {
-            action = "${context.packageName}.share_result.${UUID.randomUUID()}"
-            putExtra(EXTRA_SHARE_CACHE_ID, request.cacheId)
-            putExtra(EXTRA_SHARE_ENTRY_ID, request.entryId)
-            putExtra(EXTRA_SHARE_CLEANUP_KIND, request.kind.wireValue)
-        }
-    return PendingIntent.getBroadcast(
-        context,
-        0,
-        callback,
-        PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_MUTABLE,
-    )
-}
 
 private fun shareUri(context: Context, file: File): Uri {
     if (!file.isFile || file.length() <= 0L) {

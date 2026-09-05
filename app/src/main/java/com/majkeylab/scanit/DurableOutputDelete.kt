@@ -605,7 +605,12 @@ internal class ExactOutputDeleter(private val context: Context) {
         val canonical = mediaItemContentUri(address)
         if (uri != canonical) return OutputDeleteStatus.IdentityMismatch
         val expected =
-            ExpectedMediaItem(address.id, marker.displayName, marker.mimeType, context.packageName)
+            ExpectedMediaItem(
+                address.id,
+                marker.displayName,
+                marker.mimeType,
+                context.packageName,
+            )
         return providerDeleteResult {
             when (queryPendingMediaItem(uri, expected)) {
                 ExactItemQuery.Absent -> OutputDeleteStatus.Absent
@@ -670,6 +675,7 @@ internal class ExactOutputDeleter(private val context: Context) {
             val rootId = DocumentsContract.getTreeDocumentId(tree)
             val documentId = DocumentsContract.getDocumentId(document)
             val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+            val displayName = marker.displayName
             if (!safChildStructureIsValid(
                     sameAuthority = true,
                     rootDocumentId = rootId,
@@ -685,14 +691,14 @@ internal class ExactOutputDeleter(private val context: Context) {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 ) != PackageManager.PERMISSION_GRANTED
             ) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
-            when (querySafDocument(document, documentId, marker.displayName, marker.mimeType)) {
+            when (querySafDocument(document, documentId, displayName, marker.mimeType)) {
                 ExactItemQuery.Absent ->
                     confirmSafDocumentAbsent(
                         root,
                         rootId,
                         document,
                         documentId,
-                        marker.displayName,
+                        displayName,
                         marker.mimeType,
                     )
                 ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
@@ -712,7 +718,7 @@ internal class ExactOutputDeleter(private val context: Context) {
                         rootId,
                         document,
                         documentId,
-                        marker.displayName,
+                        displayName,
                         marker.mimeType,
                     )) {
                         OutputDeleteStatus.Absent ->
@@ -1016,6 +1022,7 @@ internal class ExactOutputDeleter(private val context: Context) {
         } catch (_: Exception) {
             null
         }
+
 }
 
 private fun Cursor.requiredString(column: String): String {

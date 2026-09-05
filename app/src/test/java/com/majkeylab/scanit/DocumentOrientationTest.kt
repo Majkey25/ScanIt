@@ -54,7 +54,7 @@ class DocumentOrientationTest {
     }
 
     @Test
-    fun noReliableTextUsesPortraitFallbackOnlyForLandscapeInput() {
+    fun noReliableTextPreservesScannerPixels() {
         assertEquals(
             ImageExifOrientation.Normal,
             selectDocumentOrientation(
@@ -64,13 +64,28 @@ class DocumentOrientationTest {
             ),
         )
         assertEquals(
-            ImageExifOrientation.Rotate270,
+            ImageExifOrientation.Normal,
             selectDocumentOrientation(
                 emptyList(),
                 imageWidth = 1800,
                 imageHeight = 1200,
             ),
         )
+    }
+
+    @Test
+    fun supportedLargeScannerPagesUseBoundedOrientationSamples() {
+        listOf(3060 to 4080, 5092 to 7146, 16384 to 12288).forEach { (width, height) ->
+            val sample = documentOrientationSampleSize(width, height)
+
+            assertEquals(true, validOriginalImageDimensions(width, height))
+            assertEquals(
+                true,
+                sampledDimensionUpperBound(width, sample).toLong() *
+                    sampledDimensionUpperBound(height, sample) <=
+                    MAX_ORIENTATION_ANALYSIS_PIXELS,
+            )
+        }
     }
 
     @Test

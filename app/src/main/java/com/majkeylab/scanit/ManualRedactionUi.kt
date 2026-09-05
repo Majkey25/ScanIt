@@ -10,15 +10,16 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,8 +54,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -111,123 +116,211 @@ internal fun ManualRedactionReview(
     val totalStrokes = state.strokesByPage.values.sumOf(List<RedactionStroke>::size)
     val totalPoints = state.strokesByPage.values.flatten().sumOf { it.points.size }
     val canApply = safeShareCanApply(previewReady, totalStrokes)
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val availableWidthDp = with(density) { windowSize.width.toDp().value.roundToInt() }
+    val availableHeightDp = with(density) { windowSize.height.toDp().value.roundToInt() }
+    val canvasHeight = boundedRedactionCanvasHeightDp(availableHeightDp).dp
+    val stackActions = stackResultActions(configuration.fontScale, availableWidthDp - 32)
+    val thicknessLabel = stringResource(R.string.redaction_brush_thickness)
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            contentPadding = PaddingValues(bottom = 2.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(stringResource(R.string.redact_document), style = MaterialTheme.typography.titleLarge)
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                RedactionTool.entries.forEachIndexed { index, tool ->
-                    SegmentedButton(
-                        selected = state.redactionTool == tool,
-                        onClick = { onToolChange(tool) },
-                        shape = SegmentedButtonDefaults.itemShape(index, RedactionTool.entries.size),
-                        label = {
-                            Text(
-                                stringResource(
-                                    if (tool == RedactionTool.Line) {
-                                        R.string.redaction_tool_line
-                                    } else {
-                                        R.string.redaction_tool_brush
-                                    },
-                                ),
-                            )
-                        },
-                    )
-                }
-            }
-            Text(
-                stringResource(R.string.redaction_draw_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            ManualRedactionCanvas(
-                bitmap = preview.bitmap.takeIf { previewReady },
-                strokes = pageStrokes,
-                brushWidthFraction = state.brushWidthFraction,
-                tool = state.redactionTool,
-                totalStrokeCount = totalStrokes,
-                totalPointCount = totalPoints,
-                onStroke = onAddStroke,
-                modifier =
-                    Modifier.fillMaxWidth().weight(1f).heightIn(min = 180.dp)
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                        .border(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant,
-                            MaterialTheme.shapes.medium,
-                        ),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                TextButton(
-                    onClick = { onSelectPage(state.page - 1) },
-                    enabled = scope == SafeShareScope.AllPages && state.page > 0,
-                ) { Text(stringResource(R.string.safe_share_previous_page)) }
+            item {
                 Text(
-                    stringResource(R.string.page_position, state.page + 1, pages.size),
-                    style = MaterialTheme.typography.labelLarge,
+                    stringResource(R.string.redact_document),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.semantics { heading() },
                 )
-                TextButton(
-                    onClick = { onSelectPage(state.page + 1) },
-                    enabled =
-                        scope == SafeShareScope.AllPages && state.page + 1 < pages.size,
-                ) { Text(stringResource(R.string.safe_share_next_page)) }
             }
-            val thicknessLabel = stringResource(R.string.redaction_brush_thickness)
-            Text(
-                stringResource(
-                    R.string.visual_mark_slider_value,
-                    thicknessLabel,
+            item {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    RedactionTool.entries.forEachIndexed { index, tool ->
+                        SegmentedButton(
+                            selected = state.redactionTool == tool,
+                            onClick = { onToolChange(tool) },
+                            shape =
+                                SegmentedButtonDefaults.itemShape(index, RedactionTool.entries.size),
+                            label = {
+                                Text(
+                                    stringResource(
+                                        if (tool == RedactionTool.Line) {
+                                            R.string.redaction_tool_line
+                                        } else {
+                                            R.string.redaction_tool_brush
+                                        },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    stringResource(R.string.redaction_draw_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
+                ManualRedactionCanvas(
+                    bitmap = preview.bitmap.takeIf { previewReady },
+                    strokes = pageStrokes,
+                    brushWidthFraction = state.brushWidthFraction,
+                    tool = state.redactionTool,
+                    totalStrokeCount = totalStrokes,
+                    totalPointCount = totalPoints,
+                    onStroke = onAddStroke,
+                    modifier =
+                        Modifier.fillMaxWidth().height(canvasHeight)
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant,
+                                MaterialTheme.shapes.medium,
+                            ),
+                )
+            }
+            item {
+                if (stackActions) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.page_position, state.page + 1, pages.size),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        TextButton(
+                            onClick = { onSelectPage(state.page - 1) },
+                            enabled = scope == SafeShareScope.AllPages && state.page > 0,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.safe_share_previous_page)) }
+                        TextButton(
+                            onClick = { onSelectPage(state.page + 1) },
+                            enabled =
+                                scope == SafeShareScope.AllPages && state.page + 1 < pages.size,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.safe_share_next_page)) }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        TextButton(
+                            onClick = { onSelectPage(state.page - 1) },
+                            enabled = scope == SafeShareScope.AllPages && state.page > 0,
+                        ) { Text(stringResource(R.string.safe_share_previous_page)) }
+                        Text(
+                            stringResource(R.string.page_position, state.page + 1, pages.size),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        TextButton(
+                            onClick = { onSelectPage(state.page + 1) },
+                            enabled =
+                                scope == SafeShareScope.AllPages && state.page + 1 < pages.size,
+                        ) { Text(stringResource(R.string.safe_share_next_page)) }
+                    }
+                }
+            }
+            item {
+                Text(
                     stringResource(
-                        R.string.visual_mark_percent,
-                        (state.brushWidthFraction * 100).roundToInt(),
+                        R.string.visual_mark_slider_value,
+                        thicknessLabel,
+                        stringResource(
+                            R.string.visual_mark_percent,
+                            (state.brushWidthFraction * 100).roundToInt(),
+                        ),
                     ),
-                ),
-            )
-            Slider(
-                value = state.brushWidthFraction,
-                onValueChange = onBrushWidthChange,
-                valueRange =
-                    MIN_REDACTION_BRUSH_WIDTH_FRACTION..MAX_REDACTION_BRUSH_WIDTH_FRACTION,
-                modifier = Modifier.fillMaxWidth().semantics {
-                    contentDescription = thicknessLabel
-                },
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onUndoStroke, enabled = pageStrokes.isNotEmpty()) {
-                    Text(stringResource(R.string.undo_drawing))
-                }
-                TextButton(
-                    onClick = onRedoStroke,
-                    enabled = state.undoneStrokesByPage[state.page].orEmpty().isNotEmpty(),
-                ) { Text(stringResource(R.string.redo_drawing)) }
-                TextButton(onClick = onClearPage, enabled = pageStrokes.isNotEmpty()) {
-                    Text(stringResource(R.string.clear_drawing))
+                )
+                Slider(
+                    value = state.brushWidthFraction,
+                    onValueChange = onBrushWidthChange,
+                    valueRange =
+                        MIN_REDACTION_BRUSH_WIDTH_FRACTION..MAX_REDACTION_BRUSH_WIDTH_FRACTION,
+                    modifier = Modifier.fillMaxWidth().semantics {
+                        contentDescription = thicknessLabel
+                    },
+                )
+            }
+            item {
+                val redoEnabled = state.undoneStrokesByPage[state.page].orEmpty().isNotEmpty()
+                if (stackActions) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = onUndoStroke,
+                            enabled = pageStrokes.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.undo_drawing)) }
+                        TextButton(
+                            onClick = onRedoStroke,
+                            enabled = redoEnabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.redo_drawing)) }
+                        TextButton(
+                            onClick = onClearPage,
+                            enabled = pageStrokes.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.clear_drawing)) }
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = onUndoStroke, enabled = pageStrokes.isNotEmpty()) {
+                            Text(stringResource(R.string.undo_drawing))
+                        }
+                        TextButton(onClick = onRedoStroke, enabled = redoEnabled) {
+                            Text(stringResource(R.string.redo_drawing))
+                        }
+                        TextButton(onClick = onClearPage, enabled = pageStrokes.isNotEmpty()) {
+                            Text(stringResource(R.string.clear_drawing))
+                        }
+                    }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.cancel))
+            item {
+                if (stackActions) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { if (canApply) onApply() },
+                            enabled = canApply,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(stringResource(R.string.apply_protection)) }
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                        Button(
+                            onClick = { if (canApply) onApply() },
+                            enabled = canApply,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.apply_protection)) }
+                    }
                 }
-                Button(
-                    onClick = { if (canApply) onApply() },
-                    enabled = canApply,
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.apply_protection)) }
             }
-            Spacer(Modifier.height(2.dp))
+            item { Spacer(Modifier.height(2.dp)) }
         }
     }
 }
+
+internal fun boundedRedactionCanvasHeightDp(availableHeightDp: Int): Int =
+    (availableHeightDp.toLong() * 45L / 100L).toInt().coerceIn(180, 420)
 
 @Composable
 private fun ManualRedactionCanvas(
