@@ -13,6 +13,21 @@ import org.junit.Test
 
 class JpegPdfWriterTest {
     @Test
+    fun pdfWritersSyncStagingBeforePublication() {
+        listOf("JpegPdfWriter.kt", "BitonalPdfWriter.kt").forEach { fileName ->
+            val source =
+                File("..").canonicalFile
+                    .resolve("app/src/main/java/com/majkeylab/scanit/$fileName")
+                    .readText()
+            val sync = source.indexOf("file.fd.sync()")
+            val publish = source.indexOf("publishStagedFileNoReplace(staging")
+
+            assertTrue("$fileName does not sync staging", sync >= 0)
+            assertTrue("$fileName publishes before sync", publish > sync)
+        }
+    }
+
+    @Test
     fun writesJpegBytesIntoAParseableDctImageObject() {
         val root = Files.createTempDirectory("scanit-jpeg-pdf").toFile()
         try {

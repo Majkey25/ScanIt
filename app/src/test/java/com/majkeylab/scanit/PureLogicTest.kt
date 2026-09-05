@@ -758,13 +758,31 @@ class PureLogicTest {
     @Test
     fun githubReleaseMetadataAndVerifierSupportAab() {
         val repository = File("..").canonicalFile
+        val rootBuild = File(repository, "build.gradle.kts").readText()
         val build = File(repository, "app/build.gradle.kts").readText()
         val verifier = File(repository, "tools/verify-release.ps1").readText()
+        val buildTool = File(repository, "tools/build.ps1").readText()
+        val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 39"))
-        assertTrue(build.contains("versionName = \"1.7.0\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"39\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.7.0\""))
+        assertTrue(build.contains("versionCode = 40"))
+        assertTrue(build.contains("versionName = \"1.8.0\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"40\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.8.0\""))
+        assertTrue(rootBuild.contains("version \"9.3.2\""))
+        assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
+        assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))
+        assertTrue(build.contains("compileSdk = 37"))
+        assertTrue(build.contains("androidx.compose:compose-bom:2026.08.00"))
+        assertTrue(build.contains("androidx.core:core-ktx:1.19.0"))
+        assertTrue(build.contains("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0"))
+        assertTrue(build.contains("org.json:json:20260814"))
+        assertTrue(build.contains("seliaScanKeystoreProperties"))
+        assertTrue(build.contains(".android/scanit/keystore.properties"))
+        assertTrue(buildTool.contains("Get-BuiltReleaseApk"))
+        assertTrue(verifier.contains("ValidateSet(\"internal\", \"github\")"))
+        assertTrue(verifier.contains("Assert-ExactUsesPermissions"))
+        assertTrue(verifier.contains("Assert-ArchiveEntryCount"))
+        assertTrue(verifier.contains("Add-ScannedArchiveBytes"))
         assertFalse(build.contains("create(\"beta\")"))
         assertFalse(build.contains("create(\"play\")"))
     }
@@ -1415,9 +1433,16 @@ class PureLogicTest {
     }
 
     @Test
-    fun automaticPdfSaveDefersCustomSafUntilExplicitSave() {
-        assertTrue(automaticPdfUsesDownloads(null))
-        assertFalse(automaticPdfUsesDownloads("content://documents/tree/scanit"))
+    fun automaticPdfSaveUsesConfiguredDestination() {
+        val source =
+            File("..").canonicalFile
+                .resolve("app/src/main/java/com/majkeylab/scanit/ScanViewModel.kt")
+                .readText()
+                .substringAfter("private suspend fun saveAutomaticInitialOutputs(")
+                .substringBefore("private suspend fun saveAutomaticReviewOutputs(")
+
+        assertTrue(source.contains("pdfTreeUri = settings.pdfTreeUri"))
+        assertFalse(source.contains("pdf_auto_save_deferred"))
     }
 
     @Test
@@ -1825,28 +1850,52 @@ class PureLogicTest {
     }
 
     @Test
-    fun falseCommitReturnStillSucceedsWhenEveryExactReadbackMatches() {
-        val (preferences, _) = inMemoryPreferences(commitResults = listOf(false, false, false))
-        val store = SettingsStore(preferences, "Scanned document")
-        val initialOwner = store.authoritySnapshot().owner
-
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.saveActiveResult("Scan_candidate", initialOwner),
-        )
-        val candidateOwner =
-            initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
-        val appearance = ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale)
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.restoreAppearanceAuthority(appearance, PdfSizeTarget.Mb5, candidateOwner),
-        )
-        assertEquals(appearance, store.load().appearance)
-        assertEquals(
-            AuthorityMutationResult.Applied,
-            store.clearActiveResult(candidateOwner),
-        )
-        assertNull(store.activeResultCheckpoint())
+    fun falseCommitReturnRejectsAuthorityMutationEvenWhenVolatileReadbackMatches() {
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(false))
+            val store = SettingsStore(preferences, "Scanned document")
+            assertThrows(IOException::class.java) {
+                store.saveActiveResult("Scan_candidate", store.authoritySnapshot().owner)
+            }
+            assertNull(store.activeResultCheckpoint())
+        }
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(true, false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val previousSettings = store.load()
+            val initialOwner = store.authoritySnapshot().owner
+            assertEquals(
+                AuthorityMutationResult.Applied,
+                store.saveActiveResult("Scan_candidate", initialOwner),
+            )
+            val candidateOwner =
+                initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+            assertThrows(IOException::class.java) {
+                store.restoreAppearanceAuthority(
+                    ScanAppearanceSettings(colorMode = ScanColorMode.Grayscale),
+                    PdfSizeTarget.Mb5,
+                    candidateOwner,
+                )
+            }
+            assertEquals(previousSettings.appearance, store.load().appearance)
+            assertEquals(previousSettings.pdfSizeTarget, store.load().pdfSizeTarget)
+        }
+        run {
+            val (preferences, _) = inMemoryPreferences(commitResults = listOf(true, false))
+            val store = SettingsStore(preferences, "Scanned document")
+            val initialOwner = store.authoritySnapshot().owner
+            assertEquals(
+                AuthorityMutationResult.Applied,
+                store.saveActiveResult("Scan_candidate", initialOwner),
+            )
+            val candidateOwner =
+                initialOwner.withCheckpoint(ActiveResultCheckpoint("Scan_candidate"))
+            assertThrows(IOException::class.java) { store.clearActiveResult(candidateOwner) }
+            assertEquals(
+                ActiveResultCheckpoint("Scan_candidate"),
+                store.activeResultCheckpoint(),
+            )
+        }
     }
 
     @Test

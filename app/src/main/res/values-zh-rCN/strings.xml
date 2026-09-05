@@ -180,7 +180,6 @@
     <string name="saving_document">正在保存文档…</string>
     <string name="images_save_failed">无法将图像保存到图库。文档仍可分享。</string>
     <string name="pdf_save_failed">无法保存 PDF。文档仍可分享。</string>
-    <string name="pdf_auto_save_deferred">所选文件夹需要确认。请在“文件详情”中保存 PDF。</string>
     <string name="pdf_size_target_not_met">如果不让页面过小，PDF 无法压缩到 %1$d MB 以下。实际大小：%2$.2f MB。</string>
     <string name="pdf_size_target_not_met_kb">如果不让页面过小，PDF 无法压缩到 %1$d KB 以下。实际大小：%2$.1f KB。</string>
     <string name="document_save_failed">无法保存文档。请重试。</string>

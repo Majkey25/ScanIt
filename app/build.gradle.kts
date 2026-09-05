@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -5,7 +6,18 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val keystorePropertiesFile = rootProject.file("keystore.properties")
+val configuredKeystorePropertiesFile =
+    providers.gradleProperty("seliaScanKeystoreProperties").orNull?.let { path ->
+        rootProject.file(path).also { file ->
+            require(file.isFile) { "Configured SeliaScan keystore properties file is missing" }
+        }
+    }
+val externalKeystorePropertiesFile =
+    File(System.getProperty("user.home"), ".android/scanit/keystore.properties")
+val keystorePropertiesFile =
+    configuredKeystorePropertiesFile
+        ?: externalKeystorePropertiesFile.takeIf(File::isFile)
+        ?: rootProject.file("keystore.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use(keystoreProperties::load)
@@ -13,14 +25,14 @@ if (keystorePropertiesFile.isFile) {
 
 android {
     namespace = "com.majkeylab.scanit"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.majkeylab.scanit"
         minSdk = 29
         targetSdk = 36
-        versionCode = 26
-        versionName = "1.5.0"
+        versionCode = 40
+        versionName = "1.8.0"
     }
 
     signingConfigs {
@@ -68,8 +80,6 @@ android {
         create("github") {
             dimension = "distribution"
             applicationIdSuffix = ".github"
-            versionCode = 39
-            versionName = "1.7.0"
         }
         create("internal") {
             dimension = "distribution"
@@ -104,17 +114,17 @@ androidComponents {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1")
     implementation("com.google.android.gms:play-services-mlkit-face-detection:17.1.0")
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20260719")
+    testImplementation("org.json:json:20260814")
 }

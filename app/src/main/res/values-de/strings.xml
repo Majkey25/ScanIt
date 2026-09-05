@@ -181,7 +181,6 @@
     <string name="saving_document">Dokument wird gespeichert…</string>
     <string name="images_save_failed">Bilder konnten nicht in der Galerie gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
     <string name="pdf_save_failed">Die PDF konnte nicht gespeichert werden. Das Dokument kann weiterhin geteilt werden.</string>
-    <string name="pdf_auto_save_deferred">Der ausgewählte Ordner muss bestätigt werden. Die PDF über die Dateidetails speichern.</string>
     <string name="pdf_size_target_not_met">Die PDF konnte nicht unter %1$d MB verkleinert werden, ohne die Seiten zu klein zu machen. Tatsächliche Größe: %2$.2f MB.</string>
     <string name="pdf_size_target_not_met_kb">Die PDF konnte nicht unter %1$d KB verkleinert werden, ohne die Seiten zu klein zu machen. Tatsächliche Größe: %2$.1f KB.</string>
     <string name="document_save_failed">Das Dokument konnte nicht gespeichert werden. Erneut versuchen.</string>

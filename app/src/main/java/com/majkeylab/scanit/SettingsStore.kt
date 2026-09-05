@@ -365,14 +365,21 @@ internal class SettingsStore(
             if (!ownerMatchesLocked(expectedOwner)) {
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
+            val expectedOwnerSettings = load()
             val normalized = normalizeAppearanceSettings(appearance)
-            preferences
-                .edit()
-                .putAppearance(normalized)
-                .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
-                .commit()
+            val stored =
+                preferences
+                    .edit()
+                    .putAppearance(normalized)
+                    .putString(KEY_PDF_SIZE_TARGET, pdfSizeTarget.wireValue)
+                    .commit()
             val loaded = load()
-            if (loaded.appearance != normalized || loaded.pdfSizeTarget != pdfSizeTarget) {
+            if (!stored || loaded.appearance != normalized || loaded.pdfSizeTarget != pdfSizeTarget) {
+                preferences
+                    .edit()
+                    .putAppearance(expectedOwnerSettings.appearance)
+                    .putString(KEY_PDF_SIZE_TARGET, expectedOwnerSettings.pdfSizeTarget.wireValue)
+                    .apply()
                 throw IOException("Appearance authority could not be restored")
             }
             AuthorityMutationResult.Applied
@@ -437,12 +444,14 @@ internal class SettingsStore(
                 return@withActiveResultAuthority AuthorityMutationResult.Stale
             }
             val encoded = encodeActiveResultCheckpoint(cacheId)
-            preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
+            val stored =
+                preferences.edit().putString(KEY_ACTIVE_RESULT_CHECKPOINT, encoded).commit()
             val verified =
                 readPreferenceOrDefault<String?>(null) {
                     preferences.getString(KEY_ACTIVE_RESULT_CHECKPOINT, null)
                 } == encoded
-            if (!verified) {
+            if (!stored || !verified) {
+                restoreActiveResultCheckpointInMemory(expectedOwner.checkpoint)
                 throw IOException("Active result could not be stored")
             }
             AuthorityMutationResult.Applied
@@ -459,12 +468,28 @@ internal class SettingsStore(
             if (expectedOwner.checkpoint == null) {
                 return@withActiveResultAuthority AuthorityMutationResult.Applied
             }
-            preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
-            if (activeResultCheckpointLocked() != null) {
+            val stored = preferences.edit().remove(KEY_ACTIVE_RESULT_CHECKPOINT).commit()
+            if (!stored || activeResultCheckpointLocked() != null) {
+                restoreActiveResultCheckpointInMemory(expectedOwner.checkpoint)
                 throw IOException("Active result could not be cleared")
             }
             AuthorityMutationResult.Applied
         }
+
+    private fun restoreActiveResultCheckpointInMemory(
+        checkpoint: ActiveResultCheckpoint?,
+    ) {
+        preferences.edit().apply {
+            if (checkpoint == null) {
+                remove(KEY_ACTIVE_RESULT_CHECKPOINT)
+            } else {
+                putString(
+                    KEY_ACTIVE_RESULT_CHECKPOINT,
+                    encodeActiveResultCheckpoint(checkpoint.cacheId),
+                )
+            }
+        }.apply()
+    }
 
     internal fun pendingPdfTreeUri(): String? =
         withStorageTransaction {

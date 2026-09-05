@@ -185,7 +185,6 @@
     <string name="saving_document">Dokument se ukládá…</string>
     <string name="images_save_failed">Obrázky se nepodařilo uložit do Galerie. Dokument lze stále odeslat.</string>
     <string name="pdf_save_failed">PDF se nepodařilo uložit. Dokument lze stále odeslat.</string>
-    <string name="pdf_auto_save_deferred">Vybranou složku je třeba potvrdit. PDF uložte v Podrobnostech souborů.</string>
     <string name="pdf_size_target_not_met">PDF se nepodařilo zmenšit pod %1$d MB bez příliš malých stránek. Skutečná velikost: %2$.2f MB.</string>
     <string name="pdf_size_target_not_met_kb">PDF se nepodařilo zmenšit pod %1$d KB bez příliš malých stránek. Skutečná velikost: %2$.1f KB.</string>
     <string name="document_save_failed">Dokument se nepodařilo uložit. Zkuste to znovu.</string>

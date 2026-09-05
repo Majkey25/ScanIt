@@ -52,8 +52,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlin.math.min
 
@@ -158,7 +160,7 @@ private fun ManualCleanupTopBar(
             modifier =
                 Modifier.fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.statusBars)
-                    .height(48.dp),
+                    .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose, enabled = closeEnabled, modifier = Modifier.size(48.dp)) {
@@ -168,7 +170,13 @@ private fun ManualCleanupTopBar(
                     Modifier.size(24.dp),
                 )
             }
-            Text(stringResource(R.string.manual_cleanup), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.manual_cleanup),
+                modifier = Modifier.weight(1f).semantics { heading() },
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

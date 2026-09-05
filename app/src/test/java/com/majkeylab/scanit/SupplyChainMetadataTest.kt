@@ -21,7 +21,7 @@ class SupplyChainMetadataTest {
             checkNotNull(
                 Regex(
                     """<component group="com\.android\.tools\.build" name="aapt2" version="([^"]+)">([\s\S]*?)</component>""",
-                ).find(metadata),
+                ).findAll(metadata).singleOrNull { it.groupValues[1].startsWith("$agpVersion-") },
             )
         val aapt2Version = component.groupValues[1]
 

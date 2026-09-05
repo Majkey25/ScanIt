@@ -468,7 +468,31 @@ internal fun automaticOutputTarget(settings: AppSettings): SaveNowTarget? =
         else -> null
     }
 
-internal fun automaticPdfUsesDownloads(pdfTreeUri: String?): Boolean = pdfTreeUri == null
+internal class ScannerCallbackGate {
+    private var complete = false
+    private var deliver = false
+    private var pending: (() -> Unit)? = null
+
+    fun submit(callback: () -> Unit): Boolean {
+        if (!complete) {
+            if (pending != null) return false
+            pending = callback
+            return true
+        }
+        if (!deliver) return false
+        callback()
+        return true
+    }
+
+    fun complete(deliver: Boolean) {
+        check(!complete) { "Scanner callback bootstrap is already complete" }
+        complete = true
+        this.deliver = deliver
+        val callback = pending
+        pending = null
+        if (deliver) callback?.invoke()
+    }
+}
 
 private enum class ResultActivation {
     Applied,
@@ -511,6 +535,7 @@ internal class ScanViewModel(
                 it.name == savedStateHandle.get<String>(SCANNER_STAGE_KEY)
             } ?: ScannerLaunchStage.Idle,
         )
+    private val scannerCallbackGate = ScannerCallbackGate()
     private val recentActionGate = RecentActionGate()
     private val recentDeletionGate = RecentDeletionGate()
     private val resultSaveGate = ResultSaveGate()
@@ -1203,6 +1228,10 @@ internal class ScanViewModel(
     }
 
     fun scannerCancelled() {
+        scannerCallbackGate.submit(::handleScannerCancelled)
+    }
+
+    private fun handleScannerCancelled() {
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
             refreshRecentScreen()
@@ -1210,6 +1239,10 @@ internal class ScanViewModel(
     }
 
     fun scannerResultFailed(message: UiMessage) {
+        scannerCallbackGate.submit { handleScannerResultFailed(message) }
+    }
+
+    private fun handleScannerResultFailed(message: UiMessage) {
         if (cleanWhiteboardApplyJob?.isActive == true) return
         completeScannerLaunch()
         if (processingJob?.isActive != true) {
@@ -1225,10 +1258,17 @@ internal class ScanViewModel(
     }
 
     fun processScan(pageUris: List<Uri>): Boolean {
+        val pages = pageUris.toList()
+        var accepted = true
+        if (!scannerCallbackGate.submit { accepted = processScanNow(pages) }) return false
+        return accepted
+    }
+
+    private fun processScanNow(pageUris: List<Uri>): Boolean {
         if (cleanWhiteboardApplyJob?.isActive == true) return false
         completeScannerLaunch()
         if (!isAcceptedScanPageCount(pageUris.size)) {
-            scannerResultFailed(UiMessage(R.string.scanner_result_error))
+            handleScannerResultFailed(UiMessage(R.string.scanner_result_error))
             return false
         }
         if (processingJob?.isActive == true) {
@@ -1240,7 +1280,6 @@ internal class ScanViewModel(
             return false
         }
 
-        val pages = pageUris.toList()
         val generation = beginRouteMutation()
         mutableState.value =
             ScreenState.Processing(
@@ -1257,11 +1296,11 @@ internal class ScanViewModel(
                         withContext(Dispatchers.IO) {
                             val settings = currentSettings()
                             val processingContext = currentCoroutineContext()
-                            val orientations = documentOrientationProcessor.detect(pages)
+                            val orientations = documentOrientationProcessor.detect(pageUris)
                             currentCoroutineContext().ensureActive()
                             val cacheBuild =
                                 storage.cacheScan(
-                                    pageUris = pages,
+                                    pageUris = pageUris,
                                     appearanceSettings = googleScannerAppearanceSettings(),
                                     pdfSizeTarget = settings.pdfSizeTarget,
                                     pageOrientations = orientations,
@@ -3219,21 +3258,22 @@ internal class ScanViewModel(
         val generation = beginRouteMutation(keepOutputChange = restoreOutputChange)
         recentJob =
             viewModelScope.launch {
-                val checkpoint = readActiveResultCheckpoint(generation)
-                if (checkpoint.mutation != CheckpointMutationResult.Applied) {
-                    if (restoreOutputChange) invalidateOutputChange()
-                    return@launch
-                }
-                val activeCheckpoint = checkpoint.checkpoint
-                val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
-                val destination =
-                    initialNavigation(
-                        savedRoute,
-                        savedCacheId,
-                        activeCheckpoint?.cacheId,
-                        restoredSafeShareActive || authoritativeWasProvisional,
-                    )
-                when (destination.route) {
+                try {
+                    val checkpoint = readActiveResultCheckpoint(generation)
+                    if (checkpoint.mutation != CheckpointMutationResult.Applied) {
+                        if (restoreOutputChange) invalidateOutputChange()
+                        return@launch
+                    }
+                    val activeCheckpoint = checkpoint.checkpoint
+                    val authoritativeWasProvisional = checkpoint.authoritativeWasProvisional
+                    val destination =
+                        initialNavigation(
+                            savedRoute,
+                            savedCacheId,
+                            activeCheckpoint?.cacheId,
+                            restoredSafeShareActive || authoritativeWasProvisional,
+                        )
+                    when (destination.route) {
                     RestoredRoute.Result -> {
                         val cacheId = checkNotNull(destination.cacheId)
                         val result = loadCachedResult(cacheId)
@@ -3303,6 +3343,12 @@ internal class ScanViewModel(
                                 }
                             }
                         }
+                    }
+                    }
+                } finally {
+                    if (currentCoroutineContext().isActive) {
+                        if (recentJob === currentCoroutineContext()[Job]) recentJob = null
+                        scannerCallbackGate.complete(deliver = activeResultAuthorityKnown)
                     }
                 }
             }
@@ -3559,7 +3605,6 @@ internal class ScanViewModel(
 
     override fun onCleared() {
         invalidateDocumentAction(OcrSnapshotInvalidation.Cleared)
-        super.onCleared()
     }
 
     private fun beginVisualMarkTemplateMutation(
@@ -3916,22 +3961,18 @@ internal class ScanViewModel(
         }
         currentCoroutineContext().ensureActive()
         if (settings.savePdf) {
-            if (automaticPdfUsesDownloads(settings.pdfTreeUri)) {
-                try {
-                    storage.savePdf(
-                        cached,
-                        settings.albumName,
-                        pdfTreeUri = null,
-                    ).warning?.let(warnings::add)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (failure: PdfSaveFailure) {
-                    warnings += pdfSaveFailureMessages(failure)
-                } catch (_: Exception) {
-                    warnings += UiMessage(R.string.pdf_save_failed)
-                }
-            } else {
-                warnings += UiMessage(R.string.pdf_auto_save_deferred)
+            try {
+                storage.savePdf(
+                    cached,
+                    settings.albumName,
+                    pdfTreeUri = settings.pdfTreeUri,
+                ).warning?.let(warnings::add)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: PdfSaveFailure) {
+                warnings += pdfSaveFailureMessages(failure)
+            } catch (_: Exception) {
+                warnings += UiMessage(R.string.pdf_save_failed)
             }
         }
         return warnings.distinct()

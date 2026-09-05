@@ -23,12 +23,12 @@
 
   <main id="main" class="policy">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective and last updated: 2026-08-24</p>
+    <p class="updated">Effective and last updated: 2026-09-05</p>
 
     <p>This policy describes the public SeliaScan Android app and this SeliaScan website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
 
     <div class="notice">
-      <strong>Short version:</strong> scanning and document processing stay on-device. Stable SeliaScan has no accounts, ads, first-party analytics, maintainer-operated document server, or generative-AI client. The SeliaScan VIP Ads prerelease contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
+      <strong>Short version:</strong> scanning and document processing stay on-device. The stable GitHub edition has no accounts, ads, Billing, first-party analytics, maintainer-operated document server, or generative-AI client. The separately maintained Google Play edition contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
     </div>
 
     <h2>Information the app handles locally</h2>
@@ -56,8 +56,8 @@
     <h2>Sharing and printing</h2>
     <p>SeliaScan sends a selected PDF or image to another app or print service only after you tap a share or print action and choose a recipient. That recipient processes the file under its own privacy terms. Review the destination before sending sensitive material.</p>
 
-    <h2>SeliaScan VIP Ads prerelease</h2>
-    <p>The VIP Ads GitHub prerelease uses the same <code>com.majkeylab.scanit</code> package as the Play app and includes Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are not present in the stable Play or GitHub variants. SeliaScan requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
+    <h2>Google Play edition</h2>
+    <p>The separately maintained Google Play edition uses the <code>com.majkeylab.scanit</code> package and includes Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are not present in the stable GitHub edition. SeliaScan requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
 
     <p>Google states that its current Mobile Ads SDK automatically collects and shares IP address, product interactions such as app launches, taps, and video views, diagnostic information such as launch time, hangs, and energy use, and device or account identifiers including Android advertising ID and app set ID. Google uses this information for advertising, analytics, and fraud prevention and encrypts it in transit using TLS. See Google's <a href="https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure">GMA Next-Gen data disclosure</a> and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 
@@ -67,7 +67,7 @@
     <p>Google Play Billing returns the monthly subscription or lifetime Premium product identifier, purchase state, acknowledgement state, and purchase token needed to buy or restore Premium for the current Google Play account. SeliaScan does not receive payment-card details, does not log purchase tokens, and does not persist a local Premium entitlement. Either confirmed product unlocks Document Actions and removes ads. The monthly subscription renews until canceled in Google Play. A pending purchase grants nothing until Google Play confirms it.</p>
 
     <h2>Information SeliaScan does not request</h2>
-    <p>The stable Play and GitHub variants have no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The VIP Ads beta adds Internet access plus Google advertising, consent, and Play Billing components to the Play-compatible package. No variant requests its own camera permission because the scanner uses the Google Play services camera flow, and no variant requests broad legacy storage access.</p>
+    <p>The stable GitHub edition has no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The Google Play edition adds Internet access plus Google advertising, consent, and Play Billing components. Neither edition requests its own camera permission because the scanner uses the Google Play services camera flow, and neither requests broad legacy storage access.</p>
 
     <h2>Support email and GitHub issues</h2>
     <p>If you email support or create a GitHub issue, the information you choose to submit is used to respond, investigate a report, and maintain the project. Public GitHub issues are visible to everyone. Support correspondence is retained only while reasonably needed for support, security, or record-keeping, then deleted when no longer needed. You may request deletion of support correspondence by emailing the support address, subject to legal or security retention needs.</p>

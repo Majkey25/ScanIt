@@ -182,7 +182,6 @@
     <string name="saving_document">Guardando documento…</string>
     <string name="images_save_failed">No se pudieron guardar las imágenes en la Galería. El documento aún se puede compartir.</string>
     <string name="pdf_save_failed">No se pudo guardar el PDF. El documento aún se puede compartir.</string>
-    <string name="pdf_auto_save_deferred">La carpeta seleccionada requiere confirmación. Guarda el PDF desde Detalles del archivo.</string>
     <string name="pdf_size_target_not_met">El PDF no pudo quedar por debajo de %1$d MB sin hacer las páginas demasiado pequeñas. Tamaño real: %2$.2f MB.</string>
     <string name="pdf_size_target_not_met_kb">El PDF no pudo quedar por debajo de %1$d KB sin hacer las páginas demasiado pequeñas. Tamaño real: %2$.1f KB.</string>
     <string name="document_save_failed">No se pudo guardar el documento. Reinténtalo.</string>

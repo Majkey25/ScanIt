@@ -46,6 +46,21 @@ if (-not $SkipClean) {
     $tasks = @("clean") + $tasks
 }
 
+function Get-BuiltReleaseApk {
+    param(
+        [Parameter(Mandatory)][string]$SignedPath,
+        [Parameter(Mandatory)][string]$UnsignedPath
+    )
+
+    $candidates = @($SignedPath, $UnsignedPath) | Where-Object {
+        Test-Path -LiteralPath $_ -PathType Leaf
+    }
+    if ($candidates.Count -ne 1) {
+        throw "Expected exactly one signed or unsigned release APK."
+    }
+    return $candidates[0]
+}
+
 Push-Location $projectRoot
 try {
     $gradle = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
@@ -59,11 +74,9 @@ try {
     }
 
     $verify = Join-Path $PSScriptRoot "verify-release.ps1"
-    $githubApk = if (Test-Path -LiteralPath "keystore.properties" -PathType Leaf) {
-        "app/build/outputs/apk/github/release/app-github-release.apk"
-    } else {
-        "app/build/outputs/apk/github/release/app-github-release-unsigned.apk"
-    }
+    $githubApk = Get-BuiltReleaseApk `
+        -SignedPath "app/build/outputs/apk/github/release/app-github-release.apk" `
+        -UnsignedPath "app/build/outputs/apk/github/release/app-github-release-unsigned.apk"
     & $verify internal "app/build/outputs/apk/internal/debug/app-internal-debug.apk" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath
     & $verify github $githubApk -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
     & $verify github "app/build/outputs/bundle/githubRelease/app-github-release.aab" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision

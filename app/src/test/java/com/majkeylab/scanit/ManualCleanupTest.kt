@@ -1,32 +1,45 @@
 package com.majkeylab.scanit
 
+import java.lang.management.ManagementFactory
 import java.util.concurrent.CancellationException
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class ManualCleanupTest {
     @Test
-    fun maskedStainUsesSurroundingPaperAndLeavesOtherPixelsUntouched() {
+    fun evenBoundaryMedianAveragesLowerAndUpperSamples() {
         val pixels =
-            IntArray(15) { index ->
-                when (index % 5) {
-                    0 -> gray(100)
-                    1 -> gray(120)
-                    2 -> gray(10)
-                    3 -> gray(160)
-                    else -> gray(180)
-                }
-            }
-        val mask = IntArray(15) { index -> if (index % 5 == 2) 255 else 0 }
-        val expected = pixels.copyOf().apply {
-            this[2] = gray(140)
-            this[7] = gray(140)
-            this[12] = gray(140)
-        }
+            intArrayOf(
+                argb(10, 20, 200, 40),
+                argb(255, 1, 2, 3),
+                argb(30, 100, 20, 200),
+            )
+        val mask = IntArray(pixels.size).apply { this[1] = 255 }
+        val expected = intArrayOf(pixels[0], argb(20, 60, 110, 120), pixels[2])
 
-        assertArrayEquals(expected, inpaintMaskedPixels(pixels, width = 5, height = 3, mask))
+        assertArrayEquals(expected, inpaintMaskedPixels(pixels, width = 3, height = 1, mask))
+    }
+
+    @Test
+    fun oddBoundaryMedianUsesMiddleSamplePerChannel() {
+        val pixels =
+            intArrayOf(
+                argb(255, 1, 2, 3),
+                argb(10, 20, 200, 40),
+                argb(255, 4, 5, 6),
+                argb(30, 100, 20, 200),
+                argb(20, 60, 100, 80),
+                argb(255, 7, 8, 9),
+            )
+        val mask = IntArray(pixels.size).apply { this[0] = 255 }
+
+        val cleaned = inpaintMaskedPixels(pixels, width = 3, height = 2, mask)
+
+        assertEquals(argb(20, 60, 100, 80), cleaned[0])
     }
 
     @Test
@@ -83,16 +96,40 @@ class ManualCleanupTest {
     }
 
     @Test
-    fun cancelledCleanupStopsBeforeChangingPixels() {
+    fun cancellationDuringBoundaryScanStopsBeforeChangingPixels() {
+        val pixels = IntArray(5_000) { gray(200) }.apply { this[4_500] = gray(10) }
+        val original = pixels.copyOf()
+        val mask = IntArray(pixels.size).apply { this[4_500] = 255 }
+        var checks = 0
+
         assertThrows(CancellationException::class.java) {
             inpaintMaskedPixels(
-                pixels = IntArray(9) { gray(200) },
-                width = 3,
-                height = 3,
-                maskAlpha = IntArray(9).apply { this[4] = 255 },
-                isCancelled = { true },
+                pixels = pixels,
+                width = pixels.size,
+                height = 1,
+                maskAlpha = mask,
+                isCancelled = { ++checks == 3 },
             )
         }
+        assertEquals(3, checks)
+        assertArrayEquals(original, pixels)
+    }
+
+    @Test
+    fun boundaryMedianScratchAllocationDoesNotScaleWithSelectionArea() {
+        val bean = ManagementFactory.getThreadMXBean() as? com.sun.management.ThreadMXBean
+        assumeTrue(bean?.isThreadAllocatedMemorySupported == true)
+        val allocationBean = requireNotNull(bean)
+        allocationBean.isThreadAllocatedMemoryEnabled = true
+        repeat(3) { measuredInpaintAllocation(allocationBean, 20_000) }
+
+        val small = measuredInpaintAllocation(allocationBean, 100_000)
+        val large = measuredInpaintAllocation(allocationBean, 200_000)
+
+        assertTrue(
+            "Boundary scratch allocation grew with the selection: small=$small, large=$large",
+            large - small < 600_000L,
+        )
     }
 
     @Test
@@ -117,4 +154,22 @@ class ManualCleanupTest {
 
     private fun gray(value: Int): Int =
         0xFF000000.toInt() or (value shl 16) or (value shl 8) or value
+
+    private fun argb(alpha: Int, red: Int, green: Int, blue: Int): Int =
+        (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+
+    private fun measuredInpaintAllocation(
+        bean: com.sun.management.ThreadMXBean,
+        size: Int,
+    ): Long {
+        val pixels = IntArray(size) { gray(200) }.apply { this[size / 2] = gray(10) }
+        val mask = IntArray(size).apply { this[size / 2] = 255 }
+        @Suppress("DEPRECATION")
+        val threadId = Thread.currentThread().id
+        val before = bean.getThreadAllocatedBytes(threadId)
+        val output = inpaintMaskedPixels(pixels, width = size, height = 1, mask)
+        val allocated = bean.getThreadAllocatedBytes(threadId) - before
+        assertEquals(gray(200), output[size / 2])
+        return allocated
+    }
 }

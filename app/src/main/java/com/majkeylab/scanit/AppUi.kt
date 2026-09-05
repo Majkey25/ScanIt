@@ -113,14 +113,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -172,6 +175,12 @@ private val DarkColorScheme =
         onTertiaryContainer = Color.White,
         inversePrimary = Color.Black,
     )
+
+@Composable
+private fun dialogContentMaxHeight(): Dp =
+    with(LocalDensity.current) {
+        (LocalWindowInfo.current.containerSize.height * 0.55f).toDp()
+    }.coerceAtLeast(180.dp)
 
 @Composable
 internal fun ScanItApp(
@@ -1331,10 +1340,7 @@ private fun DocumentActionStateDialog(
             onDispose(onStopReadAloud)
         }
     }
-    val maxContentHeight =
-        with(LocalDensity.current) {
-            (LocalWindowInfo.current.containerSize.height * 0.55f).toDp()
-        }.coerceAtLeast(180.dp)
+    val maxContentHeight = dialogContentMaxHeight()
     val title =
         when (state) {
             is DocumentActionState.Processing ->
@@ -2754,7 +2760,12 @@ private fun PdfSizeTargetDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.pdf_size)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier =
+                    Modifier.heightIn(max = dialogContentMaxHeight())
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text(
                     stringResource(R.string.current_pdf_size, pdfSizeTargetLabel(current)),
                     style = MaterialTheme.typography.bodyMedium,
@@ -2930,7 +2941,12 @@ private fun ImageSizeDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.image_size)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier =
+                    Modifier.heightIn(max = dialogContentMaxHeight())
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 ImageSizePreset.entries.forEach { candidate ->
                     Row(
                         modifier =
@@ -3282,7 +3298,12 @@ private fun RecentDeleteDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.delete_scan)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier =
+                    Modifier.heightIn(max = dialogContentMaxHeight())
+                        .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (removeRecentPending) {
                     Text(stringResource(R.string.recent_delete_pending_hint))
                 } else if (legacy) {
@@ -3388,7 +3409,7 @@ internal fun CompactTopBar(
                 modifier =
                     Modifier.fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .height(48.dp),
+                        .heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (onBack != null) {
@@ -3407,8 +3428,12 @@ internal fun CompactTopBar(
                 Text(
                     title,
                     modifier =
-                        Modifier.weight(1f).padding(start = if (onBack == null) 16.dp else 0.dp),
+                        Modifier.weight(1f)
+                            .padding(start = if (onBack == null) 16.dp else 0.dp)
+                            .semantics { heading() },
                     style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (onRecent != null) {
                     IconButton(
@@ -3512,6 +3537,22 @@ private fun SettingsScreen(
             }
         }
 
+    fun restoreLocalSettings() {
+        savePdf = settings.savePdf
+        saveImages = settings.saveImages
+        albumName = settings.albumName
+        multipage = settings.multipage
+        allowGallery = settings.allowGallery
+        emailSubject = settings.emailSubject
+        emailBody = settings.emailBody
+        deletePdfAfterShare = settings.deletePdfAfterShare
+        deleteImagesAfterShare = settings.deleteImagesAfterShare
+        pdfTreeUri = settings.pdfTreeUri
+        pdfSizeTargetWire = settings.pdfSizeTarget.wireValue
+        ocrScriptWire = settings.ocrScript.wireValue
+        readAloudLanguageWire = settings.readAloudLanguage.wireValue
+    }
+
     fun persistSettings() {
         settingsError =
             try {
@@ -3535,8 +3576,10 @@ private fun SettingsScreen(
                                 readAloudLanguageForWireValue(readAloudLanguageWire),
                         ),
                     )
+                if (!saved) restoreLocalSettings()
                 settingsSaveFailed.takeUnless { saved }
             } catch (_: RuntimeException) {
+                restoreLocalSettings()
                 settingsSaveFailed
             }
     }
@@ -3546,7 +3589,11 @@ private fun SettingsScreen(
             onDismissRequest = { languageDialogOpen = false },
             title = { Text(stringResource(R.string.choose_language)) },
             text = {
-                Column {
+                Column(
+                    modifier =
+                        Modifier.heightIn(max = dialogContentMaxHeight())
+                            .verticalScroll(rememberScrollState()),
+                ) {
                     AppLanguage.entries.forEach { option ->
                         Row(
                             modifier =
@@ -4150,7 +4197,21 @@ private fun SettingsCategoryHeader(
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle),
+        modifier =
+            Modifier.fillMaxWidth()
+                .semantics {
+                    if (expanded) {
+                        collapse(action = {
+                            onToggle()
+                            true
+                        })
+                    } else {
+                        expand(action = {
+                            onToggle()
+                            true
+                        })
+                    }
+                }.clickable(onClick = onToggle),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),

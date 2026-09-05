@@ -15,16 +15,22 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.7.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0"><img src="docs/images/scanit-current-overview.png" width="100%" alt="SeliaScan workflow showing capture, result and sharing, file controls, and signature placement."></a>
 </p>
 
-## v1.7.0 update
+## v1.8.0 update
 
 The stable GitHub edition is fully open source under the MIT License. It has no
 ads, consent flow, Billing, Premium tier, paywall, or feature locks. Every scan,
 signing, file-editing, cleanup, OCR, redaction, and Document Action feature is
 available immediately. Buy Me a Coffee remains an optional donation and does
 not change app functionality.
+
+This release accepts high-resolution scanner pages in OCR, barcode detection,
+Safe Share, and orientation analysis while keeping decoded bitmaps bounded. It
+also reduces Manual cleanup memory use, preserves selected-folder automatic PDF
+saving, hardens durable settings checkpoints, improves large-text accessibility,
+and updates the Android build toolchain.
 
 Manual redaction now defaults to a professional straight-line tool and keeps the
 freehand brush as an option. Both share adjustable thickness, undo, redo, clear,
@@ -54,8 +60,8 @@ fine-tuned from the collapsed Manual position panel.
 SeliaScan supports Android 10 and newer while keeping the same Google scanner,
 sharing, saving, and verified cleanup behavior.
 
-SeliaScan now corrects page orientation from recognized line angles, with a portrait
-fallback for textless landscape scans, before creating the result. Document Actions
+SeliaScan corrects page orientation only when recognized text provides reliable
+line-angle evidence. Ambiguous and textless pages keep the scanner orientation. Document Actions
 also contain local Smart cleanup and Manual cleanup. Smart cleanup improves paper
 contrast and removes likely edge fingers; Manual cleanup replaces user-drawn spots
 with the surrounding paper color. Both create reversible child revisions.
@@ -78,7 +84,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.7.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.7.0)
+[Download SeliaScan v1.8.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -117,7 +123,7 @@ source, release artifacts, and real-device workflows.
 - Single-page and multi-page PDF/JPEG output.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
 - Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before SeliaScan creates the result.
-- Automatic orientation correction from text-line angles, with a portrait fallback for textless landscape scans.
+- Automatic orientation correction from reliable text-line angles; ambiguous pages keep the scanner orientation.
 - Measured PDF size goals of Original, 200 KB, 500 KB, 1 MB, 5 MB, 10 MB, 20 MB, or a custom 1 KB–500 MB target; SeliaScan reports the actual size when a readable result cannot meet the selected goal.
 - Recent scans dashboard for up to eight bounded temporary working copies.
 - Automatic PDF and Gallery saving, each configurable in Settings.
@@ -140,7 +146,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.7.0 supports Android 10 and newer.
+SeliaScan v1.8.0 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and
@@ -222,7 +228,7 @@ passwords must never enter Git.
 
 - Android decides which compatible apps appear in the Sharesheet.
 - Recent scans are temporary working copies, not a permanent document library.
-- A textless landscape page is assumed to be sideways and is rotated to portrait; use the Google review editor for a legitimate textless landscape document.
+- Automatic orientation changes require reliable text-line evidence; use the Google review editor for ambiguous pages.
 - Android 17 has no `maxSdk` restriction but has not yet been device-tested.
 - Google Play publication is still in testing; do not describe the app as a production Play release yet.
 - Visual marks do not verify identity, authorization, or document integrity.
@@ -238,10 +244,7 @@ accepted; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Current material is source-visible under the [SeliaScan proprietary license](LICENSE),
-not open source. Unmodified official binaries may be installed and used under
-that license. Earlier copies distributed under MIT remain MIT-licensed; see
-[Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
+SeliaScan's stable GitHub edition is open source under the [MIT License](LICENSE).
 
 ## Support
 

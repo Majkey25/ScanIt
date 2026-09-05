@@ -37,6 +37,37 @@ class OutputChangeOrchestrationLifecycleTest {
     }
 
     @Test
+    fun scannerCallbacksWaitForBootstrapAndRunExactlyOnce() {
+        listOf("ok", "cancel", "error").forEach { callback ->
+            val gate = ScannerCallbackGate()
+            val events = mutableListOf<String>()
+
+            assertTrue(gate.submit { events += callback })
+            assertFalse(gate.submit { events += "duplicate" })
+            assertTrue(events.isEmpty())
+
+            gate.complete(deliver = true)
+
+            assertEquals(listOf(callback), events)
+            assertTrue(gate.submit { events += "after" })
+            assertEquals(listOf(callback, "after"), events)
+        }
+    }
+
+    @Test
+    fun failedBootstrapDropsQueuedScannerCallback() {
+        val gate = ScannerCallbackGate()
+        var calls = 0
+
+        assertTrue(gate.submit { calls++ })
+        gate.complete(deliver = false)
+
+        assertEquals(0, calls)
+        assertFalse(gate.submit { calls++ })
+        assertEquals(0, calls)
+    }
+
+    @Test
     fun outputTreeAttemptValidatesBeforeGrantAndAlwaysReconciles() = runBlocking {
         val validationFailureEvents = mutableListOf<String>()
         try {

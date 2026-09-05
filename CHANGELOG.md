@@ -2,6 +2,27 @@
 
 All notable changes are documented here.
 
+## [1.8.0] - 2026-09-05
+
+### Fixed
+
+- Preserved early scanner results until startup restoration completes.
+- Accepted high-resolution source scans while bounding OCR, barcode, and orientation decode memory.
+- Saved automatic PDFs to the selected folder and rejected failed durable settings writes.
+- Kept ambiguous or unreadable orientation unchanged instead of guessing.
+- Flushed PDF staging files before publication and reduced Manual cleanup memory use.
+
+### Changed
+
+- Improved long-dialog scrolling, title truncation, heading semantics, and Settings accessibility actions.
+- Updated the Android toolchain and pinned dependency verification metadata.
+- Kept the stable GitHub edition fully unlocked, MIT-licensed, and free of Ads, Billing, Premium, and feature locks.
+
+### Distribution
+
+- Versioned the `github` flavor as `1.8.0` code 40 for Android 10 and newer.
+- The separately maintained Google Play edition remains outside this checkout.
+
 ## [1.7.0] - 2026-08-30
 
 ### Changed
@@ -426,6 +447,8 @@ All notable changes are documented here.
 Historical copies retain the license supplied with them. See
 [Historical MIT releases](HISTORICAL_MIT_RELEASES.md).
 
+[1.8.0]: https://github.com/Majkey25/ScanIt/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/Majkey25/ScanIt/compare/v1.6.0...v1.7.0
 [1.0.0-preview.1]: https://github.com/Majkey25/ScanIt/releases/tag/v1.0.0-preview.1
 [1.5.0]: https://github.com/Majkey25/ScanIt/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/Majkey25/ScanIt/compare/v1.4.0...v1.4.1

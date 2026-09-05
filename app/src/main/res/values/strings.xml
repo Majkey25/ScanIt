@@ -183,7 +183,6 @@
     <string name="saving_document">Saving document…</string>
     <string name="images_save_failed">Images could not be saved to Gallery. The document can still be shared.</string>
     <string name="pdf_save_failed">The PDF could not be saved. The document can still be shared.</string>
-    <string name="pdf_auto_save_deferred">The selected folder needs confirmation. Use File details to save the PDF.</string>
     <string name="pdf_size_target_not_met">The PDF could not fit under %1$d MB without making pages too small. Actual size: %2$.2f MB.</string>
     <string name="pdf_size_target_not_met_kb">The PDF could not fit under %1$d KB without making pages too small. Actual size: %2$.1f KB.</string>
     <string name="document_save_failed">Could not save the document. Try again.</string>
