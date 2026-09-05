@@ -52,9 +52,11 @@ function Get-BuiltReleaseApk {
         [Parameter(Mandatory)][string]$UnsignedPath
     )
 
-    $candidates = @($SignedPath, $UnsignedPath) | Where-Object {
-        Test-Path -LiteralPath $_ -PathType Leaf
-    }
+    $candidates = @(
+        @($SignedPath, $UnsignedPath) | Where-Object {
+            Test-Path -LiteralPath $_ -PathType Leaf
+        }
+    )
     if ($candidates.Count -ne 1) {
         throw "Expected exactly one signed or unsigned release APK."
     }
