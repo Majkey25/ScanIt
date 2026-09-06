@@ -38,8 +38,11 @@ and device transfer are disabled for app settings and private data.
 
 Sharing, printing, email, external links, and selected storage providers receive
 content only after a user action and apply their own privacy terms.
+Cloud-backed folders and Gallery or backup services configured by the user may
+upload saved files. SeliaScan's disabled Android backup does not disable those
+services or delete external copies.
 
 For privacy questions, email [majkeylab@gmail.com](mailto:majkeylab@gmail.com).
 Do not send private documents or credentials.
 
-Last updated: 2026-09-05.
+Last updated: 2026-09-06.
