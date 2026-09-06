@@ -2,6 +2,11 @@
 
 All notable changes are documented here.
 
+## [1.8.1] - 2026-09-06
+
+- Synchronized the release version with the separately maintained Play edition.
+- Public functionality is unchanged from 1.8.0: all tools remain unlocked, without ads, Billing, or Premium. All 1.8.0 reliability and performance fixes are retained.
+
 ## [1.8.0] - 2026-09-05
 
 ### Fixed
