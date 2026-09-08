@@ -17,18 +17,21 @@
         <a href="index.html#faq">FAQ</a>
         <a href="privacy.html" aria-current="page">Privacy</a>
         <a href="terms.html">Terms</a>
+        <a href="refunds.html">Refunds</a>
+        <a href="cookies.html">Cookies</a>
       </div>
     </nav>
   </header>
 
-  <main id="main" class="policy">
+  <main id="main" class="policy" tabindex="-1">
     <h1>Privacy Policy</h1>
-    <p class="updated">Effective and last updated: 2026-09-06</p>
+    <p class="updated">Last updated: 2026-09-08</p>
 
     <p>This policy describes the public SeliaScan Android app and this SeliaScan website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
+    <p>Matěj Teplý, publishing as Majkey, maintains SeliaScan and is responsible for support correspondence received at that address.</p>
 
     <div class="notice">
-      <strong>Short version:</strong> scanning and document processing stay on-device. The stable GitHub edition has no accounts, ads, Billing, first-party analytics, maintainer-operated document server, or generative-AI client. The separately maintained Google Play edition contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
+      <strong>Short version:</strong> scanning, OCR and cleanup run on-device. Selected sharing, storage, printing and speech services have their own data handling. The stable GitHub edition has no accounts, ads, Billing, first-party analytics, maintainer-operated document server, or generative-AI client. The separately maintained Google Play edition contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
     </div>
 
     <h2>Information the app handles locally</h2>
@@ -44,6 +47,9 @@
     <p>A cloud-backed folder provider, or a Gallery or backup service you configured, may upload saved files under its own privacy terms. Disabling SeliaScan's Android backup does not disable those services or delete their external copies. Manage and delete those copies with the selected provider.</p>
     <p>Settings are stored locally in app-private storage. Android backup and device-to-device transfer are disabled for SeliaScan app data. Uninstalling the app removes its private settings and cache. It does not remove files saved outside the app-private area.</p>
 
+    <h3>Reusable signatures and stamps</h3>
+    <p>Signature and stamp templates you save or import are stored separately from Recent scans in app-private storage excluded from Android backup. They remain until you use Delete selected in the signature/stamp editor, clear app data or uninstall. Removing a Recent scan does not remove these templates. Deleting a template does not erase marks already applied to saved or shared documents.</p>
+
     <h2>Google ML Kit Document Scanner</h2>
     <p>The scanner UI, models, and related resources are supplied through Google Play services. Google says document-scanner input and output are processed on-device and are not sent to Google servers. Google Play services may contact Google to download or update the scanner module, models, bug fixes, or compatibility information.</p>
 
@@ -56,6 +62,9 @@
 
     <h2>Sharing and printing</h2>
     <p>SeliaScan sends a selected PDF or image to another app or print service only after you tap a share or print action and choose a recipient. That recipient processes the file under its own privacy terms. Review the destination before sending sensitive material.</p>
+
+    <h2>Read all pages</h2>
+    <p>Text extraction runs locally. Playback passes the selected document text to your Android text-to-speech engine after you tap Play and confirm the disclosure. That engine or voice may process text online under its own settings and privacy terms. SeliaScan cannot guarantee offline processing by a third-party speech engine. Do not confirm playback of sensitive text unless you trust the selected engine.</p>
 
     <h2>Google Play edition</h2>
     <p>The separately maintained Google Play edition uses the <code>com.majkeylab.scanit</code> package and includes Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are not present in the stable GitHub edition. SeliaScan requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
@@ -71,10 +80,17 @@
     <p>The stable GitHub edition has no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The Google Play edition adds Internet access plus Google advertising, consent, and Play Billing components. Neither edition requests its own camera permission because the scanner uses the Google Play services camera flow, and neither requests broad legacy storage access.</p>
 
     <h2>Support email and GitHub issues</h2>
-    <p>If you email support or create a GitHub issue, the information you choose to submit is used to respond, investigate a report, and maintain the project. Public GitHub issues are visible to everyone. Support correspondence is retained only while reasonably needed for support, security, or record-keeping, then deleted when no longer needed. You may request deletion of support correspondence by emailing the support address, subject to legal or security retention needs.</p>
+    <p>Private support email is used to answer and investigate your request. The retention rule is deletion within 90 days after the case closes. A case closes when resolved, or after 90 days waiting for the requester's reply. Records needed for an actual unresolved refund, dispute or legal preservation duty are retained until that matter is resolved or the applicable statutory period ends; unrelated correspondence follows the 90-day rule. You can request earlier deletion where applicable rights allow it.</p>
+    <p>Public GitHub issues are visible to everyone and form the project's technical issue history. GitHub hosts them under its own privacy terms. Do not post private documents, credentials or payment information. Contact the maintainer to request removal of personal information from content the maintainer controls.</p>
+    <p>A support request is not consent to marketing. Support handling relies on responding to your request and legitimate interests in maintaining the app; purchase-related support and required records may also involve contractual or legal obligations. This site has no contact form or mailing list.</p>
+
+    <h2>Your data rights</h2>
+    <p>Where GDPR applies, you can request access, correction, deletion, restriction or portability, and object to processing where the conditions for those rights apply. Contact support for information handled by the maintainer. You can withdraw advertising consent through the app's privacy options when available. Google's and GitHub's linked notices explain their processing, international transfers and safeguards.</p>
+    <p>You can complain to your local supervisory authority. In Czechia this is the <a href="https://uoou.gov.cz/">Office for Personal Data Protection</a>. No maintainer-operated profiling or automated decision system processes your documents.</p>
 
     <h2>This website</h2>
     <p>The SeliaScan site contains no maintainer-added analytics, JavaScript, forms, advertising, tracking pixels, web fonts, or cookies. It loads its stylesheet and QR image from the same site.</p>
+    <p>See the <a href="cookies.html">cookie policy</a> for hosting and the separate Android advertising controls.</p>
 
     <p>The site is hosted by GitHub Pages. GitHub states that it logs and stores visitors' IP addresses for security and may process other service data under the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub General Privacy Statement</a>. SeliaScan adds no code that exposes those hosting logs to the maintainer.</p>
 
@@ -89,10 +105,12 @@
 
   <footer class="site-footer">
     <div class="container footer-inner">
-      <p>© 2026 Majkey25.</p>
+      <p>Matěj Teplý, publishing as Majkey.</p>
       <div class="footer-links">
         <a href="index.html">Home</a>
         <a href="terms.html">Terms</a>
+        <a href="refunds.html">Refunds</a>
+        <a href="cookies.html">Cookies</a>
         <a href="mailto:majkeylab@gmail.com">Contact</a>
       </div>
     </div>

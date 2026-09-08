@@ -107,6 +107,13 @@ summary:focus-visible {
   text-decoration-thickness: 0.14em;
 }
 
+.nav-links a,
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
 main {
   min-height: 70vh;
 }
@@ -285,6 +292,7 @@ details p {
 }
 
 .policy {
+  overflow-wrap: anywhere;
   width: min(48rem, calc(100% - 2rem));
   margin-inline: auto;
   padding-block: clamp(3.5rem, 8vw, 6rem);
