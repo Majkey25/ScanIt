@@ -3,7 +3,6 @@
 This public checkout builds the fully unlocked, no-ads SeliaScan GitHub edition:
 
 - package: `com.majkeylab.scanit.github`
-- version: `1.8.0` (code 40)
 - license: MIT
 - advertising, consent, Billing, Premium, paywalls, and feature locks: absent
 
