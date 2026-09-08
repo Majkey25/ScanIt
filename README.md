@@ -15,13 +15,14 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.1"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document-to-share mark."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.2"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document-to-share mark."></a>
 </p>
 
-## v1.8.1 update
+## v1.8.2 update
 
-This patch synchronizes versions with the Play edition. Public functionality is
-unchanged from 1.8.0; the Play-only subscription controls are not part of this app.
+This patch adds linked legal policies and clearer storage and speech-service
+disclosures. Public functionality is unchanged from 1.8.0; the Play-only purchase
+controls are not part of this app.
 
 The stable GitHub edition is fully open source under the MIT License. It has no
 ads, consent flow, Billing, Premium tier, paywall, or feature locks. Every scan,
@@ -87,7 +88,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.8.1](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.1)
+[Download SeliaScan v1.8.2](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.2)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -149,7 +150,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.8.1 supports Android 10 and newer.
+SeliaScan v1.8.2 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and
@@ -191,11 +192,13 @@ Gallery remain until the user deletes them.
 - Copied OCR and barcode results are marked as sensitive; detected payloads never open automatically.
 - Android backup and device transfer are disabled for SeliaScan app data.
 - Sharing and printing hand a user-selected document to another app or service under that recipient's terms.
+- Optional speech playback passes text to the Android speech engine after confirmation. The engine may process text online.
 
-Read the [Privacy Policy source](docs/privacy.html),
-[security policy](SECURITY.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
-The public policy deployment target is
-`https://majkey25.github.io/ScanIt/privacy.html`.
+Read the published [privacy policy](https://majkey25.github.io/ScanIt/privacy.html),
+[terms and conditions](https://majkey25.github.io/ScanIt/terms.html),
+[refund policy](https://majkey25.github.io/ScanIt/refunds.html), and
+[cookie policy](https://majkey25.github.io/ScanIt/cookies.html).
+Also see the [security policy](SECURITY.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Build
 

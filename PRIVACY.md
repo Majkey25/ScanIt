@@ -42,7 +42,20 @@ Cloud-backed folders and Gallery or backup services configured by the user may
 upload saved files. SeliaScan's disabled Android backup does not disable those
 services or delete external copies.
 
+Reusable signature and stamp templates are stored separately in app-private
+storage excluded from Android backup. Delete them with Delete selected in the
+signature/stamp editor, or clear app data or uninstall. Deleting a Recent scan
+does not delete templates or marks already applied to exported documents.
+
+Optional read-aloud playback passes document text to the Android speech engine
+only after you tap Play and confirm the disclosure. The engine or selected voice
+may process text online under its own privacy terms. SeliaScan cannot guarantee
+offline processing by a third-party speech engine.
+
 For privacy questions, email [majkeylab@gmail.com](mailto:majkeylab@gmail.com).
 Do not send private documents or credentials.
 
-Last updated: 2026-09-06.
+The maintainer is Matěj Teplý, publishing as Majkey. For support-data rights,
+retention and provider details, use the canonical policy linked above.
+
+Last updated: 2026-09-08.

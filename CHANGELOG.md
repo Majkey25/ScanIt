@@ -2,6 +2,12 @@
 
 All notable changes are documented here.
 
+## [1.8.2] - 2026-09-08
+
+- Added linked refund and cookie policies and clarified privacy, saved-signature and speech-service disclosures.
+- Improved legal-page navigation and keyboard focus targets.
+- Synchronized the release version with the separately maintained Play edition. Public app functionality is unchanged: all tools remain unlocked, without ads, Billing or Premium.
+
 ## [1.8.1] - 2026-09-06
 
 - Synchronized the release version with the separately maintained Play edition.
