@@ -17,8 +17,13 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.3"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.4"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
+
+## v1.8.4 update
+
+Fixed OCR text export on Android cache-path aliases. The system save picker now
+opens and saves the recognized UTF-8 text. Feature access is unchanged.
 
 ## v1.8.3 update
 
@@ -95,7 +100,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.8.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.3)
+[Download SeliaScan v1.8.4](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.4)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -157,7 +162,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.8.3 supports Android 10 and newer.
+SeliaScan v1.8.4 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and

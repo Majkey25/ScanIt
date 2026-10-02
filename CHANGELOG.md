@@ -2,6 +2,12 @@
 
 All notable changes are documented here.
 
+## [1.8.4] - 2026-10-02
+
+### Fixed
+- OCR text export now opens Android's save picker when the app cache uses a legitimate path alias, including `/data/user/0` on Huawei. The trusted cache root is canonicalized; staged-file containment and symlink checks remain enforced.
+- Added alias/restoration regression coverage and a device test rejecting a symlinked text payload.
+
 ## [1.8.3] - 2026-10-02
 
 ### Changed

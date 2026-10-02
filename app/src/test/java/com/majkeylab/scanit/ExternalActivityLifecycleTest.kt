@@ -91,6 +91,22 @@ class ExternalActivityLifecycleTest {
     }
 
     @Test
+    fun textExportAcceptsTrustedCacheRootAlias() = runBlocking {
+        val handle = SavedStateHandle()
+        val directory = temporaryFolder.newFolder("text-alias")
+        val alias = File(directory, ".")
+        val request = documentRequest()
+        val output = DocumentActionOutput.Text("Příliš žluťoučký kůň\n1234.56 CZK", false)
+        val state = DocumentTextExportSavedState(handle, alias)
+
+        assertTrue(state.saveLaunch(request, output))
+        val restored = DocumentTextExportSavedState(recreatedHandle(handle), directory.canonicalFile)
+        assertEquals(output, restored.pendingExport()?.output)
+        assertTrue(state.clear(request))
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun textExportPublishesSavedStateOnlyAfterReturningFromIo() = runBlocking {
         val handle = SavedStateHandle()
         val root = temporaryFolder.newFolder("text-main")
