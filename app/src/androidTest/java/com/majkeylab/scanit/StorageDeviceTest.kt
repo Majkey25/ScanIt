@@ -6,16 +6,55 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
+import android.system.Os
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StorageDeviceTest {
+    @Test
+    fun textExportRejectsSymlinkedPayload() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        check(context.packageName == "com.majkeylab.scanit.internal")
+        val root = Files.createTempDirectory(context.cacheDir.toPath(), "text-export-qa-").toFile()
+        val outside = File.createTempFile("text-export-outside-", ".txt", context.cacheDir)
+        var staged: File? = null
+        try {
+            outside.writeText("cached text")
+            withContext(Dispatchers.Main) {
+                val request = DocumentActionRequest(
+                    "Scan_export_qa",
+                    "123e4567-e89b-12d3-a456-426614174000",
+                    0,
+                    DocumentAction.ExtractText,
+                    1L,
+                )
+                val state = DocumentTextExportSavedState(SavedStateHandle(), root)
+                assertTrue(state.saveLaunch(request, DocumentActionOutput.Text("cached text", false)))
+                val payload = root.canonicalFile.listFiles().orEmpty().single()
+                staged = payload
+                assertTrue(payload.delete())
+                Os.symlink(outside.absolutePath, payload.absolutePath)
+                assertNull(state.pendingExport())
+                assertTrue(state.clear(request))
+                assertEquals("cached text", outside.readText())
+            }
+        } finally {
+            staged?.delete()
+            outside.delete()
+            assertTrue(root.delete())
+        }
+    }
+
     @Test
     fun saveReopenRenameAndFormatPreserveExactOutputs() = withScan { storage, cached ->
         val pdf = storage.savePdf(cached, "SeliaScanQA", null)

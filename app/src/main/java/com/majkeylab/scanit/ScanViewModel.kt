@@ -182,7 +182,7 @@ internal class DocumentTextExportSavedState(
     root: File,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val root = root.absoluteFile
+    private val root = root.canonicalFile
     private var stagingToken: UUID? = null
     private val callbackGate = ScannerCallbackGate()
 
