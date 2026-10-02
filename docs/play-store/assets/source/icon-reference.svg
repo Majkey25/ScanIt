@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 595.28 841.89">
+  <!-- Generator: Adobe Illustrator 30.8.2, SVG Export Plug-In . SVG Version: 2.1.4 Build 7)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: #e0e0e0;
+        stroke: #e0e0e0;
+        stroke-linecap: round;
+      }
+
+      .st0, .st1, .st2, .st3, .st4, .st5, .st6, .st7, .st8 {
+        stroke-miterlimit: 10;
+      }
+
+      .st1 {
+        stroke: #fff;
+      }
+
+      .st1, .st2, .st6, .st7, .st8 {
+        fill: #1d1d1b;
+      }
+
+      .st1, .st8 {
+        stroke-width: 14px;
+      }
+
+      .st2 {
+        stroke-width: 13px;
+      }
+
+      .st2, .st3, .st6, .st7, .st8 {
+        stroke: #1d1d1b;
+      }
+
+      .st3 {
+        fill: #fff;
+      }
+
+      .st4 {
+        fill: #999;
+        stroke: #999;
+      }
+
+      .st4, .st6 {
+        stroke-width: 2px;
+      }
+
+      .st5 {
+        fill: #009e3c;
+        stroke: #009e3c;
+      }
+    </style>
+  </defs>
+  <g id="Vrstva_1">
+    <rect class="st7" x="137.83" y="304.87" width="372.15" height="350.14"/>
+    <path class="st1" d="M221.88,339.67h197.12c24.01,0,43.51,19.5,43.51,43.51v184.24c0,24.96-20.27,45.23-45.23,45.23h-195.4c-24.96,0-45.23-20.27-45.23-45.23v-182.52c0-24.96,20.27-45.23,45.23-45.23Z"/>
+    <rect class="st8" x="273.3" y="441.08" width="95.13" height="6.27"/>
+  </g>
+  <g id="Vrstva_3">
+    <g id="Vrstva_5">
+      <rect class="st2" x="153.65" y="441.08" width="340.51" height="70.17"/>
+    </g>
+    <rect class="st3" x="246.41" y="370.08" width="154.99" height="212.16" rx="9.46" ry="9.46"/>
+    <polygon class="st0" points="364.68 372.02 364.64 406.85 399.47 406.81 364.68 372.02"/>
+    <rect class="st2" x="365.32" y="373.28" width="55.97" height="14.39" transform="translate(384.23 -166.67) rotate(45)"/>
+  </g>
+  <g id="Vrstva_6">
+    <rect class="st4" x="276.4" y="435.49" width="88.93" height="3.44"/>
+    <rect class="st6" x="275.12" y="469.28" width="88.93" height="6.88"/>
+    <rect class="st6" x="273.3" y="476.16" width="88.93" height="3.44"/>
+    <rect class="st4" x="276.4" y="460.03" width="88.93" height="3.44"/>
+    <g id="Vrstva_2">
+      <rect class="st5" x="165.69" y="467.56" width="316.43" height="17.2" rx="8.6" ry="8.6"/>
+    </g>
+    <rect class="st4" x="276.4" y="488.89" width="88.93" height="3.44"/>
+  </g>
+</svg>

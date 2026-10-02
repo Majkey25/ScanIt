@@ -1,5 +1,7 @@
 <h1 align="center">SeliaScan</h1>
 
+<p align="center"><img src="docs/play-store/assets/icon.png" width="112" height="112" alt="SeliaScan document scanner icon"></p>
+
 SeliaScan is the new product name for ScanIt. The Android package and existing repository URLs remain unchanged for update and purchase continuity.
 
 <p align="center">
@@ -15,8 +17,13 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.2"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document-to-share mark."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.3"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
+
+## v1.8.3 update
+
+New document-and-scan icon, with adaptive launcher sizing and themed-icon support.
+Scanning, saving, sharing, and edition features are unchanged.
 
 ## v1.8.2 update
 
@@ -88,7 +95,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.8.2](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.2)
+[Download SeliaScan v1.8.3](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.3)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
@@ -150,7 +157,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.8.2 supports Android 10 and newer.
+SeliaScan v1.8.3 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and
