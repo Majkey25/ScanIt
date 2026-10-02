@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.8.3] - 2026-10-02
+
+### Changed
+- Updated the app and store icon to the document-and-green-scan-beam design.
+- Added adaptive launcher masks and Android themed icons with centered, safe-zone artwork.
+- Updated the GitHub branding, website icon, and Play feature graphic.
+
 ## [1.8.2] - 2026-09-08
 
 - Added linked refund and cookie policies and clarified privacy, saved-signature and speech-service disclosures.
