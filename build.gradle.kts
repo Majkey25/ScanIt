@@ -2,7 +2,7 @@ buildscript {
     // AGP 9.3.2 still declares these vulnerable build-only transitive versions.
     configurations.classpath {
         resolutionStrategy.force(
-            "org.apache.commons:commons-lang3:3.18.0",
+            "org.apache.commons:commons-lang3:3.20.0",
             "org.bitbucket.b_c:jose4j:0.9.6",
             "org.bouncycastle:bcpkix-jdk18on:1.84",
             "org.bouncycastle:bcprov-jdk18on:1.84",
