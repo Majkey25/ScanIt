@@ -741,6 +741,65 @@ class PureLogicTest {
     }
 
     @Test
+    fun ttsUtteranceCompletionConsumesOnlyTheCurrentIdOnce() {
+        val gate = TtsInitializationGate()
+        val id = gate.beginUtterance()
+
+        assertFalse(gate.finishUtterance(null))
+        assertFalse(gate.finishUtterance("unknown"))
+        assertTrue(gate.finishUtterance(id))
+        assertFalse(gate.finishUtterance(id))
+    }
+
+    @Test
+    fun ttsStopAndReplacementIgnoreLateCallbacksWithoutClearingTheNewUtterance() {
+        val gate = TtsInitializationGate()
+        val first = gate.beginUtterance()
+        val second = gate.beginUtterance()
+
+        assertFalse(first == second)
+        assertFalse(gate.finishUtterance(first))
+        assertTrue(gate.finishUtterance(second))
+
+        val stopped = gate.beginUtterance()
+        gate.stop()
+        assertFalse(gate.finishUtterance(stopped))
+        val retry = gate.beginUtterance()
+        assertFalse(stopped == retry)
+        assertFalse(gate.finishUtterance(stopped))
+        assertTrue(gate.finishUtterance(retry))
+    }
+
+    @Test
+    fun ttsInitializationFailureDoesNotReviveStoppedText() {
+        val gate = TtsInitializationGate()
+        gate.play("stopped", engineExists = false)
+        gate.stop()
+
+        assertEquals(TtsInitializationResult(ready = false, text = null), gate.initialized(false))
+        assertEquals(TtsPlayDecision.Initialize, gate.play("retry", engineExists = false))
+        assertEquals(TtsInitializationResult(ready = false, text = "retry"), gate.initialized(false))
+    }
+
+    @Test
+    fun ttsObservesAsyncErrorsAndValidatesCurrentUtteranceOnMainThread() {
+        val activity = File("../app/src/main/java/com/majkeylab/scanit/MainActivity.kt").readText()
+
+        assertTrue(activity.contains("object : UtteranceProgressListener()"))
+        assertTrue(activity.contains(
+            "engine.setOnUtteranceProgressListener(ttsProgressListener) == TextToSpeech.SUCCESS",
+        ))
+        val completion = activity.substringAfter("private fun finishReadAloud(")
+            .substringBefore("private fun stopReadAloud(")
+        assertTrue(completion.contains("runOnUiThread {"))
+        assertTrue(completion.substringAfter("runOnUiThread {")
+            .contains("ttsInitializationGate.finishUtterance(utteranceId) && failed"))
+        val start = activity.substringAfter("private fun startReadAloud() {")
+            .substringBefore("private fun speak(")
+        assertTrue(start.trimStart().startsWith("stopReadAloud()"))
+    }
+
+    @Test
     fun internalBuildHasDistinctTestAppLabel() {
         val repository = File("..").canonicalFile
         val manifest = File(repository, "app/src/internal/AndroidManifest.xml").readText()
