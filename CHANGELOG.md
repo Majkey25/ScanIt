@@ -2,6 +2,12 @@
 
 All notable changes are documented here.
 
+## [1.8.5] - 2026-10-04
+
+### Changed
+- Shortened the combined Recent scans deletion label to "Delete both", with matching translations. Deletion behavior is unchanged.
+- Clarified the fully unlocked GitHub release and the separate Ads + Premium Play archive in the README.
+
 ## [1.8.4] - 2026-10-02
 
 ### Fixed

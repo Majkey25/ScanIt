@@ -93,7 +93,7 @@
     <string name="delete_scan">删除…</string>
     <string name="delete_pdf">PDF</string>
     <string name="delete_images">图像</string>
-    <string name="delete_pdf_and_images">PDF 和图像</string>
+    <string name="delete_pdf_and_images">删除两者</string>
     <string name="remove_from_recent">从最近扫描中移除</string>
     <string name="recent_delete_saved_hint">将先从设备中删除所选的已保存文件，然后从最近扫描中移除此扫描。</string>
     <string name="recent_delete_legacy_hint">无法获取已保存文件的详情，因此 SeliaScan 不会猜测要删除哪些文件。只能移除此最近预览。</string>

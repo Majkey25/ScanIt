@@ -231,12 +231,12 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.8.4-internal"
+        $expectedVersionName = "1.8.5-internal"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionCode = "44"
-        $expectedVersionName = "1.8.4"
+        $expectedVersionCode = "45"
+        $expectedVersionName = "1.8.5"
     }
 }
 $expectedPermissions = @(Get-ExpectedUsesPermissions -Flavor $Flavor -Package $expectedPackage)

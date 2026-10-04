@@ -17,8 +17,25 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 </p>
 
 <p align="center">
-  <a href="https://github.com/Majkey25/ScanIt/releases/tag/v1.8.4"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
+  <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
+
+## Choose your edition
+
+| Edition | Features | Where to get it |
+| --- | --- | --- |
+| Full / No Ads | All tools unlocked. No ads, Premium, or purchases. Optional Buy Me a Coffee donation only. | [Latest stable GitHub release](https://github.com/Majkey25/ScanIt/releases/latest) |
+| Ads + Premium | Free access modes, ads, and monthly or lifetime Premium through Google Play. | [Google Play](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) for eligible testers |
+
+The `-ads` GitHub releases are separately labeled **prerelease archives** of the
+Play build, never the Latest release. Use Google Play for installation and
+purchases. The public repository contains the fully unlocked edition; the Play
+source is maintained separately and its APK/AAB are backed up in those archives.
+
+## v1.8.5 update
+
+The combined Recent scans deletion button now says **Delete both**. It still
+deletes the selected scan's saved PDF and images. Other deletion choices are unchanged.
 
 ## v1.8.4 update
 
@@ -100,7 +117,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.8.4](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.4)
+[Download SeliaScan v1.8.5](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.5)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">
