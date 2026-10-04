@@ -383,11 +383,11 @@ private fun structuredCandidatesFromAdjacentWords(
     if (words.isEmpty()) return@sequence
     val text = words.joinToString(" ", transform = OcrElement::value)
     val claimed = BooleanArray(text.length)
-    // Financial spans take precedence over overlapping card and phone fragments.
+    // Valid payment data stays protected even beside a currency label.
     for ((kind, pattern) in listOf(
         DocumentEntityKind.Iban to IBAN_PATTERN,
-        DocumentEntityKind.Money to MONEY_PATTERN,
         DocumentEntityKind.PaymentCard to PAYMENT_CARD_PATTERN,
+        DocumentEntityKind.Money to MONEY_PATTERN,
         DocumentEntityKind.Phone to PHONE_PATTERN,
     )) {
         var wordIndex = 0

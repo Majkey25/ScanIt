@@ -821,18 +821,32 @@ class DocumentActionsTest {
     }
 
     @Test
-    fun moneySpansSuppressPhoneAndCardRedactionsIncludingWholeAmountWords() {
+    fun moneySpansSuppressFalsePhoneRedactions() {
         listOf(
             listOf("USD", "1", "234", "567"),
             listOf("1", "234", "567", "CZK"),
-            listOf("4111111111111111", "CZK"),
-            listOf("USD", "4111111111111111"),
-            listOf("USD 4111111111111111"),
         ).forEach { tokens ->
             val candidates = buildDocumentEntityCandidates(entityFixtureWords(tokens))
 
             assertEquals(listOf(DocumentEntityKind.Money), candidates.map { it.kind })
             assertTrue(candidates.mapNotNull(::safeShareEntitySuggestion).isEmpty())
+        }
+    }
+
+    @Test
+    fun validCardsRemainProtectedEvenBesideCurrencyLabels() {
+        listOf(
+            listOf("4111111111111111", "CZK"),
+            listOf("USD", "4111111111111111"),
+            listOf("USD 4111111111111111"),
+            listOf("USD", "4111", "1111", "1111", "1111"),
+        ).forEach { tokens ->
+            val candidate = buildDocumentEntityCandidates(entityFixtureWords(tokens)).single()
+            assertEquals(DocumentEntityKind.PaymentCard, candidate.kind)
+            assertEquals(
+                SensitiveRegionKind.PaymentCard,
+                checkNotNull(safeShareEntitySuggestion(candidate)).kind,
+            )
         }
     }
 
