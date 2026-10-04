@@ -336,23 +336,85 @@ internal fun buildDocumentEntityCandidates(
     val values = ArrayList<DocumentEntityCandidate>()
     val counts = IntArray(MAX_SCAN_PAGES)
     val seen = HashSet<DocumentEntityCandidate>()
+    val adjacentWords = ArrayList<OcrElement>()
+    fun add(candidate: DocumentEntityCandidate) {
+        if (counts[candidate.page] < MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE && seen.add(candidate)) {
+            values += candidate
+            counts[candidate.page] += 1
+        }
+    }
+    fun flushMoneyCandidates() {
+        // Sensitive entities keep their original word bounds; only money spans words.
+        for (candidate in moneyCandidatesFromAdjacentWords(adjacentWords)) add(candidate)
+        adjacentWords.clear()
+    }
     var characters = 0
     for (element in elements) {
         if (element.value.length > MAX_ENTITY_SOURCE_CHARACTERS - characters) break
         characters += element.value.length
+        val previous = adjacentWords.lastOrNull()
+        if (previous != null && !areAdjacentOcrWords(previous, element)) flushMoneyCandidates()
+        adjacentWords += element
         if (counts[element.page] >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) continue
         for (kind in DocumentEntityKind.entries) {
             for (value in entityValues(kind, element.value)) {
                 if (counts[element.page] >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) break
-                val candidate = DocumentEntityCandidate(element.page, kind, value, element.bounds)
-                if (seen.add(candidate)) {
-                    values += candidate
-                    counts[element.page] += 1
-                }
+                add(DocumentEntityCandidate(element.page, kind, value, element.bounds))
             }
         }
     }
+    flushMoneyCandidates()
     return values
+}
+
+private fun areAdjacentOcrWords(previous: OcrElement, next: OcrElement): Boolean {
+    if (previous.page != next.page) return false
+    val first = previous.bounds
+    val second = next.bounds
+    val height = minOf(first.bottom - first.top, second.bottom - second.top)
+    return second.left >= first.right &&
+        second.left - first.right <= height &&
+        minOf(first.bottom, second.bottom) - maxOf(first.top, second.top) >= height / 2
+}
+
+private fun moneyCandidatesFromAdjacentWords(
+    words: List<OcrElement>,
+): Sequence<DocumentEntityCandidate> = sequence {
+    if (words.size < 2) return@sequence
+    val text = words.joinToString(" ", transform = OcrElement::value)
+    var wordIndex = 0
+    var wordStart = 0
+    for (match in MONEY_PATTERN.findAll(text)) {
+        val value = match.value.trim()
+        if (!isValidMoney(value)) continue
+        while (wordStart + words[wordIndex].value.length <= match.range.first) {
+            wordStart += words[wordIndex].value.length + 1
+            wordIndex += 1
+        }
+        val firstWord = wordIndex
+        while (
+            wordIndex < words.lastIndex &&
+                wordStart + words[wordIndex].value.length + 1 <= match.range.last
+        ) {
+            wordStart += words[wordIndex].value.length + 1
+            wordIndex += 1
+        }
+        if (firstWord == wordIndex) continue
+        val matchedWords = words.subList(firstWord, wordIndex + 1)
+        yield(
+            DocumentEntityCandidate(
+                words[firstWord].page,
+                DocumentEntityKind.Money,
+                value,
+                NormalizedRect(
+                    matchedWords.minOf { it.bounds.left },
+                    matchedWords.minOf { it.bounds.top },
+                    matchedWords.maxOf { it.bounds.right },
+                    matchedWords.maxOf { it.bounds.bottom },
+                ),
+            ),
+        )
+    }
 }
 
 private fun entityValues(kind: DocumentEntityKind, text: String): Sequence<String> =

@@ -658,6 +658,132 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun receiptMoneyCandidatesJoinOcrWordsOnBothPagesWithOnlyMatchedBounds() {
+        val elements =
+            (0..1).flatMap { page ->
+                listOf(
+                    OcrElement(page, "Invoice", NormalizedRect(0.05f, 0.2f, 0.15f, 0.24f)),
+                    OcrElement(page, "total:", NormalizedRect(0.16f, 0.2f, 0.24f, 0.24f)),
+                    OcrElement(page, "1234.56", NormalizedRect(0.25f, 0.2f, 0.39f, 0.24f)),
+                    OcrElement(page, "CZK", NormalizedRect(0.40f, 0.205f, 0.46f, 0.24f)),
+                )
+            }
+
+        assertEquals(
+            listOf(
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "1234.56 CZK",
+                    NormalizedRect(0.25f, 0.2f, 0.46f, 0.24f),
+                ),
+                DocumentEntityCandidate(
+                    1, DocumentEntityKind.Money, "1234.56 CZK",
+                    NormalizedRect(0.25f, 0.2f, 0.46f, 0.24f),
+                ),
+            ),
+            buildDocumentEntityCandidates(elements),
+        )
+    }
+
+    @Test
+    fun splitMoneyPreservesSensitiveWordBoundsAndDoesNotCreatePhoneRedactions() {
+        val emailBounds = NormalizedRect(0.05f, 0.2f, 0.25f, 0.24f)
+        val candidates =
+            buildDocumentEntityCandidates(
+                listOf(
+                    OcrElement(0, "person@example.com", emailBounds),
+                    OcrElement(0, "USD", NormalizedRect(0.26f, 0.2f, 0.32f, 0.24f)),
+                    OcrElement(0, "1", NormalizedRect(0.33f, 0.2f, 0.35f, 0.24f)),
+                    OcrElement(0, "234", NormalizedRect(0.36f, 0.2f, 0.42f, 0.24f)),
+                    OcrElement(0, "567", NormalizedRect(0.43f, 0.2f, 0.49f, 0.24f)),
+                    OcrElement(0, "paid", NormalizedRect(0.50f, 0.2f, 0.57f, 0.24f)),
+                    OcrElement(0, "12.34", NormalizedRect(0.58f, 0.2f, 0.68f, 0.24f)),
+                    OcrElement(0, "EUR", NormalizedRect(0.69f, 0.2f, 0.75f, 0.24f)),
+                ),
+            )
+
+        assertEquals(
+            listOf(
+                DocumentEntityCandidate(0, DocumentEntityKind.Email, "person@example.com", emailBounds),
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "USD 1 234 567",
+                    NormalizedRect(0.26f, 0.2f, 0.49f, 0.24f),
+                ),
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "12.34 EUR",
+                    NormalizedRect(0.58f, 0.2f, 0.75f, 0.24f),
+                ),
+            ),
+            candidates,
+        )
+        assertEquals(
+            listOf(RedactionSuggestion(0, SensitiveRegionKind.Email, emailBounds)),
+            candidates.mapNotNull(::safeShareEntitySuggestion),
+        )
+    }
+
+    @Test
+    fun moneyWordsDoNotJoinAcrossPagesRowsColumnsOrOverlappingElements() {
+        val amount = OcrElement(0, "1234.56", NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f))
+        val separatedCurrencies =
+            listOf(
+                OcrElement(1, "CZK", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)),
+                OcrElement(0, "CZK", NormalizedRect(0.25f, 0.3f, 0.31f, 0.34f)),
+                OcrElement(0, "CZK", NormalizedRect(0.75f, 0.2f, 0.81f, 0.24f)),
+                OcrElement(0, "CZK", amount.bounds),
+                OcrElement(0, "XYZ", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)),
+            )
+
+        separatedCurrencies.forEach { currency ->
+            assertTrue(buildDocumentEntityCandidates(listOf(amount, currency)).isEmpty())
+        }
+    }
+
+    @Test
+    fun splitMoneyCandidatesDeduplicateAndCapEachPage() {
+        val amountBounds = NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f)
+        val currencyBounds = NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)
+        val elements =
+            buildList {
+                repeat(300) { number ->
+                    repeat(2) {
+                        add(OcrElement(0, "$number.56", amountBounds))
+                        add(OcrElement(0, "CZK", currencyBounds))
+                    }
+                }
+                add(OcrElement(1, "1234.56", amountBounds))
+                add(OcrElement(1, "CZK", currencyBounds))
+            }
+
+        val candidates = buildDocumentEntityCandidates(elements)
+
+        assertEquals(MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE, candidates.count { it.page == 0 })
+        assertEquals(1, candidates.count { it.page == 1 })
+        assertEquals(1, candidates.count { it.value == "0.56 CZK" })
+        assertTrue(candidates.all { it.kind == DocumentEntityKind.Money })
+    }
+
+    @Test
+    fun splitMoneyRespectsSourceCharacterLimitAndKeepsWholeElementCandidates() {
+        val amount = OcrElement(0, "1234.56", NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f))
+        val currency = OcrElement(0, "CZK", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f))
+        val whole = OcrElement(1, "1234.56 CZK", amount.bounds)
+
+        assertEquals(
+            listOf(DocumentEntityCandidate(1, DocumentEntityKind.Money, "1234.56 CZK", whole.bounds)),
+            buildDocumentEntityCandidates(listOf(whole)),
+        )
+        assertTrue(
+            buildDocumentEntityCandidates(
+                listOf(
+                    OcrElement(0, "x".repeat(MAX_DOCUMENT_TEXT_CHARACTERS - amount.value.length), amount.bounds),
+                    amount,
+                    currency,
+                ),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun malformedTextDoesNotBecomeAnEntityCandidate() {
         val bounds = NormalizedRect(0f, 0f, 1f, 1f)
 
