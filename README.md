@@ -37,6 +37,10 @@ source is maintained separately and its APK/AAB are backed up in those archives.
 The combined Recent scans deletion button now says **Delete both**. It still
 deletes the selected scan's saved PDF and images. Other deletion choices are unchanged.
 
+Receipt and contact extraction now handle supported numbers split across adjacent
+OCR words. Protection suggestions keep tight bounds around those words. Read aloud
+also reports asynchronous speech-engine failures instead of silently ignoring them.
+
 ## v1.8.4 update
 
 Fixed OCR text export on Android cache-path aliases. The system save picker now

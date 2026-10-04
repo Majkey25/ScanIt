@@ -4,6 +4,10 @@ All notable changes are documented here.
 
 ## [1.8.5] - 2026-10-04
 
+### Fixed
+- Receipt details, contact extraction, and protection suggestions recognize amounts, phone numbers, IBANs, and card numbers split across adjacent OCR words. Candidate bounds cover the matched words only, and financial amounts do not become phone-number suggestions.
+- Read aloud reports asynchronous speech-engine errors and ignores callbacks from stopped or replaced playback.
+
 ### Changed
 - Shortened the combined Recent scans deletion label to "Delete both", with matching translations. Deletion behavior is unchanged.
 - Clarified the fully unlocked GitHub release and the separate Ads + Premium Play archive in the README.
