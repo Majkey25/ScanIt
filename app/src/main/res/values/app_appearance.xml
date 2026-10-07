@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_appearance_settings">Appearance</string>
+    <string name="app_appearance_mode">Appearance mode</string>
+    <string name="app_mode_system">System</string>
+    <string name="app_mode_light">Light</string>
+    <string name="app_mode_dark">Dark</string>
+    <string name="app_theme_presets">Themes</string>
+    <string name="app_theme_pair_hint">Choose a light and dark theme separately.</string>
+    <string name="app_theme_choice">%1$s: %2$s theme</string>
+    <string name="app_theme_classic">Classic</string>
+    <string name="app_theme_material_you">Material You</string>
+    <string name="app_theme_forest">Forest</string>
+    <string name="app_theme_ocean">Ocean</string>
+    <string name="app_theme_amber">Amber</string>
+    <string name="app_theme_lavender">Lavender</string>
+    <string name="app_theme_paper">Paper</string>
+    <string name="app_theme_custom">Custom</string>
+    <string name="app_theme_customize">Customize colors</string>
+    <string name="app_material_you_requires">Material You uses wallpaper colors on Android 12 or newer.</string>
+    <string name="app_pure_black">Pure black in dark mode</string>
+    <string name="app_font">Font</string>
+    <string name="app_font_system">System font</string>
+    <string name="app_font_serif">Serif</string>
+    <string name="app_font_monospace">Monospace</string>
+    <string name="app_text_sample">Scan, save, share.</string>
+    <string name="app_text_size">Text size</string>
+    <string name="app_text_size_value">Text size: %1$d%%</string>
+    <string name="app_corners">Corner rounding</string>
+    <string name="app_corners_value">Corner rounding: %1$d dp</string>
+    <string name="app_appearance_reset">Reset appearance</string>
+    <string name="app_theme_color_hint">Use six-digit RGB colors. Text and button colors adjust for readability.</string>
+    <string name="app_theme_accent">Accent color</string>
+    <string name="app_theme_light_background">Light background</string>
+    <string name="app_theme_dark_background">Dark background</string>
+    <string name="app_theme_color_invalid">Enter six hex digits, for example 38684E.</string>
+</resources>

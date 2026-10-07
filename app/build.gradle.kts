@@ -33,7 +33,7 @@ android {
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 46
-        versionName = "1.8.6"
+        versionName = "1.9.0"
     }
 
     signingConfigs {

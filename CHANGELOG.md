@@ -2,7 +2,11 @@
 
 All notable changes are documented here.
 
-## [1.8.6] - 2026-10-07
+## [1.9.0] - 2026-10-07
+
+### Added
+- Appearance settings with independent light/dark theme choices, System/Light/Dark mode, eight themes including Material You on Android 12+, and custom accent/background colors.
+- System, serif, or monospace fonts, text scaling, corner rounding, pure-black dark backgrounds, and an appearance reset. Preferences persist on-device; document rendering is unchanged.
 
 ### Changed
 - Shortened the combined manual-save button to "Save both", with matching translations. It still saves the PDF and images.

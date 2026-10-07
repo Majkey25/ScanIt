@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_appearance_settings">Darstellung</string>
+    <string name="app_appearance_mode">Darstellungsmodus</string>
+    <string name="app_mode_system">System</string>
+    <string name="app_mode_light">Hell</string>
+    <string name="app_mode_dark">Dunkel</string>
+    <string name="app_theme_presets">Designs</string>
+    <string name="app_theme_pair_hint">Helles und dunkles Design getrennt auswählen.</string>
+    <string name="app_theme_choice">%1$s: %2$s Design</string>
+    <string name="app_theme_classic">Klassisch</string>
+    <string name="app_theme_material_you">Material You</string>
+    <string name="app_theme_forest">Wald</string>
+    <string name="app_theme_ocean">Ozean</string>
+    <string name="app_theme_amber">Bernstein</string>
+    <string name="app_theme_lavender">Lavendel</string>
+    <string name="app_theme_paper">Papier</string>
+    <string name="app_theme_custom">Benutzerdefiniert</string>
+    <string name="app_theme_customize">Farben anpassen</string>
+    <string name="app_material_you_requires">Material You verwendet Hintergrundfarben ab Android 12.</string>
+    <string name="app_pure_black">Schwarz im dunklen Modus</string>
+    <string name="app_font">Schrift</string>
+    <string name="app_font_system">Systemschrift</string>
+    <string name="app_font_serif">Serif</string>
+    <string name="app_font_monospace">Monospace</string>
+    <string name="app_text_sample">Scannen, speichern, teilen.</string>
+    <string name="app_text_size">Textgröße</string>
+    <string name="app_text_size_value">Textgröße: %1$d%%</string>
+    <string name="app_corners">Eckenrundung</string>
+    <string name="app_corners_value">Eckenrundung: %1$d dp</string>
+    <string name="app_appearance_reset">Darstellung zurücksetzen</string>
+    <string name="app_theme_color_hint">Sechsstellige RGB-Farben verwenden. Text- und Schaltflächenfarben werden für Lesbarkeit angepasst.</string>
+    <string name="app_theme_accent">Akzentfarbe</string>
+    <string name="app_theme_light_background">Heller Hintergrund</string>
+    <string name="app_theme_dark_background">Dunkler Hintergrund</string>
+    <string name="app_theme_color_invalid">Sechs Hex-Ziffern eingeben, zum Beispiel 38684E.</string>
+</resources>

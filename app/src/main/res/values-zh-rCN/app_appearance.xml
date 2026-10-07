@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_appearance_settings">外观</string>
+    <string name="app_appearance_mode">外观模式</string>
+    <string name="app_mode_system">跟随系统</string>
+    <string name="app_mode_light">浅色</string>
+    <string name="app_mode_dark">深色</string>
+    <string name="app_theme_presets">主题</string>
+    <string name="app_theme_pair_hint">分别选择浅色和深色主题。</string>
+    <string name="app_theme_choice">%1$s：%2$s主题</string>
+    <string name="app_theme_classic">经典</string>
+    <string name="app_theme_material_you">Material You</string>
+    <string name="app_theme_forest">森林</string>
+    <string name="app_theme_ocean">海洋</string>
+    <string name="app_theme_amber">琥珀</string>
+    <string name="app_theme_lavender">薰衣草</string>
+    <string name="app_theme_paper">纸张</string>
+    <string name="app_theme_custom">自定义</string>
+    <string name="app_theme_customize">自定义颜色</string>
+    <string name="app_material_you_requires">Material You 在 Android 12 及以上使用壁纸颜色。</string>
+    <string name="app_pure_black">深色模式使用纯黑背景</string>
+    <string name="app_font">字体</string>
+    <string name="app_font_system">系统字体</string>
+    <string name="app_font_serif">衬线字体</string>
+    <string name="app_font_monospace">等宽字体</string>
+    <string name="app_text_sample">扫描、保存、分享。</string>
+    <string name="app_text_size">文字大小</string>
+    <string name="app_text_size_value">文字大小：%1$d%%</string>
+    <string name="app_corners">圆角</string>
+    <string name="app_corners_value">圆角：%1$d dp</string>
+    <string name="app_appearance_reset">重置外观</string>
+    <string name="app_theme_color_hint">使用六位 RGB 颜色。文字和按钮颜色会自动调整以保持可读性。</string>
+    <string name="app_theme_accent">强调色</string>
+    <string name="app_theme_light_background">浅色背景</string>
+    <string name="app_theme_dark_background">深色背景</string>
+    <string name="app_theme_color_invalid">输入六位十六进制数字，例如 38684E。</string>
+</resources>
