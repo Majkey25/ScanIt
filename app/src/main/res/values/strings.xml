@@ -73,7 +73,7 @@
     <string name="saving_now">Saving…</string>
     <string name="save_pdf_now">PDF</string>
     <string name="save_images_now">Images</string>
-    <string name="save_pdf_and_images_now">PDF and images</string>
+    <string name="save_pdf_and_images_now">Save both</string>
     <string name="recent_scans">Recent scans</string>
     <string name="open_recent_scans">Open recent scans</string>
     <string name="recent_scans_temporary">Recent previews are temporary.</string>

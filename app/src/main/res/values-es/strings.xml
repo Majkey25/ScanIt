@@ -74,7 +74,7 @@
     <string name="saving_now">Guardando…</string>
     <string name="save_pdf_now">PDF</string>
     <string name="save_images_now">Imágenes</string>
-    <string name="save_pdf_and_images_now">PDF e imágenes</string>
+    <string name="save_pdf_and_images_now">Guardar ambos</string>
     <string name="recent_scans">Escaneos recientes</string>
     <string name="open_recent_scans">Abrir escaneos recientes</string>
     <string name="recent_scans_temporary">Las vistas previas recientes son temporales.</string>

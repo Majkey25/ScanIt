@@ -823,10 +823,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 45"))
-        assertTrue(build.contains("versionName = \"1.8.5\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"45\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.8.5\""))
+        assertTrue(build.contains("versionCode = 46"))
+        assertTrue(build.contains("versionName = \"1.9.0\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"46\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.0\""))
         assertTrue(rootBuild.contains("version \"9.3.2\""))
         assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
         assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))
@@ -3242,6 +3242,23 @@ class PureLogicTest {
             canRenamePdf = outputsRenameable,
             canRenameImages = outputsRenameable,
         )
+
+    @Test
+    fun appAppearancePersistsWithoutChangingDocumentAppearanceAndRecoversFromBadData() {
+        val (preferences, values) = inMemoryPreferences()
+        val custom = AppAppearanceSettings(mode = AppAppearanceMode.Dark, lightTheme = AppThemePreset.Ocean,
+            darkTheme = AppThemePreset.Custom, accentRgb = 0xDDAAFF, font = AppFont.Serif, textScalePercent = 125)
+        val settings = AppSettings(appAppearance = custom, saveImages = false)
+        SettingsStore(preferences, "Scanned document").save(settings)
+        val restored = SettingsStore(preferences, "Scanned document").load()
+        assertEquals(custom, restored.appAppearance)
+        assertEquals(settings.appearance, restored.appearance)
+        assertFalse(restored.saveImages)
+        values["app_appearance"] = "broken"
+        assertEquals(AppAppearanceSettings(), SettingsStore(preferences, "Scanned document").load().appAppearance)
+        values["app_appearance"] = 123
+        assertEquals(AppAppearanceSettings(), SettingsStore(preferences, "Scanned document").load().appAppearance)
+    }
 
     private fun inMemoryPreferences(
         commitResults: List<Boolean> = emptyList(),

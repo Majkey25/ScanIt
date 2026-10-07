@@ -46,8 +46,8 @@ internal sealed class PdfSizeTarget(
     }
 
     companion object {
-        val presets: List<PdfSizeTarget> =
-            listOf(Original, Kb200, Kb500, Mb1, Mb5, Mb10, Mb20)
+        val presets: List<PdfSizeTarget>
+            get() = listOf(Original, Kb200, Kb500, Mb1, Mb5, Mb10, Mb20)
     }
 }
 

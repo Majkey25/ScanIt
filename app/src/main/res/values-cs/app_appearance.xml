@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_appearance_settings">Vzhled</string>
+    <string name="app_appearance_mode">Režim vzhledu</string>
+    <string name="app_mode_system">Podle systému</string>
+    <string name="app_mode_light">Světlý</string>
+    <string name="app_mode_dark">Tmavý</string>
+    <string name="app_theme_presets">Motivy</string>
+    <string name="app_theme_pair_hint">Světlý a tmavý motiv si můžete vybrat zvlášť.</string>
+    <string name="app_theme_choice">%1$s: %2$s motiv</string>
+    <string name="app_theme_classic">Klasický</string>
+    <string name="app_theme_material_you">Material You</string>
+    <string name="app_theme_forest">Les</string>
+    <string name="app_theme_ocean">Oceán</string>
+    <string name="app_theme_amber">Jantar</string>
+    <string name="app_theme_lavender">Levandule</string>
+    <string name="app_theme_paper">Papír</string>
+    <string name="app_theme_custom">Vlastní</string>
+    <string name="app_theme_customize">Upravit barvy</string>
+    <string name="app_material_you_requires">Material You používá barvy tapety na Androidu 12 a novějším.</string>
+    <string name="app_pure_black">Černé pozadí v tmavém režimu</string>
+    <string name="app_font">Písmo</string>
+    <string name="app_font_system">Systémové písmo</string>
+    <string name="app_font_serif">Patkové</string>
+    <string name="app_font_monospace">Neproporcionální</string>
+    <string name="app_text_sample">Naskenovat, uložit, sdílet.</string>
+    <string name="app_text_size">Velikost textu</string>
+    <string name="app_text_size_value">Velikost textu: %1$d%%</string>
+    <string name="app_corners">Zaoblení rohů</string>
+    <string name="app_corners_value">Zaoblení rohů: %1$d dp</string>
+    <string name="app_appearance_reset">Obnovit výchozí vzhled</string>
+    <string name="app_theme_color_hint">Použijte šestimístné RGB barvy. Barvy textu a tlačítek se upraví pro čitelnost.</string>
+    <string name="app_theme_accent">Barva zvýraznění</string>
+    <string name="app_theme_light_background">Světlé pozadí</string>
+    <string name="app_theme_dark_background">Tmavé pozadí</string>
+    <string name="app_theme_color_invalid">Zadejte šest hexadecimálních číslic, například 38684E.</string>
+</resources>

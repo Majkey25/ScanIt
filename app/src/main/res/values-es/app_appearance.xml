@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_appearance_settings">Apariencia</string>
+    <string name="app_appearance_mode">Modo de apariencia</string>
+    <string name="app_mode_system">Sistema</string>
+    <string name="app_mode_light">Claro</string>
+    <string name="app_mode_dark">Oscuro</string>
+    <string name="app_theme_presets">Temas</string>
+    <string name="app_theme_pair_hint">Elige los temas claro y oscuro por separado.</string>
+    <string name="app_theme_choice">%1$s: tema %2$s</string>
+    <string name="app_theme_classic">Clásico</string>
+    <string name="app_theme_material_you">Material You</string>
+    <string name="app_theme_forest">Bosque</string>
+    <string name="app_theme_ocean">Océano</string>
+    <string name="app_theme_amber">Ámbar</string>
+    <string name="app_theme_lavender">Lavanda</string>
+    <string name="app_theme_paper">Papel</string>
+    <string name="app_theme_custom">Personalizado</string>
+    <string name="app_theme_customize">Personalizar colores</string>
+    <string name="app_material_you_requires">Material You usa los colores del fondo de pantalla en Android 12 o posterior.</string>
+    <string name="app_pure_black">Negro puro en modo oscuro</string>
+    <string name="app_font">Fuente</string>
+    <string name="app_font_system">Fuente del sistema</string>
+    <string name="app_font_serif">Serif</string>
+    <string name="app_font_monospace">Monoespaciada</string>
+    <string name="app_text_sample">Escanear, guardar, compartir.</string>
+    <string name="app_text_size">Tamaño del texto</string>
+    <string name="app_text_size_value">Tamaño del texto: %1$d%%</string>
+    <string name="app_corners">Redondeo de esquinas</string>
+    <string name="app_corners_value">Redondeo de esquinas: %1$d dp</string>
+    <string name="app_appearance_reset">Restablecer apariencia</string>
+    <string name="app_theme_color_hint">Usa colores RGB de seis dígitos. El texto y los botones se ajustan para ser legibles.</string>
+    <string name="app_theme_accent">Color de acento</string>
+    <string name="app_theme_light_background">Fondo claro</string>
+    <string name="app_theme_dark_background">Fondo oscuro</string>
+    <string name="app_theme_color_invalid">Introduce seis dígitos hexadecimales, por ejemplo 38684E.</string>
+</resources>

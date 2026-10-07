@@ -25,7 +25,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,8 +76,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -141,40 +138,6 @@ private const val THIRD_PARTY_NOTICES_URL =
     "https://majkey25.github.io/ScanIt/third-party-notices.txt"
 private const val SOURCE_CODE_URL = "https://github.com/Majkey25/ScanIt"
 internal const val SUPPORT_URL = "https://www.buymeacoffee.com/majkey"
-
-private val LightColorScheme =
-    lightColorScheme(
-        primary = Color.Black,
-        onPrimary = Color.White,
-        primaryContainer = Color(0xFFE5E5E5),
-        onPrimaryContainer = Color.Black,
-        secondary = Color(0xFF444444),
-        onSecondary = Color.White,
-        secondaryContainer = Color(0xFFE5E5E5),
-        onSecondaryContainer = Color.Black,
-        tertiary = Color(0xFF666666),
-        onTertiary = Color.White,
-        tertiaryContainer = Color(0xFFE5E5E5),
-        onTertiaryContainer = Color.Black,
-        inversePrimary = Color.White,
-    )
-
-private val DarkColorScheme =
-    darkColorScheme(
-        primary = Color.White,
-        onPrimary = Color.Black,
-        primaryContainer = Color(0xFF303030),
-        onPrimaryContainer = Color.White,
-        secondary = Color(0xFFD0D0D0),
-        onSecondary = Color.Black,
-        secondaryContainer = Color(0xFF303030),
-        onSecondaryContainer = Color.White,
-        tertiary = Color(0xFFB0B0B0),
-        onTertiary = Color.Black,
-        tertiaryContainer = Color(0xFF303030),
-        onTertiaryContainer = Color.White,
-        inversePrimary = Color.Black,
-    )
 
 @Composable
 private fun dialogContentMaxHeight(): Dp =
@@ -285,9 +248,7 @@ internal fun ScanItApp(
         }
     }
 
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColorScheme else LightColorScheme,
-    ) {
+    ScanItTheme(appearance = settings.appAppearance) {
         if (state is ScreenState.Result && state.safeShareState != null) {
             SafeShareScreen(
                 result = state,
@@ -3530,6 +3491,8 @@ private fun SettingsScreen(
     var customPdfSizeUnit by rememberSaveable { mutableStateOf(PdfSizeUnit.Kilobytes) }
     var appInfoExpanded by rememberSaveable { mutableStateOf(false) }
     var generalExpanded by rememberSaveable { mutableStateOf(true) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    var appAppearance by remember { mutableStateOf(settings.appAppearance) }
     var savingExpanded by rememberSaveable { mutableStateOf(false) }
     var scanningExpanded by rememberSaveable { mutableStateOf(false) }
     var sharingExpanded by rememberSaveable { mutableStateOf(false) }
@@ -3550,6 +3513,11 @@ private fun SettingsScreen(
 
     val latestSavedSettings by rememberUpdatedState(settings)
     var settingsSaveRevision by remember { mutableStateOf(0L) }
+    var settingsSavePending by remember { mutableStateOf(false) }
+
+    LaunchedEffect(settings.appAppearance) {
+        if (!settingsSavePending) appAppearance = settings.appAppearance
+    }
 
     fun restoreLocalSettings(settings: AppSettings = latestSavedSettings) {
         savePdf = settings.savePdf
@@ -3565,10 +3533,12 @@ private fun SettingsScreen(
         pdfSizeTargetWire = settings.pdfSizeTarget.wireValue
         ocrScriptWire = settings.ocrScript.wireValue
         readAloudLanguageWire = settings.readAloudLanguage.wireValue
+        appAppearance = settings.appAppearance
     }
 
     fun persistSettings() {
         val revision = ++settingsSaveRevision
+        settingsSavePending = true
         try {
             onSave(
                         AppSettings(
@@ -3587,14 +3557,17 @@ private fun SettingsScreen(
                             ocrScript = ocrScriptForWireValue(ocrScriptWire),
                             readAloudLanguage =
                                 readAloudLanguageForWireValue(readAloudLanguageWire),
+                            appAppearance = appAppearance,
                         ),
             ) { saved ->
                 if (revision == settingsSaveRevision) {
+                    settingsSavePending = false
                     if (!saved) restoreLocalSettings()
                     settingsError = settingsSaveFailed.takeUnless { saved }
                 }
             }
         } catch (_: RuntimeException) {
+            settingsSavePending = false
             restoreLocalSettings()
             settingsError = settingsSaveFailed
         }
@@ -3727,6 +3700,21 @@ private fun SettingsScreen(
                     .padding(top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            item {
+                SettingsCategoryHeader(
+                    title = stringResource(R.string.app_appearance_settings),
+                    expanded = appearanceExpanded,
+                    onToggle = { appearanceExpanded = !appearanceExpanded },
+                )
+            }
+            if (appearanceExpanded) {
+                item {
+                    AppearanceSettings(appAppearance) {
+                        appAppearance = it
+                        persistSettings()
+                    }
+                }
+            }
             item {
                 SettingsCategoryHeader(
                     title = stringResource(R.string.general_settings),
@@ -4224,7 +4212,7 @@ private fun SettingsCategoryHeader(
 }
 
 @Composable
-private fun SettingsSwitch(
+internal fun SettingsSwitch(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -4244,7 +4232,7 @@ private fun SettingsSwitch(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium)
 }
 

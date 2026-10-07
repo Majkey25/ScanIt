@@ -32,6 +32,17 @@ Play build, never the Latest release. Use Google Play for installation and
 purchases. The public repository contains the fully unlocked edition; the Play
 source is maintained separately and its APK/AAB are backed up in those archives.
 
+## v1.9.0 update
+
+Open **Settings → Appearance** to choose light and dark themes separately. Themes
+include Classic, Forest, Ocean, Amber, Lavender, Paper, Custom, and Material You
+on Android 12 or newer. Custom colors have light/dark previews and automatic
+text contrast. Font, text size, rounded corners, and pure-black dark backgrounds
+are saved on your device. **Reset appearance** restores the original defaults.
+
+The combined manual-save button now says **Save both** and still saves the PDF
+and images. Czech uses **Uložit oboje**, with matching updates in other languages.
+
 ## v1.8.5 update
 
 The combined Recent scans deletion button now says **Delete both**. It still
@@ -121,7 +132,7 @@ directly with Save without reusing stale provider locations.
 After a full app restart, SeliaScan opens a fresh scanner session instead of reopening
 the previously viewed Result; completed scans remain available from Recent.
 
-[Download SeliaScan v1.8.5](https://github.com/Majkey25/ScanIt/releases/tag/v1.8.5)
+[Download SeliaScan v1.9.0](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.0)
 or read the [full changelog](CHANGELOG.md).
 
 <p align="center">

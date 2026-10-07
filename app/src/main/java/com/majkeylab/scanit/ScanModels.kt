@@ -522,6 +522,7 @@ internal data class AppSettings(
     val pdfSizeTarget: PdfSizeTarget = PdfSizeTarget.Original,
     val ocrScript: OcrScript = OcrScript.Auto,
     val readAloudLanguage: ReadAloudLanguage = ReadAloudLanguage.Auto,
+    val appAppearance: AppAppearanceSettings = AppAppearanceSettings(),
 )
 
 internal enum class RecentDeleteTarget {

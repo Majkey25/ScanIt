@@ -28,6 +28,7 @@ private const val KEY_APPEARANCE_SHADOWS = "appearance_shadows"
 private const val KEY_PDF_SIZE_TARGET = "pdf_size_target"
 private const val KEY_OCR_SCRIPT = "ocr_script"
 private const val KEY_READ_ALOUD_LANGUAGE = "read_aloud_language"
+private const val KEY_APP_APPEARANCE = "app_appearance"
 private const val KEY_PDF_TREE_URI = "pdf_tree_uri"
 private const val KEY_PENDING_PDF_TREE_URI = "pending_pdf_tree_uri"
 private const val KEY_ACTIVE_RESULT_CHECKPOINT = "active_result_checkpoint"
@@ -307,6 +308,9 @@ internal class SettingsStore(
                         preferences.getString(KEY_READ_ALOUD_LANGUAGE, null)
                     },
                 ),
+            appAppearance = decodeAppAppearance(
+                readPreferenceOrDefault<String?>(null) { preferences.getString(KEY_APP_APPEARANCE, null) },
+            ),
         )
     }
 
@@ -604,6 +608,7 @@ private fun SharedPreferences.Editor.putSettings(
         .putString(KEY_PDF_SIZE_TARGET, settings.pdfSizeTarget.wireValue)
         .putString(KEY_OCR_SCRIPT, settings.ocrScript.wireValue)
         .putString(KEY_READ_ALOUD_LANGUAGE, settings.readAloudLanguage.wireValue)
+        .putString(KEY_APP_APPEARANCE, encodeAppAppearance(settings.appAppearance))
 
 private fun SharedPreferences.Editor.putAppearance(
     appearance: ScanAppearanceSettings,
