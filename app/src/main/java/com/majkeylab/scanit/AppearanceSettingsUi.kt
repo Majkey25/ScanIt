@@ -36,8 +36,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -50,8 +50,10 @@ import kotlin.math.roundToInt
 @Composable
 internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (AppAppearanceSettings) -> Unit) {
     var customOpen by rememberSaveable { mutableStateOf(false) }
-    val columns = if (LocalConfiguration.current.screenWidthDp < 360 ||
-        LocalDensity.current.fontScale * appearance.textScalePercent / 100f > 1.3f) 1 else 2
+    val density = LocalDensity.current
+    val window = LocalWindowInfo.current
+    val columns = if (with(density) { window.containerSize.width.toDp() } < 360.dp ||
+        density.fontScale * appearance.textScalePercent / 100f > 1.3f) 1 else 2
     val presets = AppThemePreset.entries.filter { it != AppThemePreset.MaterialYou || Build.VERSION.SDK_INT >= 31 }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle(stringResource(R.string.app_appearance_mode))
