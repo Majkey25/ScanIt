@@ -72,7 +72,7 @@
     <string name="saving_now">正在保存…</string>
     <string name="save_pdf_now">PDF</string>
     <string name="save_images_now">图像</string>
-    <string name="save_pdf_and_images_now">PDF 和图像</string>
+    <string name="save_pdf_and_images_now">保存两者</string>
     <string name="recent_scans">最近扫描</string>
     <string name="open_recent_scans">打开最近扫描</string>
     <string name="recent_scans_temporary">最近扫描的预览是临时文件。</string>

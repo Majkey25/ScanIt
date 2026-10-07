@@ -2,6 +2,11 @@
 
 All notable changes are documented here.
 
+## [1.8.6] - 2026-10-07
+
+### Changed
+- Shortened the combined manual-save button to "Save both", with matching translations. It still saves the PDF and images.
+
 ## [1.8.5] - 2026-10-04
 
 ### Fixed
