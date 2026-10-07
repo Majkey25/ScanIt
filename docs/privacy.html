@@ -26,7 +26,7 @@
 
   <main id="main" class="policy" tabindex="-1">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-09-08</p>
+    <p class="updated">Last updated: 2026-10-05</p>
 
     <p>This policy describes the public SeliaScan Android app and this SeliaScan website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
     <p>Matěj Teplý, publishing as Majkey, maintains SeliaScan and is responsible for support correspondence received at that address.</p>
@@ -55,6 +55,10 @@
     <p>The scanner UI, models, and related resources are supplied through Google Play services. Google says document-scanner input and output are processed on-device and are not sent to Google servers. Google Play services may contact Google to download or update the scanner module, models, bug fixes, or compatibility information.</p>
 
     <p>Optional text extraction and QR/barcode detection use ML Kit recognition models delivered by Google Play services and run on-device. A model may download before first use. SeliaScan does not upload document content or detected results to a maintainer-operated service. Extracted text is written only to a document destination you select, and copied recognition results are placed on Android's clipboard with the sensitive-content flag. Google states that ML Kit collects device and app information, device or installation identifiers, performance metrics, API configuration, input/output size, feature version, event types, and error codes for diagnostics and usage analytics. Google states that this telemetry is encrypted in transit using HTTPS and is not transferred to third parties. SeliaScan cannot disable or delete telemetry processed by Google Play services.</p>
+
+    <h3>Safe Share and redaction</h3>
+    <p>When you start Safe Share, SeliaScan analyzes the selected pages on-device to suggest regions containing faces, barcodes, or potentially sensitive text such as email addresses, phone numbers, URLs, IBANs, and payment-card numbers. Face detection uses a Google Play services ML Kit model, which may need to download before use. It locates faces for your review; it does not identify people or create a face-recognition database. The ML Kit diagnostic processing described above also applies to this SDK.</p>
+    <p>You review the suggested regions and choose which to cover. Detection can miss sensitive information or flag harmless content, so review every page before sharing. Applying redaction creates a separate copy. It does not erase the original scan, files already saved or shared, or copies held by another app or provider. Delete those separately when needed.</p>
 
     <p>See Google's current <a href="https://developers.google.com/ml-kit/terms">ML Kit Terms and Privacy information</a>, <a href="https://developers.google.com/ml-kit/android-data-disclosure">Android data disclosure</a>, and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 
