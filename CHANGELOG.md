@@ -11,6 +11,9 @@ All notable changes are documented here.
 ### Changed
 - Shortened the combined manual-save button to "Save both", with matching translations. It still saves the PDF and images.
 
+### Fixed
+- PDF size choices initialize safely when the Original preset is accessed first, preventing a cold settings-screen crash.
+
 ## [1.8.5] - 2026-10-04
 
 ### Fixed
