@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyRow
@@ -28,6 +29,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -45,6 +47,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -339,7 +342,9 @@ private fun SafeShareProgress(message: String, onCancel: (() -> Unit)?) {
             Text(message, style = MaterialTheme.typography.titleMedium)
             if (onCancel != null) {
                 Spacer(Modifier.height(20.dp))
-                TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+                TextButton(onClick = onCancel) {
+                    ActionButtonContent(R.drawable.ic_close, R.string.cancel)
+                }
             }
         }
     }
@@ -359,7 +364,9 @@ private fun SafeShareFailure(message: String, onCancel: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(Modifier.height(20.dp))
-            OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+            OutlinedButton(onClick = onCancel) {
+                ActionButtonContent(R.drawable.ic_close, R.string.cancel)
+            }
         }
     }
 }
@@ -728,18 +735,20 @@ private fun SafeShareControls(
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(
                 onClick = { onSelectPage(page - 1) },
                 enabled = canChangePage && page > 0,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) {
-                Text(stringResource(R.string.safe_share_previous_page))
+                ActionButtonContent(R.drawable.ic_pdf, R.string.safe_share_previous_page)
             }
             TextButton(
                 onClick = { onSelectPage(page + 1) },
                 enabled = canChangePage && page + 1 < pageCount,
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
             ) {
-                Text(stringResource(R.string.safe_share_next_page))
+                ActionButtonContent(R.drawable.ic_pdf, R.string.safe_share_next_page)
             }
         }
         if (regions.isEmpty()) {
@@ -781,6 +790,12 @@ private fun SafeShareControls(
                     onClick = { onDeleteRegion(region.id) },
                     enabled = previewReady,
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_delete),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.safe_share_delete_area, index + 1))
                 }
             }
@@ -790,21 +805,21 @@ private fun SafeShareControls(
             enabled = previewReady && regions.size < MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.safe_share_add_area))
+            ActionButtonContent(R.drawable.ic_action_redact, R.string.safe_share_add_area)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.cancel))
+                ActionButtonContent(R.drawable.ic_close, R.string.cancel)
             }
             Button(
                 onClick = { if (canApply) onApply() },
                 enabled = canApply,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(stringResource(R.string.apply_protection))
+                ActionButtonContent(R.drawable.ic_action_safe_share, R.string.apply_protection)
             }
         }
     }

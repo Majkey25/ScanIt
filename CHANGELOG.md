@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## [1.9.1] - 2026-10-07
+
+### Changed
+- Moved Appearance directly below General in Settings.
+- Added matching icons to settings, file actions, save/delete dialogs, document tools, and editor controls without changing their behavior.
+
+### Fixed
+- Clipped theme press feedback to the circular selector instead of drawing a square over it.
+
 ## [1.9.0] - 2026-10-07
 
 ### Added

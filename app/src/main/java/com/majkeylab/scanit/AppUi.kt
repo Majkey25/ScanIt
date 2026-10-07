@@ -410,7 +410,7 @@ private fun FailureScreen(
             Text(message, color = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(24.dp))
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                Text(stringResource(R.string.try_again))
+                ActionButtonContent(R.drawable.ic_restore, R.string.try_again)
             }
         }
     }
@@ -1223,7 +1223,7 @@ private fun PageScopeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -1687,7 +1687,7 @@ private fun DocumentActionStateDialog(
                         onClick = onExportText,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(R.string.export_text))
+                        ActionButtonContent(R.drawable.ic_action_extract_text, R.string.export_text)
                     }
                 }
                 if (speech?.hasText == true) {
@@ -1702,13 +1702,13 @@ private fun DocumentActionStateDialog(
                             },
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                         ) {
-                            Text(stringResource(R.string.play_read_aloud))
+                        ActionButtonContent(R.drawable.ic_action_read_aloud, R.string.play_read_aloud)
                         }
                         TextButton(
                             onClick = onStopReadAloud,
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
-                            Text(stringResource(R.string.stop_reading))
+                        ActionButtonContent(R.drawable.ic_close, R.string.stop_reading)
                         }
                     }
                 }
@@ -1725,7 +1725,7 @@ private fun DocumentActionStateDialog(
                         onClick = { onRunSystemAction(selectedContactAction) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(R.string.create_contact))
+                        ActionButtonContent(R.drawable.ic_action_contact, R.string.create_contact)
                     }
                 }
                 if (whiteboardPreview != null) {
@@ -1733,7 +1733,7 @@ private fun DocumentActionStateDialog(
                         onClick = onApplyWhiteboard,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
-                        Text(stringResource(R.string.apply_clean_whiteboard))
+                        ActionButtonContent(R.drawable.ic_check, R.string.apply_clean_whiteboard)
                     }
                 }
                 Row {
@@ -1748,7 +1748,7 @@ private fun DocumentActionStateDialog(
                             },
                             modifier = Modifier.heightIn(min = 48.dp),
                         ) {
-                            Text(stringResource(R.string.copy))
+                        ActionButtonContent(R.drawable.ic_action_extract_text, R.string.copy)
                         }
                     }
                     if (documentActionDismissAllowed(state)) {
@@ -1780,12 +1780,12 @@ private fun DocumentActionStateDialog(
                         onReadAloud()
                     },
                 ) {
-                    Text(stringResource(R.string.play_read_aloud))
+                    ActionButtonContent(R.drawable.ic_action_read_aloud, R.string.play_read_aloud)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showTtsDisclosure = false }) {
-                    Text(stringResource(R.string.cancel))
+                    ActionButtonContent(R.drawable.ic_close, R.string.cancel)
                 }
             },
         )
@@ -1952,7 +1952,7 @@ private fun ResultPageThumbnail(
 }
 
 @Composable
-private fun ActionButtonContent(
+internal fun ActionButtonContent(
     iconRes: Int,
     textRes: Int,
 ) {
@@ -2404,11 +2404,7 @@ private fun FileDetails(
                 enabled = !saveInProgress,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
-                Text(
-                    stringResource(
-                        if (saveInProgress) R.string.saving_now else R.string.save_now,
-                    ),
-                )
+                ActionButtonContent(R.drawable.ic_save, if (saveInProgress) R.string.saving_now else R.string.save_now)
             }
         }
     }
@@ -2426,11 +2422,18 @@ private fun FileDetailActionButton(
         enabled = enabled,
         modifier = modifier.heightIn(min = 48.dp),
     ) {
-        Text(
-            text = stringResource(textRes),
-            maxLines = 2,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(painterResource(when (textRes) {
+                R.string.change_size -> R.drawable.ic_tune
+                R.string.change_location -> R.drawable.ic_folder
+                else -> R.drawable.ic_image
+            }), null, Modifier.size(18.dp))
+            Text(
+                text = stringResource(textRes),
+                maxLines = 2,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -2807,11 +2810,11 @@ private fun PdfSizeTargetDialog(
                 onClick = { selected?.let(onSelect) },
                 enabled = selected != null && selected != current,
             ) {
-                Text(stringResource(R.string.apply_appearance))
+                        ActionButtonContent(R.drawable.ic_check, R.string.apply_appearance)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -2956,11 +2959,11 @@ private fun ImageSizeDialog(
                 onClick = { onSelect(preset, selectedCustom) },
                 enabled = selectionValid && changed,
             ) {
-                Text(stringResource(R.string.apply_appearance))
+                ActionButtonContent(R.drawable.ic_check, R.string.apply_appearance)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -3004,11 +3007,11 @@ private fun ImageFormatDialog(
                 onClick = { onSelect(selected) },
                 enabled = current == null || selected != current,
             ) {
-                Text(stringResource(R.string.apply_appearance))
+                ActionButtonContent(R.drawable.ic_check, R.string.apply_appearance)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -3024,11 +3027,11 @@ private fun UnknownOutputAcknowledgementDialog(
         text = { Text(stringResource(R.string.unknown_output_confirm_body)) },
         confirmButton = {
             TextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.unknown_output_confirm))
+                        ActionButtonContent(R.drawable.ic_check, R.string.unknown_output_confirm)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -3049,6 +3052,12 @@ private fun SaveNowDialog(
                         onClick = { onSave(target) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
+                        Icon(painterResource(when (target) {
+                            SaveNowTarget.Pdf -> R.drawable.ic_pdf
+                            SaveNowTarget.Images -> R.drawable.ic_image
+                            SaveNowTarget.Both -> R.drawable.ic_save
+                        }), null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             stringResource(
                                 when (target) {
@@ -3063,7 +3072,7 @@ private fun SaveNowDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -3134,7 +3143,7 @@ private fun RecentScreen(
                     enabled = !state.deletionInProgress,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
-                    Text(stringResource(R.string.new_scan))
+                    ActionButtonContent(R.drawable.ic_camera, R.string.new_scan)
                 }
             }
             item {
@@ -3219,6 +3228,7 @@ private fun RecentScanRow(
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.open_scan)) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_file_details), null) },
                         enabled = !deletionInProgress,
                         onClick = {
                             menuExpanded = false
@@ -3227,6 +3237,7 @@ private fun RecentScanRow(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.send_pdf)) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_share), null) },
                         enabled = !deletionInProgress,
                         onClick = {
                             menuExpanded = false
@@ -3235,6 +3246,7 @@ private fun RecentScanRow(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.delete_scan)) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null) },
                         enabled = !deletionInProgress,
                         onClick = {
                             menuExpanded = false
@@ -3288,6 +3300,12 @@ private fun RecentDeleteDialog(
                         onClick = { onDelete(target) },
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
+                        Icon(painterResource(when (target) {
+                            RecentDeleteTarget.Pdf -> R.drawable.ic_pdf
+                            RecentDeleteTarget.Images -> R.drawable.ic_image
+                            RecentDeleteTarget.Both, RecentDeleteTarget.RemoveFromRecent -> R.drawable.ic_delete
+                        }), null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             stringResource(
                                 when (target) {
@@ -3303,7 +3321,7 @@ private fun RecentDeleteDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) }
         },
     )
 }
@@ -3607,7 +3625,7 @@ private fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { languageDialogOpen = false }) {
-                    Text(stringResource(R.string.cancel))
+                    ActionButtonContent(R.drawable.ic_close, R.string.cancel)
                 }
             },
         )
@@ -3642,12 +3660,12 @@ private fun SettingsScreen(
                     },
                     enabled = customKilobytes != null,
                 ) {
-                    Text(stringResource(R.string.save))
+                    ActionButtonContent(R.drawable.ic_save, R.string.save)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { customPdfSizeDialogOpen = false }) {
-                    Text(stringResource(R.string.cancel))
+                    ActionButtonContent(R.drawable.ic_close, R.string.cancel)
                 }
             },
         )
@@ -3702,22 +3720,8 @@ private fun SettingsScreen(
         ) {
             item {
                 SettingsCategoryHeader(
-                    title = stringResource(R.string.app_appearance_settings),
-                    expanded = appearanceExpanded,
-                    onToggle = { appearanceExpanded = !appearanceExpanded },
-                )
-            }
-            if (appearanceExpanded) {
-                item {
-                    AppearanceSettings(appAppearance) {
-                        appAppearance = it
-                        persistSettings()
-                    }
-                }
-            }
-            item {
-                SettingsCategoryHeader(
                     title = stringResource(R.string.general_settings),
+                    iconRes = R.drawable.ic_settings,
                     expanded = generalExpanded,
                     onToggle = { generalExpanded = !generalExpanded },
                 )
@@ -3728,7 +3732,9 @@ private fun SettingsScreen(
                     onClick = { languageDialogOpen = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Icon(painterResource(R.drawable.ic_language), null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.choose_language))
                         Text(
                             appLanguageLabel(language),
@@ -3738,7 +3744,7 @@ private fun SettingsScreen(
                     }
                 }
             }
-            item { SectionTitle(stringResource(R.string.pdf_size)) }
+            item { SectionTitle(stringResource(R.string.pdf_size), R.drawable.ic_pdf) }
             item {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -3787,7 +3793,24 @@ private fun SettingsScreen(
             }
             item {
                 SettingsCategoryHeader(
+                    title = stringResource(R.string.app_appearance_settings),
+                    iconRes = R.drawable.ic_palette,
+                    expanded = appearanceExpanded,
+                    onToggle = { appearanceExpanded = !appearanceExpanded },
+                )
+            }
+            if (appearanceExpanded) {
+                item {
+                    AppearanceSettings(appAppearance) {
+                        appAppearance = it
+                        persistSettings()
+                    }
+                }
+            }
+            item {
+                SettingsCategoryHeader(
                     title = stringResource(R.string.saving),
+                    iconRes = R.drawable.ic_save,
                     expanded = savingExpanded,
                     onToggle = { savingExpanded = !savingExpanded },
                 )
@@ -3796,6 +3819,7 @@ private fun SettingsScreen(
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.save_pdf),
+                    iconRes = R.drawable.ic_pdf,
                     checked = savePdf,
                     onCheckedChange = {
                         savePdf = it
@@ -3806,6 +3830,7 @@ private fun SettingsScreen(
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.save_images),
+                    iconRes = R.drawable.ic_image,
                     checked = saveImages,
                     onCheckedChange = {
                         saveImages = it
@@ -3828,6 +3853,7 @@ private fun SettingsScreen(
                         persistSettings()
                     },
                     label = { Text(stringResource(R.string.album_name)) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_folder), null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -3855,7 +3881,7 @@ private fun SettingsScreen(
                         },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(stringResource(R.string.choose_folder))
+                        ActionButtonContent(R.drawable.ic_folder, R.string.choose_folder)
                     }
                     OutlinedButton(
                         onClick = {
@@ -3873,7 +3899,7 @@ private fun SettingsScreen(
                         enabled = pdfTreeUri != null,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(stringResource(R.string.clear_folder))
+                        ActionButtonContent(R.drawable.ic_restore, R.string.clear_folder)
                     }
                 }
                 folderError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
@@ -3882,6 +3908,7 @@ private fun SettingsScreen(
             item {
                 SettingsCategoryHeader(
                     title = stringResource(R.string.scanning),
+                    iconRes = R.drawable.ic_camera,
                     expanded = scanningExpanded,
                     onToggle = { scanningExpanded = !scanningExpanded },
                 )
@@ -3890,6 +3917,7 @@ private fun SettingsScreen(
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.multiple_pages),
+                    iconRes = R.drawable.ic_file_details,
                     checked = multipage,
                     onCheckedChange = {
                         multipage = it
@@ -3900,6 +3928,7 @@ private fun SettingsScreen(
             item {
                 SettingsSwitch(
                     label = stringResource(R.string.allow_gallery),
+                    iconRes = R.drawable.ic_image,
                     checked = allowGallery,
                     onCheckedChange = {
                         allowGallery = it
@@ -3911,6 +3940,7 @@ private fun SettingsScreen(
             item {
                 SettingsCategoryHeader(
                     title = stringResource(R.string.sharing),
+                    iconRes = R.drawable.ic_share,
                     expanded = sharingExpanded,
                     onToggle = { sharingExpanded = !sharingExpanded },
                 )
@@ -3931,6 +3961,7 @@ private fun SettingsScreen(
                         persistSettings()
                     },
                     label = { Text(stringResource(R.string.email_subject)) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_share), null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -3943,6 +3974,7 @@ private fun SettingsScreen(
                         persistSettings()
                     },
                     label = { Text(stringResource(R.string.email_body)) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_text_format), null) },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -3951,12 +3983,13 @@ private fun SettingsScreen(
             item {
                 SettingsCategoryHeader(
                     title = stringResource(R.string.advanced_settings),
+                    iconRes = R.drawable.ic_tune,
                     expanded = advancedExpanded,
                     onToggle = { advancedExpanded = !advancedExpanded },
                 )
             }
             if (advancedExpanded) {
-                item { SectionTitle(stringResource(R.string.document_actions_settings)) }
+                item { SectionTitle(stringResource(R.string.document_actions_settings), R.drawable.ic_actions) }
                 item {
                     Text(stringResource(R.string.text_recognition_script))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -4073,19 +4106,19 @@ private fun SettingsScreen(
                                 onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(stringResource(R.string.privacy_policy))
+                                ActionButtonContent(R.drawable.ic_action_safe_share, R.string.privacy_policy)
                             }
                             TextButton(
                                 onClick = { uriHandler.openUri(THIRD_PARTY_NOTICES_URL) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(stringResource(R.string.third_party_notices))
+                                ActionButtonContent(R.drawable.ic_file_details, R.string.third_party_notices)
                             }
                             TextButton(
                                 onClick = { uriHandler.openUri(SOURCE_CODE_URL) },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text(stringResource(R.string.source_code))
+                                ActionButtonContent(R.drawable.ic_actions, R.string.source_code)
                             }
                         }
                     }
@@ -4175,6 +4208,7 @@ private fun readAloudLanguageLabel(language: ReadAloudLanguage): String =
 @Composable
 private fun SettingsCategoryHeader(
     title: String,
+    iconRes: Int,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
@@ -4201,6 +4235,8 @@ private fun SettingsCategoryHeader(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Icon(
                 painter = painterResource(R.drawable.ic_expand_more),
@@ -4215,6 +4251,7 @@ private fun SettingsCategoryHeader(
 internal fun SettingsSwitch(
     label: String,
     checked: Boolean,
+    iconRes: Int = R.drawable.ic_settings,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -4226,14 +4263,19 @@ internal fun SettingsSwitch(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(12.dp))
         Text(label, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = null)
     }
 }
 
 @Composable
-internal fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium)
+internal fun SectionTitle(text: String, iconRes: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(20.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable

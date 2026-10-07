@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -36,9 +37,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,18 +59,25 @@ internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (Ap
         density.fontScale * appearance.textScalePercent / 100f > 1.3f) 1 else 2
     val presets = AppThemePreset.entries.filter { it != AppThemePreset.MaterialYou || Build.VERSION.SDK_INT >= 31 }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionTitle(stringResource(R.string.app_appearance_mode))
+        SectionTitle(stringResource(R.string.app_appearance_mode), R.drawable.ic_light_mode)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(AppAppearanceMode.entries) { mode ->
                 FilterChip(
                     selected = appearance.mode == mode,
                     onClick = { onChange(appearance.copy(mode = mode)) },
                     label = { Text(appearanceModeLabel(mode)) },
+                    leadingIcon = {
+                        Icon(painterResource(when (mode) {
+                            AppAppearanceMode.System -> R.drawable.ic_settings
+                            AppAppearanceMode.Light -> R.drawable.ic_light_mode
+                            AppAppearanceMode.Dark -> R.drawable.ic_dark_mode
+                        }), null, Modifier.size(18.dp))
+                    },
                     modifier = Modifier.heightIn(min = 48.dp),
                 )
             }
         }
-        SectionTitle(stringResource(R.string.app_theme_presets))
+        SectionTitle(stringResource(R.string.app_theme_presets), R.drawable.ic_palette)
         Text(stringResource(R.string.app_theme_pair_hint), style = MaterialTheme.typography.bodySmall)
         for (row in presets.chunked(columns)) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -88,7 +98,7 @@ internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (Ap
                                     val description = stringResource(R.string.app_theme_choice, themePresetLabel(preset), modeLabel)
                                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                                         Surface(
-                                            modifier = Modifier.size(56.dp).selectable(
+                                            modifier = Modifier.size(56.dp).clip(CircleShape).selectable(
                                                 selected = selected, role = Role.RadioButton,
                                                 onClick = { onChange(if (dark) appearance.copy(darkTheme = preset) else appearance.copy(lightTheme = preset)) },
                                             ).semantics { contentDescription = description },
@@ -113,20 +123,21 @@ internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (Ap
             }
         }
         OutlinedButton(onClick = { customOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.app_theme_customize))
+            ActionButtonContent(R.drawable.ic_palette, R.string.app_theme_customize)
         }
         if (Build.VERSION.SDK_INT < 31) {
             Text(stringResource(R.string.app_material_you_requires), style = MaterialTheme.typography.bodySmall)
         }
-        SettingsSwitch(stringResource(R.string.app_pure_black), appearance.pureBlackDark) {
+        SettingsSwitch(stringResource(R.string.app_pure_black), appearance.pureBlackDark, R.drawable.ic_dark_mode) {
             onChange(appearance.copy(pureBlackDark = it))
         }
-        SectionTitle(stringResource(R.string.app_font))
+        SectionTitle(stringResource(R.string.app_font), R.drawable.ic_text_format)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(AppFont.entries) { font ->
                 FilterChip(
                     selected = appearance.font == font,
                     onClick = { onChange(appearance.copy(font = font)) },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_text_format), null, Modifier.size(18.dp)) },
                     label = { Text(stringResource(when (font) {
                         AppFont.System -> R.string.app_font_system
                         AppFont.Serif -> R.string.app_font_serif
@@ -161,7 +172,7 @@ internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (Ap
             modifier = Modifier.semantics { contentDescription = cornersLabel },
         )
         OutlinedButton(onClick = { onChange(AppAppearanceSettings()) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(stringResource(R.string.app_appearance_reset))
+            ActionButtonContent(R.drawable.ic_restore, R.string.app_appearance_reset)
         }
     }
     if (customOpen) CustomThemeDialog(appearance, onDismiss = { customOpen = false }) { custom ->
@@ -210,9 +221,9 @@ private fun CustomThemeDialog(appearance: AppAppearanceSettings, onDismiss: () -
             TextButton(enabled = valid, onClick = {
                 onApply(appearance.copy(lightTheme = AppThemePreset.Custom, darkTheme = AppThemePreset.Custom,
                     accentRgb = requireNotNull(accentColor), lightBackgroundRgb = requireNotNull(lightColor), darkBackgroundRgb = requireNotNull(darkColor)))
-            }) { Text(stringResource(R.string.apply_appearance)) }
+            }) { ActionButtonContent(R.drawable.ic_check, R.string.apply_appearance) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { ActionButtonContent(R.drawable.ic_close, R.string.cancel) } },
     )
 }
 
@@ -222,6 +233,7 @@ private fun ThemeColorField(label: String, value: String, onChange: (String) -> 
     OutlinedTextField(
         value = value, onValueChange = { onChange(it.removePrefix("#").take(32)) }, label = { Text(label) },
         prefix = { Text("#") }, isError = invalid, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        leadingIcon = { Icon(painterResource(R.drawable.ic_palette), null) },
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, keyboardType = KeyboardType.Ascii),
         supportingText = { if (invalid) Text(stringResource(R.string.app_theme_color_invalid)) },
     )

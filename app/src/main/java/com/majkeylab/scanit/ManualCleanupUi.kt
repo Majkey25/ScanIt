@@ -106,7 +106,7 @@ internal fun ManualCleanupEditorScreen(
                     },
                     enabled = strokes.isNotEmpty() && !editor.applying,
                 ) {
-                    Text(stringResource(R.string.undo_drawing))
+                    ActionButtonContent(R.drawable.ic_restore, R.string.undo_drawing)
                 }
                 TextButton(
                     onClick = {
@@ -116,7 +116,7 @@ internal fun ManualCleanupEditorScreen(
                     },
                     enabled = strokes.isNotEmpty() && !editor.applying,
                 ) {
-                    Text(stringResource(R.string.clear_drawing))
+                    ActionButtonContent(R.drawable.ic_delete, R.string.clear_drawing)
                 }
             }
             editor.message?.let { message ->
@@ -144,7 +144,7 @@ internal fun ManualCleanupEditorScreen(
                         strokes.all { it.size >= 3 },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             ) {
-                Text(stringResource(R.string.manual_cleanup_apply))
+                ActionButtonContent(R.drawable.ic_check, R.string.manual_cleanup_apply)
             }
             Spacer(Modifier.height(4.dp))
         }

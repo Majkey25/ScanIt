@@ -191,7 +191,7 @@ internal fun VisualMarkEditorScreen(
                         onClick = { showDeleteConfirmation = true },
                         enabled = !editor.busy,
                     ) {
-                        Text(stringResource(R.string.delete_visual_mark))
+                        ActionButtonContent(R.drawable.ic_delete, R.string.delete_visual_mark)
                     }
                 }
             }
@@ -275,6 +275,12 @@ internal fun VisualMarkEditorScreen(
                     enabled = selectedBitmap != null && !editor.busy,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_check),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.apply_visual_mark, source.pageIndex + 1))
                 }
             }
@@ -303,12 +309,12 @@ internal fun VisualMarkEditorScreen(
                         editor.selectedTemplateId?.let(onDeleteTemplate)
                     },
                 ) {
-                    Text(stringResource(R.string.delete_visual_mark_confirm))
+                    ActionButtonContent(R.drawable.ic_delete, R.string.delete_visual_mark_confirm)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text(stringResource(R.string.cancel))
+                    ActionButtonContent(R.drawable.ic_close, R.string.cancel)
                 }
             },
         )
@@ -674,7 +680,9 @@ private fun DrawVisualMarkDialog(
                             onDraftChange(strokes.toMarkStrokes())
                         },
                         enabled = strokes.isNotEmpty(),
-                    ) { Text(stringResource(R.string.undo_drawing)) }
+                    ) {
+                        ActionButtonContent(R.drawable.ic_restore, R.string.undo_drawing)
+                    }
                     TextButton(
                         onClick = {
                             strokes.clear()
@@ -682,7 +690,9 @@ private fun DrawVisualMarkDialog(
                             onDraftChange(emptyList())
                         },
                         enabled = strokes.isNotEmpty(),
-                    ) { Text(stringResource(R.string.clear_drawing)) }
+                    ) {
+                        ActionButtonContent(R.drawable.ic_delete, R.string.clear_drawing)
+                    }
                 }
             }
         },
@@ -690,9 +700,15 @@ private fun DrawVisualMarkDialog(
             TextButton(
                 onClick = { onSave(strokes.toMarkStrokes()) },
                 enabled = strokes.isNotEmpty(),
-            ) { Text(stringResource(R.string.save_visual_mark)) }
+            ) {
+                ActionButtonContent(R.drawable.ic_save, R.string.save_visual_mark)
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                ActionButtonContent(R.drawable.ic_close, R.string.cancel)
+            }
+        },
     )
 }
 
