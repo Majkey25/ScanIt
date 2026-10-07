@@ -20,6 +20,12 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.1 Settings and action icons
+
+Appearance sits directly below General. Settings and document controls use
+matching icons with their existing text labels. Theme selection feedback stays
+inside the circular preview. The stable edition is still fully unlocked and ad-free.
+
 ## Choose your edition
 
 | Edition | Features | Where to get it |
