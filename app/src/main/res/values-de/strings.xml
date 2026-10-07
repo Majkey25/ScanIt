@@ -94,7 +94,7 @@
     <string name="delete_scan">Löschen…</string>
     <string name="delete_pdf">PDF</string>
     <string name="delete_images">Bilder</string>
-    <string name="delete_pdf_and_images">PDF und Bilder</string>
+    <string name="delete_pdf_and_images">Beides löschen</string>
     <string name="remove_from_recent">Aus letzten Scans entfernen</string>
     <string name="recent_delete_saved_hint">Die ausgewählten gespeicherten Dateien werden vom Gerät gelöscht. Danach wird der Scan aus den letzten Scans entfernt.</string>
     <string name="recent_delete_legacy_hint">Details zu gespeicherten Dateien fehlen. SeliaScan errät nicht, welche Dateien gelöscht werden sollen. Nur diese Vorschau kann entfernt werden.</string>

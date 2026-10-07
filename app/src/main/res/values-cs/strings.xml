@@ -96,7 +96,7 @@
     <string name="delete_scan">Smazat…</string>
     <string name="delete_pdf">PDF</string>
     <string name="delete_images">Obrázky</string>
-    <string name="delete_pdf_and_images">PDF a obrázky</string>
+    <string name="delete_pdf_and_images">Smazat oboje</string>
     <string name="remove_from_recent">Odebrat z nedávných</string>
     <string name="recent_delete_saved_hint">Vybrané uložené soubory budou smazány ze zařízení a potom bude tento sken odebrán z nedávných.</string>
     <string name="recent_delete_legacy_hint">Podrobnosti o uložených souborech nejsou dostupné, takže SeliaScan nebude hádat, co smazat. Lze odebrat jen tento nedávný náhled.</string>

@@ -336,23 +336,109 @@ internal fun buildDocumentEntityCandidates(
     val values = ArrayList<DocumentEntityCandidate>()
     val counts = IntArray(MAX_SCAN_PAGES)
     val seen = HashSet<DocumentEntityCandidate>()
+    val adjacentWords = ArrayList<OcrElement>()
+    fun add(candidate: DocumentEntityCandidate) {
+        if (counts[candidate.page] < MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE && seen.add(candidate)) {
+            values += candidate
+            counts[candidate.page] += 1
+        }
+    }
+    fun flushEntityCandidates() {
+        for (candidate in structuredCandidatesFromAdjacentWords(adjacentWords)) add(candidate)
+        adjacentWords.clear()
+    }
     var characters = 0
     for (element in elements) {
         if (element.value.length > MAX_ENTITY_SOURCE_CHARACTERS - characters) break
         characters += element.value.length
+        val previous = adjacentWords.lastOrNull()
+        if (previous != null && !areAdjacentOcrWords(previous, element)) flushEntityCandidates()
+        adjacentWords += element
         if (counts[element.page] >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) continue
         for (kind in DocumentEntityKind.entries) {
+            if (kind != DocumentEntityKind.Email && kind != DocumentEntityKind.Url && kind != DocumentEntityKind.Date) continue
             for (value in entityValues(kind, element.value)) {
                 if (counts[element.page] >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) break
-                val candidate = DocumentEntityCandidate(element.page, kind, value, element.bounds)
-                if (seen.add(candidate)) {
-                    values += candidate
-                    counts[element.page] += 1
-                }
+                add(DocumentEntityCandidate(element.page, kind, value, element.bounds))
             }
         }
     }
+    flushEntityCandidates()
     return values
+}
+
+private fun areAdjacentOcrWords(previous: OcrElement, next: OcrElement): Boolean {
+    if (previous.page != next.page) return false
+    val first = previous.bounds
+    val second = next.bounds
+    val height = minOf(first.bottom - first.top, second.bottom - second.top)
+    return second.left >= first.right &&
+        second.left - first.right <= height &&
+        minOf(first.bottom, second.bottom) - maxOf(first.top, second.top) >= height / 2
+}
+
+private fun structuredCandidatesFromAdjacentWords(
+    words: List<OcrElement>,
+): Sequence<DocumentEntityCandidate> = sequence {
+    if (words.isEmpty()) return@sequence
+    val text = words.joinToString(" ", transform = OcrElement::value)
+    val claimed = BooleanArray(text.length)
+    // Valid payment data stays protected even beside a currency label.
+    for ((kind, pattern) in listOf(
+        DocumentEntityKind.Iban to IBAN_PATTERN,
+        DocumentEntityKind.PaymentCard to PAYMENT_CARD_PATTERN,
+        DocumentEntityKind.Money to MONEY_PATTERN,
+        DocumentEntityKind.Phone to PHONE_PATTERN,
+    )) {
+        var wordIndex = 0
+        var wordStart = 0
+        var searchStart = 0
+        while (searchStart < text.length) {
+            val match = pattern.find(text, searchStart) ?: break
+            searchStart = match.range.last + 1
+            var value = match.value.trim()
+            if (kind == DocumentEntityKind.Iban) {
+                // The alphanumeric IBAN pattern can also consume following labels.
+                while (!isValidIban(value) && ' ' in value) value = value.substringBeforeLast(' ')
+                if (!isValidIban(value)) {
+                    searchStart = match.range.first + 1
+                    continue
+                }
+            } else if (entityValues(kind, value).none { it == value }) {
+                continue
+            }
+            val range = match.range.first until match.range.first + value.length
+            searchStart = range.last + 1
+            if (range.any { claimed[it] }) continue
+            for (index in range) claimed[index] = true
+            while (wordStart + words[wordIndex].value.length <= range.first) {
+                wordStart += words[wordIndex].value.length + 1
+                wordIndex += 1
+            }
+            val firstWord = wordIndex
+            while (
+                wordIndex < words.lastIndex &&
+                    wordStart + words[wordIndex].value.length + 1 <= range.last
+            ) {
+                wordStart += words[wordIndex].value.length + 1
+                wordIndex += 1
+            }
+            val matchedWords = words.subList(firstWord, wordIndex + 1)
+            yield(
+                DocumentEntityCandidate(
+                    words[firstWord].page,
+                    kind,
+                    value,
+                    NormalizedRect(
+                        matchedWords.minOf { it.bounds.left },
+                        matchedWords.minOf { it.bounds.top },
+                        matchedWords.maxOf { it.bounds.right },
+                        matchedWords.maxOf { it.bounds.bottom },
+                    ),
+                ),
+            )
+        }
+    }
 }
 
 private fun entityValues(kind: DocumentEntityKind, text: String): Sequence<String> =

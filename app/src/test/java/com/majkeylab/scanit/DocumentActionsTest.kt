@@ -658,6 +658,132 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun receiptMoneyCandidatesJoinOcrWordsOnBothPagesWithOnlyMatchedBounds() {
+        val elements =
+            (0..1).flatMap { page ->
+                listOf(
+                    OcrElement(page, "Invoice", NormalizedRect(0.05f, 0.2f, 0.15f, 0.24f)),
+                    OcrElement(page, "total:", NormalizedRect(0.16f, 0.2f, 0.24f, 0.24f)),
+                    OcrElement(page, "1234.56", NormalizedRect(0.25f, 0.2f, 0.39f, 0.24f)),
+                    OcrElement(page, "CZK", NormalizedRect(0.40f, 0.205f, 0.46f, 0.24f)),
+                )
+            }
+
+        assertEquals(
+            listOf(
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "1234.56 CZK",
+                    NormalizedRect(0.25f, 0.2f, 0.46f, 0.24f),
+                ),
+                DocumentEntityCandidate(
+                    1, DocumentEntityKind.Money, "1234.56 CZK",
+                    NormalizedRect(0.25f, 0.2f, 0.46f, 0.24f),
+                ),
+            ),
+            buildDocumentEntityCandidates(elements),
+        )
+    }
+
+    @Test
+    fun splitMoneyPreservesSensitiveWordBoundsAndDoesNotCreatePhoneRedactions() {
+        val emailBounds = NormalizedRect(0.05f, 0.2f, 0.25f, 0.24f)
+        val candidates =
+            buildDocumentEntityCandidates(
+                listOf(
+                    OcrElement(0, "person@example.com", emailBounds),
+                    OcrElement(0, "USD", NormalizedRect(0.26f, 0.2f, 0.32f, 0.24f)),
+                    OcrElement(0, "1", NormalizedRect(0.33f, 0.2f, 0.35f, 0.24f)),
+                    OcrElement(0, "234", NormalizedRect(0.36f, 0.2f, 0.42f, 0.24f)),
+                    OcrElement(0, "567", NormalizedRect(0.43f, 0.2f, 0.49f, 0.24f)),
+                    OcrElement(0, "paid", NormalizedRect(0.50f, 0.2f, 0.57f, 0.24f)),
+                    OcrElement(0, "12.34", NormalizedRect(0.58f, 0.2f, 0.68f, 0.24f)),
+                    OcrElement(0, "EUR", NormalizedRect(0.69f, 0.2f, 0.75f, 0.24f)),
+                ),
+            )
+
+        assertEquals(
+            listOf(
+                DocumentEntityCandidate(0, DocumentEntityKind.Email, "person@example.com", emailBounds),
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "USD 1 234 567",
+                    NormalizedRect(0.26f, 0.2f, 0.49f, 0.24f),
+                ),
+                DocumentEntityCandidate(
+                    0, DocumentEntityKind.Money, "12.34 EUR",
+                    NormalizedRect(0.58f, 0.2f, 0.75f, 0.24f),
+                ),
+            ),
+            candidates,
+        )
+        assertEquals(
+            listOf(RedactionSuggestion(0, SensitiveRegionKind.Email, emailBounds)),
+            candidates.mapNotNull(::safeShareEntitySuggestion),
+        )
+    }
+
+    @Test
+    fun moneyWordsDoNotJoinAcrossPagesRowsColumnsOrOverlappingElements() {
+        val amount = OcrElement(0, "1234.56", NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f))
+        val separatedCurrencies =
+            listOf(
+                OcrElement(1, "CZK", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)),
+                OcrElement(0, "CZK", NormalizedRect(0.25f, 0.3f, 0.31f, 0.34f)),
+                OcrElement(0, "CZK", NormalizedRect(0.75f, 0.2f, 0.81f, 0.24f)),
+                OcrElement(0, "CZK", amount.bounds),
+                OcrElement(0, "XYZ", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)),
+            )
+
+        separatedCurrencies.forEach { currency ->
+            assertTrue(buildDocumentEntityCandidates(listOf(amount, currency)).isEmpty())
+        }
+    }
+
+    @Test
+    fun splitMoneyCandidatesDeduplicateAndCapEachPage() {
+        val amountBounds = NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f)
+        val currencyBounds = NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f)
+        val elements =
+            buildList {
+                repeat(300) { number ->
+                    repeat(2) {
+                        add(OcrElement(0, "$number.56", amountBounds))
+                        add(OcrElement(0, "CZK", currencyBounds))
+                    }
+                }
+                add(OcrElement(1, "1234.56", amountBounds))
+                add(OcrElement(1, "CZK", currencyBounds))
+            }
+
+        val candidates = buildDocumentEntityCandidates(elements)
+
+        assertEquals(MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE, candidates.count { it.page == 0 })
+        assertEquals(1, candidates.count { it.page == 1 })
+        assertEquals(1, candidates.count { it.value == "0.56 CZK" })
+        assertTrue(candidates.all { it.kind == DocumentEntityKind.Money })
+    }
+
+    @Test
+    fun splitMoneyRespectsSourceCharacterLimitAndKeepsWholeElementCandidates() {
+        val amount = OcrElement(0, "1234.56", NormalizedRect(0.1f, 0.2f, 0.24f, 0.24f))
+        val currency = OcrElement(0, "CZK", NormalizedRect(0.25f, 0.2f, 0.31f, 0.24f))
+        val whole = OcrElement(1, "1234.56 CZK", amount.bounds)
+
+        assertEquals(
+            listOf(DocumentEntityCandidate(1, DocumentEntityKind.Money, "1234.56 CZK", whole.bounds)),
+            buildDocumentEntityCandidates(listOf(whole)),
+        )
+        assertTrue(
+            buildDocumentEntityCandidates(
+                listOf(
+                    OcrElement(0, "x".repeat(MAX_DOCUMENT_TEXT_CHARACTERS - amount.value.length), amount.bounds),
+                    amount,
+                    currency,
+                ),
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun malformedTextDoesNotBecomeAnEntityCandidate() {
         val bounds = NormalizedRect(0f, 0f, 1f, 1f)
 
@@ -673,6 +799,133 @@ class DocumentActionsTest {
             ).isEmpty(),
         )
     }
+
+    @Test
+    fun splitSensitiveEntitiesKeepMatchedBoundsAndSharedActions() {
+        val fixtures = listOf(
+            Triple(listOf("+1", "202", "555", "0100"), DocumentEntityKind.Phone, "+1 202 555 0100"),
+            Triple(listOf("GB82", "WEST", "1234", "5698", "7654", "32"), DocumentEntityKind.Iban, "GB82 WEST 1234 5698 7654 32"),
+            Triple(listOf("4111", "1111", "1111", "1111"), DocumentEntityKind.PaymentCard, "4111 1111 1111 1111"),
+        )
+        fixtures.forEach { (tokens, kind, value) ->
+            val words = entityFixtureWords(listOf("Label:") + tokens + "End")
+            val expectedBounds = NormalizedRect(0.08f, 0.2f, (tokens.size * 6 + 7) / 100f, 0.24f)
+            val candidate = buildDocumentEntityCandidates(words).single()
+
+            assertEquals(DocumentEntityCandidate(0, kind, value, expectedBounds), candidate)
+            assertEquals(expectedBounds, checkNotNull(safeShareEntitySuggestion(candidate)).bounds)
+            if (kind == DocumentEntityKind.Phone) {
+                assertEquals(DetectedCodeAction.Dial("+1 202 555 0100"), systemActionForCandidate(candidate))
+            }
+        }
+    }
+
+    @Test
+    fun moneySpansSuppressFalsePhoneRedactions() {
+        listOf(
+            listOf("USD", "1", "234", "567"),
+            listOf("1", "234", "567", "CZK"),
+        ).forEach { tokens ->
+            val candidates = buildDocumentEntityCandidates(entityFixtureWords(tokens))
+
+            assertEquals(listOf(DocumentEntityKind.Money), candidates.map { it.kind })
+            assertTrue(candidates.mapNotNull(::safeShareEntitySuggestion).isEmpty())
+        }
+    }
+
+    @Test
+    fun validCardsRemainProtectedEvenBesideCurrencyLabels() {
+        listOf(
+            listOf("4111111111111111", "CZK"),
+            listOf("USD", "4111111111111111"),
+            listOf("USD 4111111111111111"),
+            listOf("USD", "4111", "1111", "1111", "1111"),
+        ).forEach { tokens ->
+            val candidate = buildDocumentEntityCandidates(entityFixtureWords(tokens)).single()
+            assertEquals(DocumentEntityKind.PaymentCard, candidate.kind)
+            assertEquals(
+                SensitiveRegionKind.PaymentCard,
+                checkNotNull(safeShareEntitySuggestion(candidate)).kind,
+            )
+        }
+    }
+
+    @Test
+    fun structuredSpansExcludeOverlappingPhoneFragmentsButKeepSeparatePhone() {
+        val candidates = buildDocumentEntityCandidates(
+            entityFixtureWords(listOf("GB82", "WEST", "1234", "5698", "7654", "32", "Tel:", "+1", "202", "555", "0100")),
+        )
+
+        assertEquals(
+            listOf(DocumentEntityKind.Iban to "GB82 WEST 1234 5698 7654 32", DocumentEntityKind.Phone to "+1 202 555 0100"),
+            candidates.map { it.kind to it.value },
+        )
+        val moneyAndPhone = buildDocumentEntityCandidates(
+            entityFixtureWords(listOf("USD", "1", "234", "567", "Tel:", "+1", "202", "555", "0100")),
+        )
+        assertEquals(
+            listOf(DocumentEntityKind.Money to "USD 1 234 567", DocumentEntityKind.Phone to "+1 202 555 0100"),
+            moneyAndPhone.map { it.kind to it.value },
+        )
+    }
+
+    @Test
+    fun splitSensitiveEntitiesRespectPagesRowsColumnsAndInvalidChecksums() {
+        listOf(
+            listOf("+1", "202", "555", "0100") to DocumentEntityKind.Phone,
+            listOf("GB82", "WEST", "1234", "5698", "7654", "32") to DocumentEntityKind.Iban,
+            listOf("4111", "1111", "1111", "1111") to DocumentEntityKind.PaymentCard,
+        ).forEach { (tokens, kind) ->
+            val words = entityFixtureWords(tokens)
+            val last = words.last()
+            listOf(
+                last.copy(page = 1),
+                last.copy(bounds = NormalizedRect(last.bounds.left, 0.3f, last.bounds.right, 0.34f)),
+                last.copy(bounds = NormalizedRect(0.85f, 0.2f, 0.9f, 0.24f)),
+                last.copy(bounds = words[words.lastIndex - 1].bounds),
+            ).forEach { separated ->
+                assertTrue(
+                    buildDocumentEntityCandidates(words.dropLast(1) + separated)
+                        .none { it.kind == kind && it.value == tokens.joinToString(" ") },
+                )
+            }
+        }
+        assertTrue(
+            buildDocumentEntityCandidates(entityFixtureWords(listOf("4111", "1111", "1111", "1112")))
+                .none { it.kind == DocumentEntityKind.PaymentCard },
+        )
+        assertTrue(
+            buildDocumentEntityCandidates(entityFixtureWords(listOf("GB82", "WEST", "1234", "5698", "7654", "31")))
+                .none { it.kind == DocumentEntityKind.Iban },
+        )
+    }
+
+    @Test
+    fun splitSensitiveCandidatesKeepPageCapsDeduplicationAndSourceLimit() {
+        val repeated = entityFixtureWords(listOf("+1", "202", "555", "0100"))
+        val elements = buildList {
+            addAll(repeated)
+            addAll(repeated)
+            repeat(300) { number ->
+                addAll(entityFixtureWords(listOf("+1", "202", "555", (1000 + number).toString())))
+            }
+            addAll(repeated.map { it.copy(page = 1) })
+        }
+        val candidates = buildDocumentEntityCandidates(elements)
+        assertEquals(MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE, candidates.count { it.page == 0 })
+        assertEquals(1, candidates.count { it.page == 1 })
+        assertEquals(1, candidates.count { it.page == 0 && it.value == "+1 202 555 0100" })
+        val prefix = OcrElement(
+            0, "x".repeat(MAX_DOCUMENT_TEXT_CHARACTERS - repeated.take(2).sumOf { it.value.length }),
+            repeated.first().bounds,
+        )
+        assertTrue(buildDocumentEntityCandidates(listOf(prefix) + repeated).isEmpty())
+    }
+
+    private fun entityFixtureWords(tokens: List<String>): List<OcrElement> =
+        tokens.mapIndexed { index, value ->
+            OcrElement(0, value, NormalizedRect((index * 6 + 2) / 100f, 0.2f, (index * 6 + 7) / 100f, 0.24f))
+        }
 
     @Test
     fun entityCandidatesDeduplicateAndCapEachPage() {

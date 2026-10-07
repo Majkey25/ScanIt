@@ -741,6 +741,65 @@ class PureLogicTest {
     }
 
     @Test
+    fun ttsUtteranceCompletionConsumesOnlyTheCurrentIdOnce() {
+        val gate = TtsInitializationGate()
+        val id = gate.beginUtterance()
+
+        assertFalse(gate.finishUtterance(null))
+        assertFalse(gate.finishUtterance("unknown"))
+        assertTrue(gate.finishUtterance(id))
+        assertFalse(gate.finishUtterance(id))
+    }
+
+    @Test
+    fun ttsStopAndReplacementIgnoreLateCallbacksWithoutClearingTheNewUtterance() {
+        val gate = TtsInitializationGate()
+        val first = gate.beginUtterance()
+        val second = gate.beginUtterance()
+
+        assertFalse(first == second)
+        assertFalse(gate.finishUtterance(first))
+        assertTrue(gate.finishUtterance(second))
+
+        val stopped = gate.beginUtterance()
+        gate.stop()
+        assertFalse(gate.finishUtterance(stopped))
+        val retry = gate.beginUtterance()
+        assertFalse(stopped == retry)
+        assertFalse(gate.finishUtterance(stopped))
+        assertTrue(gate.finishUtterance(retry))
+    }
+
+    @Test
+    fun ttsInitializationFailureDoesNotReviveStoppedText() {
+        val gate = TtsInitializationGate()
+        gate.play("stopped", engineExists = false)
+        gate.stop()
+
+        assertEquals(TtsInitializationResult(ready = false, text = null), gate.initialized(false))
+        assertEquals(TtsPlayDecision.Initialize, gate.play("retry", engineExists = false))
+        assertEquals(TtsInitializationResult(ready = false, text = "retry"), gate.initialized(false))
+    }
+
+    @Test
+    fun ttsObservesAsyncErrorsAndValidatesCurrentUtteranceOnMainThread() {
+        val activity = File("../app/src/main/java/com/majkeylab/scanit/MainActivity.kt").readText()
+
+        assertTrue(activity.contains("object : UtteranceProgressListener()"))
+        assertTrue(activity.contains(
+            "engine.setOnUtteranceProgressListener(ttsProgressListener) == TextToSpeech.SUCCESS",
+        ))
+        val completion = activity.substringAfter("private fun finishReadAloud(")
+            .substringBefore("private fun stopReadAloud(")
+        assertTrue(completion.contains("runOnUiThread {"))
+        assertTrue(completion.substringAfter("runOnUiThread {")
+            .contains("ttsInitializationGate.finishUtterance(utteranceId) && failed"))
+        val start = activity.substringAfter("private fun startReadAloud() {")
+            .substringBefore("private fun speak(")
+        assertTrue(start.trimStart().startsWith("stopReadAloud()"))
+    }
+
+    @Test
     fun internalBuildHasDistinctTestAppLabel() {
         val repository = File("..").canonicalFile
         val manifest = File(repository, "app/src/internal/AndroidManifest.xml").readText()
@@ -764,10 +823,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 44"))
-        assertTrue(build.contains("versionName = \"1.8.4\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"44\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.8.4\""))
+        assertTrue(build.contains("versionCode = 45"))
+        assertTrue(build.contains("versionName = \"1.8.5\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"45\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.8.5\""))
         assertTrue(rootBuild.contains("version \"9.3.2\""))
         assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
         assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))

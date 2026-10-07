@@ -95,7 +95,7 @@
     <string name="delete_scan">Eliminar…</string>
     <string name="delete_pdf">PDF</string>
     <string name="delete_images">Imágenes</string>
-    <string name="delete_pdf_and_images">PDF e imágenes</string>
+    <string name="delete_pdf_and_images">Eliminar ambos</string>
     <string name="remove_from_recent">Quitar de Recientes</string>
     <string name="recent_delete_saved_hint">Los archivos guardados seleccionados se eliminarán del dispositivo y después se quitará este escaneo de Recientes.</string>
     <string name="recent_delete_legacy_hint">No hay detalles de los archivos guardados, así que SeliaScan no adivinará cuáles eliminar. Solo se puede quitar esta vista previa reciente.</string>

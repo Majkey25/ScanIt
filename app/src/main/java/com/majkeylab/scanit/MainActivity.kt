@@ -18,6 +18,7 @@ import android.provider.ContactsContract
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.widget.Toast
 import java.util.Locale
 import androidx.activity.ComponentActivity
@@ -112,6 +113,8 @@ internal data class TtsInitializationResult(
 internal class TtsInitializationGate {
     private var initializing = false
     private var queuedText: String? = null
+    private var utteranceGeneration = 0L
+    private var activeUtteranceId: String? = null
 
     fun play(text: String, engineExists: Boolean): TtsPlayDecision {
         require(text.isNotBlank()) { "Speech text is empty" }
@@ -131,6 +134,19 @@ internal class TtsInitializationGate {
 
     fun stop() {
         queuedText = null
+        activeUtteranceId = null
+    }
+
+    fun beginUtterance(): String {
+        val id = "scanit_document_${++utteranceGeneration}"
+        activeUtteranceId = id
+        return id
+    }
+
+    fun finishUtterance(id: String?): Boolean {
+        if (id == null || id != activeUtteranceId) return false
+        activeUtteranceId = null
+        return true
     }
 
     fun initialized(success: Boolean): TtsInitializationResult {
@@ -148,6 +164,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var textToSpeech: TextToSpeech? = null
     private val ttsInitializationGate = TtsInitializationGate()
     private var speechPreparationJob: Job? = null
+    private val ttsProgressListener =
+        object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+
+            override fun onDone(utteranceId: String?) {
+                finishReadAloud(utteranceId, failed = false)
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                finishReadAloud(utteranceId, failed = true)
+            }
+
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                finishReadAloud(utteranceId, failed = true)
+            }
+
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                finishReadAloud(utteranceId, failed = false)
+            }
+        }
     private val savedOutputsChangedReceiver =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -327,8 +364,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
-        ttsInitializationGate.stop()
-        textToSpeech?.stop()
+        stopReadAloud()
         textToSpeech?.shutdown()
         textToSpeech = null
         super.onDestroy()
@@ -336,10 +372,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         val engine = textToSpeech
+        val ready =
+            status == TextToSpeech.SUCCESS && engine != null &&
+                try {
+                    engine.setOnUtteranceProgressListener(ttsProgressListener) == TextToSpeech.SUCCESS
+                } catch (_: RuntimeException) {
+                    false
+                }
         val result =
-            ttsInitializationGate.initialized(
-                status == TextToSpeech.SUCCESS && engine != null,
-            )
+            ttsInitializationGate.initialized(ready)
         if (!result.ready || engine == null) {
             engine?.shutdown()
             textToSpeech = null
@@ -630,7 +671,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startReadAloud() {
-        speechPreparationJob?.cancel()
+        stopReadAloud()
         speechPreparationJob =
             lifecycleScope.launch {
                 val text = viewModel.currentReadAloudText()?.let(::validatedSpeechText)
@@ -677,19 +718,28 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             showToast(R.string.tts_language_unavailable)
             return
         }
+        val utteranceId = ttsInitializationGate.beginUtterance()
         val result =
             try {
                 engine.speak(
                     text,
                     TextToSpeech.QUEUE_FLUSH,
                     null,
-                    "scanit_document",
+                    utteranceId,
                 )
             } catch (_: RuntimeException) {
                 TextToSpeech.ERROR
             }
         if (result == TextToSpeech.ERROR) {
-            showToast(R.string.tts_reading_failed)
+            finishReadAloud(utteranceId, failed = true)
+        }
+    }
+
+    private fun finishReadAloud(utteranceId: String?, failed: Boolean) {
+        runOnUiThread {
+            if (ttsInitializationGate.finishUtterance(utteranceId) && failed) {
+                showToast(R.string.tts_reading_failed)
+            }
         }
     }
 
