@@ -2,6 +2,14 @@
 
 All notable changes are documented here.
 
+## [1.9.3] - 2026-10-11
+
+### Fixed
+- Restored Gallery import directly inside Google's scanner beside the shutter, with automatic and manual capture unchanged.
+- New scan, retry, and back-to-scanner open the camera directly, without a source-selection menu.
+- Removed the separate gallery crop activity and its unused import pipeline. Imported pages use Google's crop/review editor again.
+- Retained the Recent partial-deletion and saved-file security fixes from 1.9.2. Ads/Premium behavior is unchanged in the Play edition; GitHub Full remains unlocked and ad-free.
+
 ## [1.9.2] - 2026-10-11
 
 ### Added
