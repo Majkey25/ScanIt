@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gallery_crop_camera">Fotoaparát</string>
+    <string name="gallery_crop_import">Importovat z galerie</string>
+    <string name="gallery_crop_title">Oříznout importovaný obrázek</string>
+    <string name="gallery_crop_hint">Přetažením čtyř rohů vyberte dokument. Ořez se provede až po klepnutí na Použít.</string>
+    <string name="gallery_crop_invalid">Zachovejte čtyři oddělené rohy v pořadí po směru hodinových ručiček.</string>
+    <string name="gallery_crop_failed">Obrázek se nepodařilo importovat nebo oříznout. Zkuste to znovu.</string>
+    <string name="gallery_crop_reset">Celý obrázek</string>
+    <string name="gallery_crop_top_left">Levý horní roh</string>
+    <string name="gallery_crop_top_right">Pravý horní roh</string>
+    <string name="gallery_crop_bottom_right">Pravý dolní roh</string>
+    <string name="gallery_crop_bottom_left">Levý dolní roh</string>
+    <string name="gallery_crop_left">vlevo</string>
+    <string name="gallery_crop_right">vpravo</string>
+    <string name="gallery_crop_up">nahoru</string>
+    <string name="gallery_crop_down">dolů</string>
+    <string name="gallery_crop_move">%1$s: posunout %2$s</string>
+    <string name="gallery_crop_cleanup_failed">Dočasné importované obrázky se nepodařilo odstranit.</string>
+</resources>

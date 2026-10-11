@@ -20,6 +20,14 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.2 Gallery crop and safer saved files
+
+Gallery imports open a manual four-corner crop with the whole image selected.
+Deleting only a saved PDF or its images keeps the Recent scan while the other
+output remains. Folder exports recheck document identity and saved bytes before
+replacing existing files. Both editions include these fixes; the stable GitHub
+edition remains fully unlocked and ad-free.
+
 ## v1.9.1 Settings and action icons
 
 Appearance sits directly below General. Settings and document controls use
@@ -175,6 +183,7 @@ source, release artifacts, and real-device workflows.
 - Opens Google ML Kit Document Scanner directly; no redundant landing-page tap.
 - Automatic capture, edge detection, crop, rotation, filters, shadow removal, and cleanup through the ML Kit scanner flow.
 - Single-page and multi-page PDF/JPEG output.
+- Manual four-corner crop for gallery imports, with a Full image reset and no automatic crop.
 - Lazy page thumbnails for browsing multi-page results without decoding every page at once.
 - Google's review editor provides page previews, crop and rotate, and Original, Auto, Color, Grayscale, Black and white, and Shadows filters before SeliaScan creates the result.
 - Automatic orientation correction from reliable text-line angles; ambiguous pages keep the scanner orientation.
@@ -200,7 +209,7 @@ source, release artifacts, and real-device workflows.
 
 Download the
 [latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.8.4 supports Android 10 and newer.
+SeliaScan v1.9.2 supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
 their first use. This repository builds only the full no-ads GitHub edition and

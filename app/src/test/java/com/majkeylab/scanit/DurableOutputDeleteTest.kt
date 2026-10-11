@@ -18,6 +18,174 @@ import org.junit.Test
 
 class DurableOutputDeleteTest {
     @Test
+    fun partialSafRefreshIsJournaledWhenLaterImageValidationFails() {
+        val tree = "content://documents/tree/root"
+        val old = exactImage(1, "content://media/external/images/media/1")
+        val created = (1..2).map {
+            exactImage(it, "$tree/document/page$it").copy(treeUri = tree, ownerPackageName = null)
+        }
+        val refreshed = created.first().copy(displayName = "renamed.jpg")
+        var metadata = metadata().copy(images = listOf(old))
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement = replacement(
+            read = { metadata },
+            write = { expected, updated ->
+                assertEquals(expected, metadata)
+                metadata = updated
+                updated
+            },
+            deleteImage = { deleted += it; OutputDeleteStatus.Failed },
+        )
+        assertThrows(IOException::class.java) {
+            replacement.replaceImages(
+                pageCount = 2,
+                create = { created[it - 1] },
+                publish = { it },
+                validatePublished = { _, accept ->
+                    accept(refreshed)
+                    throw IOException("second page failed")
+                },
+            )
+        }
+        assertEquals(listOf(old), metadata.images)
+        assertEquals(listOf(refreshed, created.last()), metadata.stagedImages)
+        assertEquals(listOf(refreshed, created.last()), deleted)
+
+        val recovered = replacement(
+            read = { metadata },
+            write = { expected, updated ->
+                assertEquals(expected, metadata)
+                metadata = updated
+                updated
+            },
+        ).reconcile()
+        assertEquals(listOf(old), recovered.metadata.images)
+        assertTrue(recovered.metadata.stagedImages.isEmpty())
+    }
+
+    @Test
+    fun failedFinalImageValidationKeepsOldSetAndUnresolvedCreatedOutputs() {
+        val old = listOf(exactImage(1, "content://media/external/images/media/1"))
+        val tree = "content://documents/tree/root"
+        val created = (1..2).map {
+            exactImage(it, "$tree/document/page$it").copy(treeUri = tree, ownerPackageName = null)
+        }
+        var metadata = metadata().copy(images = old)
+        val events = mutableListOf<String>()
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement = replacement(
+            read = { metadata },
+            write = { expected, updated ->
+                assertEquals(expected, metadata)
+                metadata = updated
+                updated
+            },
+            deleteImage = { deleted += it; OutputDeleteStatus.IdentityMismatch },
+        )
+        assertThrows(IOException::class.java) {
+            replacement.replaceImages(
+                pageCount = 2,
+                create = { created[it - 1] },
+                publish = { events += "publish:${it.page}"; it },
+                validatePublished = { observed, _ ->
+                    events += "validate"
+                    assertEquals(created, observed)
+                    assertEquals(old, metadata.images)
+                    throw IOException("provider changed an earlier page")
+                },
+            )
+        }
+        assertEquals(listOf("publish:1", "publish:2", "validate"), events)
+        assertEquals(old, metadata.images)
+        assertEquals(created, metadata.stagedImages)
+        assertEquals(created, deleted)
+    }
+
+    @Test
+    fun finalSafImageNamesAreJournaledBeforeRetiringOldOutputs() {
+        val old = exactImage(1, "content://media/external/images/media/1")
+        val tree = "content://documents/tree/root"
+        val created = (1..2).map {
+            exactImage(it, "$tree/document/page$it").copy(treeUri = tree, ownerPackageName = null)
+        }
+        val final = created.map { it.copy(displayName = "Žádost (${it.page}).jpg") }
+        var metadata = metadata().copy(images = listOf(old))
+        val deleted = mutableListOf<ImageOutputRef>()
+        val replacement = replacement(
+            read = { metadata },
+            write = { expected, updated ->
+                assertEquals(expected, metadata)
+                metadata = updated
+                updated
+            },
+            deleteImage = {
+                assertEquals(final, metadata.images)
+                deleted += it
+                OutputDeleteStatus.Deleted
+            },
+        )
+        replacement.replaceImages(
+            pageCount = 2,
+            create = { created[it - 1] },
+            publish = { it },
+            validatePublished = { _, accept -> final.forEach(accept) },
+        )
+        assertEquals(final, metadata.images)
+        assertTrue(metadata.stagedImages.isEmpty())
+        assertEquals(listOf(old), deleted)
+    }
+
+    @Test
+    fun safPublicationAcceptsFreshProviderNamesWithoutMediaStoreOwnership() {
+        val tree = "content://documents/tree/root"
+        val pdf = exactPdf("$tree/document/pdf").copy(treeUri = tree, ownerPackageName = null)
+        val image = exactImage(1, "$tree/document/image").copy(treeUri = tree, ownerPackageName = null)
+        val finalPdf = pdf.copy(displayName = "Žádost (1).pdf")
+        val finalImage = image.copy(displayName = "Žádost (1).jpg")
+
+        assertEquals(finalPdf, mergePublishedPdfIdentity(pdf, finalPdf))
+        assertEquals(finalImage, mergePublishedImageIdentity(image, finalImage))
+        assertThrows(IOException::class.java) {
+            mergePublishedPdfIdentity(pdf, finalPdf.copy(ownerPackageName = "foreign.owner"))
+        }
+        assertThrows(IOException::class.java) {
+            mergePublishedImageIdentity(image, finalImage.copy(ownerPackageName = "foreign.owner"))
+        }
+        assertThrows(IOException::class.java) {
+            val media = exactPdf("content://media/external/downloads/1")
+            mergePublishedPdfIdentity(media, media.copy(ownerPackageName = null))
+        }
+    }
+
+    @Test
+    fun safProviderRenameIsJournaledBeforeActivationAndRollbackFailure() {
+        val tree = "content://documents/tree/root"
+        val old = exactPdf("content://media/external/downloads/1")
+        val created = exactPdf("$tree/document/pdf").copy(treeUri = tree, ownerPackageName = null)
+        val published = created.copy(displayName = "scan (1).pdf")
+        var metadata = metadata().copy(pdf = old)
+        var writes = 0
+        val deleted = mutableListOf<PdfOutputRef>()
+        val replacement = replacement(
+            read = { metadata },
+            write = { expected, updated ->
+                assertEquals(expected, metadata)
+                if (++writes == 3) throw IOException("activation failed")
+                metadata = updated
+                updated
+            },
+            deletePdf = { deleted += it; OutputDeleteStatus.Failed },
+        )
+
+        assertThrows(IOException::class.java) {
+            replacement.replacePdf(create = { created }, publish = { published })
+        }
+        assertEquals(old, metadata.pdf)
+        assertEquals(published, metadata.stagedPdf)
+        assertEquals(listOf(published), deleted)
+    }
+
+    @Test
     fun imageLocationReplacementCopiesExactBytesAndPreservesUnknownPresetAndPdfState() {
         val directory = Files.createTempDirectory("scanit-image-relocation-").toFile()
         try {

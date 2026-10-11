@@ -57,7 +57,7 @@ private const val OUTPUT_TREE_INTENT_FLAGS =
 private const val LEGACY_APP_LANGUAGE_PREFS = "legacy_app_language"
 private const val LEGACY_APP_LANGUAGE = "language_tag"
 
-private fun localizedLegacyContext(context: Context): Context {
+internal fun localizedLegacyContext(context: Context): Context {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return context
     val languageTag =
         context.getSharedPreferences(LEGACY_APP_LANGUAGE_PREFS, Context.MODE_PRIVATE)
@@ -209,6 +209,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             handleDocumentTextExportResult(it)
         }
+    private val galleryCropLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            handleGalleryCropResult(it)
+        }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(localizedLegacyContext(newBase))
@@ -239,6 +243,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 language = currentAppLanguage(),
                 defaultEmailSubjects = defaultEmailSubjects,
                 onScan = ::startScan,
+                onImportGallery = ::startGalleryImport,
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
@@ -399,12 +404,63 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         viewModel.beginScannerLaunch()
     }
 
+    private fun startGalleryImport() {
+        val settings = viewModel.currentSettings()
+        if (!settings.allowGallery) return
+        when (val state = viewModel.state.value) {
+            is ScreenState.Recent -> if (state.deletionInProgress) return
+            is ScreenState.Result -> if (state.resultActionsBlocked) return
+            is ScreenState.Failure -> Unit
+            else -> return
+        }
+        try {
+            galleryCropLauncher.launch(
+                Intent(this, GalleryCropActivity::class.java)
+                    .putExtra(GALLERY_CROP_PAGE_LIMIT, scannerPageLimit(settings.multipage)),
+            )
+        } catch (_: RuntimeException) {
+            showToast(R.string.gallery_crop_failed)
+        }
+    }
+
+    private fun handleGalleryCropResult(result: ActivityResult) {
+        val session = result.data?.getStringExtra(GALLERY_CROP_SESSION)
+        if (result.resultCode != Activity.RESULT_OK) {
+            discardGalleryImport(session)
+            return
+        }
+        val count = result.data?.getIntExtra(GALLERY_CROP_PAGE_COUNT, 0) ?: 0
+        try {
+            val pages = galleryCropResultPages(this, requireNotNull(session), count)
+            if (!viewModel.processScan(pages, session)) {
+                showToast(R.string.gallery_crop_failed)
+            }
+        } catch (_: Exception) {
+            discardGalleryImport(session)
+            showToast(R.string.gallery_crop_failed)
+        }
+    }
+
+    private fun discardGalleryImport(session: String?) {
+        if (session == null || !isCanonicalUuid(session)) return
+        lifecycleScope.launch {
+            val discarded = withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    discardGalleryCropSession(this@MainActivity, session)
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            if (!discarded) showToast(R.string.gallery_crop_cleanup_failed)
+        }
+    }
+
     private fun requestScannerIntent(requestGeneration: Long) {
         try {
             val settings = viewModel.currentSettings()
             val optionsBuilder =
                 GmsDocumentScannerOptions.Builder()
-                    .setGalleryImportAllowed(settings.allowGallery)
+                    .setGalleryImportAllowed(false)
                     .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
                     .setScannerMode(scannerMode(ScannerPurpose.Document))
             optionsBuilder.setPageLimit(scannerPageLimit(settings.multipage))

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gallery_crop_camera">Kamera</string>
+    <string name="gallery_crop_import">Aus Galerie importieren</string>
+    <string name="gallery_crop_title">Importiertes Bild zuschneiden</string>
+    <string name="gallery_crop_hint">Ziehen Sie die vier Ecken, um das Dokument auszuwählen. Der Zuschnitt erfolgt erst mit Anwenden.</string>
+    <string name="gallery_crop_invalid">Halten Sie die vier Ecken getrennt und im Uhrzeigersinn angeordnet.</string>
+    <string name="gallery_crop_failed">Das Bild konnte nicht importiert oder zugeschnitten werden. Versuchen Sie es erneut.</string>
+    <string name="gallery_crop_reset">Ganzes Bild</string>
+    <string name="gallery_crop_top_left">Obere linke Ecke</string>
+    <string name="gallery_crop_top_right">Obere rechte Ecke</string>
+    <string name="gallery_crop_bottom_right">Untere rechte Ecke</string>
+    <string name="gallery_crop_bottom_left">Untere linke Ecke</string>
+    <string name="gallery_crop_left">links</string>
+    <string name="gallery_crop_right">rechts</string>
+    <string name="gallery_crop_up">oben</string>
+    <string name="gallery_crop_down">unten</string>
+    <string name="gallery_crop_move">%1$s: nach %2$s verschieben</string>
+    <string name="gallery_crop_cleanup_failed">Temporäre importierte Bilder konnten nicht gelöscht werden.</string>
+</resources>

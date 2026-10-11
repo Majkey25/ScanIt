@@ -96,7 +96,7 @@
     <string name="delete_images">Images</string>
     <string name="delete_pdf_and_images">Delete both</string>
     <string name="remove_from_recent">Remove from Recent</string>
-    <string name="recent_delete_saved_hint">The selected saved files will be deleted from your device, then this scan will be removed from Recent.</string>
+    <string name="recent_delete_saved_hint">The selected saved files will be deleted from your device. This scan stays in Recent until no saved files remain.</string>
     <string name="recent_delete_legacy_hint">Saved file details are unavailable, so SeliaScan will not guess which files to delete. Only this recent preview can be removed.</string>
     <string name="recent_delete_pending_hint">The selected saved files are already gone. Retry removing this Recent preview; no other saved files will be deleted.</string>
     <string name="deleting_scan">Deleting…</string>

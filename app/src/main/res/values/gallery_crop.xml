@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gallery_crop_camera">Camera</string>
+    <string name="gallery_crop_import">Import from Gallery</string>
+    <string name="gallery_crop_title">Crop imported image</string>
+    <string name="gallery_crop_hint">Drag the four corners to select the document. Nothing is cropped until you select Apply.</string>
+    <string name="gallery_crop_invalid">Keep four separate corners in clockwise order.</string>
+    <string name="gallery_crop_failed">The image could not be imported or cropped. Try again.</string>
+    <string name="gallery_crop_reset">Full image</string>
+    <string name="gallery_crop_top_left">Top left corner</string>
+    <string name="gallery_crop_top_right">Top right corner</string>
+    <string name="gallery_crop_bottom_right">Bottom right corner</string>
+    <string name="gallery_crop_bottom_left">Bottom left corner</string>
+    <string name="gallery_crop_left">left</string>
+    <string name="gallery_crop_right">right</string>
+    <string name="gallery_crop_up">up</string>
+    <string name="gallery_crop_down">down</string>
+    <string name="gallery_crop_move">%1$s: move %2$s</string>
+    <string name="gallery_crop_cleanup_failed">Temporary imported images could not be cleared.</string>
+</resources>

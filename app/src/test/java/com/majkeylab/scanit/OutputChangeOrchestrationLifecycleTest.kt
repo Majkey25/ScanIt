@@ -68,6 +68,49 @@ class OutputChangeOrchestrationLifecycleTest {
     }
 
     @Test
+    fun droppedGalleryCallbackDiscardsItsDraftOnce() {
+        val gate = ScannerCallbackGate()
+        var discarded = 0
+        var delivered = 0
+        assertTrue(gate.submit(onDiscard = { discarded++ }) { delivered++ })
+
+        gate.complete(deliver = false)
+        gate.discardPending()
+
+        assertEquals(1, discarded)
+        assertEquals(0, delivered)
+    }
+
+    @Test
+    fun deliveredGalleryCallbackDoesNotDiscardItsInputs() {
+        val gate = ScannerCallbackGate()
+        var discarded = 0
+        var delivered = 0
+        assertTrue(gate.submit(onDiscard = { discarded++ }) { delivered++ })
+
+        gate.complete(deliver = true)
+        gate.discardPending()
+
+        assertEquals(0, discarded)
+        assertEquals(1, delivered)
+    }
+
+    @Test
+    fun abandonedGalleryCallbackDiscardsItsDraftOnce() {
+        val gate = ScannerCallbackGate()
+        var discarded = 0
+        var delivered = 0
+        assertTrue(gate.submit(onDiscard = { discarded++ }) { delivered++ })
+
+        gate.discardPending()
+        gate.discardPending()
+        gate.complete(deliver = true)
+
+        assertEquals(1, discarded)
+        assertEquals(0, delivered)
+    }
+
+    @Test
     fun outputTreeAttemptValidatesBeforeGrantAndAlwaysReconciles() = runBlocking {
         val validationFailureEvents = mutableListOf<String>()
         try {
