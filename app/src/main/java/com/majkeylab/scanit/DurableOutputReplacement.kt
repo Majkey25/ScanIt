@@ -73,7 +73,7 @@ internal fun mergePublishedPdfIdentity(
             published.pending ||
             published.displayName == null ||
             published.mimeType == null ||
-            published.ownerPackageName == null ||
+            (if (published.treeUri == null) published.ownerPackageName == null else published.ownerPackageName != null) ||
             published.outputFingerprint() == null
     ) {
         throw IOException("Published PDF identity is incomplete")
@@ -99,7 +99,7 @@ internal fun mergePublishedImageIdentity(
             published.pending ||
             published.displayName == null ||
             published.mimeType == null ||
-            published.ownerPackageName == null ||
+            (if (published.treeUri == null) published.ownerPackageName == null else published.ownerPackageName != null) ||
             published.outputFingerprint() == null
     ) {
         throw IOException("Published image identity is incomplete")
@@ -167,6 +167,8 @@ internal class DurableOutputReplacement(
         create: (Int) -> ImageOutputRef,
         onStaged: (ImageOutputRef) -> Unit = {},
         publish: (ImageOutputRef) -> ImageOutputRef,
+        validatePublished: (List<ImageOutputRef>, (ImageOutputRef) -> Unit) -> Unit =
+            { images, accept -> images.forEach(accept) },
     ): OutputReplacementJournalResult {
         require(pageCount in 1..MAX_SCAN_PAGES) { "Image page count is invalid" }
         var current = reconcile().metadata
@@ -196,6 +198,17 @@ internal class DurableOutputReplacement(
                 created[index] = published
                 current = commitPublishedImage(current, published)
             }
+            val validatedPages = mutableSetOf<Int>()
+            validatePublished(created.toList()) { observed ->
+                val index = created.indexOfFirst { it.page == observed.page }
+                if (index < 0) throw IOException("Published image page changed")
+                val verified = if (created[index] == observed) observed
+                    else mergePublishedImageIdentity(created[index], observed)
+                created[index] = verified
+                current = commitPublishedImage(current, verified)
+                validatedPages += observed.page
+            }
+            if (validatedPages.size != created.size) throw IOException("Published image validation is incomplete")
             val published = created.toList()
             current =
                 commit(

@@ -152,6 +152,7 @@ internal fun ScanItApp(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onScan: () -> Unit,
+    onImportGallery: () -> Unit,
     onSaveSettings: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int) -> UiMessage?,
@@ -221,6 +222,8 @@ internal fun ScanItApp(
     onApplyVisualMark: () -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showScanSource by rememberSaveable { mutableStateOf(false) }
+    val newScan = { if (settings.allowGallery) showScanSource = true else onScan() }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
     var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
     val backAction =
@@ -243,7 +246,7 @@ internal fun ScanItApp(
             backAction == AppBackAction.CloseSettings -> closeSettings()
             backAction == AppBackAction.CollapseFileDetails -> fileDetailsExpanded = false
             backAction == AppBackAction.ShowRecent -> onNavigateBack()
-            backAction == AppBackAction.LaunchScanner -> onScan()
+            backAction == AppBackAction.LaunchScanner -> newScan()
             else -> Unit
         }
     }
@@ -311,7 +314,7 @@ internal fun ScanItApp(
                 is ScreenState.Failure ->
                     FailureScreen(
                         message = state.message.resolve(),
-                        onRetry = onScan,
+                        onRetry = newScan,
                         onRecent = onRecent,
                         onSettings = {
                             fileDetailsExpanded = false
@@ -321,7 +324,7 @@ internal fun ScanItApp(
                 is ScreenState.Recent ->
                     RecentScreen(
                         state = state,
-                        onNewScan = onScan,
+                        onNewScan = newScan,
                         onOpen = onOpenRecent,
                         onSharePdf = onShareRecentPdf,
                         onDelete = onDeleteRecent,
@@ -331,7 +334,7 @@ internal fun ScanItApp(
                 is ScreenState.Result ->
                     ResultScreen(
                         result = state,
-                        onNewScan = onScan,
+                        onNewScan = newScan,
                         onRecent = onRecent,
                         onSettings = {
                             fileDetailsExpanded = false
@@ -375,6 +378,13 @@ internal fun ScanItApp(
                         },
                     )
             }
+        }
+        if (showScanSource) {
+            GalleryCropSourceDialog(
+                onDismiss = { showScanSource = false },
+                onCamera = { showScanSource = false; onScan() },
+                onGallery = { showScanSource = false; onImportGallery() },
+            )
         }
     }
 }

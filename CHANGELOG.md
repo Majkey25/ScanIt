@@ -2,6 +2,20 @@
 
 All notable changes are documented here.
 
+## [1.9.2] - 2026-10-11
+
+### Added
+- Manual four-corner cropping for single-page and multi-page gallery imports. The whole image is selected by default; Apply is explicit and Full image resets the crop.
+
+### Fixed
+- Deleting only PDF or images keeps the Recent scan while the other saved output remains, including recovery of pending history removal.
+- Gallery import cancellation and rejected scanner callbacks clean up their own temporary files without touching the original image.
+- Folder exports recheck current tree permission, document identity, saved bytes, and image dimensions before activating replacements. Failed verification retains previous outputs.
+- Smart and Manual cleanup preserve the parent working copy even when it has no saved output.
+
+### Distribution
+- GitHub 1.9.2 remains fully unlocked without Ads, Billing, Premium, or feature locks. The separate Play edition uses Ads + Premium and the same document fixes.
+
 ## [1.9.1] - 2026-10-07
 
 ### Changed

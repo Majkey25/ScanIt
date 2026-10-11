@@ -2422,7 +2422,6 @@ class RecentScanTest {
             initializeOutputMetadata(directory, id, 1, 1L, entryId)
             rewriteOutputMetadata(directory, id, entryId, 1) {
                 it.copy(
-                    images = listOf(ImageOutputRef(1, "content://media/external/images/media/7")),
                     removeRecentPending = true,
                 )
             }
@@ -2431,6 +2430,38 @@ class RecentScanTest {
             assertTrue(pending.removeRecentPending)
             assertTrue(recoverPendingRecentRemovalsInRoot(root))
             assertFalse(directory.exists())
+        }
+
+    @Test
+    fun pendingRecentRemovalKeepsSurvivingOutputAndClearsRemovalRequest() =
+        listOf(false, true).forEach { hasPdf ->
+            withShareRoot { root ->
+                val id = "Scan_pending_with_output"
+                val directory = createEntry(root, id)
+                val entryId = "123e4567-e89b-12d3-a456-426614174000"
+                val image = exactImage(1, "content://media/external/images/media/7", pending = false)
+                val pdf = exactPdf("content://media/external/downloads/8")
+                initializeOutputMetadata(directory, id, 1, 1L, entryId)
+                rewriteOutputMetadata(directory, id, entryId, 1) {
+                    it.copy(
+                        version = OUTPUT_METADATA_VERSION,
+                        pdf = pdf.takeIf { hasPdf },
+                        images = if (hasPdf) emptyList() else listOf(image),
+                        removeRecentPending = true,
+                    )
+                }
+
+                assertTrue(recoverPendingRecentRemovalsInRoot(root))
+
+                val remaining = listRecentScansInRoot(root).single()
+                assertEquals(id, remaining.cacheId)
+                assertEquals(hasPdf, remaining.hasSavedPdf)
+                assertEquals(if (hasPdf) 0 else 1, remaining.savedImageCount)
+                assertFalse(remaining.removeRecentPending)
+                val outputs = checkNotNull(readOutputMetadata(directory, id, 1))
+                assertEquals(pdf.takeIf { hasPdf }, outputs.pdf)
+                assertEquals(if (hasPdf) emptyList<ImageOutputRef>() else listOf(image), outputs.images)
+            }
         }
 
     private fun createEntry(

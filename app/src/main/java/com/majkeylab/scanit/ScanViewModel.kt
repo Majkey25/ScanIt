@@ -703,11 +703,13 @@ internal class ScannerCallbackGate {
     private var complete = false
     private var deliver = false
     private var pending: (() -> Unit)? = null
+    private var pendingDiscard: (() -> Unit)? = null
 
-    fun submit(callback: () -> Unit): Boolean {
+    fun submit(onDiscard: (() -> Unit)? = null, callback: () -> Unit): Boolean {
         if (!complete) {
             if (pending != null) return false
             pending = callback
+            pendingDiscard = onDiscard
             return true
         }
         if (!deliver) return false
@@ -720,8 +722,17 @@ internal class ScannerCallbackGate {
         complete = true
         this.deliver = deliver
         val callback = pending
+        val discard = pendingDiscard
         pending = null
-        if (deliver) callback?.invoke()
+        pendingDiscard = null
+        if (deliver) callback?.invoke() else discard?.invoke()
+    }
+
+    fun discardPending() {
+        val discard = pendingDiscard
+        pending = null
+        pendingDiscard = null
+        discard?.invoke()
     }
 }
 
@@ -1478,7 +1489,7 @@ internal class ScanViewModel(
     }
 
     fun scannerCancelled() {
-        scannerCallbackGate.submit(::handleScannerCancelled)
+        scannerCallbackGate.submit(callback = ::handleScannerCancelled)
     }
 
     private fun handleScannerCancelled() {
@@ -1507,14 +1518,36 @@ internal class ScanViewModel(
         }
     }
 
-    fun processScan(pageUris: List<Uri>): Boolean {
+    fun processScan(pageUris: List<Uri>, gallerySession: String? = null): Boolean {
+        require(gallerySession == null || isCanonicalUuid(gallerySession)) { "Gallery session is invalid" }
         val pages = pageUris.toList()
         var accepted = true
-        if (!scannerCallbackGate.submit { accepted = processScanNow(pages) }) return false
+        val submitted = scannerCallbackGate.submit(onDiscard = { discardGalleryDraft(gallerySession) }) {
+            accepted = processScanNow(pages, gallerySession)
+            if (!accepted) discardGalleryDraft(gallerySession)
+        }
+        if (!submitted) {
+            discardGalleryDraft(gallerySession)
+            return false
+        }
         return accepted
     }
 
-    private fun processScanNow(pageUris: List<Uri>): Boolean {
+    private fun discardGalleryDraft(session: String?) {
+        if (session == null) return
+        viewModelScope.launch(NonCancellable + Dispatchers.IO) {
+            val discarded = try {
+                discardGalleryCropSession(getApplication(), session)
+            } catch (_: IOException) {
+                false
+            } catch (_: SecurityException) {
+                false
+            }
+            if (!discarded) android.util.Log.w("SeliaScan", "Gallery draft cleanup failed")
+        }
+    }
+
+    private fun processScanNow(pageUris: List<Uri>, gallerySession: String?): Boolean {
         if (cleanWhiteboardApplyJob?.isActive == true) return false
         completeScannerLaunch()
         if (!isAcceptedScanPageCount(pageUris.size)) {
@@ -1689,7 +1722,31 @@ internal class ScanViewModel(
                         }
                     }
                 } finally {
-                    processingJob = null
+                    try {
+                        if (gallerySession != null) {
+                            val removed = withContext(NonCancellable + Dispatchers.IO) {
+                                try {
+                                    discardGalleryCropSession(getApplication(), gallerySession)
+                                } catch (_: IOException) {
+                                    false
+                                } catch (_: SecurityException) {
+                                    false
+                                }
+                            }
+                            if (!removed) {
+                                routeMutationMutex.withLock {
+                                    val result = mutableState.value as? ScreenState.Result
+                                    if (result != null && routeMutationGate.isCurrent(generation)) {
+                                        publishResult(result.copy(scan = result.scan.copy(
+                                            warnings = (result.scan.warnings + UiMessage(R.string.output_scratch_cleanup_failed)).distinct(),
+                                        )))
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        processingJob = null
+                    }
                 }
             }
         return true
@@ -4023,6 +4080,7 @@ internal class ScanViewModel(
     }
 
     override fun onCleared() {
+        scannerCallbackGate.discardPending()
         invalidateDocumentAction(OcrSnapshotInvalidation.Cleared)
     }
 

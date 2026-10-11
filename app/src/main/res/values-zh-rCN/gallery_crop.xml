@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gallery_crop_camera">相机</string>
+    <string name="gallery_crop_import">从图库导入</string>
+    <string name="gallery_crop_title">裁剪导入的图片</string>
+    <string name="gallery_crop_hint">拖动四个角来选择文档。只有点击应用后才会裁剪。</string>
+    <string name="gallery_crop_invalid">请按顺时针顺序保持四个角分开。</string>
+    <string name="gallery_crop_failed">无法导入或裁剪图片。请重试。</string>
+    <string name="gallery_crop_reset">完整图片</string>
+    <string name="gallery_crop_top_left">左上角</string>
+    <string name="gallery_crop_top_right">右上角</string>
+    <string name="gallery_crop_bottom_right">右下角</string>
+    <string name="gallery_crop_bottom_left">左下角</string>
+    <string name="gallery_crop_left">左</string>
+    <string name="gallery_crop_right">右</string>
+    <string name="gallery_crop_up">上</string>
+    <string name="gallery_crop_down">下</string>
+    <string name="gallery_crop_move">%1$s：向%2$s移动</string>
+    <string name="gallery_crop_cleanup_failed">无法清除临时导入的图片。</string>
+</resources>
