@@ -14,6 +14,7 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.pdf.PrintedPdfDocument
 import java.io.File
+import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.CancellationException
@@ -79,7 +80,7 @@ internal class ScanPrintAdapter(
         val output = ParcelFileDescriptor.AutoCloseOutputStream(destination)
         val outputClosed = AtomicBoolean()
         fun closeOutput(): Boolean {
-            if (!outputClosed.compareAndSet(false, true)) return true
+            if (!outputClosed.compareAndSet(false, true)) return false
             return try {
                 output.close()
                 true
@@ -114,6 +115,8 @@ internal class ScanPrintAdapter(
                     ensureActive()
                     if (cancellationSignal.isCanceled) throw CancellationException()
                     if (!closeOutput()) throw IOException("Print destination could not be closed")
+                    ensureActive()
+                    if (cancellationSignal.isCanceled) throw CancellationException()
                     if (callbackSent.compareAndSet(false, true)) {
                         callback.onWriteFinished(
                             selected.map { PageRange(it, it) }.toTypedArray(),
@@ -125,7 +128,11 @@ internal class ScanPrintAdapter(
                 } catch (_: Exception) {
                     closeOutput()
                     if (callbackSent.compareAndSet(false, true)) {
-                        callback.onWriteFailed(context.getString(R.string.print_failed))
+                        if (cancellationSignal.isCanceled) {
+                            callback.onWriteCancelled()
+                        } else {
+                            callback.onWriteFailed(context.getString(R.string.print_failed))
+                        }
                     }
                 }
             }
@@ -135,7 +142,10 @@ internal class ScanPrintAdapter(
                 callback.onWriteCancelled()
             }
         }
-        cancellationSignal.setOnCancelListener { job.cancel() }
+        cancellationSignal.setOnCancelListener {
+            job.cancel()
+            closeOutput()
+        }
     }
 
     override fun onFinish() {
@@ -195,7 +205,33 @@ internal class ScanPrintAdapter(
                     bitmap.recycle()
                 }
             }
-            document.writeTo(output)
+            currentCoroutineContext().ensureActive()
+            if (cancellationSignal.isCanceled) throw CancellationException()
+            // Android's native PDF writer can clear a Java stream exception.
+            var writeFailure: IOException? = null
+            val checkedOutput = object : FilterOutputStream(output) {
+                override fun write(value: Int) {
+                    try {
+                        writeFailure?.let { throw it }
+                        out.write(value)
+                    } catch (failure: IOException) {
+                        writeFailure = failure
+                        throw failure
+                    }
+                }
+
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    try {
+                        writeFailure?.let { throw it }
+                        out.write(bytes, offset, length)
+                    } catch (failure: IOException) {
+                        writeFailure = failure
+                        throw failure
+                    }
+                }
+            }
+            document.writeTo(checkedOutput)
+            writeFailure?.let { throw it }
         } finally {
             document.close()
         }

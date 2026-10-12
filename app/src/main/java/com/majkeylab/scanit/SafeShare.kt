@@ -88,6 +88,18 @@ internal fun safeShareEntitySuggestion(
     return RedactionSuggestion(candidate.page, kind, candidate.bounds)
 }
 
+internal fun safeShareEntitySuggestions(ocr: DocumentOcrSnapshot): List<RedactionSuggestion> {
+    if (ocr.truncated) throw IOException("Safe Share OCR is incomplete")
+    val candidates = buildDocumentEntityCandidates(ocr.elements)
+    // The shared extractor does not distinguish a full page from an overflowing page.
+    if (
+        candidates.groupingBy(DocumentEntityCandidate::page).eachCount().values.any {
+            it >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE
+        }
+    ) throw IOException("Safe Share entity analysis may be incomplete")
+    return candidates.mapNotNull(::safeShareEntitySuggestion)
+}
+
 internal fun safeShareCodeSuggestion(
     page: Int,
     bounds: NormalizedRect?,
@@ -148,7 +160,10 @@ private fun MutableList<RedactionSuggestion>.addMerged(candidate: RedactionSugge
             index += 1
         }
     }
-    if (size < MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) add(merged)
+    if (size >= MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) {
+        throw IOException("Safe Share regions exceed the page limit")
+    }
+    add(merged)
 }
 
 private fun RedactionSuggestion.padded(padding: Float): RedactionSuggestion =
@@ -230,82 +245,83 @@ internal class SafeShareAnalyzer(context: Context) {
         ocr: DocumentOcrSnapshot,
     ): SafeShareAnalysis =
         withContext(Dispatchers.IO) {
-            require(
-                pageCount in 1..MAX_SCAN_PAGES &&
-                    pages.size in 1..pageCount &&
-                    pages.map(IndexedValue<File>::index).distinct().size == pages.size &&
-                    pages.all { it.index in 0 until pageCount } &&
-                    ocr.pageTexts.size == pages.size,
-            ) {
-                "Safe Share pages do not match OCR"
-            }
-            val detector = FaceDetection.getClient(faceDetectorOptions())
-            try {
-                val scanner = BarcodeScanning.getClient()
-                try {
-                    val moduleClient = ModuleInstall.getClient(context)
-                    val faceModel =
-                        SafeShareFaceModelBoundary(
-                            PlayServicesSafeShareFaceModule(moduleClient, detector),
-                        )
-                    faceModel.requireAvailable()
-                    val candidates = ArrayList<RedactionSuggestion>()
-                    val entitiesByPage =
-                        buildDocumentEntityCandidates(ocr.elements)
-                            .mapNotNull(::safeShareEntitySuggestion)
-                            .groupBy(RedactionSuggestion::page)
-                    for ((localPage, page) in pages.withIndex()) {
-                        currentCoroutineContext().ensureActive()
-                        val bitmap = decodeSafeSharePage(page.value)
-                        try {
-                            val image = InputImage.fromBitmap(bitmap, 0)
-                            val faces = detector.process(image).awaitResult()
-                            faceModel.verifyEmptyResult(faces.isEmpty())
-                            var faceAttempts = 0
-                            for (face in faces) {
-                                if (faceAttempts == MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) break
-                                faceAttempts += 1
-                                val box = face.boundingBox
-                                safeShareFaceSuggestion(
-                                    page = page.index,
-                                    left = box.left,
-                                    top = box.top,
-                                    right = box.right,
-                                    bottom = box.bottom,
-                                    sourceWidth = bitmap.width,
-                                    sourceHeight = bitmap.height,
-                                )?.let(candidates::add)
-                            }
-                            var codeAttempts = 0
-                            for (barcode in scanner.process(image).awaitResult()) {
-                                if (codeAttempts == MAX_DETECTED_CODES) break
-                                codeAttempts += 1
-                                val box = barcode.boundingBox ?: continue
-                                safeShareCodeSuggestion(
-                                    page.index,
-                                    normalizedRect(
-                                        box.left,
-                                        box.top,
-                                        box.right,
-                                        box.bottom,
-                                        bitmap.width,
-                                        bitmap.height,
-                                    ),
-                                )?.let(candidates::add)
-                            }
-                        } finally {
-                            bitmap.recycle()
-                        }
-                        entitiesByPage[localPage]
-                            .orEmpty()
-                            .mapTo(candidates) { it.onOriginalSafeSharePage(pages) }
-                    }
-                    buildSafeShareAnalysis(pageCount, candidates)
-                } finally {
-                    scanner.close()
+            withDocumentActionOwner {
+                require(
+                    pageCount in 1..MAX_SCAN_PAGES &&
+                        pages.size in 1..pageCount &&
+                        pages.map(IndexedValue<File>::index).distinct().size == pages.size &&
+                        pages.all { it.index in 0 until pageCount } &&
+                        ocr.pageTexts.size == pages.size,
+                ) {
+                    "Safe Share pages do not match OCR"
                 }
-            } finally {
-                detector.close()
+                val entitiesByPage =
+                    safeShareEntitySuggestions(ocr).groupBy(RedactionSuggestion::page)
+                val detector = FaceDetection.getClient(faceDetectorOptions())
+                try {
+                    val scanner = BarcodeScanning.getClient()
+                    try {
+                        val moduleClient = ModuleInstall.getClient(context)
+                        val faceModel =
+                            SafeShareFaceModelBoundary(
+                                PlayServicesSafeShareFaceModule(moduleClient, detector),
+                            )
+                        faceModel.requireAvailable()
+                        val candidates = ArrayList<RedactionSuggestion>()
+                        for ((localPage, page) in pages.withIndex()) {
+                            currentCoroutineContext().ensureActive()
+                            val bitmap = decodeSafeSharePage(page.value)
+                            try {
+                                val image = InputImage.fromBitmap(bitmap, 0)
+                                val faces = detector.process(image).awaitResult()
+                                if (faces.size > MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) {
+                                    throw IOException("Safe Share face analysis is incomplete")
+                                }
+                                faceModel.verifyEmptyResult(faces.isEmpty())
+                                for (face in faces) {
+                                    val box = face.boundingBox
+                                    safeShareFaceSuggestion(
+                                        page = page.index,
+                                        left = box.left,
+                                        top = box.top,
+                                        right = box.right,
+                                        bottom = box.bottom,
+                                        sourceWidth = bitmap.width,
+                                        sourceHeight = bitmap.height,
+                                    )?.let(candidates::add)
+                                }
+                                val codes = scanner.process(image).awaitResult()
+                                if (codes.size > MAX_DETECTED_CODES) {
+                                    throw IOException("Safe Share code analysis is incomplete")
+                                }
+                                for (barcode in codes) {
+                                    val box = barcode.boundingBox ?: continue
+                                    safeShareCodeSuggestion(
+                                        page.index,
+                                        normalizedRect(
+                                            box.left,
+                                            box.top,
+                                            box.right,
+                                            box.bottom,
+                                            bitmap.width,
+                                            bitmap.height,
+                                        ),
+                                    )?.let(candidates::add)
+                                }
+                            } finally {
+                                bitmap.recycle()
+                            }
+                            entitiesByPage[localPage]
+                                .orEmpty()
+                                .mapTo(candidates) { it.onOriginalSafeSharePage(pages) }
+                        }
+                        buildSafeShareAnalysis(pageCount, candidates)
+                    } finally {
+                        scanner.close()
+                    }
+                } finally {
+                    detector.close()
+                }
             }
         }
 }

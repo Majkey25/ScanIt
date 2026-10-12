@@ -958,10 +958,9 @@ private fun publishCacheEntryInRoot(
         maintainPendingDirectories(safeRoot, work)
         val entriesToPrune =
             entriesToPrune(
-                safeRoot,
+                readCacheEntries(safeRoot, readOutputMetadata = readOutputMetadata),
                 protectedCacheIds,
                 maxEntries - 1,
-                readOutputMetadata,
             )
         val pending =
             readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
@@ -1312,8 +1311,9 @@ private fun pruneRecentEntries(
     maxEntries: Int,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entriesToPrune =
-        entriesToPrune(root, protectedCacheIds, maxEntries, readOutputMetadata)
+    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
+    val entriesToPrune = entriesToPrune(entries, protectedCacheIds, maxEntries)
+    if (entriesToPrune.isEmpty()) return entries
     entriesToPrune.forEach { entry ->
         if (!deleteRecentScanInRoot(root, entry.recent.cacheId)) {
             throw IOException("Old recent scan could not be deleted")
@@ -1323,12 +1323,10 @@ private fun pruneRecentEntries(
 }
 
 private fun entriesToPrune(
-    root: File,
+    entries: List<ParsedCacheEntry>,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
-    readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
-    val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
     val protectedEntries =
         entries.filter { entry ->
             entry.recent.cacheId in protectedCacheIds ||

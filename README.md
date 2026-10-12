@@ -20,6 +20,15 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.4 Reliability and memory fixes
+
+Cancelled edits clean up their own temporary working copies. Printing reports
+write failures instead of treating incomplete output as successful. Large-image
+processing remains bounded, cleanup reuses pixel buffers, and large-text layouts
+and theme contrast are improved. Camera and Gallery still open together inside
+Google's scanner. The stable GitHub edition remains fully unlocked and ad-free;
+the separately labelled Ads + Premium archive is for the Play edition.
+
 ## v1.9.3 Gallery inside the scanner
 
 New scan opens the camera directly. Gallery import is back inside Google's

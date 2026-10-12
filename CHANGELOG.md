@@ -2,6 +2,21 @@
 
 All notable changes are documented here.
 
+## [1.9.4] - 2026-10-12
+
+### Fixed
+- Cancelled document edits release their own temporary images and working copies without changing the original scan.
+- Printing reports output failures correctly and releases cancelled output streams.
+- Large-image processing uses bounded decodes and rejects unsafe bitmap allocations.
+- Recent scans keep the remaining saved PDF or images after partial deletion. Saved-folder replacements retain provider identity checks.
+- Cleanup reuses pixel buffers, reducing sampled Java memory in the tested large-page workflow.
+- Theme contrast, circular selection feedback, large-text layouts and labelled controls are improved.
+
+### Distribution
+- The stable GitHub edition remains fully unlocked without ads, Premium, Billing or feature locks. Buy Me a Coffee is optional.
+- The separate Play edition includes the same document fixes and corrections to purchase refresh, restore and acknowledgement handling. Real Play transactions require an eligible Play installation and account.
+- OCR still depends on Google Play services model availability and accuracy. This release does not promise perfect recognition.
+
 ## [1.9.3] - 2026-10-11
 
 ### Fixed

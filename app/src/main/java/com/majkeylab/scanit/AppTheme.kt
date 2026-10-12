@@ -32,20 +32,7 @@ internal fun appColorScheme(settings: AppAppearanceSettings, dark: Boolean): Col
     val configuration = LocalConfiguration.current
     return remember(settings, dark, context, configuration) {
         val preset = if (dark) settings.darkTheme else settings.lightTheme
-        if (preset == AppThemePreset.Classic) {
-            val primary = if (dark) Color.White else Color.Black
-            val onPrimary = if (dark) Color.Black else Color.White
-            val container = Color(if (dark) 0xFF303030 else 0xFFE5E5E5)
-            val base = if (dark) darkColorScheme() else lightColorScheme()
-            base.copy(
-                primary = primary, onPrimary = onPrimary,
-                primaryContainer = container, onPrimaryContainer = primary,
-                secondary = Color(if (dark) 0xFFD0D0D0 else 0xFF444444), onSecondary = onPrimary,
-                secondaryContainer = container, onSecondaryContainer = primary,
-                tertiary = Color(if (dark) 0xFFB0B0B0 else 0xFF666666), onTertiary = onPrimary,
-                tertiaryContainer = container, onTertiaryContainer = primary, inversePrimary = onPrimary,
-            ).let { if (dark && settings.pureBlackDark) it.copy(background = Color.Black, surface = Color.Black) else it }
-        } else if (preset == AppThemePreset.MaterialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (preset == AppThemePreset.MaterialYou && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val scheme = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             if (dark && settings.pureBlackDark) scheme.copy(background = Color.Black, surface = Color.Black) else scheme
         } else {
@@ -55,8 +42,9 @@ internal fun appColorScheme(settings: AppAppearanceSettings, dark: Boolean): Col
             val foreground = themeForeground(background)
             val container = themeContainerColor(background, colors.accent, 0.12)
             val surfaceHigh = themeContainerColor(background, foreground, 0.08)
-            val primary = readableThemeAccent(colors.accent, background, container, surfaceHigh)
-            val error = readableThemeAccent(if (dark) 0xFFB4AB else 0xBA1A1A, background, container, surfaceHigh)
+            val surfaceHighest = themeContainerColor(background, foreground, 0.12)
+            val primary = readableThemeAccent(colors.accent, background, container, surfaceHigh, surfaceHighest)
+            val error = readableThemeAccent(if (dark) 0xFFB4AB else 0xBA1A1A, background, container, surfaceHigh, surfaceHighest)
             val base = if (dark) darkColorScheme() else lightColorScheme()
             base.copy(
                 primary = color(primary), onPrimary = color(themeForeground(primary)),
@@ -68,9 +56,12 @@ internal fun appColorScheme(settings: AppAppearanceSettings, dark: Boolean): Col
                 background = color(background), onBackground = color(foreground),
                 surface = color(background), onSurface = color(foreground),
                 surfaceVariant = color(container), onSurfaceVariant = color(themeForeground(container)),
-                surfaceContainerLowest = color(background), surfaceContainerLow = color(background),
-                surfaceContainer = color(background), surfaceContainerHigh = color(surfaceHigh),
-                surfaceContainerHighest = color(surfaceHigh), surfaceBright = color(surfaceHigh),
+                surfaceContainerLowest = color(background),
+                surfaceContainerLow = color(themeContainerColor(background, foreground, 0.02)),
+                surfaceContainer = color(themeContainerColor(background, foreground, 0.04)),
+                surfaceContainerHigh = color(surfaceHigh),
+                surfaceContainerHighest = color(surfaceHighest),
+                surfaceBright = color(surfaceHigh),
                 surfaceDim = color(background), surfaceTint = color(primary),
                 outline = color(blendThemeColors(background, foreground, 0.65)),
                 outlineVariant = color(blendThemeColors(background, foreground, 0.35)),

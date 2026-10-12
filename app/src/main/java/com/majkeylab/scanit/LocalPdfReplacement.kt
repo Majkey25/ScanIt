@@ -210,6 +210,7 @@ internal fun reconcileLocalPdfReplacement(
                 throw IOException("Local PDF replacement state is ambiguous")
             }
             requireLocalFingerprint(oldFile, journal.oldFingerprint)
+            deleteExactLocalStaging(newFile)
             copyLocalPdf(oldFile, newFile) { false }
             try {
                 movePdf(newFile.toPath(), cachedPdf.toPath())

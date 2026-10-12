@@ -124,6 +124,59 @@ class LocalPdfReplacementTest {
         }
 
     @Test
+    fun startupRetriesRollbackInterruptedDuringStagingCopy() =
+        listOf(OLD_BYTES.copyOf(2), OLD_BYTES, NEW_BYTES).forEach { interruptedCopy ->
+            withCachedScan { root, directory, pdf, candidate ->
+                val prepared = prepareLocalPdfReplacement(
+                    directory = directory,
+                    cacheId = CACHE_ID,
+                    entryId = ENTRY_ID,
+                    pageCount = 1,
+                    cachedPdf = pdf,
+                    candidatePdf = candidate,
+                    oldTarget = PdfSizeTarget.Original,
+                    newTarget = PdfSizeTarget.Mb5,
+                )
+                publishLocalPdfReplacement(directory, prepared, pdf)
+                File(directory, LOCAL_PDF_REPLACEMENT_NEW_FILE_NAME).writeBytes(interruptedCopy)
+
+                assertTrue(openCachedScanInRoot(root, CACHE_ID) != null)
+                assertArrayEquals(OLD_BYTES, pdf.readBytes())
+                assertLocalReplacementCleared(directory)
+            }
+        }
+
+    @Test
+    fun rollbackRejectsChangedBackupBeforeDiscardingInterruptedStaging() =
+        withCachedScan { _, directory, pdf, candidate ->
+            val prepared = prepareLocalPdfReplacement(
+                directory = directory,
+                cacheId = CACHE_ID,
+                entryId = ENTRY_ID,
+                pageCount = 1,
+                cachedPdf = pdf,
+                candidatePdf = candidate,
+                oldTarget = PdfSizeTarget.Original,
+                newTarget = PdfSizeTarget.Mb5,
+            )
+            publishLocalPdfReplacement(directory, prepared, pdf)
+            val backup = File(directory, LOCAL_PDF_REPLACEMENT_OLD_FILE_NAME)
+            val staging = File(directory, LOCAL_PDF_REPLACEMENT_NEW_FILE_NAME)
+            val interruptedCopy = OLD_BYTES.copyOf(2)
+            backup.writeBytes(byteArrayOf(1))
+            staging.writeBytes(interruptedCopy)
+
+            assertThrows(IOException::class.java) {
+                reconcileLocalPdfReplacement(directory, CACHE_ID, pageCount = 1, cachedPdf = pdf)
+            }
+
+            assertArrayEquals(NEW_BYTES, pdf.readBytes())
+            assertArrayEquals(interruptedCopy, staging.readBytes())
+            assertArrayEquals(byteArrayOf(1), backup.readBytes())
+            assertTrue(File(directory, LOCAL_PDF_REPLACEMENT_FILE_NAME).isFile)
+        }
+
+    @Test
     fun cancellationBeforePrepareLeavesOldAuthorityAndNoJournal() =
         withCachedScan { _, directory, pdf, candidate ->
             assertThrows(CancellationException::class.java) {

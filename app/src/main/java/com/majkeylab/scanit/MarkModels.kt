@@ -38,6 +38,27 @@ internal data class MarkStroke(
     }
 }
 
+internal fun normalizedPageMarkPoint(
+    x: Float,
+    y: Float,
+    canvasWidth: Int,
+    canvasHeight: Int,
+    pageWidth: Int,
+    pageHeight: Int,
+): MarkPoint? {
+    if (canvasWidth <= 0 || canvasHeight <= 0 || pageWidth <= 0 || pageHeight <= 0) return null
+    val scale = min(canvasWidth.toFloat() / pageWidth, canvasHeight.toFloat() / pageHeight)
+    val width = pageWidth * scale
+    val height = pageHeight * scale
+    val left = (canvasWidth - width) / 2f
+    val top = (canvasHeight - height) / 2f
+    if (x !in left..left + width || y !in top..top + height) return null
+    return MarkPoint(
+        ((x - left) / width).coerceIn(0f, 1f),
+        ((y - top) / height).coerceIn(0f, 1f),
+    )
+}
+
 internal data class MarkPlacement(
     val centerX: Float = 0.5f,
     val centerY: Float = 0.75f,
@@ -144,12 +165,14 @@ internal fun resolveMarkRect(
     width *= scaleDown
     height *= scaleDown
     rotated = rotatedMarkSize(width, height, placement.rotationDegrees)
+    val halfWidth = min(rotated.first, pageWidthDouble) / 2.0
+    val halfHeight = min(rotated.second, pageHeightDouble) / 2.0
     val centerX =
         (pageWidthDouble * placement.centerX)
-            .coerceIn(rotated.first / 2.0, pageWidthDouble - rotated.first / 2.0)
+            .coerceIn(halfWidth, pageWidthDouble - halfWidth)
     val centerY =
         (pageHeightDouble * placement.centerY)
-            .coerceIn(rotated.second / 2.0, pageHeightDouble - rotated.second / 2.0)
+            .coerceIn(halfHeight, pageHeightDouble - halfHeight)
     val left = centerX - width / 2.0
     val top = centerY - height / 2.0
     return MarkRect(
@@ -173,12 +196,14 @@ internal fun dragMarkPlacement(
     val rect = resolveMarkRect(pageWidth, pageHeight, markWidth, markHeight, placement)
     val rotated =
         rotatedMarkSize(rect.width.toDouble(), rect.height.toDouble(), placement.rotationDegrees)
+    val halfWidth = min((rotated.first / 2.0).toFloat(), pageWidth / 2f)
+    val halfHeight = min((rotated.second / 2.0).toFloat(), pageHeight / 2f)
     val centerX =
         ((rect.left + rect.right) / 2f + deltaX)
-            .coerceIn((rotated.first / 2.0).toFloat(), pageWidth - (rotated.first / 2.0).toFloat())
+            .coerceIn(halfWidth, pageWidth - halfWidth)
     val centerY =
         ((rect.top + rect.bottom) / 2f + deltaY)
-            .coerceIn((rotated.second / 2.0).toFloat(), pageHeight - (rotated.second / 2.0).toFloat())
+            .coerceIn(halfHeight, pageHeight - halfHeight)
     return placement.copy(centerX = centerX / pageWidth, centerY = centerY / pageHeight)
 }
 

@@ -77,6 +77,7 @@ private data class ManualRedactionPreview(
 @Composable
 internal fun ManualRedactionReview(
     pages: List<File>,
+    appTextScalePercent: Int,
     state: SafeShareState.Reviewing,
     scope: SafeShareScope,
     onCancel: () -> Unit,
@@ -122,7 +123,7 @@ internal fun ManualRedactionReview(
     val availableWidthDp = with(density) { windowSize.width.toDp().value.roundToInt() }
     val availableHeightDp = with(density) { windowSize.height.toDp().value.roundToInt() }
     val canvasHeight = boundedRedactionCanvasHeightDp(availableHeightDp).dp
-    val stackActions = stackResultActions(configuration.fontScale, availableWidthDp - 32)
+    val stackActions = stackResultActions(configuration.fontScale * appTextScalePercent / 100f, availableWidthDp - 32)
     val thicknessLabel = stringResource(R.string.redaction_brush_thickness)
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing) { padding ->
         LazyColumn(
@@ -367,7 +368,8 @@ private fun ManualRedactionCanvas(
                             change.consume()
                             if (
                                 activePoints.isEmpty() ||
-                                    currentPointCount + activePoints.size >= MAX_MARK_DRAWING_POINTS
+                                    (currentPointCount + activePoints.size >= MAX_MARK_DRAWING_POINTS &&
+                                        (activeTool != RedactionTool.Line || activePoints.size < 2))
                             ) {
                                 return@detectDragGestures
                             }
@@ -476,12 +478,5 @@ private fun DrawScope.drawRedactionStroke(
 }
 
 private fun Offset.normalizedRedactionPoint(size: IntSize, page: Bitmap): MarkPoint? {
-    if (size.width <= 0 || size.height <= 0) return null
-    val scale = min(size.width.toFloat() / page.width, size.height.toFloat() / page.height)
-    val pageWidth = page.width * scale
-    val pageHeight = page.height * scale
-    val left = (size.width - pageWidth) / 2f
-    val top = (size.height - pageHeight) / 2f
-    if (x !in left..left + pageWidth || y !in top..top + pageHeight) return null
-    return MarkPoint((x - left) / pageWidth, (y - top) / pageHeight)
+    return normalizedPageMarkPoint(x, y, size.width, size.height, page.width, page.height)
 }

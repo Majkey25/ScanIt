@@ -971,6 +971,83 @@ class RecentScanTest {
     }
 
     @Test
+    fun cleanEightEntryListReadsMetadataOncePerEntry() = withShareRoot { root ->
+        (1..8).forEach { index ->
+            createManagedEntry(root, "Scan_$index", index.toLong())
+        }
+        val expected = listRecentScansInRoot(root, protectedCacheIds = setOf("Scan_1"))
+        val reads = mutableMapOf<String, Int>()
+        val cache =
+            RecentScanCache(
+                root,
+                readOutputMetadata = { directory, cacheId, pageCount ->
+                    reads[cacheId] = reads.getOrDefault(cacheId, 0) + 1
+                    readOutputMetadataResult(directory, cacheId, pageCount)
+                },
+            )
+
+        repeat(2) { iteration ->
+            val listed = cache.list(protectedCacheIds = setOf("Scan_1"))
+
+            assertEquals(expected, listed)
+            assertEquals((8 downTo 1).map { "Scan_$it" }, listed.map(RecentScan::cacheId))
+            assertEquals((1..8).associate { "Scan_$it" to iteration + 1 }, reads)
+            assertEquals(expected.map(RecentScan::cacheId).toSet(), root.listFiles()!!.map(File::getName).toSet())
+        }
+    }
+
+    @Test
+    fun pruningUsesMtimeAndRereadsProtectedSurvivors() = withShareRoot { root ->
+        createManagedEntry(root, "Scan_old", 1L).apply { assertTrue(setLastModified(4L)) }
+        createManagedEntry(root, "Scan_protected", 2L)
+        createManagedEntry(root, "Scan_new", 3L)
+        val reads = mutableMapOf<String, Int>()
+
+        val listed =
+            listRecentScansInRoot(
+                root,
+                protectedCacheIds = setOf("Scan_protected"),
+                maxEntries = 2,
+                readOutputMetadata = { directory, cacheId, pageCount ->
+                    reads[cacheId] = reads.getOrDefault(cacheId, 0) + 1
+                    readOutputMetadataResult(directory, cacheId, pageCount)
+                },
+            )
+
+        assertEquals(listOf("Scan_protected", "Scan_old"), listed.map(RecentScan::cacheId))
+        assertEquals(mapOf("Scan_old" to 2, "Scan_protected" to 2, "Scan_new" to 1), reads)
+        assertFalse(File(root, "Scan_new").exists())
+        assertEquals(setOf("Scan_old", "Scan_protected"), root.listFiles()!!.map(File::getName).toSet())
+    }
+
+    @Test
+    fun pruningPropagatesMetadataReadFailureAfterRemoval() = withShareRoot { root ->
+        createManagedEntry(root, "Scan_old", 1L)
+        createManagedEntry(root, "Scan_new", 2L)
+        var survivorReads = 0
+
+        val failure =
+            assertThrows(IOException::class.java) {
+                listRecentScansInRoot(
+                    root,
+                    maxEntries = 1,
+                    readOutputMetadata = { directory, cacheId, pageCount ->
+                        if (cacheId == "Scan_new" && ++survivorReads == 2) {
+                            throw IOException("Forced post-prune metadata read failure")
+                        }
+                        readOutputMetadataResult(directory, cacheId, pageCount)
+                    },
+                )
+            }
+
+        assertEquals("Forced post-prune metadata read failure", failure.message)
+        assertEquals(2, survivorReads)
+        assertFalse(File(root, "Scan_old").exists())
+        assertTrue(File(root, "Scan_new").isDirectory)
+        assertEquals(listOf("Scan_new"), listRecentScansInRoot(root).map(RecentScan::cacheId))
+    }
+
+    @Test
     fun pruningRefusesCapacitySmallerThanProtectedEntries() = withShareRoot { root ->
         (1..3).forEach { index -> createEntry(root, "Scan_$index") }
 

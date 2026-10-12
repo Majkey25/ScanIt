@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -87,7 +88,51 @@ class StorageDeviceTest {
         assertTrue(text, text.contains("12345"))
     }
 
-    private fun withScan(test: (ScanStorage, CachedScan) -> Unit) {
+    @Test
+    fun latinTextRecognitionPreservesCzechDiacriticsAndPageOrder() =
+        withScan(lines = listOf("Příliš žluťoučký kůň", "úpěl ďábelské ódy", "Reference 24680")) { _, czech ->
+            withScan { _, english ->
+                val context = InstrumentationRegistry.getInstrumentation().targetContext
+                val snapshot = runBlocking {
+                    DocumentActionProcessor(context).extractOcr(czech.pages + english.pages, OcrScript.Latin)
+                }
+                assertEquals(2, snapshot.pageTexts.size)
+                assertFalse(snapshot.truncated)
+                val firstPage = snapshot.pageTexts[0]
+                for (word in listOf("Příliš", "žluťoučký", "kůň", "úpěl", "ďábelské", "ódy", "24680")) {
+                    assertTrue("Missing $word on Czech page: $firstPage", firstPage.contains(word, ignoreCase = true))
+                }
+                val secondPage = snapshot.pageTexts[1]
+                assertTrue(secondPage, secondPage.contains("DOCUMENT", ignoreCase = true))
+                assertTrue(secondPage, secondPage.contains("12345"))
+                assertEquals(setOf(0, 1), snapshot.elements.map { it.page }.toSet())
+            }
+        }
+
+    @Test
+    fun chineseTextRecognitionReadsExplicitChineseScript() =
+        withScan(lines = listOf("中文识别测试", "你好世界", "Reference 97531")) { _, cached ->
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val snapshot = runBlocking {
+                DocumentActionProcessor(context).extractOcr(cached.pages, OcrScript.Chinese)
+            }
+            assertEquals(1, snapshot.pageTexts.size)
+            assertFalse(snapshot.truncated)
+            val text = snapshot.pageTexts.single()
+            val compact = text.filterNot(Char::isWhitespace)
+            assertTrue(text, compact.contains("中文识别测试"))
+            assertTrue(text, compact.contains("你好世界"))
+            assertTrue(text, compact.contains("97531"))
+            assertEquals(setOf(0), snapshot.elements.map { it.page }.toSet())
+        }
+
+    private fun withScan(
+        lines: List<String> = listOf("DOCUMENT TEST", "Reference 12345"),
+        test: (ScanStorage, CachedScan) -> Unit,
+    ) {
+        require(lines.size in 1..8 && lines.all { it.isNotBlank() && it.length <= 64 }) {
+            "Synthetic fixture text exceeds its bounds"
+        }
         val base = InstrumentationRegistry.getInstrumentation().targetContext
         check(base.packageName == "com.majkeylab.scanit.internal") {
             "Device tests may only target the isolated internal app"
@@ -108,8 +153,13 @@ class StorageDeviceTest {
                     color = Color.BLACK
                     textSize = 72f
                 }
-                canvas.drawText("DOCUMENT TEST", 80f, 200f, paint)
-                canvas.drawText("Reference 12345", 80f, 360f, paint)
+                lines.forEachIndexed { index, line ->
+                    require(paint.measureText(line) <= 1040f) { "Synthetic fixture line is too wide: $line" }
+                    require(line.all { it.isWhitespace() || paint.hasGlyph(it.toString()) }) {
+                        "Synthetic fixture font lacks a required glyph: $line"
+                    }
+                    canvas.drawText(line, 80f, 200f + index * 160f, paint)
+                }
                 FileOutputStream(source).use { output ->
                     check(bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output))
                     output.fd.sync()

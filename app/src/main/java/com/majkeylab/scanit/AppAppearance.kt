@@ -127,7 +127,7 @@ internal data class AppThemeColors(val accent: Int, val background: Int)
 internal fun appThemeColors(settings: AppAppearanceSettings, dark: Boolean): AppThemeColors {
     val preset = if (dark) settings.darkTheme else settings.lightTheme
     val colors = when (preset) {
-        AppThemePreset.Classic -> AppThemeColors(if (dark) 0xFFFFFF else 0, if (dark) 0x121212 else 0xFFFBFE)
+        AppThemePreset.Classic -> AppThemeColors(if (dark) 0xFFFFFF else 0, if (dark) 0x121212 else 0xFAFAFA)
         AppThemePreset.MaterialYou, AppThemePreset.Forest -> AppThemeColors(0x38684E, if (dark) 0x121812 else 0xF7FBF5)
         AppThemePreset.Ocean -> AppThemeColors(0x265C95, if (dark) 0x111820 else 0xF6FAFF)
         AppThemePreset.Amber -> AppThemeColors(0x865C10, if (dark) 0x1D170E else 0xFFFAF0)

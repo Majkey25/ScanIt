@@ -185,6 +185,22 @@ class ImageExportRendererTest {
     }
 
     @Test
+    fun twoHundredMegapixelExportsStayBoundedForEveryExifOrientation() {
+        for (orientation in ImageExifOrientation.entries) {
+            val plan = imageExportRenderPlan(16_384, 12_288, orientation, maxDimension = null)
+            val expected = if (orientation.swapsDimensions) {
+                ImageExportDimensions(3000, 4000)
+            } else {
+                ImageExportDimensions(4000, 3000)
+            }
+
+            assertEquals(expected, plan.target)
+            assertTrue(plan.tiled)
+            assertEquals(52_194_304L, plan.peakBitmapBytes)
+        }
+    }
+
+    @Test
     fun stagedOutputVerificationBoundsPixelsAndEdges() {
         assertEquals(4, imageExportVerificationSampleSize(3840, 2560))
         assertEquals(4, imageExportVerificationSampleSize(20000, 100))

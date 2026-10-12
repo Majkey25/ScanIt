@@ -87,15 +87,15 @@ internal fun validatedScannerPageOrientations(
 }
 
 internal class DocumentOrientationProcessor(private val context: Context) {
-    suspend fun detect(pageUris: List<Uri>): List<ImageExifOrientation> {
+    suspend fun detect(pageUris: List<Uri>): List<ImageExifOrientation> = withDocumentActionOwner {
         require(pageUris.size in 1..MAX_SCAN_PAGES) { "Orientation page count is invalid" }
         val recognizer =
             try {
                 TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             } catch (_: Exception) {
-                return List(pageUris.size) { ImageExifOrientation.Normal }
+                return@withDocumentActionOwner List(pageUris.size) { ImageExifOrientation.Normal }
             }
-        return try {
+        try {
             pageUris.map { uri ->
                 currentCoroutineContext().ensureActive()
                 try {
@@ -159,9 +159,30 @@ internal class DocumentOrientationProcessor(private val context: Context) {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inScaled = false
             }
-        return context.contentResolver.openInputStream(uri)?.use {
+        val bitmap = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, options)
         } ?: throw IOException("Scanner page could not be decoded for orientation")
+        try {
+            requireOrientationAnalysisBounds(
+                bitmap.width,
+                bitmap.height,
+                bitmap.allocationByteCount.toLong(),
+            )
+            return bitmap
+        } catch (failure: Throwable) {
+            bitmap.recycle()
+            throw failure
+        }
+    }
+}
+
+internal fun requireOrientationAnalysisBounds(width: Int, height: Int, allocationBytes: Long) {
+    if (
+        !validOriginalImageDimensions(width, height) ||
+            width.toLong() * height > MAX_ORIENTATION_ANALYSIS_PIXELS ||
+            allocationBytes !in 1..MAX_ORIENTATION_ANALYSIS_PIXELS * 4L
+    ) {
+        throw IOException("Decoded scanner page exceeds the orientation memory bound")
     }
 }
 
