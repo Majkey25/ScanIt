@@ -52,6 +52,7 @@ private fun applyManualCleanup(
     points: List<MarkPoint>,
     isCancelled: () -> Boolean,
 ) {
+    throwIfManualCleanupCancelled(isCancelled)
     val maskStrokeWidth =
         (minOf(bitmap.width, bitmap.height) * MANUAL_CLEANUP_MASK_STROKE_FRACTION)
             .coerceIn(MIN_MANUAL_CLEANUP_MASK_STROKE, MAX_MANUAL_CLEANUP_MASK_STROKE)
@@ -82,9 +83,13 @@ private fun applyManualCleanup(
             },
         )
         val size = bounds.width * bounds.height
-        val maskPixels = IntArray(size)
-        maskBitmap.getPixels(maskPixels, 0, bounds.width, 0, 0, bounds.width, bounds.height)
-        val maskAlpha = IntArray(size) { maskPixels[it] ushr 24 }
+        val maskAlpha = IntArray(size)
+        maskBitmap.getPixels(maskAlpha, 0, bounds.width, 0, 0, bounds.width, bounds.height)
+        maskBitmap.recycle()
+        for (index in maskAlpha.indices) {
+            if (index and 0xFFF == 0) throwIfManualCleanupCancelled(isCancelled)
+            maskAlpha[index] = maskAlpha[index] ushr 24
+        }
         if (maskAlpha.none { it > 0 }) throw IOException("Manual cleanup selection is empty")
         val pixels = IntArray(size)
         bitmap.getPixels(
@@ -114,7 +119,7 @@ private fun applyManualCleanup(
             bounds.height,
         )
     } finally {
-        maskBitmap.recycle()
+        if (!maskBitmap.isRecycled) maskBitmap.recycle()
     }
 }
 

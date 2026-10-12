@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -120,6 +121,7 @@ internal fun AppearanceSettings(appearance: AppAppearanceSettings, onChange: (Ap
                         }
                     }
                 }
+                if (row.size < columns) Spacer(Modifier.weight(1f))
             }
         }
         OutlinedButton(onClick = { customOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

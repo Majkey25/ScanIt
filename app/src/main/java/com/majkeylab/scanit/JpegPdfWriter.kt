@@ -41,6 +41,7 @@ internal object JpegPdfWriter {
                     file.fd.sync()
                 }
             }
+            throwIfJpegPdfCancelled(isCancelled)
             publishStagedFileNoReplace(staging, target.toPath())
         } catch (throwable: Throwable) {
             failure = throwable

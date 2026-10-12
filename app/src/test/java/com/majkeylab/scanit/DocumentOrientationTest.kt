@@ -1,5 +1,6 @@
 package com.majkeylab.scanit
 
+import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -85,6 +86,20 @@ class DocumentOrientationTest {
                     sampledDimensionUpperBound(height, sample) <=
                     MAX_ORIENTATION_ANALYSIS_PIXELS,
             )
+        }
+    }
+
+    @Test
+    fun orientationRejectsOversizedDecodedPixelsAndAllocations() {
+        requireOrientationAnalysisBounds(1024, 1024, 4_194_304L)
+        assertThrows(IOException::class.java) {
+            requireOrientationAnalysisBounds(1025, 1024, 4_198_400L)
+        }
+        assertThrows(IOException::class.java) {
+            requireOrientationAnalysisBounds(100, 100, 4_194_305L)
+        }
+        assertThrows(IOException::class.java) {
+            requireOrientationAnalysisBounds(0, 1024, 4_194_304L)
         }
     }
 

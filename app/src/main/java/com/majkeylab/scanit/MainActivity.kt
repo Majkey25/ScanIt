@@ -74,6 +74,10 @@ private fun localizedLegacyContext(context: Context): Context {
 
 internal fun isAcceptedScanPageCount(pageCount: Int): Boolean = pageCount in 1..MAX_SCAN_PAGES
 
+internal fun scannerIntentSenderFailed(action: String?, hasSendIntentException: Boolean): Boolean =
+    action == ActivityResultContracts.StartIntentSenderForResult.ACTION_INTENT_SENDER_REQUEST &&
+        hasSendIntentException
+
 internal fun exactOutputTreeGrantFlags(
     scheme: String?,
     isTreeUri: Boolean,
@@ -112,6 +116,7 @@ internal data class TtsInitializationResult(
 
 internal class TtsInitializationGate {
     private var initializing = false
+    private var initializationGeneration = 0L
     private var queuedText: String? = null
     private var utteranceGeneration = 0L
     private var activeUtteranceId: String? = null
@@ -149,7 +154,20 @@ internal class TtsInitializationGate {
         return true
     }
 
+    fun initializationCallback(
+        post: (() -> Unit) -> Unit,
+        initialized: (Int) -> Unit,
+    ): (Int) -> Unit {
+        val generation = ++initializationGeneration
+        return { status ->
+            post {
+                if (generation == initializationGeneration) initialized(status)
+            }
+        }
+    }
+
     fun initialized(success: Boolean): TtsInitializationResult {
+        initializationGeneration += 1L
         val result = TtsInitializationResult(initializing && success, queuedText)
         initializing = false
         queuedText = null
@@ -161,6 +179,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: ScanViewModel by viewModels()
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
+    private val visualMarkPreparationGate = ScannerLaunchGate()
     private var textToSpeech: TextToSpeech? = null
     private val ttsInitializationGate = TtsInitializationGate()
     private var speechPreparationJob: Job? = null
@@ -327,6 +346,21 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
         }
         viewModel.resumeScannerPreparation()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                visualMarkPreparationGate.complete()
+                viewModel.state.collect {
+                    val source = viewModel.preparingVisualMarkScanSource()
+                    if (source == null) {
+                        visualMarkPreparationGate.complete()
+                    } else {
+                        visualMarkPreparationGate.begin(processing = false)?.let { generation ->
+                            requestVisualMarkScannerIntent(source, generation)
+                        }
+                    }
+                }
+            }
+        }
         lifecycleScope.launch(Dispatchers.IO) {
             retryPendingShareCleanup(applicationContext)
         }
@@ -365,6 +399,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         stopReadAloud()
+        ttsInitializationGate.initialized(success = false)
         textToSpeech?.shutdown()
         textToSpeech = null
         super.onDestroy()
@@ -443,7 +478,19 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun handleScannerResult(activityResult: ActivityResult) {
         when (activityResult.resultCode) {
-            Activity.RESULT_CANCELED -> viewModel.scannerCancelled()
+            Activity.RESULT_CANCELED -> {
+                if (scannerIntentSenderFailed(
+                        activityResult.data?.action,
+                        activityResult.data?.hasExtra(
+                            ActivityResultContracts.StartIntentSenderForResult.EXTRA_SEND_INTENT_EXCEPTION,
+                        ) == true,
+                    )
+                ) {
+                    viewModel.scannerResultFailed(UiMessage(R.string.scanner_launch_error))
+                } else {
+                    viewModel.scannerCancelled()
+                }
+            }
             Activity.RESULT_OK -> processScannerResult(activityResult.data)
             else ->
                 viewModel.scannerResultFailed(
@@ -684,7 +731,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 when (ttsInitializationGate.play(text, engine != null)) {
                     TtsPlayDecision.Initialize -> {
                         try {
-                            textToSpeech = TextToSpeech(this@MainActivity, this@MainActivity)
+                            val callback =
+                                ttsInitializationGate.initializationCallback(
+                                    post = { action ->
+                                        lifecycleScope.launch(Dispatchers.Main) { action() }
+                                    },
+                                    initialized = ::onInit,
+                                )
+                            textToSpeech = TextToSpeech(this@MainActivity, callback)
                         } catch (_: RuntimeException) {
                             ttsInitializationGate.initialized(success = false)
                             showToast(R.string.tts_reading_failed)
@@ -778,7 +832,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun startVisualMarkScan() {
-        val source = viewModel.beginVisualMarkScan() ?: return
+        viewModel.beginVisualMarkScan()
+    }
+
+    private fun visualMarkPreparationIsCurrent(source: MarkEditorSource, generation: Long): Boolean =
+        !isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+            visualMarkPreparationGate.isPreparing(generation) &&
+            viewModel.preparingVisualMarkScanSource() == source
+
+    private fun requestVisualMarkScannerIntent(source: MarkEditorSource, generation: Long) {
         try {
             val options =
                 GmsDocumentScannerOptions.Builder()
@@ -790,33 +852,47 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             GmsDocumentScanning.getClient(options)
                 .getStartScanIntent(this)
                 .addOnSuccessListener { intentSender ->
-                    if (
-                        isFinishing ||
-                            isDestroyed ||
-                            viewModel.currentVisualMarkScanSource() != source
-                    ) {
-                        viewModel.visualMarkScannerFailed(source)
-                        return@addOnSuccessListener
-                    }
+                    if (!visualMarkPreparationIsCurrent(source, generation)) return@addOnSuccessListener
                     try {
                         visualMarkScannerLauncher.launch(
                             IntentSenderRequest.Builder(intentSender).build(),
                         )
+                        visualMarkPreparationGate.markLaunched(generation)
+                        viewModel.visualMarkScannerLaunched(source)
                     } catch (_: RuntimeException) {
+                        visualMarkPreparationGate.fail(generation)
                         viewModel.visualMarkScannerFailed(source)
                     }
                 }.addOnFailureListener {
-                    viewModel.visualMarkScannerFailed(source)
+                    if (visualMarkPreparationIsCurrent(source, generation)) {
+                        visualMarkPreparationGate.fail(generation)
+                        viewModel.visualMarkScannerFailed(source)
+                    }
                 }
         } catch (_: RuntimeException) {
-            viewModel.visualMarkScannerFailed(source)
+            if (visualMarkPreparationIsCurrent(source, generation)) {
+                visualMarkPreparationGate.fail(generation)
+                viewModel.visualMarkScannerFailed(source)
+            }
         }
     }
 
     private fun handleVisualMarkScannerResult(activityResult: ActivityResult) {
         val source = viewModel.currentVisualMarkScanSource() ?: return
         when (activityResult.resultCode) {
-            Activity.RESULT_CANCELED -> viewModel.visualMarkScannerCancelled(source)
+            Activity.RESULT_CANCELED -> {
+                if (scannerIntentSenderFailed(
+                        activityResult.data?.action,
+                        activityResult.data?.hasExtra(
+                            ActivityResultContracts.StartIntentSenderForResult.EXTRA_SEND_INTENT_EXCEPTION,
+                        ) == true,
+                    )
+                ) {
+                    viewModel.visualMarkScannerFailed(source)
+                } else {
+                    viewModel.visualMarkScannerCancelled(source)
+                }
+            }
             Activity.RESULT_OK -> {
                 val uri =
                     try {

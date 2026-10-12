@@ -35,6 +35,8 @@ import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal const val MAX_DOCUMENT_TEXT_CHARACTERS = 200_000
 internal const val MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE = 256
@@ -51,8 +53,9 @@ private const val MAX_TYPED_CODE_LIST_ITEMS = 16
 private const val MAX_OPENABLE_HTTP_URL_CHARACTERS = 4_096
 private const val TEXT_EXPORT_SUFFIX = "_text.txt"
 private const val MAX_ENTITY_SOURCE_CHARACTERS = MAX_DOCUMENT_TEXT_CHARACTERS
+// The bounded matcher must not extract part of a longer grouped amount.
 private const val MONEY_AMOUNT_PATTERN =
-    "\\d(?:[\\d ,.']{0,62}\\d)?"
+    "(?<!\\d[\\p{Zs},.'])\\d(?:[\\d\\p{Zs},.']{0,62}\\d)?(?![\\p{Zs},.']\\d)"
 private val EMAIL_PATTERN =
     Regex(
         """(?<![A-Z0-9.!#$%&'*+/=?^_`{|}~-])[A-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+(?![A-Z0-9-])""",
@@ -70,10 +73,10 @@ private val IBAN_PATTERN =
 private val PAYMENT_CARD_PATTERN = Regex("""(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)""")
 private val MONEY_PATTERN =
     Regex(
-        """(?<![\p{L}\p{N}])(?:\p{Sc}\s?$MONEY_AMOUNT_PATTERN|[A-Z]{3}\s+$MONEY_AMOUNT_PATTERN|$MONEY_AMOUNT_PATTERN\s?(?:\p{Sc}|[A-Z]{3}))(?![\p{L}\p{N}])""",
+        """(?<![\p{L}\p{N}])(?:\p{Sc}[\s\p{Zs}]?$MONEY_AMOUNT_PATTERN|[A-Z]{3}[\s\p{Zs}]+$MONEY_AMOUNT_PATTERN|$MONEY_AMOUNT_PATTERN[\s\p{Zs}]?(?:\p{Sc}|[A-Z]{3}))(?![\p{L}\p{N}])""",
     )
 private val MONEY_AMOUNT_FORMAT_PATTERN =
-    Regex("""(?:\d{1,3}(?:[ ,.']\d{3})+|\d+)(?:[.,]\d{1,2})?""")
+    Regex("""(?:\d{1,3}(?:[\p{Zs},.']\d{3})+|\d+)(?:[.,]\d{1,2})?""")
 private val DATE_PATTERN =
     Regex("""(?<!\d)(?:\d{4}([./-])\d{1,2}\1\d{1,2}|\d{1,2}([./-])\d{1,2}\2\d{4})(?!\d)""")
 private val CURRENCY_CODE_PATTERN = Regex("""\b[A-Z]{3}\b""")
@@ -209,7 +212,7 @@ private class DocumentTextAccumulator(
         if (value.length <= remaining) {
             output.append(value)
         } else {
-            output.append(value, 0, remaining)
+            output.append(boundedTextPrefix(value, remaining))
             truncated = true
         }
     }
@@ -344,7 +347,13 @@ internal fun buildDocumentEntityCandidates(
         }
     }
     fun flushEntityCandidates() {
-        for (candidate in structuredCandidatesFromAdjacentWords(adjacentWords)) add(candidate)
+        val page = adjacentWords.firstOrNull()?.page
+        if (page != null && counts[page] < MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) {
+            for (candidate in structuredCandidatesFromAdjacentWords(adjacentWords)) {
+                add(candidate)
+                if (counts[page] == MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) break
+            }
+        }
         adjacentWords.clear()
     }
     var characters = 0
@@ -353,8 +362,8 @@ internal fun buildDocumentEntityCandidates(
         characters += element.value.length
         val previous = adjacentWords.lastOrNull()
         if (previous != null && !areAdjacentOcrWords(previous, element)) flushEntityCandidates()
-        adjacentWords += element
         if (counts[element.page] >= MAX_DOCUMENT_ENTITY_CANDIDATES_PER_PAGE) continue
+        adjacentWords += element
         for (kind in DocumentEntityKind.entries) {
             if (kind != DocumentEntityKind.Email && kind != DocumentEntityKind.Url && kind != DocumentEntityKind.Date) continue
             for (value in entityValues(kind, element.value)) {
@@ -508,6 +517,7 @@ private fun isValidPhone(raw: String): Boolean {
             value.any { it !in "0123456789+()- " } ||
             value.drop(1).contains('+') ||
             value.count { it == '(' } != value.count { it == ')' } ||
+            value.indexOf(')') < value.indexOf('(') ||
             value.count { it == '(' } > 1 ||
             (value.first() != '+' && value.none { it == ' ' || it == '-' || it == '(' })
     ) {
@@ -753,6 +763,7 @@ private fun isValidTypedPhone(value: String): Boolean {
             value.any { it !in "0123456789+()- " } ||
             value.drop(1).contains('+') ||
             value.count { it == '(' } != value.count { it == ')' } ||
+            value.indexOf(')') < value.indexOf('(') ||
             value.count { it == '(' } > 1
     ) {
         return false
@@ -917,15 +928,23 @@ private fun decodeStrictUtf8(bytes: ByteArray): String? =
         null
     }
 
+private val documentActionOwnerMutex = Mutex()
+
+internal suspend fun <T> withDocumentActionOwner(operation: suspend () -> T): T =
+    documentActionOwnerMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        operation()
+    }
+
 internal class DocumentActionProcessor(private val context: Context) {
     suspend fun extractOcr(
         pages: List<File>,
         script: OcrScript = OcrScript.Auto,
-    ): DocumentOcrSnapshot {
+    ): DocumentOcrSnapshot = withDocumentActionOwner {
         require(pages.size in 1..MAX_SCAN_PAGES) { "OCR page count is invalid" }
         val appLanguageTag = context.resources.configuration.locales.get(0)?.toLanguageTag()
         val recognizer = textRecognizer(resolveOcrScript(script, appLanguageTag))
-        return try {
+        try {
             val pageTexts = ArrayList<String>(pages.size)
             val elements = ArrayList<OcrElement>()
             var textCharacters = 0
@@ -981,9 +1000,9 @@ internal class DocumentActionProcessor(private val context: Context) {
                 TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
         }
 
-    suspend fun detectCodes(page: File): DocumentActionOutput.Codes {
+    suspend fun detectCodes(page: File): DocumentActionOutput.Codes = withDocumentActionOwner {
         val scanner = BarcodeScanning.getClient()
-        return try {
+        try {
             withInputImage(page) { image ->
                 buildDetectedCodes(
                     scanner.process(image).awaitResult().asSequence().mapNotNull { barcode ->

@@ -61,4 +61,21 @@ class AppAppearanceTest {
         assertEquals(0, appThemeColors(settings, true).background)
         assertTrue(appThemeColors(settings, false).background != 0)
     }
+
+    @Test
+    fun classicPaletteAndLayeredSurfacesStayNeutralAndReadable() {
+        for (dark in listOf(false, true)) {
+            val colors = appThemeColors(AppAppearanceSettings(), dark)
+            assertEquals((colors.background shr 16) and 255, (colors.background shr 8) and 255)
+            assertEquals((colors.background shr 8) and 255, colors.background and 255)
+            val foreground = themeForeground(colors.background)
+            val surfaces = listOf(0.02, 0.04, 0.08, 0.12).map {
+                themeContainerColor(colors.background, foreground, it)
+            }
+            assertEquals(4, surfaces.distinct().size)
+            surfaces.forEach { assertTrue(themeContrast(foreground, it) >= 4.5) }
+            val accent = readableThemeAccent(colors.accent, colors.background, *surfaces.toIntArray())
+            surfaces.forEach { assertTrue(themeContrast(accent, it) >= 4.5) }
+        }
+    }
 }

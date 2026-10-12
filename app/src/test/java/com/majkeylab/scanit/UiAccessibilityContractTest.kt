@@ -20,12 +20,16 @@ class UiAccessibilityContractTest {
                     .section("private fun VisualMarkTopBar(", "private fun VisualMarkCreationActions("),
             )
 
-        sections.forEach { section ->
+        sections.forEachIndexed { index, section ->
             assertFalse(section.contains(".height(48.dp)"))
             assertTrue(section.contains(".heightIn(min = 48.dp)"))
             assertTrue(section.contains("maxLines = 1"))
             assertTrue(section.contains("overflow = TextOverflow.Ellipsis"))
-            assertTrue(section.contains(".semantics { heading() }"))
+            if (index == 0) {
+                assertTrue(section.contains(".semantics { if (title.isNotBlank()) heading() }"))
+            } else {
+                assertTrue(section.contains(".semantics { heading() }"))
+            }
         }
     }
 
@@ -101,9 +105,9 @@ class UiAccessibilityContractTest {
         val cleanup = source("app/src/main/java/com/majkeylab/scanit/ManualCleanupUi.kt")
 
         assertTrue(cleanup.section("onDragEnd = {", "onDragCancel = {")
-            .contains("discardShortCleanupStroke()"))
-        assertTrue(cleanup.section("onDragCancel = {", "},\n                    )")
-            .contains("discardShortCleanupStroke()"))
+            .contains("finishCleanupStroke(cancelled = false)"))
+        assertTrue(cleanup.section("onDragCancel = {", "} finally {")
+            .contains("finishCleanupStroke(cancelled = true)"))
     }
 
     @Test

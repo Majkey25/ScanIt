@@ -752,6 +752,57 @@ class PureLogicTest {
     }
 
     @Test
+    fun ttsImmediateInitializationFailureWaitsForConstructorAssignmentAndAllowsRetry() {
+        val gate = TtsInitializationGate()
+        val queue = java.util.ArrayDeque<() -> Unit>()
+        var engine: String? = null
+        var result: TtsInitializationResult? = null
+        assertEquals(TtsPlayDecision.Initialize, gate.play("first", engineExists = false))
+        val callback = gate.initializationCallback(post = { queue.addLast(it) }) { status ->
+            assertEquals("failed engine", engine)
+            result = gate.initialized(success = status == 0)
+            if (result?.ready != true) engine = null
+        }
+
+        engine = run {
+            callback(-1)
+            assertNull(result)
+            "failed engine"
+        }
+        assertEquals(1, queue.size)
+        queue.removeFirst().invoke()
+        assertEquals(TtsInitializationResult(ready = false, text = "first"), result)
+        assertNull(engine)
+        assertEquals(TtsPlayDecision.Initialize, gate.play("retry", engineExists = engine != null))
+        val retry = gate.initializationCallback(post = { queue.addLast(it) }) { status ->
+            result = gate.initialized(success = status == 0)
+        }
+        callback(-1)
+        retry(0)
+        queue.removeFirst().invoke()
+        assertEquals(TtsInitializationResult(ready = false, text = "first"), result)
+        queue.removeFirst().invoke()
+        assertEquals(TtsInitializationResult(ready = true, text = "retry"), result)
+    }
+
+    @Test
+    fun ttsQueuedInitializationIsIgnoredAfterTeardownOrConstructorFailure() {
+        val gate = TtsInitializationGate()
+        val queue = java.util.ArrayDeque<() -> Unit>()
+        var callbacks = 0
+        gate.play("first", engineExists = false)
+        val callback = gate.initializationCallback(post = { queue.addLast(it) }) { callbacks += 1 }
+        callback(0)
+        gate.stop()
+        gate.initialized(success = false)
+        queue.removeFirst().invoke()
+        callback(-1)
+        queue.removeFirst().invoke()
+        assertEquals(0, callbacks)
+        assertEquals(TtsPlayDecision.Initialize, gate.play("retry", engineExists = false))
+    }
+
+    @Test
     fun ttsStopAndReplacementIgnoreLateCallbacksWithoutClearingTheNewUtterance() {
         val gate = TtsInitializationGate()
         val first = gate.beginUtterance()
@@ -797,6 +848,9 @@ class PureLogicTest {
         val start = activity.substringAfter("private fun startReadAloud() {")
             .substringBefore("private fun speak(")
         assertTrue(start.trimStart().startsWith("stopReadAloud()"))
+        assertTrue(start.contains("ttsInitializationGate.initializationCallback("))
+        assertTrue(start.contains("lifecycleScope.launch(Dispatchers.Main) { action() }"))
+        assertTrue(start.contains("textToSpeech = TextToSpeech(this@MainActivity, callback)"))
     }
 
     @Test
@@ -823,10 +877,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 49"))
-        assertTrue(build.contains("versionName = \"1.9.3\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"49\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.3\""))
+        assertTrue(build.contains("versionCode = 50"))
+        assertTrue(build.contains("versionName = \"1.9.4\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"50\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.4\""))
         assertTrue(rootBuild.contains("version \"9.3.2\""))
         assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
         assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))

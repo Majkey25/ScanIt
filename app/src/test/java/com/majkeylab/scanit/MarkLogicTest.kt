@@ -10,6 +10,19 @@ import org.junit.Test
 
 class MarkLogicTest {
     @Test
+    fun pageEdgeCoordinatesStayNormalizedAndRejectLetterboxInput() {
+        val edge = normalizedPageMarkPoint(195.47345f, 180f, 320, 180, 512, 1_299)
+        assertEquals(MarkPoint(1f, 1f), edge)
+        validateNormalizedMarkStrokes(listOf(MarkStroke(listOf(requireNotNull(edge)))))
+        val center = requireNotNull(normalizedPageMarkPoint(160f, 90f, 320, 180, 512, 1_299))
+        assertEquals(0.5f, center.x, 0.0001f)
+        assertEquals(0.5f, center.y, 0.0001f)
+        assertNull(normalizedPageMarkPoint(0f, 90f, 320, 180, 512, 1_299))
+        assertNull(normalizedPageMarkPoint(160f, 90f, 0, 180, 512, 1_299))
+        assertNull(normalizedPageMarkPoint(Float.NaN, 90f, 320, 180, 512, 1_299))
+    }
+
+    @Test
     fun markRectPreservesAspectAndNormalizedPlacement() {
         val rect =
             resolveMarkRect(
@@ -93,6 +106,24 @@ class MarkLogicTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             dragMarkPlacement(0f, 2_000f, 200, 100, MarkPlacement(), 0f, 0f)
+        }
+    }
+
+    @Test
+    fun fittedRotatedMarkKeepsValidClampRangesAfterRounding() {
+        listOf(
+            Triple(692f to 1_715f, 56 to 989, -112.27244f),
+            Triple(769f to 1_458f, 558 to 562, 116.60336f),
+            Triple(1_347f to 1_886f, 208 to 797, 38.321228f),
+        ).forEach { (page, mark, rotation) ->
+            val placement = MarkPlacement(widthFraction = 0.8f, rotationDegrees = rotation)
+            val moved =
+                dragMarkPlacement(page.first, page.second, mark.first, mark.second, placement, 1f, -1f)
+            val rect = resolveMarkRect(page.first, page.second, mark.first, mark.second, moved)
+
+            assertTrue(moved.centerX in 0f..1f && moved.centerY in 0f..1f)
+            assertTrue(rect.left >= 0f && rect.right <= page.first)
+            assertTrue(rect.top >= 0f && rect.bottom <= page.second)
         }
     }
 

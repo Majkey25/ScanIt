@@ -75,6 +75,7 @@ internal object ScanAppearanceRenderer {
         var staging: File? = null
         var failure: Throwable? = null
         try {
+            throwIfCancelled(isCancelled)
             transformBitmap(bitmap)
             throwIfCancelled(isCancelled)
             applyScanAppearance(bitmap, normalizedAppearance, isCancelled)

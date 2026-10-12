@@ -268,6 +268,7 @@ private inline fun List<RedactionRegion>.updateManualRegion(
 @Composable
 internal fun SafeShareScreen(
     result: ScreenState.Result,
+    appTextScalePercent: Int,
     onCancel: () -> Unit,
     onSelectPage: (Int) -> Unit,
     onAddArea: () -> Unit,
@@ -295,6 +296,7 @@ internal fun SafeShareScreen(
             if (state.mode == RedactionMode.Manual) {
                 ManualRedactionReview(
                     pages = result.scan.cached.pages,
+                    appTextScalePercent = appTextScalePercent,
                     state = state,
                     scope = scope,
                     onCancel = onCancel,

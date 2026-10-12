@@ -184,7 +184,7 @@ class DocumentActionsTest {
     }
 
     @Test
-    fun safeShareCapsEveryPageAndRejectsMoreThanTwentyPages() {
+    fun safeShareAllowsFullPagesAndRejectsRegionAndPageOverflow() {
         val candidates =
             List(300) { index ->
                 val left = index / 600f
@@ -200,10 +200,17 @@ class DocumentActionsTest {
                     NormalizedRect(0f, 0f, 1f, 1f),
                 )
 
-        val analysis =
+        expectFailure<IOException> {
             buildSafeShareAnalysis(
                 pageCount = MAX_SCAN_PAGES,
                 candidates = candidates,
+                padding = 0f,
+            )
+        }
+        val analysis =
+            buildSafeShareAnalysis(
+                pageCount = MAX_SCAN_PAGES,
+                candidates = candidates.take(MAX_SAFE_SHARE_SUGGESTIONS_PER_PAGE) + candidates.last(),
                 padding = 0f,
             )
 
@@ -351,6 +358,63 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun cancelledNativeOwnerBlocksRetriesUntilTaskTerminalAndCancelledWaitersNeverAcquire() = runBlocking {
+        var owners = 0
+        var maximumOwners = 0
+        var starts = 0
+        suspend fun own(task: Task<String>) = withDocumentActionOwner {
+            owners += 1
+            starts += 1
+            maximumOwners = maxOf(maximumOwners, owners)
+            try {
+                task.awaitResult()
+            } finally {
+                owners -= 1
+            }
+        }
+
+        val firstTask = TaskCompletionSource<String>()
+        val first = launch(start = CoroutineStart.UNDISPATCHED) { own(firstTask.task) }
+        first.cancel()
+        val retries = List(8) {
+            val task = TaskCompletionSource<String>()
+            launch(start = CoroutineStart.UNDISPATCHED) { own(task.task) }.also { it.cancel() }
+        }
+        val nextTask = TaskCompletionSource<String>()
+        var failure: IOException? = null
+        val next = launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                own(nextTask.task)
+            } catch (exception: IOException) {
+                failure = exception
+            }
+        }
+
+        assertEquals(1, owners)
+        assertEquals(1, starts)
+        assertFalse(first.isCompleted)
+        assertFalse(next.isCompleted)
+        retries.forEach { it.join() }
+        firstTask.setResult("late result")
+        first.join()
+        kotlinx.coroutines.yield()
+        assertTrue(first.isCancelled)
+        assertEquals(1, owners)
+        assertEquals(2, starts)
+        assertEquals(1, maximumOwners)
+
+        nextTask.setException(IOException("recognition failed"))
+        next.join()
+        assertEquals("recognition failed", failure?.message)
+        assertEquals(0, owners)
+        val recoveredTask = TaskCompletionSource<String>().also { it.setResult("recovered") }
+        assertEquals("recovered", own(recoveredTask.task))
+        assertEquals(3, starts)
+        assertEquals(0, owners)
+        assertEquals(1, maximumOwners)
+    }
+
+    @Test
     fun faceModelBoundaryWaitsForDeferredInstallTerminalOnCancellation() = runBlocking {
         val deferred = TaskCompletionSource<Unit>()
         val module = RecordingSafeShareFaceModule(listOf(false), deferred.task)
@@ -465,6 +529,45 @@ class DocumentActionsTest {
         assertEquals(
             "x".repeat(MAX_TTS_CHARACTERS - 1),
             validatedSpeechText("x".repeat(MAX_TTS_CHARACTERS - 1) + "😀"),
+        )
+    }
+
+    @Test
+    fun documentTextTruncationPreservesSupplementaryCharactersForSpeechAndExport() {
+        val output = buildDocumentText(listOf("A😀B"), maxCharacters = 9)
+
+        assertEquals(DocumentActionOutput.Text("Page 1\nA", truncated = true), output)
+        assertEquals(output.value, validatedSpeechText(output.value))
+        val bytes = ByteArrayOutputStream()
+        writeDocumentTextUtf8(bytes, output.value)
+        assertArrayEquals(output.value.toByteArray(StandardCharsets.UTF_8), bytes.toByteArray())
+        assertEquals(
+            DocumentActionOutput.Text("Page 1\nA😀", truncated = true),
+            buildDocumentText(listOf("A😀B"), maxCharacters = 10),
+        )
+        assertEquals(
+            DocumentActionOutput.Text("Page 1\nA😀B", truncated = false),
+            buildDocumentText(listOf("A😀B"), maxCharacters = 11),
+        )
+        assertEquals(
+            DocumentActionOutput.Text("", truncated = true),
+            buildDocumentText(listOf("text"), maxCharacters = 1, pageLabel = { "😀" }),
+        )
+    }
+
+    @Test
+    fun phoneActionsRejectReversedParenthesesAndKeepValidFormattedNumbers() {
+        assertNull(validatedDialAction("+420 )123( 456 789"))
+        assertNull(validatedSmsAction("+420 )123( 456 789", null))
+        assertNull(validatedContactAction(null, listOf("+420 )123( 456 789"), emptyList()))
+        assertTrue(
+            buildDocumentEntityCandidates(
+                listOf(OcrElement(0, "123 )456( 789", NormalizedRect(0f, 0f, 1f, 1f))),
+            ).none { it.kind == DocumentEntityKind.Phone },
+        )
+        assertEquals(
+            DetectedCodeAction.Dial("+420 (123) 456 789"),
+            validatedDialAction("+420 (123) 456 789"),
         )
     }
 
@@ -612,6 +715,28 @@ class DocumentActionsTest {
         assertEquals(listOf("USD 12.34"), moneyEntityValues("USD 12.34").toList())
         assertTrue(moneyEntityValues("1".repeat(65) + " USD").none())
         assertTrue(moneyEntityValues("1".repeat(8_192)).none())
+    }
+
+    @Test
+    fun receiptAmountsKeepNonbreakingThousandsAndCurrencySpaces() {
+        val bounds = NormalizedRect(0f, 0f, 1f, 1f)
+        listOf("\u00a0", "\u202f").forEach { space ->
+            listOf("1${space}234,56 EUR", "CZK${space}1${space}234,56", "¥1${space}234.56").forEach { value ->
+                assertEquals(listOf(value), moneyEntityValues(value).toList())
+                assertEquals(
+                    listOf(DocumentEntityCandidate(0, DocumentEntityKind.Money, value, bounds)),
+                    buildDocumentEntityCandidates(listOf(OcrElement(0, value, bounds))),
+                )
+            }
+        }
+        assertTrue(moneyEntityValues("1\u00a023,45 EUR").none())
+        listOf(" ", "\u00a0", "\u202f", ",", ".", "'").forEach { separator ->
+            val oversized = ("123$separator".repeat(20)).trimEnd(separator.single())
+            assertTrue("Oversized suffix amount: $separator", moneyEntityValues("$oversized EUR").none())
+            assertTrue("Oversized prefix amount: $separator", moneyEntityValues("EUR $oversized").none())
+            assertTrue("Oversized symbol suffix amount: $separator", moneyEntityValues("$oversized€").none())
+            assertTrue("Oversized symbol prefix amount: $separator", moneyEntityValues("€$oversized").none())
+        }
     }
 
     @Test

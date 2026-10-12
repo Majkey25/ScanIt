@@ -621,37 +621,51 @@ private fun DrawVisualMarkDialog(
                             .onSizeChanged { drawingSize = it }
                             .pointerInput(drawingSize) {
                                 var active: SnapshotStateList<MarkPoint>? = null
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        val point = offset.normalized(drawingSize)
-                                        if (
-                                            point != null &&
-                                                strokes.size < MAX_MARK_DRAWING_STROKES &&
-                                                pointCount < MAX_MARK_DRAWING_POINTS
-                                        ) {
-                                            active = mutableStateListOf(point)
-                                            strokes.add(requireNotNull(active))
-                                            pointCount++
+                                fun finishDrawingStroke(cancelled: Boolean) {
+                                    val stroke = active
+                                    if (cancelled && stroke != null) {
+                                        val index = strokes.indexOfFirst { it === stroke }
+                                        if (index >= 0) {
+                                            strokes.removeAt(index)
+                                            pointCount -= stroke.size
                                         }
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        val stroke = active ?: return@detectDragGestures
-                                        if (pointCount >= MAX_MARK_DRAWING_POINTS) return@detectDragGestures
-                                        change.position.normalized(drawingSize)?.let {
-                                            stroke.add(it)
-                                            pointCount++
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        active = null
-                                        onDraftChange(strokes.toMarkStrokes())
-                                    },
-                                    onDragCancel = {
-                                        active = null
-                                        onDraftChange(strokes.toMarkStrokes())
-                                    },
-                                )
+                                    }
+                                    active = null
+                                    onDraftChange(strokes.toMarkStrokes())
+                                }
+                                try {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            val point = offset.normalized(drawingSize)
+                                            if (
+                                                point != null &&
+                                                    strokes.size < MAX_MARK_DRAWING_STROKES &&
+                                                    pointCount < MAX_MARK_DRAWING_POINTS
+                                            ) {
+                                                active = mutableStateListOf(point)
+                                                strokes.add(requireNotNull(active))
+                                                pointCount++
+                                            }
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            val stroke = active ?: return@detectDragGestures
+                                            if (pointCount >= MAX_MARK_DRAWING_POINTS) return@detectDragGestures
+                                            change.position.normalized(drawingSize)?.let {
+                                                stroke.add(it)
+                                                pointCount++
+                                            }
+                                        },
+                                        onDragEnd = {
+                                            finishDrawingStroke(cancelled = false)
+                                        },
+                                        onDragCancel = {
+                                            finishDrawingStroke(cancelled = true)
+                                        },
+                                    )
+                                } finally {
+                                    if (active != null) finishDrawingStroke(cancelled = true)
+                                }
                             },
                 ) {
                     strokes.forEach { stroke ->
@@ -720,4 +734,5 @@ private fun Offset.normalized(size: IntSize): MarkPoint? {
     )
 }
 
-private fun List<SnapshotStateList<MarkPoint>>.toMarkStrokes(): List<MarkStroke> = map(::MarkStroke)
+private fun List<SnapshotStateList<MarkPoint>>.toMarkStrokes(): List<MarkStroke> =
+    map { MarkStroke(it.toList()) }

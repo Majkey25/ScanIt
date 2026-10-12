@@ -213,6 +213,33 @@ class JpegPdfWriterTest {
     }
 
     @Test
+    fun cancellationAfterSerializationDoesNotPublishOrLeaveStaging() {
+        val root = Files.createTempDirectory("scanit-jpeg-pdf-cancel-ready").toFile()
+        try {
+            val jpeg = File(root, "page.jpg").apply { writeBytes(JPEG_BYTES) }
+            val pdf = File(root, "scan.pdf")
+
+            assertThrows(CancellationException::class.java) {
+                JpegPdfWriter.write(
+                    pdf,
+                    listOf(JpegPdfPage(jpeg, width = 32, height = 48)),
+                    isCancelled = {
+                        root.listFiles().orEmpty().any {
+                            it.name.endsWith(".part") &&
+                                it.readText(Charsets.ISO_8859_1).endsWith("%%EOF\n")
+                        }
+                    },
+                )
+            }
+
+            assertFalse(pdf.exists())
+            assertEquals(listOf("page.jpg"), root.listFiles()!!.map(File::getName))
+        } finally {
+            assertTrue(root.deleteRecursively())
+        }
+    }
+
+    @Test
     fun rejectsMissingEmptyAndInvalidPagesBeforeCreatingOutput() {
         val root = Files.createTempDirectory("scanit-jpeg-pdf-invalid").toFile()
         try {

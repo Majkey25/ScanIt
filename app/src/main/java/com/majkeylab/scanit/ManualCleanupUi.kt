@@ -206,45 +206,52 @@ private fun ManualCleanupCanvas(
                     val pageBitmap = page ?: return@pointerInput
                     if (!enabled) return@pointerInput
                     var active: SnapshotStateList<MarkPoint>? = null
-                    fun discardShortCleanupStroke() {
+                    fun finishCleanupStroke(cancelled: Boolean) {
                         val stroke = active
-                        if (stroke != null && stroke.size < 3 && strokes.remove(stroke)) {
-                            currentOnPointsDiscarded(stroke.size)
+                        if (stroke != null && (cancelled || stroke.size < 3)) {
+                            val index = strokes.indexOfFirst { it === stroke }
+                            if (index >= 0) {
+                                strokes.removeAt(index)
+                                currentOnPointsDiscarded(stroke.size)
+                            }
                         }
                         active = null
+                        currentOnDraftCommitted()
                     }
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            if (
-                                strokes.size >= MAX_MARK_DRAWING_STROKES ||
-                                    currentPointCount >= MAX_MARK_DRAWING_POINTS
-                            ) {
-                                return@detectDragGestures
-                            }
-                            offset.normalizedCleanupPoint(size, pageBitmap)?.let { point ->
-                                active = mutableStateListOf(point)
-                                strokes.add(requireNotNull(active))
-                                currentOnPointAdded()
-                            }
-                        },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            val stroke = active ?: return@detectDragGestures
-                            if (currentPointCount >= MAX_MARK_DRAWING_POINTS) return@detectDragGestures
-                            change.position.normalizedCleanupPoint(size, pageBitmap)?.let { point ->
-                                stroke.add(point)
-                                currentOnPointAdded()
-                            }
-                        },
-                        onDragEnd = {
-                            discardShortCleanupStroke()
-                            currentOnDraftCommitted()
-                        },
-                        onDragCancel = {
-                            discardShortCleanupStroke()
-                            currentOnDraftCommitted()
-                        },
-                    )
+                    try {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                if (
+                                    strokes.size >= MAX_MARK_DRAWING_STROKES ||
+                                        currentPointCount >= MAX_MARK_DRAWING_POINTS
+                                ) {
+                                    return@detectDragGestures
+                                }
+                                offset.normalizedCleanupPoint(size, pageBitmap)?.let { point ->
+                                    active = mutableStateListOf(point)
+                                    strokes.add(requireNotNull(active))
+                                    currentOnPointAdded()
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                val stroke = active ?: return@detectDragGestures
+                                if (currentPointCount >= MAX_MARK_DRAWING_POINTS) return@detectDragGestures
+                                change.position.normalizedCleanupPoint(size, pageBitmap)?.let { point ->
+                                    stroke.add(point)
+                                    currentOnPointAdded()
+                                }
+                            },
+                            onDragEnd = {
+                                finishCleanupStroke(cancelled = false)
+                            },
+                            onDragCancel = {
+                                finishCleanupStroke(cancelled = true)
+                            },
+                        )
+                    } finally {
+                        if (active != null) finishCleanupStroke(cancelled = true)
+                    }
                 },
     ) {
         val pageBitmap = page ?: return@Canvas
@@ -282,14 +289,8 @@ private fun Offset.normalizedCleanupPoint(
     size: androidx.compose.ui.unit.IntSize,
     page: android.graphics.Bitmap,
 ): MarkPoint? {
-    if (size.width <= 0 || size.height <= 0) return null
-    val scale = min(size.width.toFloat() / page.width, size.height.toFloat() / page.height)
-    val pageWidth = page.width * scale
-    val pageHeight = page.height * scale
-    val left = (size.width - pageWidth) / 2f
-    val top = (size.height - pageHeight) / 2f
-    if (x !in left..left + pageWidth || y !in top..top + pageHeight) return null
-    return MarkPoint((x - left) / pageWidth, (y - top) / pageHeight)
+    return normalizedPageMarkPoint(x, y, size.width, size.height, page.width, page.height)
 }
 
-private fun List<SnapshotStateList<MarkPoint>>.toCleanupStrokes(): List<MarkStroke> = map(::MarkStroke)
+private fun List<SnapshotStateList<MarkPoint>>.toCleanupStrokes(): List<MarkStroke> =
+    map { MarkStroke(it.toList()) }

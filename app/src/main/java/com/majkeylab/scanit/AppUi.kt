@@ -21,7 +21,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -97,7 +96,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -154,8 +152,8 @@ internal fun ScanItApp(
     onScan: () -> Unit,
     onSaveSettings: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
-    onPdfFolderSelected: (Uri, Int) -> UiMessage?,
-    onPdfFolderCleared: () -> UiMessage?,
+    onPdfFolderSelected: (Uri, Int, (Result<UiMessage?>) -> Unit) -> Unit,
+    onPdfFolderCleared: ((Result<UiMessage?>) -> Unit) -> Unit,
     onRecent: () -> Unit,
     onOpenRecent: (String) -> Unit,
     onShareRecentPdf: (String) -> Unit,
@@ -252,6 +250,7 @@ internal fun ScanItApp(
         if (state is ScreenState.Result && state.safeShareState != null) {
             SafeShareScreen(
                 result = state,
+                appTextScalePercent = settings.appAppearance.textScalePercent,
                 onCancel = onCancelSafeShare,
                 onSelectPage = onSelectSafeSharePage,
                 onAddArea = onAddSafeShareRegion,
@@ -331,6 +330,7 @@ internal fun ScanItApp(
                 is ScreenState.Result ->
                     ResultScreen(
                         result = state,
+                        appTextScalePercent = settings.appAppearance.textScalePercent,
                         onNewScan = onScan,
                         onRecent = onRecent,
                         onSettings = {
@@ -419,6 +419,7 @@ private fun FailureScreen(
 @Composable
 private fun ResultScreen(
     result: ScreenState.Result,
+    appTextScalePercent: Int,
     onNewScan: () -> Unit,
     onRecent: () -> Unit,
     onSettings: () -> Unit,
@@ -493,7 +494,7 @@ private fun ResultScreen(
             LocalWindowInfo.current.containerSize.width.toDp().value.toInt()
         }
     val stackSecondaryActions =
-        stackResultActions(configuration.fontScale, availableWidthDp)
+        stackResultActions(configuration.fontScale * appTextScalePercent / 100f, availableWidthDp)
     val pagerState =
         rememberPagerState(initialPage = selectedPageIndex) { pageCount }
     val currentSelectedPageIndex by rememberUpdatedState(selectedPageIndex)
@@ -679,6 +680,7 @@ private fun ResultScreen(
                     Spacer(Modifier.height(12.dp))
                     FileDetails(
                         scan = scan,
+                        appTextScalePercent = appTextScalePercent,
                         cachedImageDimensions = cachedImageDimensions,
                         saveTargets = saveTargets,
                         saveInProgress = result.outputSaveInProgress,
@@ -1007,7 +1009,8 @@ private fun ownedResultPreview(
     maxSize: Int,
     onLoad: suspend (File, Int) -> Bitmap?,
 ): BitmapPreviewState {
-    val preview by produceState(BitmapPreviewState(), page, maxSize) {
+    val preview = remember(page, maxSize) { mutableStateOf(BitmapPreviewState()) }
+    LaunchedEffect(page, maxSize) {
         val bitmap =
             if (page == null) {
                 null
@@ -1020,9 +1023,9 @@ private fun ownedResultPreview(
                     null
                 }
             }
-        value = BitmapPreviewState(bitmap = bitmap, loading = false)
+        preview.value = BitmapPreviewState(bitmap = bitmap, loading = false)
     }
-    return preview
+    return preview.value
 }
 
 @Composable
@@ -2096,6 +2099,7 @@ private fun FileDetailsHeader(
 @Composable
 private fun FileDetails(
     scan: SavedScan,
+    appTextScalePercent: Int,
     cachedImageDimensions: List<Pair<Int, Int>>?,
     saveTargets: List<SaveNowTarget>,
     saveInProgress: Boolean,
@@ -2120,7 +2124,7 @@ private fun FileDetails(
             LocalWindowInfo.current.containerSize.width.toDp().value.toInt()
         }
     val stackFileDetailControls =
-        availableWidthDp < 360 || configuration.fontScale >= 1.3f
+        stackResultActions(configuration.fontScale * appTextScalePercent / 100f, availableWidthDp)
     val pdfLocation =
         when {
             scan.savedPdfDeleted -> ""
@@ -2482,18 +2486,19 @@ private fun FileDetailSection(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
-                            BasicTextField(
+                            OutlinedTextField(
                                 value = draft,
                                 onValueChange = {
                                     if (it.length <= MAX_OUTPUT_BASE_NAME_LENGTH) draft = it
                                 },
                                 enabled = renameEnabled,
                                 singleLine = true,
+                                label = { Text(stringResource(R.string.rename_file)) },
+                                isError = draft.isNotBlank() && normalizedDraft == null,
                                 textStyle =
                                     MaterialTheme.typography.bodySmall.copy(
                                         color = MaterialTheme.colorScheme.onSurface,
                                     ),
-                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                 modifier = Modifier.weight(1f).focusRequester(nameFocusRequester),
                             )
                             Text(
@@ -2594,7 +2599,7 @@ private fun FileDetailStatusRow(
     onAction: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2614,7 +2619,7 @@ private fun FileDetailStatusRow(
                 TextButton(
                     onClick = onAction,
                     enabled = actionEnabled,
-                    modifier = Modifier.height(40.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
                 ) {
                     Text(actionLabel)
@@ -3331,8 +3336,9 @@ private fun RecentThumbnail(
     firstPage: File,
     onLoadThumbnail: suspend (File) -> Bitmap?,
 ) {
-    val thumbnail by produceState<Bitmap?>(null, firstPage) {
-        value =
+    var preview by remember(firstPage) { mutableStateOf(BitmapPreviewState()) }
+    LaunchedEffect(firstPage) {
+        val bitmap =
             try {
                 onLoadThumbnail(firstPage)
             } catch (cancellation: CancellationException) {
@@ -3340,17 +3346,19 @@ private fun RecentThumbnail(
             } catch (_: Exception) {
                 null
             }
+        preview = BitmapPreviewState(bitmap = bitmap, loading = false)
     }
-    if (thumbnail == null) {
+    if (preview.bitmap == null) {
         Box(
             modifier = Modifier.width(72.dp).height(96.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(stringResource(R.string.preview_unavailable))
+            if (preview.loading) CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            else Text(stringResource(R.string.preview_unavailable))
         }
     } else {
         Image(
-            bitmap = requireNotNull(thumbnail).asImageBitmap(),
+            bitmap = requireNotNull(preview.bitmap).asImageBitmap(),
             contentDescription = stringResource(R.string.recent_scan_preview),
             modifier = Modifier.width(72.dp).height(96.dp),
             contentScale = ContentScale.Fit,
@@ -3420,7 +3428,7 @@ internal fun CompactTopBar(
                     modifier =
                         Modifier.weight(1f)
                             .padding(start = if (onBack == null) 16.dp else 0.dp)
-                            .semantics { heading() },
+                            .semantics { if (title.isNotBlank()) heading() },
                     style = MaterialTheme.typography.titleLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -3477,8 +3485,8 @@ private fun SettingsScreen(
     onClose: () -> Unit,
     onSave: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
-    onPdfFolderSelected: (Uri, Int) -> UiMessage?,
-    onPdfFolderCleared: () -> UiMessage?,
+    onPdfFolderSelected: (Uri, Int, (Result<UiMessage?>) -> Unit) -> Unit,
+    onPdfFolderCleared: ((Result<UiMessage?>) -> Unit) -> Unit,
 ) {
     val folderPermissionMissing = UiMessage(R.string.folder_permission_missing)
     val folderPermissionFailed = UiMessage(R.string.folder_permission_failed)
@@ -3516,6 +3524,7 @@ private fun SettingsScreen(
     var sharingExpanded by rememberSaveable { mutableStateOf(false) }
     var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var folderError by remember { mutableStateOf<UiMessage?>(null) }
+    var folderChangePending by remember { mutableStateOf(false) }
     var settingsError by remember { mutableStateOf<UiMessage?>(null) }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -3689,14 +3698,23 @@ private fun SettingsScreen(
                 if (uri == null || grantedFlags != PDF_TREE_FLAGS) {
                     folderError = folderPermissionMissing
                 } else {
+                    folderChangePending = true
+                    folderError = null
                     try {
-                        folderError = onPdfFolderSelected(uri, grantedFlags)
-                        pdfTreeUri = uri.toString()
-                    } catch (_: SecurityException) {
-                        folderError = folderPermissionFailed
-                    } catch (_: IOException) {
-                        folderError = folderPermissionFailed
-                    } catch (_: RuntimeException) {
+                        onPdfFolderSelected(uri, grantedFlags) { result ->
+                            folderChangePending = false
+                            result.fold(
+                                onSuccess = { warning ->
+                                    pdfTreeUri = uri.toString()
+                                    folderError = warning
+                                },
+                                onFailure = { folderError = folderPermissionFailed },
+                            )
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        folderChangePending = false
                         folderError = folderPermissionFailed
                     }
                 }
@@ -3879,29 +3897,40 @@ private fun SettingsScreen(
                                 ),
                             )
                         },
+                        enabled = !folderChangePending,
                         modifier = Modifier.weight(1f),
                     ) {
                         ActionButtonContent(R.drawable.ic_folder, R.string.choose_folder)
                     }
                     OutlinedButton(
                         onClick = {
+                            folderChangePending = true
+                            folderError = null
                             try {
-                                folderError = onPdfFolderCleared()
-                                pdfTreeUri = null
-                            } catch (_: SecurityException) {
-                                folderError = folderClearFailed
-                            } catch (_: IOException) {
-                                folderError = folderClearFailed
-                            } catch (_: RuntimeException) {
+                                onPdfFolderCleared { result ->
+                                    folderChangePending = false
+                                    result.fold(
+                                        onSuccess = { warning ->
+                                            pdfTreeUri = null
+                                            folderError = warning
+                                        },
+                                        onFailure = { folderError = folderClearFailed },
+                                    )
+                                }
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (_: Exception) {
+                                folderChangePending = false
                                 folderError = folderClearFailed
                             }
                         },
-                        enabled = pdfTreeUri != null,
+                        enabled = pdfTreeUri != null && !folderChangePending,
                         modifier = Modifier.weight(1f),
                     ) {
                         ActionButtonContent(R.drawable.ic_restore, R.string.clear_folder)
                     }
                 }
+                if (folderChangePending) CircularProgressIndicator(modifier = Modifier.size(24.dp))
                 folderError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
             }
             }
@@ -4062,7 +4091,7 @@ private fun SettingsScreen(
                         Row(
                             modifier =
                                 Modifier.fillMaxWidth()
-                                    .clickable { appInfoExpanded = !appInfoExpanded }
+                                    .clickable(role = Role.Button) { appInfoExpanded = !appInfoExpanded }
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -4213,6 +4242,7 @@ private fun SettingsCategoryHeader(
     onToggle: () -> Unit,
 ) {
     Surface(
+        onClick = onToggle,
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier =
@@ -4229,7 +4259,7 @@ private fun SettingsCategoryHeader(
                             true
                         })
                     }
-                }.clickable(onClick = onToggle),
+                },
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
