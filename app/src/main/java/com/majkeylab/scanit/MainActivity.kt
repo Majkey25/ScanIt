@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.IntentSender
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
@@ -179,6 +180,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: ScanViewModel by viewModels()
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
+    private var pendingScannerIntent: Pair<Long, IntentSender>? = null
     private val visualMarkPreparationGate = ScannerLaunchGate()
     private var textToSpeech: TextToSpeech? = null
     private val ttsInitializationGate = TtsInitializationGate()
@@ -350,6 +352,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 visualMarkPreparationGate.complete()
                 viewModel.state.collect {
+                    launchPendingScannerIntent()
                     val source = viewModel.preparingVisualMarkScanSource()
                     if (source == null) {
                         visualMarkPreparationGate.complete()
@@ -398,6 +401,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        pendingScannerIntent = null
         stopReadAloud()
         ttsInitializationGate.initialized(success = false)
         textToSpeech?.shutdown()
@@ -453,21 +457,33 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                     if (!viewModel.isScannerLaunchCurrent(requestGeneration)) {
                         return@addOnSuccessListener
                     }
-                    try {
-                        scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
-                        viewModel.scannerLaunched(requestGeneration)
-                    } catch (_: RuntimeException) {
-                        viewModel.scannerLaunchFailed(
-                            requestGeneration,
-                            UiMessage(R.string.scanner_launch_error),
-                        )
-                    }
+                    pendingScannerIntent = requestGeneration to intentSender
+                    launchPendingScannerIntent()
                 }.addOnFailureListener {
                     viewModel.scannerLaunchFailed(
                         requestGeneration,
                         UiMessage(R.string.scanner_launch_error),
                     )
                 }
+        } catch (_: RuntimeException) {
+            viewModel.scannerLaunchFailed(
+                requestGeneration,
+                UiMessage(R.string.scanner_launch_error),
+            )
+        }
+    }
+
+    private fun launchPendingScannerIntent() {
+        val (requestGeneration, intentSender) = pendingScannerIntent ?: return
+        if (isFinishing || isDestroyed || !viewModel.isScannerLaunchCurrent(requestGeneration)) {
+            pendingScannerIntent = null
+            return
+        }
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        pendingScannerIntent = null
+        try {
+            scannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+            viewModel.scannerLaunched(requestGeneration)
         } catch (_: RuntimeException) {
             viewModel.scannerLaunchFailed(
                 requestGeneration,

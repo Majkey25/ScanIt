@@ -28,7 +28,11 @@ internal fun buildScanPdfFromPages(
             val sourceBounds = readJpegDimensions(source)
             throwIfAndroidPdfCancelled(isCancelled)
             val renderedBounds = readJpegDimensions(rendered)
-            val baseSample = appearanceDecodeSampleSize(sourceBounds.width, sourceBounds.height)
+            val baseSample =
+                pdfSourceBaseSampleSize(
+                    maxOf(sourceBounds.width, sourceBounds.height),
+                    maxOf(renderedBounds.width, renderedBounds.height),
+                )
             ScanPdfBuildPage(
                 longestEdge = maxOf(renderedBounds.width, renderedBounds.height),
                 renderJpeg = { workingDirectory, sampleMultiplier ->

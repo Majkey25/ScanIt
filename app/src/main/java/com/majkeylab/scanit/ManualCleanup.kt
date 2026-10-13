@@ -15,9 +15,6 @@ import kotlin.math.floor
 internal const val MAX_MANUAL_CLEANUP_PIXELS = 2_000_000
 private const val ARGB_CHANNEL_VALUES = 256
 private const val MANUAL_CLEANUP_BACKGROUND_PADDING = 24
-private const val MANUAL_CLEANUP_MASK_STROKE_FRACTION = 0.02f
-private const val MIN_MANUAL_CLEANUP_MASK_STROKE = 16f
-private const val MAX_MANUAL_CLEANUP_MASK_STROKE = 96f
 
 internal fun renderManualCleanupJpeg(
     source: File,
@@ -53,16 +50,7 @@ private fun applyManualCleanup(
     isCancelled: () -> Boolean,
 ) {
     throwIfManualCleanupCancelled(isCancelled)
-    val maskStrokeWidth =
-        (minOf(bitmap.width, bitmap.height) * MANUAL_CLEANUP_MASK_STROKE_FRACTION)
-            .coerceIn(MIN_MANUAL_CLEANUP_MASK_STROKE, MAX_MANUAL_CLEANUP_MASK_STROKE)
-    val bounds =
-        manualCleanupPixelBounds(
-            points,
-            bitmap.width,
-            bitmap.height,
-            padding = ceil(maskStrokeWidth / 2f).toInt() + MANUAL_CLEANUP_BACKGROUND_PADDING,
-        )
+    val bounds = manualCleanupPixelBounds(points, bitmap.width, bitmap.height)
     val maskBitmap = createBitmap(bounds.width, bounds.height, Bitmap.Config.ARGB_8888)
     try {
         val path =
@@ -78,8 +66,7 @@ private fun applyManualCleanup(
             path,
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
-                style = Paint.Style.FILL_AND_STROKE
-                strokeWidth = maskStrokeWidth
+                style = Paint.Style.FILL
             },
         )
         val size = bounds.width * bounds.height

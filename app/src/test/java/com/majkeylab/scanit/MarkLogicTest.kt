@@ -122,8 +122,7 @@ class MarkLogicTest {
             val rect = resolveMarkRect(page.first, page.second, mark.first, mark.second, moved)
 
             assertTrue(moved.centerX in 0f..1f && moved.centerY in 0f..1f)
-            assertTrue(rect.left >= 0f && rect.right <= page.first)
-            assertTrue(rect.top >= 0f && rect.bottom <= page.second)
+            assertRotatedBounds(rect, page.first, page.second, rotation)
         }
     }
 
@@ -338,6 +337,66 @@ class MarkLogicTest {
             intArrayOf(0xFFFF0000.toInt(), 0x33F0F5FF),
             cropArgbPixels(3, 2, converted, bounds!!),
         )
+    }
+
+    @Test
+    fun rotatedMarksKeepTheirSizeAndCenterAtEveryPageEdge() {
+        for ((markWidth, markHeight) in listOf(400 to 200, 200 to 400, 100 to 1_500)) {
+            for (rotation in listOf(-180f, -135f, -90f, -45f, 0f, 45f, 90f, 135f, 180f)) {
+                val placement = MarkPlacement(centerY = 0.5f, widthFraction = 0.8f, rotationDegrees = rotation)
+                val centered = resolveMarkRect(1_000f, 2_000f, markWidth, markHeight, placement)
+                for (x in listOf(0f, 0.5f, 1f)) {
+                    for (y in listOf(0f, 0.5f, 1f)) {
+                        val atEdge = placement.copy(centerX = x, centerY = y)
+                        val rect = resolveMarkRect(1_000f, 2_000f, markWidth, markHeight, atEdge)
+                        assertEquals(centered.width, rect.width, 0.001f)
+                        assertEquals(centered.height, rect.height, 0.001f)
+                        assertEquals(markWidth.toFloat() / markHeight, rect.width / rect.height, 0.001f)
+                        val bounds = assertRotatedBounds(rect, 1_000f, 2_000f, rotation)
+                        assertEquals(x * 1_000f, when (x) {
+                            0f -> bounds.left
+                            1f -> bounds.right
+                            else -> (rect.left + rect.right) / 2f
+                        }, 0.001f)
+                        assertEquals(y * 2_000f, when (y) {
+                            0f -> bounds.top
+                            1f -> bounds.bottom
+                            else -> (rect.top + rect.bottom) / 2f
+                        }, 0.001f)
+                        val unmoved = dragMarkPlacement(1_000f, 2_000f, markWidth, markHeight, atEdge, 0f, 0f)
+                        val resolved = resolveMarkRect(1_000f, 2_000f, markWidth, markHeight, unmoved)
+                        assertEquals(rect.left, resolved.left, 0.001f)
+                        assertEquals(rect.top, resolved.top, 0.001f)
+                        assertEquals(rect.right, resolved.right, 0.001f)
+                        assertEquals(rect.bottom, resolved.bottom, 0.001f)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun assertRotatedBounds(
+        rect: MarkRect,
+        pageWidth: Float,
+        pageHeight: Float,
+        rotation: Float,
+    ): MarkRect {
+        val radians = Math.toRadians(rotation.toDouble())
+        val centerX = (rect.left + rect.right) / 2f
+        val centerY = (rect.top + rect.bottom) / 2f
+        val corners = listOf(rect.left, rect.right).flatMap { x ->
+            listOf(rect.top, rect.bottom).map { y ->
+                MarkPoint(
+                    (centerX + (x - centerX) * Math.cos(radians) - (y - centerY) * Math.sin(radians)).toFloat(),
+                    (centerY + (x - centerX) * Math.sin(radians) + (y - centerY) * Math.cos(radians)).toFloat(),
+                )
+            }
+        }
+        corners.forEach { point ->
+            assertTrue("Rotated X outside page: $point", point.x in -0.001f..pageWidth + 0.001f)
+            assertTrue("Rotated Y outside page: $point", point.y in -0.001f..pageHeight + 0.001f)
+        }
+        return MarkRect(corners.minOf { it.x }, corners.minOf { it.y }, corners.maxOf { it.x }, corners.maxOf { it.y })
     }
 
     private fun assertRect(expected: MarkRect, actual: MarkRect) {

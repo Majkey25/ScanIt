@@ -213,7 +213,7 @@
     <string name="visual_mark_working">Pracuji…</string>
     <string name="draw_visual_mark_title">Nakreslit podpis nebo razítko</string>
     <string name="draw_visual_mark_hint">Kreslete do bílé plochy.</string>
-    <string name="draw_visual_mark_accessibility">Kreslení dotykem může vyžadovat průchozí gesto TalkBacku. Uživatelé čtečky obrazovky mohou zvolit Zrušit a potom Importovat obrázek nebo Skenovat předlohu.</string>
+    <string name="draw_visual_mark_accessibility">Kreslení dotykem může vyžadovat průchozí gesto TalkBacku. Uživatelé čtečky obrazovky mohou zvolit Zrušit a potom Importovat obrázek nebo Skenovat papír.</string>
     <string name="clear_drawing">Vymazat</string>
     <string name="undo_drawing">Zpět</string>
     <string name="redo_drawing">Znovu</string>
@@ -317,7 +317,7 @@
     <string name="close">Zavřít</string>
     <string name="rename_file">Přejmenovat soubor</string>
     <string name="save_file_name">Uložit název souboru</string>
-    <string name="invalid_file_name">Použijte název bez znaků / \ : * ? &quot; &lt; &gt; nebo |.</string>
+    <string name="invalid_file_name">Použijte název bez znaků / \ : * ? &quot; &lt; &gt; nebo |. Název nesmí končit tečkou.</string>
     <string name="safe_share">Bezpečné sdílení</string>
     <string name="redact_document">Začernit dokument</string>
     <string name="redact_document_scope_title">Začernit dokument</string>

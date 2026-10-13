@@ -25,6 +25,20 @@ import org.junit.Test
 
 class PureLogicTest {
     @Test
+    fun pdfSizeWarningPreservesCustomKilobytesAndWholeMegabytes() {
+        assertEquals(
+            UiMessage(R.string.pdf_size_target_not_met_kb, listOf(1500, 2000.0)),
+            pdfSizeTargetWarning(PdfSizeTarget.Custom(1500), 2_000_000L),
+        )
+        assertNull(pdfSizeTargetWarning(PdfSizeTarget.Custom(1500), 1_500_000L))
+        assertEquals(
+            UiMessage(R.string.pdf_size_target_not_met, listOf(5, 6.0)),
+            pdfSizeTargetWarning(PdfSizeTarget.Mb5, 6_000_000L),
+        )
+        assertNull(pdfSizeTargetWarning(PdfSizeTarget.Mb5, 5_000_000L))
+    }
+
+    @Test
     fun redactionModesDeclareWhetherAnalysisIsRequired() {
         assertTrue(RedactionMode.Automatic.requiresAnalysis)
         assertFalse(RedactionMode.Manual.requiresAnalysis)
@@ -877,10 +891,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 50"))
-        assertTrue(build.contains("versionName = \"1.9.4\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"50\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.4\""))
+        assertTrue(build.contains("versionCode = 51"))
+        assertTrue(build.contains("versionName = \"1.9.5\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"51\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.5\""))
         assertTrue(rootBuild.contains("version \"9.3.2\""))
         assertTrue(wrapper.contains("gradle-9.7.1-bin.zip"))
         assertTrue(wrapper.contains("acd53f1edaf02f1a8ff99879f8a34b302661a057d9b063ae9e35b552f804d20a"))

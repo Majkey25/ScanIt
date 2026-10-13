@@ -178,8 +178,8 @@ internal fun resolveMarkRect(
     return MarkRect(
         left = left.toFloat(),
         top = top.toFloat(),
-        right = (left + width).coerceAtMost(pageWidthDouble).toFloat(),
-        bottom = (top + height).coerceAtMost(pageHeightDouble).toFloat(),
+        right = (left + width).toFloat(),
+        bottom = (top + height).toFloat(),
     )
 }
 

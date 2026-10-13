@@ -175,6 +175,20 @@ class UiAccessibilityContractTest {
         assertTrue(strings.contains("Bereinigung fehlgeschlagen. Wähle einen kleineren Bereich."))
     }
 
+    @Test
+    fun signatureAccessibilityHintNamesAvailableAlternatives() {
+        listOf("values", "values-cs", "values-de", "values-es", "values-zh-rCN").forEach { directory ->
+            val strings = source("app/src/main/res/$directory/strings.xml")
+            fun value(key: String): String = checkNotNull(
+                Regex("""<string name="$key">([^<]*)</string>""").find(strings),
+            ).groupValues[1]
+            val hint = value("draw_visual_mark_accessibility")
+            listOf("cancel", "import_visual_mark", "scan_visual_mark").forEach { key ->
+                assertTrue("$directory: hint must name $key", hint.contains(value(key)))
+            }
+        }
+    }
+
     private fun source(path: String): String = File(repository, path).readText()
 
     private fun String.section(start: String, end: String): String =

@@ -55,10 +55,12 @@ private const val TEXT_EXPORT_SUFFIX = "_text.txt"
 private const val MAX_ENTITY_SOURCE_CHARACTERS = MAX_DOCUMENT_TEXT_CHARACTERS
 // The bounded matcher must not extract part of a longer grouped amount.
 private const val MONEY_AMOUNT_PATTERN =
-    "(?<!\\d[\\p{Zs},.'])\\d(?:[\\d\\p{Zs},.']{0,62}\\d)?(?![\\p{Zs},.']\\d)"
+    "(?<!\\d[\\p{Zs},.'])(?:" +
+        "(?:\\d{1,3}(?:[\\p{Zs},.']\\d{3}){1,15}|\\d{1,62})[.,]\\d{1,2}(?!\\d|[.,']\\d)|" +
+        "\\d(?:[\\d\\p{Zs},.']{0,62}\\d)?(?![\\p{Zs},.']\\d))"
 private val EMAIL_PATTERN =
     Regex(
-        """(?<![A-Z0-9.!#$%&'*+/=?^_`{|}~-])[A-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+(?![A-Z0-9-])""",
+        """(?<![A-Z0-9.!#$%&'*+/=?^_`{|}@~-])[A-Z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+(?![A-Z0-9@-])""",
         RegexOption.IGNORE_CASE,
     )
 private val URL_PATTERN =
@@ -382,7 +384,7 @@ private fun areAdjacentOcrWords(previous: OcrElement, next: OcrElement): Boolean
     val second = next.bounds
     val height = minOf(first.bottom - first.top, second.bottom - second.top)
     return second.left >= first.right &&
-        second.left - first.right <= height &&
+        second.left - first.right <= height / previous.pageAspectRatio &&
         minOf(first.bottom, second.bottom) - maxOf(first.top, second.top) >= height / 2
 }
 
@@ -960,6 +962,7 @@ internal class DocumentActionProcessor(private val context: Context) {
                     pageTexts += pageText
                     textCharacters += pageText.length
                     if (pageText.length != result.text.length) truncated = true
+                    val pageAspectRatio = image.width.toFloat() / image.height
                     for (block in result.textBlocks) {
                         for (line in block.lines) {
                             for (element in line.elements) {
@@ -979,7 +982,7 @@ internal class DocumentActionProcessor(private val context: Context) {
                                         image.width,
                                         image.height,
                                     ) ?: continue
-                                elements += OcrElement(index, value, bounds)
+                                elements += OcrElement(index, value, bounds, pageAspectRatio)
                                 elementCharacters += value.length
                             }
                         }

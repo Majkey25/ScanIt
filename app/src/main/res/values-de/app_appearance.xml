@@ -7,7 +7,7 @@
     <string name="app_mode_dark">Dunkel</string>
     <string name="app_theme_presets">Designs</string>
     <string name="app_theme_pair_hint">Helles und dunkles Design getrennt auswählen.</string>
-    <string name="app_theme_choice">%1$s: %2$s Design</string>
+    <string name="app_theme_choice">%1$s: Design (%2$s)</string>
     <string name="app_theme_classic">Klassisch</string>
     <string name="app_theme_material_you">Material You</string>
     <string name="app_theme_forest">Wald</string>

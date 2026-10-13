@@ -695,7 +695,7 @@ internal fun pdfSizeTargetWarning(
 ): UiMessage? {
     val targetBytes = target.maxBytes ?: return null
     if (bytes <= 0L || bytes <= targetBytes) return null
-    if (targetBytes < PDF_DISPLAY_BYTES) {
+    if (targetBytes < PDF_DISPLAY_BYTES || targetBytes % PDF_DISPLAY_BYTES != 0L) {
         return UiMessage(
             R.string.pdf_size_target_not_met_kb,
             listOf(
@@ -1701,12 +1701,12 @@ internal fun initialNavigation(
     savedCacheId: String?,
     activeResultCacheId: String?,
     safeShareWasActive: Boolean = false,
+    restoreAuthoritativeResult: Boolean = false,
 ): InitialNavigation {
     val durableCacheId = activeResultCacheId?.takeIf(::isSafeActiveResultCacheId)
     if (
-        safeShareWasActive &&
-            savedRoute == "result" &&
-            durableCacheId != null
+        durableCacheId != null &&
+            (restoreAuthoritativeResult || (safeShareWasActive && savedRoute == "result"))
     ) {
         return InitialNavigation(RestoredRoute.Result, durableCacheId)
     }

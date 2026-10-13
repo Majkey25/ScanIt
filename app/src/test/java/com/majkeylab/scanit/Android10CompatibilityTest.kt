@@ -1,12 +1,44 @@
 package com.majkeylab.scanit
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Android10CompatibilityTest {
     private val repository = File("..").canonicalFile
+
+    @Test
+    fun speechEngineDiscoveryUsesOnlyTheTtsServiceQuery() {
+        val manifest = File(repository, "app/src/main/AndroidManifest.xml").readText()
+        val queries = manifest.substringAfter("<queries>", "").substringBefore("</queries>")
+
+        assertTrue(queries.contains("android:name=\"android.intent.action.TTS_SERVICE\""))
+        assertFalse(manifest.contains("android.permission.QUERY_ALL_PACKAGES"))
+    }
+
+    @Test
+    fun scannerIntentWaitsForStartedAndIsConsumedBeforeLaunch() {
+        val activity = File(repository, "app/src/main/java/com/majkeylab/scanit/MainActivity.kt").readText()
+        val launch = activity.substringAfter("private fun launchPendingScannerIntent() {", "")
+            .substringBefore("private fun handleScannerResult(")
+        val started = launch.indexOf("lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)")
+        val consume = launch.indexOf("pendingScannerIntent = null", started.coerceAtLeast(0))
+        val dispatch = launch.indexOf("scannerLauncher.launch(")
+
+        assertTrue(launch.contains("isFinishing || isDestroyed"))
+        assertTrue(launch.contains("viewModel.isScannerLaunchCurrent(requestGeneration)"))
+        assertTrue(started >= 0 && consume > started && dispatch > consume)
+        assertEquals(1, Regex("scannerLauncher\\.launch\\(").findAll(activity).count())
+        val observer = activity.substringAfter("viewModel.resumeScannerPreparation()")
+            .substringBefore("override fun onStart()")
+        assertTrue(observer.contains("repeatOnLifecycle(Lifecycle.State.STARTED)"))
+        assertTrue(observer.substringAfter("viewModel.state.collect {").contains("launchPendingScannerIntent()"))
+        val destroy = activity.substringAfter("override fun onDestroy() {")
+            .substringBefore("override fun onInit(")
+        assertTrue(destroy.contains("pendingScannerIntent = null"))
+    }
 
     @Test
     fun api29UsesCompatibilityPathsForNewerPlatformApis() {

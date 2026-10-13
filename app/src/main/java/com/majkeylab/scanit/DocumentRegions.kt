@@ -26,10 +26,12 @@ internal data class OcrElement(
     val page: Int,
     val value: String,
     val bounds: NormalizedRect,
+    val pageAspectRatio: Float = 1f,
 ) {
     init {
         require(page in 0 until MAX_SCAN_PAGES) { "OCR element page is invalid" }
         require(value.isNotBlank()) { "OCR element value is empty" }
+        require(pageAspectRatio.isFinite() && pageAspectRatio > 0f) { "OCR page aspect ratio is invalid" }
     }
 }
 

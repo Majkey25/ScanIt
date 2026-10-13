@@ -495,6 +495,8 @@ internal class SettingsStore(
     @Throws(IOException::class)
     internal fun savePdfTreeUris(current: String?, pending: String?) =
         withStorageTransaction {
+            val previousCurrent = currentPdfTreeUri()
+            val previousPending = pendingPdfTreeUri()
             val stored =
                 preferences
                     .edit()
@@ -510,6 +512,10 @@ internal class SettingsStore(
                     preferences.getString(KEY_PENDING_PDF_TREE_URI, null)
                 }
             if (!stored || currentRead != current || pendingRead != pending) {
+                preferences.edit()
+                    .putString(KEY_PDF_TREE_URI, previousCurrent)
+                    .putString(KEY_PENDING_PDF_TREE_URI, previousPending)
+                    .apply()
                 throw IOException("PDF destinations could not be stored")
             }
         }

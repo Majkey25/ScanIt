@@ -37,6 +37,7 @@ internal data class ProvisionalOutputCreate(
     val mimeType: String,
     val treeUri: String?,
     val returnedUri: String?,
+    val fingerprint: OutputFingerprint? = null,
 )
 
 internal sealed interface ProvisionalOutputCreateReadResult {
@@ -188,7 +189,12 @@ internal fun acknowledgeUnknownProvisionalOutput(
     if (!target.exists()) return UnknownOutputAcknowledgementResult.Absent
     val bytes = readMarkerBytes(directory) ?: return UnknownOutputAcknowledgementResult.Failed
     if (decodeUnknownOutputCreateAcknowledgement(bytes) != acknowledgement) {
-        return UnknownOutputAcknowledgementResult.Stale
+        val marker = decodeProvisionalOutputCreate(
+            bytes, acknowledgement.cacheId, acknowledgement.entryId, pageCount,
+        ) ?: return UnknownOutputAcknowledgementResult.Stale
+        if (marker.provider != ProvisionalOutputProvider.Saf || marker.returnedUri == null ||
+            marker.operationId != acknowledgement.operationId
+        ) return UnknownOutputAcknowledgementResult.Stale
     }
     return try {
         deleteMarker(target)
@@ -231,7 +237,14 @@ internal fun reconcileProvisionalOutputCreate(
         }
         OutputDeleteStatus.IdentityMismatch,
         OutputDeleteStatus.Failed,
-        -> ProvisionalOutputCreateReconciliation(true, listOf(warning))
+        -> ProvisionalOutputCreateReconciliation(
+            true,
+            listOf(warning),
+            acknowledgement =
+                if (marker.provider == ProvisionalOutputProvider.Saf) {
+                    UnknownOutputCreateAcknowledgement(marker.cacheId, marker.entryId, marker.operationId)
+                } else null,
+        )
     }
 }
 
@@ -329,6 +342,11 @@ private fun encodeProvisionalOutputCreate(marker: ProvisionalOutputCreate): Byte
         .put("mimeType", marker.mimeType)
         .put("treeUri", marker.treeUri ?: JSONObject.NULL)
         .put("returnedUri", marker.returnedUri ?: JSONObject.NULL)
+        .also { value ->
+            marker.fingerprint?.let {
+                value.put("byteLength", it.byteLength).put("sha256", it.sha256)
+            }
+        }
         .toString()
         .toByteArray(StandardCharsets.UTF_8)
         .also {
@@ -347,7 +365,8 @@ private fun decodeProvisionalOutputCreate(
     return try {
         val value = JSONObject(String(bytes, StandardCharsets.UTF_8))
         val keys = value.keys().asSequence().toSet()
-        if (keys != MARKER_KEYS || value.opt("version") !is Int ||
+        if ((keys != MARKER_KEYS && keys != MARKER_KEYS + setOf("byteLength", "sha256")) ||
+            value.opt("version") !is Int ||
             value.getInt("version") != PROVISIONAL_OUTPUT_CREATE_VERSION
         ) return null
         val marker =
@@ -362,6 +381,13 @@ private fun decodeProvisionalOutputCreate(
                 mimeType = value.requiredString("mimeType") ?: return null,
                 treeUri = (value.optionalString("treeUri") ?: return null).value,
                 returnedUri = (value.optionalString("returnedUri") ?: return null).value,
+                fingerprint =
+                    if ("byteLength" in keys) {
+                        OutputFingerprint(
+                            value.requiredLong("byteLength") ?: return null,
+                            value.requiredString("sha256") ?: return null,
+                        )
+                    } else null,
             )
         marker.takeIf {
             it.cacheId == expectedCacheId && it.entryId == expectedEntryId &&
@@ -411,7 +437,8 @@ private fun isValidProvisionalOutputCreate(marker: ProvisionalOutputCreate, page
     if (pageCount !in 1..MAX_SCAN_PAGES || !isCanonicalUuid(marker.operationId) ||
         !isSafeCacheId(marker.cacheId) || !isCanonicalUuid(marker.entryId) ||
         !isProviderDisplayName(marker.displayName) || !isMarkerValue(marker.mimeType) ||
-        marker.returnedUri?.let(::isExactContentMarkerUri) == false
+        marker.returnedUri?.let(::isExactContentMarkerUri) == false ||
+        marker.fingerprint?.let { !isValidOutputFingerprint(it.byteLength, it.sha256) } == true
     ) return false
     if (marker.kind == ProvisionalOutputKind.Pdf && (marker.page != null || marker.mimeType != "application/pdf") ||
         marker.kind == ProvisionalOutputKind.Image &&
@@ -442,6 +469,13 @@ private fun isMarkerValue(value: String): Boolean =
 
 private fun JSONObject.requiredString(key: String): String? =
     opt(key).takeIf { it is String } as? String
+
+private fun JSONObject.requiredLong(key: String): Long? =
+    when (val value = opt(key)) {
+        is Long -> value
+        is Int -> value.toLong()
+        else -> null
+    }
 
 private fun JSONObject.optionalString(key: String): OptionalValue<String>? =
     when (val value = opt(key)) {

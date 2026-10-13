@@ -2,6 +2,21 @@
 
 All notable changes are documented here.
 
+## [1.9.5] - 2026-10-13
+
+### Fixed
+- Manual cleanup preserves nearby ink and the bytes and dimensions of unedited pages.
+- PDF export avoids reducing already-rendered pages twice. Consecutive scans within one second keep separate files.
+- Saved-folder recovery requires exact identity and content before deletion; uncertain exports remain visible for manual review.
+- Startup and delayed scanner callbacks preserve the restored document. Failed folder changes roll back settings.
+- Signatures retain rotated edges and use the current viewport for placement. Redaction previews match thin output strokes; fullscreen panning stays inside page bounds.
+- OCR region grouping accounts for page aspect ratio. Email boundaries and receipt amounts are parsed correctly.
+- Save waits for output edits to finish. Cleanup requires a ready preview. Czech hints and German theme labels match their controls.
+
+### Distribution
+- GitHub Full remains unlocked, without Ads, Billing or Premium. The separate Play build retains Ads + Premium, with bounded purchase acknowledgement retries and guarded ad callbacks.
+- OCR accuracy and model availability remain dependent on Google Play services; imperfect Czech diacritics were also reproduced on the previous release.
+
 ## [1.9.4] - 2026-10-12
 
 ### Fixed

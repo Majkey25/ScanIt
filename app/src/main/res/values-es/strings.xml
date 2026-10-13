@@ -314,7 +314,7 @@
     <string name="close">Cerrar</string>
     <string name="rename_file">Cambiar nombre del archivo</string>
     <string name="save_file_name">Guardar nombre del archivo</string>
-    <string name="invalid_file_name">Usa un nombre sin / \ : * ? &quot; &lt; &gt; ni |.</string>
+    <string name="invalid_file_name">Usa un nombre sin / \ : * ? &quot; &lt; &gt; ni |. El nombre no puede terminar con un punto.</string>
     <string name="safe_share">Compartir de forma segura</string>
     <string name="redact_document">Censurar documento</string>
     <string name="redact_document_scope_title">Censurar documento</string>

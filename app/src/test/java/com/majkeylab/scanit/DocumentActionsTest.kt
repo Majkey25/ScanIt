@@ -718,6 +718,31 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun decimalReceiptAmountsStopBeforeAdjacentNumericFieldsWithExactBounds() {
+        listOf("12.34", "1,234.56", "1\u00a0234,56").forEach { amount ->
+            listOf("2026-08-18", "2.00").forEach { nextField ->
+                val value = "USD $amount"
+                assertEquals(listOf(value), moneyEntityValues("$value $nextField").toList())
+                val candidates =
+                    buildDocumentEntityCandidates(entityFixtureWords(listOf("USD", amount, nextField)))
+                assertEquals(
+                    listOf(
+                        DocumentEntityCandidate(
+                            0, DocumentEntityKind.Money, value,
+                            NormalizedRect(0.02f, 0.2f, 0.13f, 0.24f),
+                        ),
+                    ),
+                    candidates.filter { it.kind == DocumentEntityKind.Money },
+                )
+                assertTrue(candidates.none { it.kind == DocumentEntityKind.Phone })
+            }
+        }
+        assertEquals(listOf("€12,34"), moneyEntityValues("€12,34 2").toList())
+        assertTrue(moneyEntityValues("USD 1 23,45").none())
+        assertTrue(moneyEntityValues("USD 12.34.56").none())
+    }
+
+    @Test
     fun receiptAmountsKeepNonbreakingThousandsAndCurrencySpaces() {
         val bounds = NormalizedRect(0f, 0f, 1f, 1f)
         listOf("\u00a0", "\u202f").forEach { space ->
@@ -926,6 +951,21 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun emailCandidatesRejectDoubleAtBoundariesBeforeContactActions() {
+        val bounds = NormalizedRect(0.1f, 0.2f, 0.4f, 0.3f)
+        listOf("a@b@example.com", "person@example.com@other.example").forEach { value ->
+            assertTrue(buildDocumentEntityCandidates(listOf(OcrElement(0, value, bounds))).isEmpty())
+        }
+        val address = "first.last+tag@example.com"
+        val candidate = buildDocumentEntityCandidates(listOf(OcrElement(0, address, bounds))).single()
+        assertEquals(DocumentEntityCandidate(0, DocumentEntityKind.Email, address, bounds), candidate)
+        assertEquals(
+            DetectedCodeAction.ComposeEmail(address, null, null),
+            systemActionForCandidate(candidate),
+        )
+    }
+
+    @Test
     fun splitSensitiveEntitiesKeepMatchedBoundsAndSharedActions() {
         val fixtures = listOf(
             Triple(listOf("+1", "202", "555", "0100"), DocumentEntityKind.Phone, "+1 202 555 0100"),
@@ -1051,6 +1091,53 @@ class DocumentActionsTest {
         tokens.mapIndexed { index, value ->
             OcrElement(0, value, NormalizedRect((index * 6 + 2) / 100f, 0.2f, (index * 6 + 7) / 100f, 0.24f))
         }
+
+    @Test
+    fun splitPhoneKeepsBoundsOnSquareTallAndWidePages() {
+        listOf(1000 to 1000, 1000 to 4000, 4000 to 1000).forEach { (width, height) ->
+            val words = listOf("+420", "123", "456", "789").mapIndexed { index, value ->
+                val left = 100 + index * 55
+                OcrElement(
+                    0, value,
+                    checkNotNull(normalizedRect(left, 400, left + 40, 420, width, height)),
+                    pageAspectRatio = width.toFloat() / height,
+                )
+            }
+            val candidates = buildDocumentEntityCandidates(words)
+            assertEquals(
+                listOf(
+                    DocumentEntityCandidate(
+                        0, DocumentEntityKind.Phone, "+420 123 456 789",
+                        checkNotNull(normalizedRect(100, 400, 305, 420, width, height)),
+                    ),
+                ),
+                candidates,
+            )
+        }
+    }
+
+    @Test
+    fun widePagePhoneWordsDoNotJoinAcrossGapLargerThanWordHeight() {
+        val words = listOf("+420", "123", "456", "789").mapIndexed { index, value ->
+            val left = 100 + index * 70
+            OcrElement(
+                0, value,
+                checkNotNull(normalizedRect(left, 400, left + 40, 420, 4000, 1000)),
+                pageAspectRatio = 4f,
+            )
+        }
+
+        assertTrue(buildDocumentEntityCandidates(words).isEmpty())
+    }
+
+    @Test
+    fun ocrPageAspectDefaultsToSquareAndRejectsInvalidValues() {
+        val bounds = NormalizedRect(0f, 0f, 1f, 1f)
+        assertEquals(1f, OcrElement(0, "text", bounds).pageAspectRatio)
+        listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach { ratio ->
+            expectFailure<IllegalArgumentException> { OcrElement(0, "text", bounds, ratio) }
+        }
+    }
 
     @Test
     fun entityCandidatesDeduplicateAndCapEachPage() {
