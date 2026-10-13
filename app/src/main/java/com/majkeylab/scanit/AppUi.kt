@@ -98,6 +98,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -119,6 +120,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -765,6 +767,11 @@ private fun ResultScreen(
     if (showDocumentActions) {
         DocumentActionPickerDialog(
             cleanWhiteboardAvailable = result.canCleanWhiteboard,
+            manualCleanupAvailable = manualCleanupAvailable(
+                previewLoading = result.pagePreviewLoading,
+                hasPreview = result.thumbnail != null,
+                sourceEditable = actionsEnabled && result.canCleanWhiteboard,
+            ),
             onDismiss = { showDocumentActions = false },
             onSafeShare = {
                 showDocumentActions = false
@@ -897,11 +904,16 @@ private fun FullscreenPreviewDialog(
     val preview = ownedResultPreview(page, 2048, onLoadPreview)
     var scale by remember(page) { mutableFloatStateOf(1f) }
     var offset by remember(page) { mutableStateOf(Offset.Zero) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+    val bitmapSize = preview.bitmap?.let { IntSize(it.width, it.height) } ?: IntSize.Zero
+    LaunchedEffect(viewportSize, bitmapSize) {
+        offset = clampFullscreenOffset(offset, viewportSize, bitmapSize, scale)
+    }
     val transformableState =
         rememberTransformableState { _, zoomChange, panChange, _ ->
             val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
             scale = nextScale
-            offset = if (nextScale == 1f) Offset.Zero else offset + panChange
+            offset = clampFullscreenOffset(offset + panChange, viewportSize, bitmapSize, nextScale)
         }
     val pagePosition =
         stringResource(
@@ -944,7 +956,7 @@ private fun FullscreenPreviewDialog(
                     }
                 }
                 Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f).onSizeChanged { viewportSize = it },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (preview.loading) {
@@ -1032,6 +1044,7 @@ private fun ownedResultPreview(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DocumentActionPickerDialog(
     cleanWhiteboardAvailable: Boolean,
+    manualCleanupAvailable: Boolean,
     onDismiss: () -> Unit,
     onSafeShare: () -> Unit,
     onRedactDocument: () -> Unit,
@@ -1123,6 +1136,7 @@ private fun DocumentActionPickerDialog(
                                         iconRes = documentActionIcon(action),
                                         labelRes = documentActionLabel(action),
                                         scopeRes = documentActionScope(action),
+                                        enabled = action != DocumentAction.ManualCleanup || manualCleanupAvailable,
                                         onClick = actionCallback,
                                     )
                                     if (index < actions.lastIndex) {
@@ -1236,10 +1250,12 @@ private fun DocumentActionPickerRow(
     iconRes: Int,
     labelRes: Int,
     scopeRes: Int,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         color = Color.Transparent,
         modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
     ) {
@@ -2405,7 +2421,7 @@ private fun FileDetails(
         if (saveTargets.isNotEmpty()) {
             Button(
                 onClick = onSaveNow,
-                enabled = !saveInProgress,
+                enabled = !saveInProgress && !outputChangeInProgress,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) {
                 ActionButtonContent(R.drawable.ic_save, if (saveInProgress) R.string.saving_now else R.string.save_now)

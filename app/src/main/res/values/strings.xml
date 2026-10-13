@@ -315,7 +315,7 @@
     <string name="close">Close</string>
     <string name="rename_file">Rename file</string>
     <string name="save_file_name">Save file name</string>
-    <string name="invalid_file_name">Use a name without / \ : * ? &quot; &lt; &gt; or |.</string>
+    <string name="invalid_file_name">Use a name without / \ : * ? &quot; &lt; &gt; or |. Do not end the name with a dot.</string>
     <string name="safe_share">Safe Share</string>
     <string name="redact_document">Redact document</string>
     <string name="redact_document_scope_title">Redact document</string>

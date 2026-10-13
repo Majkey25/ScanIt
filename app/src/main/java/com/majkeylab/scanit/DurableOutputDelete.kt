@@ -661,71 +661,19 @@ internal class ExactOutputDeleter(private val context: Context) {
         marker: ProvisionalOutputCreate,
         uriValue: String,
     ): OutputDeleteStatus {
-        val tree = marker.treeUri?.let(::exactContentUri)
-            ?: return OutputDeleteStatus.IdentityMismatch
-        val document = exactContentUri(uriValue) ?: return OutputDeleteStatus.IdentityMismatch
-        if (tree.authority != document.authority) return OutputDeleteStatus.IdentityMismatch
+        val treeUri = marker.treeUri ?: return OutputDeleteStatus.IdentityMismatch
+        val fingerprint = marker.fingerprint
+        if (fingerprint != null) {
+            return deleteSafOutput(uriValue, treeUri, marker.displayName, marker.mimeType, fingerprint)
+        }
+        // Legacy markers can confirm absence, but cannot authorize deletion.
         return providerDeleteResult {
-            if (!DocumentsContract.isTreeUri(tree) ||
-                !DocumentsContract.isDocumentUri(context, document) ||
-                resolver.persistedUriPermissions.none {
-                    it.uri == tree && it.isReadPermission && it.isWritePermission
-                }
-            ) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
-            val rootId = DocumentsContract.getTreeDocumentId(tree)
-            val documentId = DocumentsContract.getDocumentId(document)
-            val root = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
-            val displayName = marker.displayName
-            if (!safChildStructureIsValid(
-                    sameAuthority = true,
-                    rootDocumentId = rootId,
-                    returnedTreeDocumentId = DocumentsContract.getTreeDocumentId(document),
-                    returnedDocumentId = documentId,
-                    returnedUriIsCanonical =
-                        DocumentsContract.buildDocumentUriUsingTree(tree, documentId) == document,
-                ) ||
-                context.checkUriPermission(
-                    document,
-                    Process.myPid(),
-                    Process.myUid(),
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
-            when (querySafDocument(document, documentId, displayName, marker.mimeType)) {
-                ExactItemQuery.Absent ->
-                    confirmSafDocumentAbsent(
-                        root,
-                        rootId,
-                        document,
-                        documentId,
-                        displayName,
-                        marker.mimeType,
-                    )
+            when (querySafOutput(uriValue, treeUri, marker.displayName, marker.mimeType)) {
+                ExactItemQuery.Absent -> OutputDeleteStatus.Absent
                 ExactItemQuery.IdentityMismatch -> OutputDeleteStatus.IdentityMismatch
-                ExactItemQuery.Failed -> OutputDeleteStatus.Failed
-                ExactItemQuery.Exact -> {
-                    if (!DocumentsContract.isChildDocument(resolver, root, document)) {
-                        return@providerDeleteResult OutputDeleteStatus.IdentityMismatch
-                    }
-                    val deleted =
-                        try {
-                            DocumentsContract.deleteDocument(resolver, document)
-                        } catch (_: FileNotFoundException) {
-                            false
-                        }
-                    when (confirmSafDocumentAbsent(
-                        root,
-                        rootId,
-                        document,
-                        documentId,
-                        displayName,
-                        marker.mimeType,
-                    )) {
-                        OutputDeleteStatus.Absent ->
-                            if (deleted) OutputDeleteStatus.Deleted else OutputDeleteStatus.Absent
-                        else -> OutputDeleteStatus.Failed
-                    }
-                }
+                ExactItemQuery.Exact,
+                ExactItemQuery.Failed,
+                -> OutputDeleteStatus.Failed
             }
         }
     }

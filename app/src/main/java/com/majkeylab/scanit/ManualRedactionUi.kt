@@ -436,7 +436,7 @@ private fun ManualRedactionCanvas(
     }
 }
 
-private fun DrawScope.drawRedactionStroke(
+internal fun DrawScope.drawRedactionStroke(
     points: List<MarkPoint>,
     widthFraction: Float,
     tool: RedactionTool,
@@ -446,7 +446,7 @@ private fun DrawScope.drawRedactionStroke(
     pageHeight: Float,
 ) {
     val offsets = points.map { Offset(left + it.x * pageWidth, top + it.y * pageHeight) }
-    val width = (widthFraction * min(pageWidth, pageHeight)).coerceAtLeast(1f)
+    val width = widthFraction * min(pageWidth, pageHeight)
     if (offsets.size == 1) {
         val point = offsets.single()
         if (tool == RedactionTool.Line) {

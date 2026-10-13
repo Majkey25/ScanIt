@@ -135,6 +135,37 @@ class PdfSizePolicyTest {
     }
 
     @Test
+    fun pdfSamplingUsesTheActualRenderedScale() {
+        assertEquals(1, pdfSourceBaseSampleSize(4_080, 4_080))
+        assertEquals(2, relativePdfSourceSampleSize(pdfSourceBaseSampleSize(4_080, 4_080), 2))
+        assertEquals(4, relativePdfSourceSampleSize(pdfSourceBaseSampleSize(6_120, 3_060), 2))
+        assertEquals(4, pdfSourceBaseSampleSize(12_240, 3_060))
+        assertEquals(1, pdfSourceBaseSampleSize(4_500, 2_800))
+    }
+
+    @Test
+    fun pdfSamplingStillRespectsRendererMemoryBound() {
+        val requested = relativePdfSourceSampleSize(pdfSourceBaseSampleSize(12_000, 12_000), 2)
+        assertEquals(
+            4,
+            appearanceDecodeSampleSize(12_000, 9_000, minimumSampleSize = requested),
+        )
+    }
+
+    @Test
+    fun pdfSamplingHandlesRoundedEdgesAndRejectsInvalidDimensions() {
+        assertEquals(2, pdfSourceBaseSampleSize(6_121, 3_061))
+        assertEquals(2, pdfSourceBaseSampleSize(6_121, 3_060))
+        assertEquals(1, pdfSourceBaseSampleSize(1, 1))
+        assertEquals(2, pdfSourceBaseSampleSize(2, 1))
+        assertEquals(1, pdfSourceBaseSampleSize(1_280, 2_560))
+        assertEquals(1 shl 30, pdfSourceBaseSampleSize(Int.MAX_VALUE, 1))
+        assertThrows(IllegalArgumentException::class.java) { pdfSourceBaseSampleSize(0, 1) }
+        assertThrows(IllegalArgumentException::class.java) { pdfSourceBaseSampleSize(1, 0) }
+        assertThrows(IllegalArgumentException::class.java) { pdfSourceBaseSampleSize(-1, 1) }
+    }
+
+    @Test
     fun relativePdfSamplingKeepsRendererBaseBound() {
         assertEquals(1, relativePdfSourceSampleSize(1, 1))
         assertEquals(8, relativePdfSourceSampleSize(2, 4))

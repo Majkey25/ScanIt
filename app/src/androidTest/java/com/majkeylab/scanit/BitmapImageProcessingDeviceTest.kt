@@ -231,6 +231,10 @@ class BitmapImageProcessingDeviceTest {
             try {
                 assertTrue(Color.red(decoded.getPixel(128, 128)) >= 240)
                 assertTrue(Color.red(decoded.getPixel(20, 20)) <= 20)
+                assertTrue(
+                    "Cleanup erased nearby ink outside the lasso",
+                    Color.red(decoded.getPixel(184, 128)) <= 40,
+                )
                 assertTrue(Color.red(decoded.getPixel(230, 230)) >= 240)
             } finally {
                 decoded.recycle()
@@ -371,6 +375,7 @@ class BitmapImageProcessingDeviceTest {
             val paint = Paint().apply { color = Color.BLACK }
             canvas.drawRect(110f, 110f, 146f, 146f, paint)
             canvas.drawRect(10f, 10f, 30f, 30f, paint)
+            canvas.drawRect(181f, 120f, 187f, 136f, paint)
             source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, it)) }
         } finally {
             bitmap.recycle()

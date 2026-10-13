@@ -12,6 +12,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -22,6 +25,58 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StorageDeviceTest {
+    @Test
+    fun sameSecondScansPreserveBothCacheEntries() =
+        withScan(clock = Clock.fixed(Instant.parse("2026-10-13T11:20:00Z"), ZoneOffset.UTC)) { storage, first ->
+            val originals = (first.pages + first.sourcePages + first.pdf).associateWith(::fileFingerprint)
+            val second = storage.activateProvisionalCacheEntry(
+                storage.cacheScan(
+                    first.sourcePages.map(Uri::fromFile), googleScannerAppearanceSettings(), PdfSizeTarget.Original,
+                ).cached,
+            )
+            assertFalse(first.baseName == second.baseName)
+            assertEquals(first.entryId, checkNotNull(storage.openCachedScan(first.baseName)).entryId)
+            assertEquals(second.entryId, checkNotNull(storage.openCachedScan(second.baseName)).entryId)
+            originals.forEach { (file, expected) -> assertEquals(expected, fileFingerprint(file)) }
+        }
+
+    @Test
+    fun manualCleanupPreservesUntouchedLargePageBytesAndDimensions() =
+        withScan(pageCount = 2, dimensions = JpegDimensions(3060, 4080)) { storage, parent ->
+            assertEquals(JpegDimensions(3060, 4080), readJpegDimensions(parent.pages[1]))
+            val originals = (parent.sourcePages + parent.pages + parent.pdf)
+                .associateWith(::fileFingerprint)
+            val child = storage.createManualCleanupVariant(
+                parent,
+                selectedPageIndex = 0,
+                strokes = listOf(MarkStroke(listOf(
+                    MarkPoint(0.25f, 0.25f), MarkPoint(0.75f, 0.25f),
+                    MarkPoint(0.75f, 0.75f), MarkPoint(0.25f, 0.75f),
+                ))),
+            ).cached
+
+            assertEquals(originals.getValue(parent.pages[1]), fileFingerprint(child.pages[1]))
+            assertEquals(JpegDimensions(3060, 4080), readJpegDimensions(child.pages[1]))
+            assertEquals(originals.getValue(parent.sourcePages[1]), fileFingerprint(child.sourcePages[1]))
+            assertEquals(parent.appearanceSettings, child.appearanceSettings)
+            assertEquals(parent.pdfSizeTarget, child.pdfSizeTarget)
+            assertEquals(parent.baseName, child.parentCacheId)
+            assertEquals(parent.entryId, child.parentEntryId)
+            assertTrue(storage.isProvisionalCacheEntry(child))
+            assertTrue(child.pdf.length() > 0L)
+
+            val activated = storage.activateCheckpointProvisional(child)
+            val reopened = checkNotNull(storage.openCachedScan(activated.baseName))
+            assertEquals(originals.getValue(parent.pages[1]), fileFingerprint(reopened.pages[1]))
+            assertEquals(JpegDimensions(3060, 4080), readJpegDimensions(reopened.pages[1]))
+            assertFalse(storage.isProvisionalCacheEntry(reopened))
+            assertEquals(parent.entryId, checkNotNull(storage.openCachedScan(parent.baseName)).entryId)
+            originals.forEach { (file, expected) -> assertEquals(expected, fileFingerprint(file)) }
+        }
+
+    private fun fileFingerprint(file: File): OutputFingerprint =
+        file.inputStream().use { readOutputFingerprint(it, file.length()) }
+
     @Test
     fun textExportRejectsSymlinkedPayload() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -128,6 +183,9 @@ class StorageDeviceTest {
 
     private fun withScan(
         lines: List<String> = listOf("DOCUMENT TEST", "Reference 12345"),
+        pageCount: Int = 1,
+        dimensions: JpegDimensions = JpegDimensions(1200, 1600),
+        clock: Clock = Clock.systemDefaultZone(),
         test: (ScanStorage, CachedScan) -> Unit,
     ) {
         require(lines.size in 1..8 && lines.all { it.isNotBlank() && it.length <= 64 }) {
@@ -141,11 +199,11 @@ class StorageDeviceTest {
         val context = object : ContextWrapper(base) {
             override fun getCacheDir(): File = root
         }
-        val storage = ScanStorage(context)
+        val storage = ScanStorage(context, clock)
         var cached: CachedScan? = null
         try {
             val source = File(root, "fixture.jpg")
-            val bitmap = Bitmap.createBitmap(1200, 1600, Bitmap.Config.ARGB_8888)
+            val bitmap = Bitmap.createBitmap(dimensions.width, dimensions.height, Bitmap.Config.ARGB_8888)
             try {
                 val canvas = Canvas(bitmap)
                 canvas.drawColor(Color.WHITE)
@@ -169,7 +227,7 @@ class StorageDeviceTest {
             }
             cached = storage.activateProvisionalCacheEntry(
                 storage.cacheScan(
-                    listOf(Uri.fromFile(source)),
+                    List(pageCount) { Uri.fromFile(source) },
                     googleScannerAppearanceSettings(),
                     PdfSizeTarget.Original,
                 ).cached,

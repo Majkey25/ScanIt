@@ -312,7 +312,7 @@
     <string name="close">关闭</string>
     <string name="rename_file">重命名文件</string>
     <string name="save_file_name">保存文件名</string>
-    <string name="invalid_file_name">名称不能包含 / \ : * ? &quot; &lt; &gt; 或 |。</string>
+    <string name="invalid_file_name">名称不能包含 / \ : * ? &quot; &lt; &gt; 或 |，也不能以点结尾。</string>
     <string name="safe_share">安全分享</string>
     <string name="redact_document">遮盖文档</string>
     <string name="redact_document_scope_title">遮盖文档</string>

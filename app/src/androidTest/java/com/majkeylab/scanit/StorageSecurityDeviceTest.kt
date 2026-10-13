@@ -18,6 +18,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -29,6 +30,152 @@ import org.junit.Test
 class StorageSecurityDeviceTest {
     private val ownedPdfs = linkedMapOf<String, PdfOutputRef>()
     private val ownedImages = linkedMapOf<String, ImageOutputRef>()
+
+    @Test
+    fun provisionalSafPdfRecoveryRequiresExactBytes() = provisionalSafRecovery(true)
+
+    @Test
+    fun provisionalSafImageRecoveryRequiresExactBytes() = provisionalSafRecovery(false)
+
+    @Test
+    fun unknownSafCreateRetainsMarkerAndDoesNotFallBackToDownloads() =
+        withScan(1) { context, storage, cached ->
+            withTree(context, SecurityProviderMode.Stable) { tree ->
+                val parent = DocumentsContract.buildDocumentUriUsingTree(tree, SECURITY_ROOT_ID)
+                // Exhaust the existing fixture's bounded capacity to fail inside provider creation.
+                repeat(8) { index ->
+                    checkNotNull(DocumentsContract.createDocument(
+                        context.contentResolver, parent, "application/pdf", "occupied-$index.pdf",
+                    ))
+                }
+                val before = outputs(cached)
+                val failure = rejection { storage.savePdf(cached, "SeliaScanSecurityTest", tree.toString()) }
+                rememberMedia(cached)
+                assertNotNull("Unknown SAF outcome must not become a successful Downloads save", failure)
+                assertEquals(before, outputs(cached))
+                val directory = checkNotNull(cached.pdf.parentFile)
+                val marker = JSONObject(File(directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).readText())
+                assertTrue(marker.has("returnedUri") && marker.isNull("returnedUri"))
+                val expected = fingerprint(cached.pdf)
+                assertEquals(expected.byteLength, marker.getLong("byteLength"))
+                assertEquals(expected.sha256, marker.getString("sha256"))
+                val reopened = checkNotNull(ScanStorage(context).openSavedScan(cached.baseName))
+                assertFalse(reopened.outputMetadataValid)
+                val acknowledgement = checkNotNull(reopened.unknownOutputCreateAcknowledgement)
+                assertEquals(
+                    UnknownOutputAcknowledgementResult.Applied,
+                    storage.acknowledgeUnknownOutputCreate(cached, acknowledgement),
+                )
+                assertTrue(checkNotNull(storage.openSavedScan(cached.baseName)).outputMetadataValid)
+                assertEquals(8, fixtureCall(context, "fixture_stats").getInt("created"))
+            }
+        }
+
+    private fun provisionalSafRecovery(pdf: Boolean) =
+        withScan(1) { context, _, cached ->
+            withTree(context, SecurityProviderMode.Stable) { tree ->
+                val resolver = context.contentResolver
+                val parent = DocumentsContract.buildDocumentUriUsingTree(tree, SECURITY_ROOT_ID)
+                val source = if (pdf) cached.pdf else cached.pages.single()
+                val original = source.readBytes()
+                val expected = fingerprint(source)
+                val changed = original.copyOf().apply { this[lastIndex] = (last().toInt() xor 1).toByte() }
+                val cases = listOf(
+                    null to original,
+                    expected to changed,
+                    expected to original.copyOf(original.size - 1),
+                    expected to byteArrayOf(),
+                    expected to original,
+                )
+                val mime = if (pdf) "application/pdf" else "image/jpeg"
+                val extension = if (pdf) "pdf" else "jpg"
+                val directory = checkNotNull(cached.pdf.parentFile)
+                val before = outputs(cached)
+                cases.forEachIndexed { index, (fingerprint, bytes) ->
+                    val name = "provisional-$index.$extension"
+                    val document = checkNotNull(DocumentsContract.createDocument(resolver, parent, mime, name))
+                    checkNotNull(resolver.openOutputStream(document, "wt")).use { it.write(bytes) }
+                    // Raw disk format also runs against the saved baseline APK's older constructor.
+                    var marker = JSONObject()
+                        .put("version", 1)
+                        .put("operationId", java.util.UUID.randomUUID().toString())
+                        .put("cacheId", cached.baseName)
+                        .put("entryId", checkNotNull(cached.entryId))
+                        .put("kind", if (pdf) "Pdf" else "Image")
+                        .put("page", if (pdf) JSONObject.NULL else 1)
+                        .put("provider", "Saf")
+                        .put("displayName", name)
+                        .put("mimeType", mime)
+                        .put("treeUri", tree.toString())
+                        .put("returnedUri", document.toString())
+                        .also { value ->
+                            fingerprint?.let {
+                                value.put("byteLength", it.byteLength).put("sha256", it.sha256)
+                            }
+                        }
+                        .toString()
+                    val markerFile = File(directory, PROVISIONAL_OUTPUT_CREATE_FILE_NAME)
+                    markerFile.writeText(marker)
+                    val fresh = ScanStorage(context)
+                    val reopened = checkNotNull(fresh.openSavedScan(cached.baseName))
+                    val removed = index == cases.lastIndex
+                    assertFalse("case $index must remain blocked until acknowledgement", reopened.outputMetadataValid)
+                    assertEquals(marker, markerFile.readText())
+                    val acknowledgement = checkNotNull(reopened.unknownOutputCreateAcknowledgement)
+                    val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, SECURITY_ROOT_ID)
+                    checkNotNull(resolver.query(children, arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)).use {
+                        assertEquals("case $index", removed, !it.moveToFirst())
+                        if (!removed) {
+                            assertEquals(DocumentsContract.getDocumentId(document), it.getString(0))
+                            assertFalse(it.moveToNext())
+                        }
+                    }
+                    if (!removed) {
+                        checkNotNull(resolver.openInputStream(document)).use {
+                            org.junit.Assert.assertArrayEquals(bytes, it.readBytes())
+                        }
+                        assertEquals(
+                            UnknownOutputAcknowledgementResult.Applied,
+                            fresh.acknowledgeUnknownOutputCreate(cached, acknowledgement),
+                        )
+                        assertFalse(markerFile.exists())
+                        assertTrue(checkNotNull(fresh.openSavedScan(cached.baseName)).outputMetadataValid)
+                        // Acknowledgement must leave even partial or unverified provider bytes untouched.
+                        checkNotNull(resolver.openInputStream(document)).use {
+                            org.junit.Assert.assertArrayEquals(bytes, it.readBytes())
+                        }
+                        marker = JSONObject(marker)
+                            .put("operationId", java.util.UUID.randomUUID().toString()).toString()
+                        markerFile.writeText(marker)
+                        assertEquals(
+                            UnknownOutputAcknowledgementResult.Stale,
+                            fresh.acknowledgeUnknownOutputCreate(cached, acknowledgement),
+                        )
+                        assertEquals(marker, markerFile.readText())
+                        assertTrue(DocumentsContract.deleteDocument(resolver, document))
+                    }
+                    // Query the live parent: Android rejects the deleted child's tree URI.
+                    checkNotNull(resolver.query(children, arrayOf(Document.COLUMN_DOCUMENT_ID), null, null, null)).use {
+                        assertFalse(it.moveToFirst())
+                    }
+                    val afterRemoval = checkNotNull(fresh.openSavedScan(cached.baseName))
+                    assertFalse(afterRemoval.outputMetadataValid)
+                    assertEquals(marker, markerFile.readText())
+                    val currentAcknowledgement = checkNotNull(afterRemoval.unknownOutputCreateAcknowledgement)
+                    assertEquals(
+                        UnknownOutputAcknowledgementResult.Applied,
+                        fresh.acknowledgeUnknownOutputCreate(cached, currentAcknowledgement),
+                    )
+                    assertFalse(markerFile.exists())
+                    assertTrue(checkNotNull(fresh.openSavedScan(cached.baseName)).outputMetadataValid)
+                    assertEquals(
+                        UnknownOutputAcknowledgementResult.Absent,
+                        fresh.acknowledgeUnknownOutputCreate(cached, currentAcknowledgement),
+                    )
+                    assertEquals(before, outputs(cached))
+                }
+            }
+        }
 
     @Test fun pdfRejectsChangedId() = invalidReplacement(SecurityProviderMode.WrongIdAfterBytes, true)
     @Test fun imageRejectsChangedId() = invalidReplacement(SecurityProviderMode.WrongIdAfterBytes, false)

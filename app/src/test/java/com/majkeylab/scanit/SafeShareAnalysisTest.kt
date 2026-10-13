@@ -24,6 +24,48 @@ class SafeShareAnalysisTest {
     }
 
     @Test
+    fun decimalReceiptAmountBesideDateDoesNotBecomeAPhoneRedaction() {
+        val snapshot =
+            DocumentOcrSnapshot(
+                pageTexts = listOf("USD 12.34 2026-08-18"),
+                elements =
+                    listOf(
+                        OcrElement(0, "USD", NormalizedRect(0.02f, 0.2f, 0.07f, 0.24f)),
+                        OcrElement(0, "12.34", NormalizedRect(0.08f, 0.2f, 0.13f, 0.24f)),
+                        OcrElement(0, "2026-08-18", NormalizedRect(0.14f, 0.2f, 0.19f, 0.24f)),
+                    ),
+                truncated = false,
+            )
+
+        assertEquals(emptyList<RedactionSuggestion>(), safeShareEntitySuggestions(snapshot))
+    }
+
+    @Test
+    fun selectedTallPageKeepsAspectMetadataAndSplitPhoneProtection() {
+        val words = listOf("+420", "123", "456", "789").mapIndexed { index, value ->
+            val left = 100 + index * 55
+            OcrElement(
+                2, value,
+                checkNotNull(normalizedRect(left, 400, left + 40, 420, 1000, 4000)),
+                pageAspectRatio = 0.25f,
+            )
+        }
+        val snapshot = DocumentOcrSnapshot(listOf("", "", "+420 123 456 789"), words, false)
+            .selectSafeSharePages(listOf(IndexedValue(2, java.io.File("page-2.jpg"))))
+
+        assertEquals(words.map { it.copy(page = 0) }, snapshot.elements)
+        assertEquals(
+            listOf(
+                RedactionSuggestion(
+                    0, SensitiveRegionKind.Phone,
+                    checkNotNull(normalizedRect(100, 400, 305, 420, 1000, 4000)),
+                ),
+            ),
+            safeShareEntitySuggestions(snapshot),
+        )
+    }
+
+    @Test
     fun truncatedOcrCannotProduceAnApparentlyCompleteReview() {
         val snapshot =
             DocumentOcrSnapshot(

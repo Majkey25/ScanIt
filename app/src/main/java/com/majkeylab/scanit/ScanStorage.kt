@@ -606,7 +606,6 @@ internal fun buildProtectedScanPdf(
             require(bounds.width > 0 && bounds.height > 0) {
                 "Protected PDF page dimensions are invalid"
             }
-            val baseSample = appearanceDecodeSampleSize(bounds.width, bounds.height)
             ScanPdfBuildPage(
                 longestEdge = maxOf(bounds.width, bounds.height),
                 renderJpeg = { workingDirectory, sampleMultiplier ->
@@ -614,10 +613,8 @@ internal fun buildProtectedScanPdf(
                         JpegPdfPage(page, bounds.width, bounds.height)
                     } else {
                         val destination = File(workingDirectory, "page-${index + 1}.jpg")
-                        val sampleSize =
-                            relativePdfSourceSampleSize(baseSample, sampleMultiplier)
                         val rendered =
-                            renderSampledPage?.invoke(page, destination, sampleSize)
+                            renderSampledPage?.invoke(page, destination, sampleMultiplier)
                                 ?: ScanAppearanceRenderer.renderJpeg(
                                     source = page,
                                     destination = destination,
@@ -627,7 +624,7 @@ internal fun buildProtectedScanPdf(
                                             intensity = 0,
                                             shadows = 0,
                                         ),
-                                    minimumSampleSize = sampleSize,
+                                    minimumSampleSize = sampleMultiplier,
                                     isCancelled = isCancelled,
                                 )
                         JpegPdfPage(
@@ -2058,9 +2055,13 @@ internal class ScanStorage(
             require(pageUris.isNotEmpty()) { "Scanner returned no pages" }
             require(isAcceptedScanPageCount(pageUris.size)) { "Scanner returned too many pages" }
             val orientations = validatedScannerPageOrientations(pageUris.size, pageOrientations)
-            val baseName = scanBaseName(clock)
             val appearance = appearanceSettings.selected()
             val shareRoot = ensureShareRoot(shareCacheRoot())
+            val requestedBaseName = scanBaseName(clock)
+            val baseName =
+                if (File(shareRoot, requestedBaseName).exists()) {
+                    recentScanCache.nextDerivedCacheId(requestedBaseName, "scan")
+                } else requestedBaseName
             val finalDirectory = File(shareRoot, baseName)
             val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
             if (!workDirectory.mkdir()) {
@@ -2364,13 +2365,18 @@ internal class ScanStorage(
                     )
                 val renderedPages =
                     sourcePages.mapIndexed { index, page ->
+                        if (isCancelled()) throw CancellationException("Manual cleanup cancelled")
                         File(workDirectory, scanPageFileName(baseName, index + 1)).also { destination ->
-                            ScanAppearanceRenderer.renderJpeg(
-                                page,
-                                destination,
-                                appearance,
-                                isCancelled = isCancelled,
-                            )
+                            if (index == selectedPageIndex) {
+                                ScanAppearanceRenderer.renderJpeg(
+                                    page,
+                                    destination,
+                                    appearance,
+                                    isCancelled = isCancelled,
+                                )
+                            } else {
+                                copyDerivedSourcePage(source.pages[index], destination)
+                            }
                         }
                     }
                 val pdfBuild =
@@ -2878,6 +2884,7 @@ internal class ScanStorage(
                 displayName = displayName,
                 mimeType = PDF_MIME_TYPE,
                 treeUri = treeUri,
+                fingerprint = fingerprint.takeIf { treeUri != null },
             )
         val result =
             replacementFor(cached, reconcileLocalPdf).replacePdf(
@@ -3411,6 +3418,7 @@ internal class ScanStorage(
                             displayName,
                             output.mimeType,
                             treeUri,
+                            fingerprint = if (treeUri == null) null else fingerprintFile(output.file),
                         )
                     if (treeUri == null) {
                         val values =
@@ -4021,6 +4029,7 @@ internal class ScanStorage(
         displayName: String,
         mimeType: String,
         treeUri: String?,
+        fingerprint: OutputFingerprint? = null,
     ): ProvisionalOutputCreate =
         ProvisionalOutputCreate(
             operationId = UUID.randomUUID().toString(),
@@ -4034,6 +4043,7 @@ internal class ScanStorage(
             mimeType = mimeType,
             treeUri = treeUri,
             returnedUri = null,
+            fingerprint = fingerprint,
         )
 
     private fun writeProvisionalOutputCreate(
@@ -4437,13 +4447,18 @@ internal class ScanStorage(
         }
         val sourceFingerprint = fingerprintFile(source)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)
+        if (provisional.fingerprint != sourceFingerprint) {
+            throw IOException("SAF source fingerprint changed before creation")
+        }
         var document: Uri? = null
+        var createAttempted = false
         var observedIdentity = provisional
         try {
             document =
                 createProviderOutputWithMarker(
                     beforeCreate = beforeCreate,
                     create = {
+                        createAttempted = true
                         DocumentsContract.createDocument(resolver, parent, mimeType, displayName)
                             ?.also { document = it }
                     },
@@ -4470,14 +4485,14 @@ internal class ScanStorage(
             if (verified.displayName != row.displayName) onIdentified(createdDocument, verified.displayName)
             return verified
         } catch (cancellation: CancellationException) {
-            if (!deleteCreatedSafOutput(observedIdentity, document)) {
+            if (!deleteCreatedSafOutput(observedIdentity, document, createAttempted)) {
                 cancellation.addSuppressed(
                     IOException("An unverified SAF output may require manual cleanup"),
                 )
             }
             throw cancellation
         } catch (failure: Exception) {
-            val outputCreated = !deleteCreatedSafOutput(observedIdentity, document)
+            val outputCreated = !deleteCreatedSafOutput(observedIdentity, document, createAttempted)
             if (outputCreated) {
                 failure.addSuppressed(
                     IOException("An unverified SAF output may require manual cleanup"),
@@ -4490,8 +4505,9 @@ internal class ScanStorage(
     private fun deleteCreatedSafOutput(
         provisional: ProvisionalOutputCreate,
         document: Uri?,
+        createAttempted: Boolean,
     ): Boolean {
-        if (document == null) return true
+        if (document == null) return !createAttempted
         val exact =
             provisional.copy(
                 returnedUri = document.toString(),

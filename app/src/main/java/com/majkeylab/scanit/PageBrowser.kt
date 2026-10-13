@@ -1,5 +1,8 @@
 package com.majkeylab.scanit
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
+
 internal const val RESULT_ACTION_MIN_HEIGHT_DP = 48
 
 internal fun appearanceEditorUsesSplitLayout(widthPx: Int, heightPx: Int): Boolean =
@@ -26,6 +29,29 @@ internal fun restoredResultPageIndex(
         selectedIndex = if (savedCacheId == targetCacheId) savedPageIndex ?: 0 else 0,
         pageCount = pageCount,
     )
+
+internal fun manualCleanupAvailable(
+    previewLoading: Boolean,
+    hasPreview: Boolean,
+    sourceEditable: Boolean,
+): Boolean = !previewLoading && hasPreview && sourceEditable
+
+internal fun clampFullscreenOffset(
+    offset: Offset,
+    viewport: IntSize,
+    bitmap: IntSize,
+    scale: Float,
+): Offset {
+    if (scale <= 1f || viewport.width <= 0 || viewport.height <= 0 ||
+        bitmap.width <= 0 || bitmap.height <= 0) return Offset.Zero
+    val fit = minOf(viewport.width.toFloat() / bitmap.width, viewport.height.toFloat() / bitmap.height)
+    val maxX = ((bitmap.width * fit * scale - viewport.width) / 2f).coerceAtLeast(0f)
+    val maxY = ((bitmap.height * fit * scale - viewport.height) / 2f).coerceAtLeast(0f)
+    return Offset(
+        if (maxX == 0f) 0f else offset.x.coerceIn(-maxX, maxX),
+        if (maxY == 0f) 0f else offset.y.coerceIn(-maxY, maxY),
+    )
+}
 
 internal data class ResultPageLoad(
     val cacheId: String,

@@ -1,5 +1,7 @@
 package com.majkeylab.scanit
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -88,6 +90,58 @@ class PageBrowserTest {
                 pageCount = 4,
             ),
         )
+    }
+
+    @Test
+    fun manualCleanupNeedsReadyPreviewAndEditableSource() {
+        assertFalse(manualCleanupAvailable(previewLoading = true, hasPreview = true, sourceEditable = true))
+        assertFalse(manualCleanupAvailable(previewLoading = false, hasPreview = false, sourceEditable = true))
+        assertFalse(manualCleanupAvailable(previewLoading = false, hasPreview = true, sourceEditable = false))
+        assertTrue(manualCleanupAvailable(previewLoading = false, hasPreview = true, sourceEditable = true))
+    }
+
+    @Test
+    fun fullscreenPanUsesFittedBitmapRatherThanViewportBounds() {
+        assertEquals(
+            Offset(0f, 200f),
+            clampFullscreenOffset(Offset(1_000f, 1_000f), IntSize(600, 400), IntSize(100, 200), 2f),
+        )
+        assertEquals(
+            Offset(-200f, 0f),
+            clampFullscreenOffset(Offset(-1_000f, -1_000f), IntSize(400, 600), IntSize(200, 100), 2f),
+        )
+    }
+
+    @Test
+    fun fullscreenPanClampsBothDirectionsAndPreservesValidTranslation() {
+        val viewport = IntSize(400, 300)
+        val bitmap = IntSize(100, 100)
+        assertEquals(Offset(100f, 150f), clampFullscreenOffset(Offset(1_000f, 1_000f), viewport, bitmap, 2f))
+        assertEquals(Offset(-100f, -150f), clampFullscreenOffset(Offset(-1_000f, -1_000f), viewport, bitmap, 2f))
+        assertEquals(Offset(42f, -73f), clampFullscreenOffset(Offset(42f, -73f), viewport, bitmap, 2f))
+        assertEquals(Offset(25f, 75f), clampFullscreenOffset(Offset(100f, 150f), viewport, bitmap, 1.5f))
+    }
+
+    @Test
+    fun fullscreenPanReclampsAfterViewportAndBitmapChanges() {
+        val bitmap = IntSize(400, 400)
+        val offset = clampFullscreenOffset(Offset(1_000f, 1_000f), IntSize(600, 400), bitmap, 2f)
+        assertEquals(Offset(100f, 200f), offset)
+        val resized = clampFullscreenOffset(offset, IntSize(400, 600), bitmap, 2f)
+        assertEquals(Offset(100f, 100f), resized)
+        assertEquals(
+            Offset(100f, 0f),
+            clampFullscreenOffset(resized, IntSize(400, 600), IntSize(800, 200), 2f),
+        )
+    }
+
+    @Test
+    fun fullscreenPanResetsAtFitScaleAndWithoutMeasuredContent() {
+        val offset = Offset(100f, -200f)
+        val size = IntSize(400, 600)
+        assertEquals(Offset.Zero, clampFullscreenOffset(offset, size, size, 1f))
+        assertEquals(Offset.Zero, clampFullscreenOffset(offset, IntSize.Zero, size, 2f))
+        assertEquals(Offset.Zero, clampFullscreenOffset(offset, size, IntSize.Zero, 2f))
     }
 
     @Test

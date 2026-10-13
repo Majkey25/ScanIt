@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -478,13 +479,6 @@ private fun VisualMarkPreview(
                     val pageBitmap = page ?: return@pointerInput
                     val markBitmap = mark ?: return@pointerInput
                     if (!enabled) return@pointerInput
-                    val scale =
-                        min(
-                            size.width.toFloat() / pageBitmap.width,
-                            size.height.toFloat() / pageBitmap.height,
-                        )
-                    val pageWidth = pageBitmap.width * scale
-                    val pageHeight = pageBitmap.height * scale
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
                         var gesturePlacement = currentPlacement
@@ -494,10 +488,15 @@ private fun VisualMarkPreview(
                             val zoom = event.calculateZoom()
                             val rotation = event.calculateRotation()
                             if (pan != Offset.Zero || zoom != 1f || rotation != 0f) {
+                                val scale =
+                                    min(
+                                        size.width.toFloat() / pageBitmap.width,
+                                        size.height.toFloat() / pageBitmap.height,
+                                    )
                                 gesturePlacement =
                                     transformMarkPlacement(
-                                        pageWidth = pageWidth,
-                                        pageHeight = pageHeight,
+                                        pageWidth = pageBitmap.width * scale,
+                                        pageHeight = pageBitmap.height * scale,
                                         markWidth = markBitmap.width,
                                         markHeight = markBitmap.height,
                                         placement = gesturePlacement,
@@ -614,7 +613,9 @@ private fun DrawVisualMarkDialog(
                 }
                 Canvas(
                     modifier =
-                        Modifier.fillMaxWidth().height(220.dp).background(Color.White)
+                        Modifier.fillMaxWidth()
+                            .aspectRatio(DRAWN_MARK_WIDTH.toFloat() / DRAWN_MARK_HEIGHT)
+                            .background(Color.White)
                             .border(1.dp, Color.Gray)
                             .semantics { contentDescription = description }
                             .focusable()

@@ -169,6 +169,14 @@ internal fun isBitonalPdfEligible(appearance: ScanAppearance): Boolean =
     appearance.colorMode == ScanColorMode.BlackWhite &&
         clampAppearancePercent(appearance.intensity) == 100
 
+internal fun pdfSourceBaseSampleSize(sourceEdge: Int, renderedEdge: Int): Int {
+    require(sourceEdge > 0 && renderedEdge > 0) { "PDF page edges must be positive" }
+    // JPEG sampling may round an odd source edge up or down.
+    val ratio =
+        if (renderedEdge == 1) sourceEdge else (sourceEdge - 1) / (renderedEdge - 1)
+    return Integer.highestOneBit(ratio.coerceAtLeast(1))
+}
+
 internal fun relativePdfSourceSampleSize(
     baseSampleSize: Int,
     profileMultiplier: Int,

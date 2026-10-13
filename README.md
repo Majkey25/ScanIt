@@ -20,6 +20,15 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.5 Document reliability
+
+Manual cleanup preserves nearby text and leaves unedited pages unchanged. PDF
+export avoids reducing page resolution twice. Fast consecutive scans get unique
+names, and storage recovery never deletes an unverified external file. Restored
+scans, signatures, redaction and fullscreen navigation have regression fixes.
+The stable GitHub edition is fully unlocked without ads or Premium; the labelled
+Ads + Premium archive backs up the separate Google Play edition.
+
 ## v1.9.4 Reliability and memory fixes
 
 Cancelled edits clean up their own temporary working copies. Printing reports

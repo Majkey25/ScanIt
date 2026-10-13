@@ -313,7 +313,7 @@
     <string name="close">Schließen</string>
     <string name="rename_file">Datei umbenennen</string>
     <string name="save_file_name">Dateinamen speichern</string>
-    <string name="invalid_file_name">Verwende einen Namen ohne / \ : * ? &quot; &lt; &gt; oder |.</string>
+    <string name="invalid_file_name">Verwende einen Namen ohne / \ : * ? &quot; &lt; &gt; oder |. Der Name darf nicht mit einem Punkt enden.</string>
     <string name="safe_share">Sicher teilen</string>
     <string name="redact_document">Dokument schwärzen</string>
     <string name="redact_document_scope_title">Dokument schwärzen</string>
