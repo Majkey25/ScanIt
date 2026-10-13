@@ -291,6 +291,30 @@ class VariantHandoffDeviceTest {
     }
 
     @Test(timeout = 15_000)
+    fun replayedOutputTreeResultCannotReplacePendingSelection() = runBlocking {
+        withRestoreFixture { fixture ->
+            fixture.storage.activateCheckpointProvisional(fixture.cached)
+            val request = OutputChangeRequest(
+                fixture.cached.baseName, checkNotNull(fixture.cached.entryId), OutputChangeKind.PdfLocation, 1L,
+            )
+            val handle = resultRestoreHandle(request.cacheId)
+            val pending = OutputTreeSavedState(handle)
+            assertTrue(pending.saveLaunch(request))
+            assertTrue(pending.claimLaunch(request))
+            val first = Uri.parse("content://qa.documents/tree/first")
+            val replay = Uri.parse("content://qa.documents/tree/replay")
+            fixture.restore(handle) { viewModel ->
+                assertEquals(OutputTreeCallbackDisposition.Accepted, viewModel.outputTreePickerSelected(request, first, PDF_TREE_FLAGS))
+                val replayDisposition = viewModel.outputTreePickerSelected(request, replay, PDF_TREE_FLAGS)
+                assertEquals(first.toString(), pending.pendingSelection()?.uri)
+                assertEquals(OutputTreeCallbackDisposition.DefiniteStale, replayDisposition)
+                assertEquals(OutputTreeCallbackDisposition.DefiniteStale, viewModel.outputTreePickerCancelled(request))
+                assertEquals(first.toString(), pending.pendingSelection()?.uri)
+            }
+        }
+    }
+
+    @Test(timeout = 15_000)
     fun outputTreeCancellationBeforeBootstrapStillRestoresItsResult() = runBlocking {
         withRestoreFixture { fixture ->
             fixture.storage.activateCheckpointProvisional(fixture.cached)

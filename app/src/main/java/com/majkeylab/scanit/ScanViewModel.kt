@@ -969,7 +969,10 @@ internal class ScanViewModel(
     fun outputTreePickerCancelled(
         request: OutputChangeRequest,
     ): OutputTreeCallbackDisposition {
-        if (outputChangeGate.active != request) {
+        if (outputChangeGate.active != request ||
+            outputTreeSavedState.activeRequest() != request ||
+            outputTreeSavedState.pendingSelection() != null
+        ) {
             return OutputTreeCallbackDisposition.DefiniteStale
         }
         finishOutputChange(request)
@@ -981,7 +984,10 @@ internal class ScanViewModel(
         treeUri: Uri,
         grantFlags: Int,
     ): OutputTreeCallbackDisposition {
-        if (outputChangeGate.active != request) {
+        if (outputChangeGate.active != request ||
+            outputTreeSavedState.activeRequest() != request ||
+            outputTreeSavedState.pendingSelection() != null
+        ) {
             return OutputTreeCallbackDisposition.DefiniteStale
         }
         val selection =

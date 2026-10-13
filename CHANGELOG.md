@@ -9,6 +9,7 @@ All notable changes are documented here.
 - PDF export avoids reducing already-rendered pages twice. Consecutive scans within one second keep separate files.
 - Saved-folder recovery requires exact identity and content before deletion; uncertain exports remain visible for manual review.
 - Startup and delayed scanner callbacks preserve the restored document. Failed folder changes roll back settings.
+- Repeated folder-picker results cannot replace or cancel the first accepted selection.
 - Signatures retain rotated edges and use the current viewport for placement. Redaction previews match thin output strokes; fullscreen panning stays inside page bounds.
 - OCR region grouping accounts for page aspect ratio. Email boundaries and receipt amounts are parsed correctly.
 - Save waits for output edits to finish. Cleanup requires a ready preview. Czech hints and German theme labels match their controls.
