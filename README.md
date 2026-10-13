@@ -20,6 +20,12 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.6 Calendar QR compatibility
+
+Calendar QR codes without clock values retain their dates. Wi-Fi QR actions open
+the standard system settings page. The GitHub edition remains fully unlocked and
+ad-free; Google Play retains the separate Ads + Premium edition.
+
 ## v1.9.5 Document reliability
 
 Manual cleanup preserves nearby text and leaves unedited pages unchanged. PDF

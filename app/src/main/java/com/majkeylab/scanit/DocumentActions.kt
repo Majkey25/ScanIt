@@ -807,9 +807,9 @@ private fun calendarDateTimeMillis(value: Barcode.CalendarDateTime): Long? =
             value.year,
             value.month,
             value.day,
-            value.hours,
-            value.minutes,
-            value.seconds,
+            if (value.hours == -1) 0 else value.hours,
+            if (value.minutes == -1) 0 else value.minutes,
+            if (value.seconds == -1) 0 else value.seconds,
         ).atZone(if (value.isUtc) ZoneOffset.UTC else ZoneId.systemDefault())
             .toInstant()
             .toEpochMilli()

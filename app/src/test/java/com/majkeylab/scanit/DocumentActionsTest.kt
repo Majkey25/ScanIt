@@ -1268,6 +1268,48 @@ class DocumentActionsTest {
     }
 
     @Test
+    fun calendarBarcodeAcceptsUnsetTimeComponents() {
+        for ((time, expected) in listOf(
+            Triple(-1, -1, -1) to "2026-10-13T00:00:00Z",
+            Triple(-1, 30, 45) to "2026-10-13T00:30:45Z",
+            Triple(12, -1, 45) to "2026-10-13T12:00:45Z",
+            Triple(12, 30, -1) to "2026-10-13T12:30:00Z",
+        )) {
+            assertEquals(
+                DetectedCodeAction.CreateCalendarEvent("Appointment", Instant.parse(expected).toEpochMilli(), null),
+                validatedCalendarAction(
+                    "Appointment",
+                    Barcode.CalendarDateTime(2026, 10, 13, time.first, time.second, time.third, true, "ignored"),
+                    null,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun calendarBarcodeRejectsOtherInvalidTimeComponents() {
+        for (time in listOf(
+            Triple(-2, 0, 0), Triple(0, -2, 0), Triple(0, 0, -2),
+            Triple(24, 0, 0), Triple(0, 60, 0), Triple(0, 0, 60),
+        )) {
+            assertNull(
+                validatedCalendarAction(
+                    "Appointment",
+                    Barcode.CalendarDateTime(2026, 10, 13, time.first, time.second, time.third, true, "ignored"),
+                    null,
+                ),
+            )
+        }
+        assertNull(
+            validatedCalendarAction(
+                "Appointment",
+                Barcode.CalendarDateTime(2026, 10, 13, 12, 30, 45, true, "ignored"),
+                Barcode.CalendarDateTime(2026, 10, 13, 12, 30, -1, true, "ignored"),
+            ),
+        )
+    }
+
+    @Test
     fun detectedCodeCarriesValidatedBoundsAndTypedAction() {
         val bounds = NormalizedRect(0.1f, 0.2f, 0.4f, 0.6f)
 

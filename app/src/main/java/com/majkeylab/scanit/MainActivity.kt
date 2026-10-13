@@ -722,7 +722,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                         ),
                         getString(R.string.open_map),
                     )
-                is DetectedCodeAction.OpenWifiSettings -> Intent(Settings.Panel.ACTION_WIFI)
+                is DetectedCodeAction.OpenWifiSettings -> Intent(Settings.ACTION_WIFI_SETTINGS)
             }
         try {
             startActivity(intent)
