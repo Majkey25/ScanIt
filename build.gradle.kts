@@ -4,9 +4,9 @@ buildscript {
         resolutionStrategy.force(
             "org.apache.commons:commons-lang3:3.18.0",
             "org.bitbucket.b_c:jose4j:0.9.6",
-            "org.bouncycastle:bcpkix-jdk18on:1.84",
-            "org.bouncycastle:bcprov-jdk18on:1.84",
-            "org.bouncycastle:bcutil-jdk18on:1.84",
+            "org.bouncycastle:bcpkix-jdk18on:1.85",
+            "org.bouncycastle:bcprov-jdk18on:1.85",
+            "org.bouncycastle:bcutil-jdk18on:1.85",
             "org.jdom:jdom2:2.0.6.1",
         )
     }
