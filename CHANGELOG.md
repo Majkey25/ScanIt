@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## [1.9.6] - 2026-10-13
+
+### Fixed
+- Calendar QR codes with unspecified clock components keep their valid dates instead of losing the calendar action. Other invalid times remain rejected.
+- Wi-Fi QR actions open the standard system Wi-Fi settings page, without depending on optional Settings Panels.
+
+### Distribution
+- GitHub Full remains unlocked and ad-free. The separate Play edition retains Ads + Premium.
+
 ## [1.9.5] - 2026-10-13
 
 ### Fixed
