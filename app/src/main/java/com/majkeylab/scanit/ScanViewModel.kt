@@ -10,7 +10,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.UUID
@@ -251,7 +250,7 @@ internal class DocumentTextExportSavedState(
                 if (!root.isDirectory && !root.mkdir() && !root.isDirectory) return@withContext false
                 if (!stagedFile.createNewFile()) return@withContext false
                 created = true
-                FileOutputStream(stagedFile).use { target ->
+                scanCacheOutput(stagedFile).use { target ->
                     target.write(bytes)
                     target.fd.sync()
                 }

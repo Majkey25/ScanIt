@@ -88,6 +88,7 @@ class ProviderInputDeviceTest {
         val context = object : ContextWrapper(base) {
             override fun getCacheDir(): File = root
         }
+        val previousBudget = scanCacheBudget
         try {
             val outside = File(root, "unrelated-cache").apply { writeText("preserve") }
             val staging = providerInputStagingDirectory(root)
@@ -104,6 +105,7 @@ class ProviderInputDeviceTest {
             assertEquals(staging, providerInputStagingDirectory(root))
             assertEquals("active", active.readText())
         } finally {
+            scanCacheBudget = previousBudget
             assertTrue(deleteTreeWithoutFollowingLinks(root))
         }
     }

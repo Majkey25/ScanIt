@@ -2,7 +2,6 @@ package com.majkeylab.scanit
 
 import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.OutputStream
@@ -34,7 +33,7 @@ internal object JpegPdfWriter {
         val staging = Files.createTempFile(parent.toPath(), ".scanit-pdf-", ".part")
         var failure: Throwable? = null
         try {
-            FileOutputStream(staging.toFile()).use { file ->
+            scanCacheOutput(staging.toFile()).use { file ->
                 BufferedOutputStream(file).use { stream ->
                     writeJpegPdf(JpegPdfOutput(stream), pages, isCancelled)
                     stream.flush()
@@ -60,7 +59,7 @@ internal fun publishStagedFileNoReplace(
     staging: Path,
     target: Path,
 ) {
-    Files.move(staging, target)
+    moveScanCacheFile(staging, target)
 }
 
 private fun writeJpegPdf(

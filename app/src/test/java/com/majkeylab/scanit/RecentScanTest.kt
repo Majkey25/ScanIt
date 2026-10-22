@@ -997,6 +997,75 @@ class RecentScanTest {
     }
 
     @Test
+    fun byteRetentionPrunesOldestUnprotectedScanBelowTheCountLimit() = withShareRoot { root ->
+        val protected = createManagedEntry(root, "Scan_protected", 1L)
+        val old = createManagedEntry(root, "Scan_old", 2L)
+        val newest = createManagedEntry(root, "Scan_newest", 3L)
+        val maxBytes = cacheDirectoryBytes(protected) + cacheDirectoryBytes(newest)
+
+        val listed = listRecentScansInRoot(
+            root, protectedCacheIds = setOf("Scan_protected"), maxBytes = maxBytes,
+        )
+
+        assertEquals(setOf("Scan_protected", "Scan_newest"), listed.map(RecentScan::cacheId).toSet())
+        assertFalse(old.exists())
+        assertEquals(maxBytes, cacheDirectoryBytes(root))
+    }
+
+    @Test
+    fun protectedBytesPreventActivationWithoutDeletingHistoryOrCandidate() = withShareRoot { root ->
+        val protected = createManagedEntry(root, "Scan_protected", 1L)
+        val pending = createEntry(root, ".pending-bytes", fileBaseName = "Scan_candidate")
+        val candidate = RecentScanCache(root).publishProvisional(pending, File(root, "Scan_candidate"))
+        val maxBytes = maxOf(cacheDirectoryBytes(protected), cacheDirectoryBytes(candidate.pdf.parentFile!!))
+        val cache = RecentScanCache(root, maxBytes = maxBytes)
+        val before = root.walkTopDown().filter(File::isFile).associate { it.relativeTo(root).path to it.readBytes().toList() }
+
+        assertThrows(IOException::class.java) {
+            cache.activateProvisional(candidate.baseName, protectedCacheIds = setOf("Scan_protected"))
+        }
+
+        assertTrue(cache.isProvisional(candidate.baseName))
+        assertEquals(before, root.walkTopDown().filter(File::isFile).associate { it.relativeTo(root).path to it.readBytes().toList() })
+    }
+
+    @Test
+    fun bytePruneFailureRestoresHistoryAndKeepsProvisionalCandidate() = withShareRoot { root ->
+        val oldIds = (1..2).map { "Scan_old_$it".also { id -> createManagedEntry(root, id, it.toLong()) } }
+        val pending = createEntry(root, ".pending-bytes", fileBaseName = "Scan_candidate")
+        val candidate = RecentScanCache(root).publishProvisional(pending, File(root, "Scan_candidate"))
+        var moves = 0
+        val cache = RecentScanCache(
+            root,
+            maxBytes = cacheDirectoryBytes(candidate.pdf.parentFile!!),
+            moveEntry = { source, target ->
+                if (++moves == 2) throw IOException("Forced byte-prune staging failure")
+                Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+            },
+        )
+
+        assertThrows(IOException::class.java) { cache.activateProvisional(candidate.baseName) }
+
+        assertTrue(moves >= 3)
+        assertEquals((oldIds + candidate.baseName).toSet(), root.listFiles()!!.map(File::getName).toSet())
+        assertTrue(cache.isProvisional(candidate.baseName))
+        oldIds.forEach { assertTrue(cache.open(it) != null) }
+    }
+
+    @Test
+    fun oversizedCandidateCannotActivateOrPrunePreviousHistory() = withShareRoot { root ->
+        val old = createManagedEntry(root, "Scan_old", 1L)
+        val pending = createEntry(root, ".pending-bytes", fileBaseName = "Scan_candidate")
+        val candidate = RecentScanCache(root).publishProvisional(pending, File(root, "Scan_candidate"))
+        val cache = RecentScanCache(root, maxBytes = cacheDirectoryBytes(candidate.pdf.parentFile!!) - 1)
+
+        assertThrows(IOException::class.java) { cache.activateProvisional(candidate.baseName) }
+
+        assertTrue(old.isDirectory)
+        assertTrue(cache.isProvisional(candidate.baseName))
+    }
+
+    @Test
     fun pruningUsesMtimeAndRereadsProtectedSurvivors() = withShareRoot { root ->
         createManagedEntry(root, "Scan_old", 1L).apply { assertTrue(setLastModified(4L)) }
         createManagedEntry(root, "Scan_protected", 2L)

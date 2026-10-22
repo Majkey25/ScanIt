@@ -1,7 +1,6 @@
 package com.majkeylab.scanit
 
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
@@ -446,7 +445,7 @@ private fun writeOutputMetadata(
     val bytes = encodeOutputMetadata(metadata, pageCount)
     try {
         Files.deleteIfExists(temporary.toPath())
-        FileOutputStream(temporary).use { output ->
+        scanCacheOutput(temporary).use { output ->
             output.write(bytes)
             output.fd.sync()
         }
@@ -467,7 +466,7 @@ private fun writeOutputMetadata(
 }
 
 private fun moveOutputMetadataAtomically(source: Path, target: Path) {
-    Files.move(
+    moveScanCacheFile(
         source,
         target,
         StandardCopyOption.ATOMIC_MOVE,

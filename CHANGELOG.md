@@ -2,6 +2,13 @@
 
 All notable changes are documented here.
 
+## [1.9.8] - 2026-10-22
+
+### Fixed
+- Imports, image edits, and PDF generation share a 1 GiB cache write limit, including temporary copies and concurrent writers.
+- New scans and normal history pruning use a 512 MiB retention target. Oversized imports fail without deleting protected history or unresolved recovery data; existing over-limit protected data is preserved and further growth is rejected at the shared limit.
+- Cancelled or rejected operations remove their partial output. PDF size preferences remain soft targets.
+
 ## [1.9.7] - 2026-10-22
 
 ### Fixed
