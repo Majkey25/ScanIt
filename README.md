@@ -20,6 +20,12 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.8 Bounded document cache
+
+Imports and document edits share one cache write limit, including temporary
+copies. Large operations fail cleanly while protected history and recovery data
+remain intact. PDF size preferences remain soft targets.
+
 ## v1.9.7 Safer file imports
 
 Scanner pages and signature imports use bounded private copies before decoding.

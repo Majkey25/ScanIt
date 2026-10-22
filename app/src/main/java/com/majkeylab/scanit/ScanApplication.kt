@@ -19,6 +19,7 @@ class ScanApplication : Application() {
                 throw IOException("Orphaned input staging could not be removed")
             }
         }
+        scanCacheBudget = ScanCacheBudget(cacheDir)
     }
 }
 

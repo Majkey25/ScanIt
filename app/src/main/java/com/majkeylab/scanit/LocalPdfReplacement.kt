@@ -1,7 +1,6 @@
 package com.majkeylab.scanit
 
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -127,7 +126,7 @@ internal fun publishLocalPdfReplacement(
     val candidate = File(safeDirectory, LOCAL_PDF_REPLACEMENT_NEW_FILE_NAME)
     requireLocalFingerprint(candidate, expected.newFingerprint)
     checkCancellation(isCancelled)
-    Files.move(
+    moveScanCacheFile(
         candidate.toPath(),
         cachedPdf.toPath(),
         StandardCopyOption.ATOMIC_MOVE,
@@ -256,7 +255,7 @@ private fun writeLocalPdfReplacement(
     val bytes = encodeLocalPdfReplacement(journal)
     try {
         Files.deleteIfExists(temporary.toPath())
-        FileOutputStream(temporary).use { output ->
+        scanCacheOutput(temporary).use { output ->
             output.write(bytes)
             output.fd.sync()
         }
@@ -269,7 +268,7 @@ private fun writeLocalPdfReplacement(
             } else {
                 arrayOf(StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             }
-        Files.move(temporary.toPath(), target.toPath(), *options)
+        moveScanCacheFile(temporary.toPath(), target.toPath(), *options)
     } catch (failure: Exception) {
         deleteLocalPdfReplacementFile(temporary, failure)
         throw IOException("Local PDF replacement journal could not be written", failure)
@@ -430,7 +429,7 @@ private fun copyLocalPdf(source: File, destination: File, isCancelled: () -> Boo
     checkCancellation(isCancelled)
     try {
         source.inputStream().use { input ->
-            FileOutputStream(destination).use { output ->
+            scanCacheOutput(destination).use { output ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 while (true) {
                     checkCancellation(isCancelled)
@@ -466,7 +465,7 @@ private fun checkCancellation(isCancelled: () -> Boolean) {
 }
 
 private fun moveLocalPdfAtomically(source: Path, target: Path) {
-    Files.move(
+    moveScanCacheFile(
         source,
         target,
         StandardCopyOption.ATOMIC_MOVE,

@@ -139,7 +139,7 @@ private suspend fun copyAdmittedProviderInput(
                     opened.set(it)
                     if (!continuation.isActive) throw CancellationException("Input copy was cancelled")
                     it.createInputStream().use { input ->
-                        FileOutputStream(destination).use { output ->
+                        scanCacheOutput(destination).use { output ->
                             copyBoundedInput(input, output, maxBytes) { !continuation.isActive }
                         }
                     }

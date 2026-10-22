@@ -1,7 +1,6 @@
 package com.majkeylab.scanit
 
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URI
 import java.nio.charset.StandardCharsets
@@ -302,7 +301,7 @@ private fun writeProvisionalOutputCreate(
     val bytes = encodeProvisionalOutputCreate(marker)
     try {
         Files.deleteIfExists(temporary.toPath())
-        FileOutputStream(temporary).use { output ->
+        scanCacheOutput(temporary).use { output ->
             output.write(bytes)
             output.fd.sync()
         }
@@ -310,9 +309,9 @@ private fun writeProvisionalOutputCreate(
             throw IOException("Staged provisional output marker could not be verified")
         }
         if (expected == null) {
-            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            moveScanCacheFile(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
         } else {
-            Files.move(
+            moveScanCacheFile(
                 temporary.toPath(),
                 target.toPath(),
                 StandardCopyOption.ATOMIC_MOVE,

@@ -3,7 +3,6 @@ package com.majkeylab.scanit
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -82,7 +81,7 @@ internal object ScanAppearanceRenderer {
             throwIfCancelled(isCancelled)
 
             staging = Files.createTempFile(parent.toPath(), ".scanit-render-", ".jpg.tmp").toFile()
-            FileOutputStream(staging).use { output ->
+            scanCacheOutput(staging).use { output ->
                 if (!bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
                     throw IOException("JPEG encoder rejected the rendered bitmap")
                 }
@@ -100,7 +99,7 @@ internal object ScanAppearanceRenderer {
             }
 
             val outputBytes = staging.length()
-            Files.move(
+            moveScanCacheFile(
                 staging.toPath(),
                 target.toPath(),
                 StandardCopyOption.ATOMIC_MOVE,

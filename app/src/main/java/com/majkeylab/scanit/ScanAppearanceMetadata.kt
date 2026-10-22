@@ -1,7 +1,6 @@
 package com.majkeylab.scanit
 
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -222,7 +221,7 @@ internal fun writeScanAppearanceMetadata(
     val temporary = File(parent, SCAN_APPEARANCE_TEMP_FILE_NAME)
     var failure: Throwable? = null
     try {
-        FileOutputStream(temporary).use { output ->
+        scanCacheOutput(temporary).use { output ->
             output.write(
                 encodeScanAppearanceMetadata(
                     appearanceSettings,
@@ -235,7 +234,7 @@ internal fun writeScanAppearanceMetadata(
             )
             output.fd.sync()
         }
-        Files.move(
+        moveScanCacheFile(
             temporary.toPath(),
             target.toPath(),
             StandardCopyOption.ATOMIC_MOVE,

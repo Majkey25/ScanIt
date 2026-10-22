@@ -13,7 +13,6 @@ import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
@@ -573,7 +572,7 @@ internal fun writeRedactedPages(
             val output = File(workDirectory, scanPageFileName(derivedBaseName, index + 1))
             created += output
             copyDerivedSourcePage(source, output)
-            FileOutputStream(output, true).use { stream -> stream.fd.sync() }
+            scanCacheOutput(output, true).use { stream -> stream.fd.sync() }
             if (isCancelled()) throw CancellationException("Protected scan creation cancelled")
             sources += source
             rendered += output
@@ -712,8 +711,10 @@ internal fun copyDerivedSourcePage(source: File, target: File) {
     }
     if (target.exists()) throw IOException("Derived scan source target already exists")
     try {
-        Files.copy(source.toPath(), target.toPath())
-        FileOutputStream(target, true).use { output -> output.fd.sync() }
+        scanCacheOutput(target).use { output ->
+            source.inputStream().use { it.copyTo(output) }
+            output.fd.sync()
+        }
         if (!target.isFile || target.length() != source.length()) {
             throw IOException("Derived scan source page is incomplete")
         }
@@ -751,7 +752,7 @@ private fun normalizeScannerPageOrientation(
                 isCancelled = isCancelled,
                 orientationOverride = orientation,
             )
-        Files.move(
+        moveScanCacheFile(
             rotated.toPath(),
             page.toPath(),
             StandardCopyOption.ATOMIC_MOVE,
@@ -876,6 +877,7 @@ internal fun listRecentScansInRoot(
     root: File,
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
+    maxBytes: Long = MAX_RETAINED_SCAN_BYTES,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
 ): List<RecentScan> {
@@ -887,6 +889,7 @@ internal fun listRecentScansInRoot(
         safeRoot,
         protectedCacheIds,
         maxEntries,
+        maxBytes,
         readOutputMetadata,
     ).map(ParsedCacheEntry::recent)
 }
@@ -935,6 +938,8 @@ private fun publishCacheEntryInRoot(
     protectedCacheIds: Set<String> = emptySet(),
     maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     moveEntry: (Path, Path) -> Unit,
+    maxBytes: Long = MAX_RETAINED_SCAN_BYTES,
+    maxEntryBytes: Long = maxBytes,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
 ): CachedScan {
@@ -956,12 +961,6 @@ private fun publishCacheEntryInRoot(
     var published = false
     try {
         maintainPendingDirectories(safeRoot, work)
-        val entriesToPrune =
-            entriesToPrune(
-                readCacheEntries(safeRoot, readOutputMetadata = readOutputMetadata),
-                protectedCacheIds,
-                maxEntries - 1,
-            )
         val pending =
             readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
                 ?: throw IOException("Pending cache entry is incomplete")
@@ -973,6 +972,17 @@ private fun publishCacheEntryInRoot(
         )
         readCacheEntry(safeRoot, work, cacheId, readOutputMetadata)
             ?: throw IOException("Pending cache metadata is incomplete")
+        val candidateBytes = cacheDirectoryBytes(work)
+        if (candidateBytes > maxEntryBytes || candidateBytes > maxBytes) {
+            throw IOException("Scan exceeds the retained cache byte limit")
+        }
+        val entriesToPrune =
+            entriesToPrune(
+                readCacheEntries(safeRoot, readOutputMetadata = readOutputMetadata),
+                protectedCacheIds,
+                maxEntries - 1,
+                maxBytes - candidateBytes,
+            )
         cleanDisposablePendingDirectories(safeRoot, work)
         moveEntry(work.toPath(), final.toPath())
         published = true
@@ -1001,6 +1011,7 @@ private fun publishProvisionalCacheEntryInRoot(
     workDir: File,
     finalDir: File,
     moveEntry: (Path, Path) -> Unit,
+    maxBytes: Long,
 ): CachedScan {
     val safeRoot = ensureShareRoot(root)
     val work = workDir.absoluteFile
@@ -1018,6 +1029,8 @@ private fun publishProvisionalCacheEntryInRoot(
             finalDir = finalDir,
             maxEntries = Int.MAX_VALUE,
             moveEntry = moveEntry,
+            maxBytes = Long.MAX_VALUE,
+            maxEntryBytes = maxBytes,
         )
     } catch (failure: Throwable) {
         if (work.exists() && !deleteTreeWithoutFollowingLinks(work)) {
@@ -1034,6 +1047,7 @@ private fun activateProvisionalCacheEntryInRoot(
     protectedCacheIds: Set<String>,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    maxBytes: Long,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
 ): CachedScan {
@@ -1048,6 +1062,10 @@ private fun activateProvisionalCacheEntryInRoot(
         ?: throw IOException("Provisional cache entry is unavailable")
     var activated: CachedScan? = null
     try {
+        val candidateBytes = cacheDirectoryBytes(candidateDirectory)
+        if (candidateBytes > maxBytes) {
+            throw IOException("Scan exceeds the retained cache byte limit")
+        }
         val entriesToRemove =
             activationEntriesToRemove(
                 safeRoot,
@@ -1055,6 +1073,7 @@ private fun activateProvisionalCacheEntryInRoot(
                 candidate.cached.lineageCacheId,
                 protectedCacheIds,
                 maxEntries - 1,
+                maxBytes - candidateBytes,
                 readOutputMetadata,
             )
         commitCacheEntryRemovals(
@@ -1126,6 +1145,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
     candidateCacheId: String,
     maxEntries: Int,
     moveEntry: (Path, Path) -> Unit,
+    maxBytes: Long,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
 ): CachedScan {
@@ -1156,6 +1176,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
             protectedCacheIds = emptySet(),
             maxEntries = maxEntries,
             moveEntry = moveEntry,
+            maxBytes = maxBytes,
             readOutputMetadata = readOutputMetadata,
         )
     }
@@ -1184,6 +1205,7 @@ private fun activateCheckpointProvisionalCacheEntryInRoot(
         protectedCacheIds = protectedParent,
         maxEntries = maxEntries,
         moveEntry = moveEntry,
+        maxBytes = maxBytes,
         readOutputMetadata = readOutputMetadata,
     )
 }
@@ -1194,6 +1216,7 @@ private fun activationEntriesToRemove(
     candidateLineageCacheId: String,
     protectedCacheIds: Set<String>,
     activeCapacity: Int,
+    maxBytes: Long,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
     require(activeCapacity >= 0) { "Active cache capacity must not be negative" }
@@ -1218,21 +1241,8 @@ private fun activationEntriesToRemove(
             entry
         }
     val remaining = entries.filterNot { it === retired }
-    val protectedEntries =
-        remaining.filter { entry ->
-            entry.recent.cacheId in protectedCacheIds ||
-                cacheEntryHasUnresolvedDurableState(entry)
-        }
-    if (protectedEntries.size > activeCapacity) {
-        throw IOException("Protected recent scans exceed cache capacity")
-    }
-    val protectedDirectories = protectedEntries.mapTo(mutableSetOf(), ParsedCacheEntry::directory)
-    val unprotected = remaining.filterNot { it.directory in protectedDirectories }
-    val unprotectedToKeep = activeCapacity - protectedEntries.size
-    val directoriesToDelete =
-        shareCacheEntriesToPrune(unprotected.map(ParsedCacheEntry::directory), unprotectedToKeep)
-            .toSet()
-    return listOfNotNull(retired) + remaining.filter { it.directory in directoriesToDelete }
+    return listOfNotNull(retired) +
+        entriesToPrune(remaining, protectedCacheIds, activeCapacity, maxBytes)
 }
 
 private fun commitCacheEntryRemovals(
@@ -1309,10 +1319,11 @@ private fun pruneRecentEntries(
     root: File,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    maxBytes: Long,
     readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult,
 ): List<ParsedCacheEntry> {
     val entries = readCacheEntries(root, readOutputMetadata = readOutputMetadata)
-    val entriesToPrune = entriesToPrune(entries, protectedCacheIds, maxEntries)
+    val entriesToPrune = entriesToPrune(entries, protectedCacheIds, maxEntries, maxBytes)
     if (entriesToPrune.isEmpty()) return entries
     entriesToPrune.forEach { entry ->
         if (!deleteRecentScanInRoot(root, entry.recent.cacheId)) {
@@ -1326,7 +1337,9 @@ private fun entriesToPrune(
     entries: List<ParsedCacheEntry>,
     protectedCacheIds: Set<String>,
     maxEntries: Int,
+    maxBytes: Long,
 ): List<ParsedCacheEntry> {
+    require(maxBytes >= 0) { "Recent scan byte retention must not be negative" }
     val protectedEntries =
         entries.filter { entry ->
             entry.recent.cacheId in protectedCacheIds ||
@@ -1335,17 +1348,29 @@ private fun entriesToPrune(
     if (protectedEntries.size > maxEntries) {
         throw IOException("Protected recent scans exceed cache capacity")
     }
+    val sizes = entries.associate { it.directory to cacheDirectoryBytes(it.directory) }
+    val protectedBytes = protectedEntries.fold(0L) { total, entry ->
+        Math.addExact(total, sizes.getValue(entry.directory))
+    }
+    if (protectedBytes > maxBytes) {
+        throw IOException("Protected recent scans exceed the cache byte limit")
+    }
     val protectedDirectories = protectedEntries.mapTo(mutableSetOf(), ParsedCacheEntry::directory)
     val unprotected = entries.filterNot { it.directory in protectedDirectories }
-    val unprotectedToKeep = maxEntries - protectedEntries.size
-    val directoriesToDelete =
-        shareCacheEntriesToPrune(unprotected.map(ParsedCacheEntry::directory), unprotectedToKeep)
-            .toSet()
+    var retainedBytes = sizes.values.fold(0L, Math::addExact)
+    var retainedCount = entries.size
+    val directoriesToDelete = mutableSetOf<File>()
+    for (directory in shareCacheEntriesToPrune(unprotected.map(ParsedCacheEntry::directory), 0).asReversed()) {
+        if (retainedCount <= maxEntries && retainedBytes <= maxBytes) break
+        directoriesToDelete += directory
+        retainedCount--
+        retainedBytes -= sizes.getValue(directory)
+    }
     return entries.filter { it.directory in directoriesToDelete }
 }
 
 private fun moveCacheEntryAtomically(source: Path, target: Path) {
-    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE)
+    moveScanCacheFile(source, target, StandardCopyOption.ATOMIC_MOVE)
 }
 
 private fun readCacheEntries(
@@ -1819,6 +1844,7 @@ internal class RecentScanCache(
     private val root: File,
     private val lock: ReentrantLock = ReentrantLock(),
     private val moveEntry: (Path, Path) -> Unit = ::moveCacheEntryAtomically,
+    private val maxBytes: Long = MAX_RETAINED_SCAN_BYTES,
     private val readOutputMetadata: (File, String, Int) -> OutputMetadataReadResult =
         ::readCacheOutputMetadata,
 ) {
@@ -1827,7 +1853,7 @@ internal class RecentScanCache(
         maxEntries: Int = MAX_SHARE_CACHE_SCANS,
     ): List<RecentScan> =
         lock.withLock {
-            listRecentScansInRoot(root, protectedCacheIds, maxEntries, readOutputMetadata)
+            listRecentScansInRoot(root, protectedCacheIds, maxEntries, maxBytes, readOutputMetadata)
         }
 
     fun open(cacheId: String): CachedScan? =
@@ -1875,7 +1901,8 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
-                readOutputMetadata,
+                maxBytes = maxBytes,
+                readOutputMetadata = readOutputMetadata,
             )
         }
 
@@ -1884,7 +1911,7 @@ internal class RecentScanCache(
         finalDir: File,
     ): CachedScan =
         synchronized(lock) {
-            publishProvisionalCacheEntryInRoot(root, workDir, finalDir, moveEntry)
+            publishProvisionalCacheEntryInRoot(root, workDir, finalDir, moveEntry, maxBytes)
         }
 
     fun activateProvisional(
@@ -1901,6 +1928,7 @@ internal class RecentScanCache(
                 protectedCacheIds,
                 maxEntries,
                 moveEntry,
+                maxBytes,
                 readOutputMetadata,
             )
         }
@@ -1945,6 +1973,7 @@ internal class RecentScanCache(
                 candidateCacheId,
                 maxEntries,
                 moveEntry,
+                maxBytes,
                 readOutputMetadata,
             )
         }
@@ -2002,7 +2031,7 @@ internal fun ScanStorage.createRedactedVariant(
                     target = current.pdfSizeTarget,
                     isCancelled = isCancelled,
                 )
-            FileOutputStream(File(workDirectory, scanPdfFileName(baseName)), true).use { output ->
+            scanCacheOutput(File(workDirectory, scanPdfFileName(baseName)), true).use { output ->
                 output.fd.sync()
             }
             writeScanAppearanceMetadata(
@@ -2021,7 +2050,7 @@ internal fun ScanStorage.createRedactedVariant(
                 createdAtEpochMs = System.currentTimeMillis(),
                 pdfSizeTarget = current.pdfSizeTarget,
             )
-            FileOutputStream(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
+            scanCacheOutput(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
                 output.fd.sync()
             }
             CachedScanBuild(
@@ -2248,7 +2277,7 @@ internal class ScanStorage(
                     createdAtEpochMs = clock.millis(),
                     pdfSizeTarget = pdfSizeTarget,
                 )
-                FileOutputStream(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
+                scanCacheOutput(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
                     output.fd.sync()
                 }
                 CachedScanBuild(
@@ -2439,7 +2468,7 @@ internal class ScanStorage(
                     createdAtEpochMs = clock.millis(),
                     pdfSizeTarget = source.pdfSizeTarget,
                 )
-                FileOutputStream(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
+                scanCacheOutput(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { output ->
                     output.fd.sync()
                 }
                 CachedScanBuild(
@@ -4941,7 +4970,7 @@ internal class ScanStorage(
                 ?: throw IOException("Source URI could not be opened")
         val copied =
             input.use { stream ->
-                FileOutputStream(destination).use { output ->
+                scanCacheOutput(destination).use { output ->
                     copyBoundedInput(stream, output, maxBytes, isCancelled)
                         .also { output.fd.sync() }
                 }

@@ -27,6 +27,7 @@ credentials.
 - The separately maintained Google Play edition contains GMA Next-Gen, UMP, and Google Play Billing. UMP gates ad requests where consent is required. SeliaScan never passes document content to these SDKs.
 - Google Play services supplies the ML Kit scanner UI and may download modules and process diagnostic telemetry under Google's terms.
 - Scans are held in a bounded app-private cache and exposed for sharing only through scoped content URIs.
+- App-owned cache writes share a 1 GiB byte limit, including active input snapshots and temporary outputs. New scans and normal history pruning use a 512 MiB retention target; existing PDF edits and protected recovery state can exceed that target within the shared write limit. Large imports may be rejected. Protected history and unresolved output recovery state are not pruned to make room, and PDF size targets remain soft targets.
 - Saved-output replacement verifies destination identity, size, dimensions, and SHA-256 before metadata activation and exact old-output cleanup.
 - OCR and barcode payloads are bounded, stale requests are rejected, clipboard copies are marked sensitive, and detected codes do not open automatically.
 - Android backup and device-to-device transfer are disabled for SeliaScan app data.

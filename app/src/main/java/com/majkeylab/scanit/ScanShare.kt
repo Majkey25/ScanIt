@@ -10,7 +10,6 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.CancellationException
@@ -293,7 +292,7 @@ internal fun markPreparedImageShareLaunched(
             if (marker.parentFile != prepared.directory || marker.canonicalFile != marker || marker.exists()) {
                 return@synchronized false
             }
-            FileOutputStream(marker).use { output ->
+            scanCacheOutput(marker).use { output ->
                 output.write(nowMillis.toString().toByteArray(Charsets.US_ASCII))
                 output.fd.sync()
             }
@@ -373,7 +372,7 @@ private fun reservePreparedImageShareDirectory(
             throw IOException("Prepared image share directory could not be created")
         }
         try {
-            FileOutputStream(File(directory, PREPARED_IMAGE_SHARE_LEASE_FILE)).use { output ->
+            scanCacheOutput(File(directory, PREPARED_IMAGE_SHARE_LEASE_FILE)).use { output ->
                 output.write(expectedBytes.toString().toByteArray(Charsets.US_ASCII))
                 output.fd.sync()
             }
@@ -449,7 +448,7 @@ internal fun copyExactOutput(
     isCancelled: () -> Boolean,
 ) {
     input.use { source ->
-        FileOutputStream(target).use { output ->
+        scanCacheOutput(target).use { output ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             var remaining = fingerprint.byteLength
             while (remaining > 0L) {

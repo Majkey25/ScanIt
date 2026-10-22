@@ -2,7 +2,6 @@ package com.majkeylab.scanit
 
 import java.io.BufferedOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.io.FilterOutputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
@@ -36,7 +35,7 @@ internal object BitonalPdfWriter {
         val staging = Files.createTempFile(parent.toPath(), ".scanit-pdf-", ".part")
         var failure: Throwable? = null
         try {
-            FileOutputStream(staging.toFile()).use { file ->
+            scanCacheOutput(staging.toFile()).use { file ->
                 BufferedOutputStream(file).use { stream ->
                     writePdf(PdfOutput(stream), pages, isCancelled)
                     stream.flush()

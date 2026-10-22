@@ -11,7 +11,6 @@ import android.os.Build
 import androidx.core.graphics.createBitmap
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -128,8 +127,10 @@ internal fun renderImageExport(
 
     if (isExactImageExportCopy(options, bounds.format, orientationOverride)) {
         publishImageExportAtomically(target, isCancelled) { staging ->
-            Files.copy(input.toPath(), staging.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            FileOutputStream(staging, true).use { it.fd.sync() }
+            scanCacheOutput(staging).use { output ->
+                input.inputStream().use { it.copyTo(output) }
+                output.fd.sync()
+            }
             val stagedBounds = readImageBounds(staging)
             if (
                 stagedBounds != bounds ||
@@ -436,7 +437,7 @@ internal fun publishImageExportAtomically(
         throwIfImageExportCancelled(isCancelled)
         writeAndVerify(staging)
         throwIfImageExportCancelled(isCancelled)
-        Files.move(
+        moveScanCacheFile(
             staging.toPath(),
             target.toPath(),
             StandardCopyOption.ATOMIC_MOVE,
@@ -760,7 +761,7 @@ private fun encodeImageExport(
             EncodedImageFormat.Png -> Bitmap.CompressFormat.PNG
         }
     val quality = encoding.jpegQuality ?: PNG_ENCODER_IGNORED_QUALITY
-    FileOutputStream(staging).use { output ->
+    scanCacheOutput(staging).use { output ->
         if (!bitmap.compress(format, quality, output)) {
             throw IOException("Image encoder rejected the rendered bitmap")
         }
