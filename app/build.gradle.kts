@@ -8,16 +8,23 @@ plugins {
 
 val configuredKeystorePropertiesFile =
     providers.gradleProperty("seliaScanKeystoreProperties").orNull?.let { path ->
-        rootProject.file(path).also { file ->
+        File(path).also { file ->
+            require(file.isAbsolute) { "SeliaScan keystore properties path must be absolute" }
             require(file.isFile) { "Configured SeliaScan keystore properties file is missing" }
         }
     }
 val externalKeystorePropertiesFile =
     File(System.getProperty("user.home"), ".android/scanit/keystore.properties")
+fun requireExternalSigningFile(file: File): File = file.toPath().toRealPath().toFile().also {
+    require(!it.toPath().startsWith(rootProject.projectDir.toPath().toRealPath())) {
+        "Signing properties and keys must stay outside the project directory"
+    }
+}
+
 val keystorePropertiesFile =
-    configuredKeystorePropertiesFile
-        ?: externalKeystorePropertiesFile.takeIf(File::isFile)
-        ?: rootProject.file("keystore.properties")
+    (configuredKeystorePropertiesFile ?: externalKeystorePropertiesFile).let {
+        if (it.isFile) requireExternalSigningFile(it) else it
+    }
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use(keystoreProperties::load)
@@ -32,17 +39,19 @@ android {
         minSdk = 29
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 52
-        versionName = "1.9.6"
+        versionCode = 53
+        versionName = "1.9.7"
     }
 
     signingConfigs {
         if (keystorePropertiesFile.isFile) {
             create("release") {
                 storeFile =
-                    rootProject.file(
-                        requireNotNull(keystoreProperties.getProperty("storeFile")) {
+                    requireExternalSigningFile(
+                        File(requireNotNull(keystoreProperties.getProperty("storeFile")) {
                             "storeFile is missing from keystore.properties"
+                        }).let { file ->
+                            if (file.isAbsolute) file else File(keystorePropertiesFile.parentFile, file.path)
                         },
                     )
                 storePassword =

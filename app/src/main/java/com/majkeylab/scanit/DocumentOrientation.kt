@@ -1,13 +1,12 @@
 package com.majkeylab.scanit
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -86,20 +85,20 @@ internal fun validatedScannerPageOrientations(
     return orientations.toList()
 }
 
-internal class DocumentOrientationProcessor(private val context: Context) {
-    suspend fun detect(pageUris: List<Uri>): List<ImageExifOrientation> = withDocumentActionOwner {
-        require(pageUris.size in 1..MAX_SCAN_PAGES) { "Orientation page count is invalid" }
+internal class DocumentOrientationProcessor {
+    suspend fun detect(pages: List<File>): List<ImageExifOrientation> = withDocumentActionOwner {
+        require(pages.size in 1..MAX_SCAN_PAGES) { "Orientation page count is invalid" }
         val recognizer =
             try {
                 TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
             } catch (_: Exception) {
-                return@withDocumentActionOwner List(pageUris.size) { ImageExifOrientation.Normal }
+                return@withDocumentActionOwner List(pages.size) { ImageExifOrientation.Normal }
             }
         try {
-            pageUris.map { uri ->
+            pages.map { page ->
                 currentCoroutineContext().ensureActive()
                 try {
-                    detectPage(uri, recognizer::process)
+                    detectPage(page, recognizer::process)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: Exception) {
@@ -112,10 +111,10 @@ internal class DocumentOrientationProcessor(private val context: Context) {
     }
 
     private suspend fun detectPage(
-        uri: Uri,
+        page: File,
         recognize: (InputImage) -> com.google.android.gms.tasks.Task<Text>,
     ): ImageExifOrientation {
-        val bitmap = decodeOrientationBitmap(uri)
+        val bitmap = decodeOrientationBitmap(page)
         return try {
             currentCoroutineContext().ensureActive()
             selectDocumentOrientation(
@@ -138,13 +137,9 @@ internal class DocumentOrientationProcessor(private val context: Context) {
         }
     }
 
-    private fun decodeOrientationBitmap(uri: Uri): Bitmap {
+    private fun decodeOrientationBitmap(file: File): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsInput = context.contentResolver.openInputStream(uri)
-            ?: throw IOException("Scanner page could not be opened for orientation")
-        boundsInput.use {
-            BitmapFactory.decodeStream(it, null, bounds)
-        }
+        BitmapFactory.decodeFile(file.path, bounds)
         if (
             bounds.outWidth <= 0 ||
                 bounds.outHeight <= 0 ||
@@ -159,9 +154,8 @@ internal class DocumentOrientationProcessor(private val context: Context) {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
                 inScaled = false
             }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, options)
-        } ?: throw IOException("Scanner page could not be decoded for orientation")
+        val bitmap = BitmapFactory.decodeFile(file.path, options)
+            ?: throw IOException("Scanner page could not be decoded for orientation")
         try {
             requireOrientationAnalysisBounds(
                 bitmap.width,

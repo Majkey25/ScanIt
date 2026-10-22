@@ -30,6 +30,9 @@ import java.util.concurrent.locks.ReentrantLock
 import java.util.UUID
 import kotlin.concurrent.withLock
 import kotlin.math.min
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 
 private const val DEFAULT_THUMBNAIL_SIZE = 1024
 private const val PDF_MAX_BITMAP_SIDE = 3508
@@ -2042,6 +2045,38 @@ internal class ScanStorage(
     private val resolver = context.contentResolver
     private val recentScanCache by lazy { RecentScanCache(shareCacheRoot(), storageTransactionLock) }
     private val outputDeleter by lazy { ExactOutputDeleter(context) }
+
+    suspend fun cacheScannerResult(
+        pageUris: List<Uri>,
+        appearanceSettings: ScanAppearanceSettings,
+        pdfSizeTarget: PdfSizeTarget,
+        detectOrientations: suspend (List<File>) -> List<ImageExifOrientation>,
+    ): CachedScanBuild {
+        require(isAcceptedScanPageCount(pageUris.size)) { "Scanner page count is invalid" }
+        val snapshots = Files.createTempDirectory(
+            providerInputStagingDirectory(context.cacheDir).toPath(), ".scanner_",
+        ).toFile()
+        return try {
+            var remainingBytes = MAX_SCAN_SOURCE_TOTAL_BYTES
+            val pages = pageUris.mapIndexed { index, uri ->
+                File(snapshots, "$index.jpg").also { file ->
+                    if (remainingBytes <= 0L) throw IOException("Scanner input is too large")
+                    remainingBytes -= copyProviderInput(
+                        resolver, uri, file, minOf(MAX_SCAN_SOURCE_PAGE_BYTES, remainingBytes),
+                    )
+                }
+            }
+            val orientations = detectOrientations(pages)
+            val operation = currentCoroutineContext()
+            operation.ensureActive()
+            cacheScan(
+                pages.map(Uri::fromFile), appearanceSettings, pdfSizeTarget, orientations,
+                isCancelled = { !operation.isActive },
+            )
+        } finally {
+            deleteTreeWithoutFollowingLinks(snapshots)
+        }
+    }
 
     fun cacheScan(
         pageUris: List<Uri>,

@@ -1,9 +1,12 @@
 package com.majkeylab.scanit
 
 import android.content.Context
+import android.content.ContentResolver
+import android.content.res.AssetFileDescriptor
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.CancellationSignal
 import androidx.core.graphics.scale
 import java.io.File
 import java.io.FileOutputStream
@@ -12,33 +15,43 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
 import java.util.concurrent.CancellationException
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val MARK_DIRECTORY = "marks"
 private const val COPY_BUFFER_BYTES = 8_192
 private const val MARK_TEMP_PREFIX = ".mark_"
 private const val MARK_TEMP_SUFFIX = ".tmp"
+private const val PROVIDER_INPUT_TIMEOUT_MS = 30_000L
 private val MARK_STORAGE_LOCK = Any()
+private val PROVIDER_INPUT_PERMIT = Semaphore(1)
 
 internal class MarkTemplateStore(context: Context) {
     private val resolver = context.applicationContext.contentResolver
     private val noBackupRoot = context.applicationContext.noBackupFilesDir.canonicalFile
     private val directory = File(noBackupRoot, MARK_DIRECTORY).absoluteFile
+    private val importDirectory = context.applicationContext.cacheDir
 
     fun list(): List<String> = synchronized(MARK_STORAGE_LOCK) {
         listMarkTemplateIds(requireDirectory())
     }
 
-    fun import(uri: Uri): String = synchronized(MARK_STORAGE_LOCK) {
-        val importFile = File.createTempFile(".mark_import_", ".tmp", requireDirectory())
-        try {
-            resolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(importFile).use { output ->
-                    copyBoundedInput(input, output, MAX_MARK_INPUT_BYTES)
-                }
-            } ?: throw IOException("The selected mark could not be opened")
+    suspend fun import(uri: Uri): String {
+        val importFile = File.createTempFile(
+            ".mark_import_", ".tmp", providerInputStagingDirectory(importDirectory),
+        )
+        return try {
+            copyProviderInput(resolver, uri, importFile, MAX_MARK_INPUT_BYTES)
             val decoded = decodeMarkBitmap(importFile, MARK_DECODE_MAX_SIDE)
             try {
+                currentCoroutineContext().ensureActive()
                 save(decoded)
             } finally {
                 decoded.recycle()
@@ -89,6 +102,54 @@ internal class MarkTemplateStore(context: Context) {
         return directory
     }
 }
+
+internal suspend fun copyProviderInput(
+    resolver: ContentResolver,
+    uri: Uri,
+    destination: File,
+    maxBytes: Long,
+): Long {
+    // A provider may ignore cancellation before returning its descriptor. Keep its slot until it returns.
+    if (!PROVIDER_INPUT_PERMIT.tryAcquire()) throw IOException("Another input is still being read")
+    return try {
+        copyAdmittedProviderInput(resolver, uri, destination, maxBytes)
+    } finally {
+        PROVIDER_INPUT_PERMIT.release()
+    }
+}
+
+private suspend fun copyAdmittedProviderInput(
+    resolver: ContentResolver,
+    uri: Uri,
+    destination: File,
+    maxBytes: Long,
+): Long = withTimeoutOrNull(PROVIDER_INPUT_TIMEOUT_MS) {
+    withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine { continuation ->
+            val signal = CancellationSignal()
+            val opened = AtomicReference<AssetFileDescriptor?>()
+            continuation.invokeOnCancellation {
+                runCatching { opened.getAndSet(null)?.close() }
+                signal.cancel()
+            }
+            val result = runCatching {
+                val descriptor = resolver.openAssetFileDescriptor(uri, "r", signal)
+                    ?: throw IOException("The selected input could not be opened")
+                descriptor.use {
+                    opened.set(it)
+                    if (!continuation.isActive) throw CancellationException("Input copy was cancelled")
+                    it.createInputStream().use { input ->
+                        FileOutputStream(destination).use { output ->
+                            copyBoundedInput(input, output, maxBytes) { !continuation.isActive }
+                        }
+                    }
+                }
+            }
+            opened.set(null)
+            continuation.resumeWith(result)
+        }
+    }
+} ?: throw IOException("The selected input timed out")
 
 internal fun boundedMarkDimensions(
     width: Int,
