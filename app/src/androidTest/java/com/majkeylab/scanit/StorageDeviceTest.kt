@@ -26,6 +26,30 @@ import org.junit.Test
 
 class StorageDeviceTest {
     @Test
+    fun orientationAndCacheUseOneBoundedPrivateSnapshot() = withScan { storage, first ->
+        val source = first.sourcePages.single()
+        val original = source.readBytes()
+        val snapshotFiles = mutableListOf<File>()
+        try {
+            val second = runBlocking {
+                storage.cacheScannerResult(
+                    listOf(Uri.fromFile(source)), googleScannerAppearanceSettings(), PdfSizeTarget.Original,
+                ) { pages ->
+                    snapshotFiles.addAll(pages)
+                    assertFalse(source == pages.single())
+                    assertEquals(fileFingerprint(source), fileFingerprint(pages.single()))
+                    source.writeText("Changed after the snapshot")
+                    listOf(ImageExifOrientation.Normal)
+                }
+            }.cached
+            assertTrue(original.contentEquals(second.sourcePages.single().readBytes()))
+            assertTrue(snapshotFiles.none(File::exists))
+        } finally {
+            source.writeBytes(original)
+        }
+    }
+
+    @Test
     fun sameSecondScansPreserveBothCacheEntries() =
         withScan(clock = Clock.fixed(Instant.parse("2026-10-13T11:20:00Z"), ZoneOffset.UTC)) { storage, first ->
             val originals = (first.pages + first.sourcePages + first.pdf).associateWith(::fileFingerprint)

@@ -1,16 +1,12 @@
 package com.majkeylab.scanit
 
-import android.content.ContentResolver
-import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.net.Uri
 import android.util.Base64
 import androidx.exifinterface.media.ExifInterface
-import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -36,37 +32,27 @@ class BitmapImageProcessingDeviceTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun cancelledOrientationWaiterCannotReadBitmapWhileAnotherNativeOwnerIsActive() = runBlocking {
+    fun cancelledOrientationWaiterDoesNotStartWhileAnotherNativeOwnerIsActive() = runBlocking {
         val source = createSource()
-        var resolverReads = 0
-        val context = object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext) {
-            override fun getContentResolver(): ContentResolver {
-                resolverReads += 1
-                return super.getContentResolver()
-            }
-        }
         val release = CompletableDeferred<Unit>()
         val owner = launch(start = CoroutineStart.UNDISPATCHED) {
             withDocumentActionOwner { release.await() }
         }
         val orientation = launch(start = CoroutineStart.UNDISPATCHED) {
-            DocumentOrientationProcessor(context).detect(listOf(Uri.fromFile(source)))
+            DocumentOrientationProcessor().detect(listOf(source))
         }
         try {
-            assertEquals(0, resolverReads)
             assertFalse(orientation.isCompleted)
             orientation.cancel()
             orientation.join()
             assertTrue(orientation.isCancelled)
             assertFalse(owner.isCompleted)
-            assertEquals(0, resolverReads)
         } finally {
             release.complete(Unit)
             owner.join()
             orientation.cancel()
             orientation.join()
         }
-        assertEquals(0, resolverReads)
     }
 
     @Test

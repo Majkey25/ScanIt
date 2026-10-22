@@ -1,3 +1,4 @@
+#Requires -Version 7.3
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
@@ -20,7 +21,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "52"
+$expectedVersionCode = "53"
 $expectedMinSdk = "29"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -eq "github"
@@ -231,12 +232,12 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.9.6-internal"
+        $expectedVersionName = "1.9.7-internal"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionCode = "52"
-        $expectedVersionName = "1.9.6"
+        $expectedVersionCode = "53"
+        $expectedVersionName = "1.9.7"
     }
 }
 $expectedPermissions = @(Get-ExpectedUsesPermissions -Flavor $Flavor -Package $expectedPackage)
@@ -333,7 +334,71 @@ function Resolve-AndroidSdkRoot {
     throw "Set ANDROID_HOME or ANDROID_SDK_ROOT, or add sdk.dir to local.properties."
 }
 
+function New-PrivateToolDirectory {
+    if (-not $isWindowsHost) {
+        return [IO.Directory]::CreateTempSubdirectory("scanit-release-tools-")
+    }
+
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $trustedInstaller = [Security.Principal.NTAccount]::new("NT SERVICE", "TrustedInstaller").Translate([Security.Principal.SecurityIdentifier])
+    $trustedOwners = @($user.Value, "S-1-5-18", "S-1-5-32-544", $trustedInstaller.Value)
+    $parent = [IO.DirectoryInfo]::new([IO.Path]::GetTempPath())
+    $writeRights = [long][Security.AccessControl.FileSystemRights]"Write, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership"
+    # Generic write/all bits may appear in Windows access rules without enum names.
+    $writeRights = $writeRights -bor 0x50000000
+    for ($ancestor = $parent; $null -ne $ancestor; $ancestor = $ancestor.Parent) {
+        if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Automatic bundletool download requires a trusted temporary path without reparse points. Use -BundletoolPath for a trusted local JAR."
+        }
+        $acl = [IO.FileSystemAclExtensions]::GetAccessControl($ancestor)
+        $descriptor = [Security.AccessControl.RawSecurityDescriptor]::new($acl.GetSecurityDescriptorBinaryForm(), 0)
+        if ($null -eq $descriptor.DiscretionaryAcl) {
+            throw "Automatic bundletool download refuses an unrestricted temporary directory tree. Use -BundletoolPath for a trusted local JAR."
+        }
+        if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trustedOwners) {
+            throw "Automatic bundletool download requires trusted temporary directory owners. Use -BundletoolPath for a trusted local JAR."
+        }
+        # Creating siblings in an ancestor does not grant replacement of an existing directory.
+        $unsafeRights = if ($ancestor.FullName -eq $parent.FullName) { $writeRights } else {
+            $writeRights -band (-bnot [long][Security.AccessControl.FileSystemRights]::CreateDirectories)
+        }
+        foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+            if (
+                $rule.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+                -not ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
+                $rule.IdentityReference.Value -notin $trustedOwners -and
+                ([long]$rule.FileSystemRights -band $unsafeRights)
+            ) {
+                throw "Automatic bundletool download requires a private temporary directory tree. Use -BundletoolPath for a trusted local JAR."
+            }
+        }
+    }
+
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetOwner($user)
+    $security.SetAccessRuleProtection($true, $false)
+    $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        $user, "FullControl", "ContainerInherit, ObjectInherit", "None", "Allow"
+    ))
+    $path = Join-Path $parent.FullName ("scanit-release-tools-" + [Guid]::NewGuid().ToString("N"))
+    if (Test-Path -LiteralPath $path) { throw "The private tool directory already exists." }
+    $directory = [IO.FileSystemAclExtensions]::CreateDirectory($security, $path)
+    $createdAcl = [IO.FileSystemAclExtensions]::GetAccessControl($directory)
+    $createdRules = @($createdAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+    if (
+        ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        -not $createdAcl.AreAccessRulesProtected -or
+        $createdAcl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $user.Value -or
+        $createdRules.Count -ne 1 -or
+        $createdRules[0].IdentityReference.Value -ne $user.Value -or
+        $createdRules[0].AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+        $createdRules[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl
+    ) { throw "The private tool directory has unsafe permissions." }
+    return $directory
+}
+
 function Get-Bundletool {
+    param([string]$PrivateDirectory)
     if (-not [string]::IsNullOrWhiteSpace($BundletoolPath)) {
         if (-not (Test-Path -LiteralPath $BundletoolPath -PathType Leaf)) {
             throw "bundletool was not found: $BundletoolPath"
@@ -343,29 +408,18 @@ function Get-Bundletool {
 
     $version = "1.18.3"
     $expectedHash = "A099CFA1543F55593BC2ED16A70A7C67FE54B1747BB7301F37FDFD6D91028E29"
-    $cacheRoot = Join-Path ([IO.Path]::GetTempPath()) "scanit-release-tools"
-    $cachedTool = Join-Path $cacheRoot "bundletool-all-$version.jar"
-    $validCache =
-        (Test-Path -LiteralPath $cachedTool -PathType Leaf) -and
-        ((Get-FileHash -LiteralPath $cachedTool -Algorithm SHA256).Hash -eq $expectedHash)
-    if (-not $validCache) {
-        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
-        $download = "$cachedTool.download-$PID"
-        try {
-            $previousProgressPreference = $ProgressPreference
-            $ProgressPreference = "SilentlyContinue"
-            Invoke-WebRequest -Uri "https://github.com/google/bundletool/releases/download/$version/bundletool-all-$version.jar" -OutFile $download
-            $ProgressPreference = $previousProgressPreference
-            if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expectedHash) {
-                throw "Downloaded bundletool checksum does not match the pinned release."
-            }
-            Move-Item -LiteralPath $download -Destination $cachedTool -Force
-        } finally {
-            $ProgressPreference = $previousProgressPreference
-            Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
+    $download = Join-Path $PrivateDirectory "bundletool-all-$version.jar"
+    $previousProgressPreference = $ProgressPreference
+    try {
+        $ProgressPreference = "SilentlyContinue"
+        Invoke-WebRequest -Uri "https://github.com/google/bundletool/releases/download/$version/bundletool-all-$version.jar" -OutFile $download
+        if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne $expectedHash) {
+            throw "Downloaded bundletool checksum does not match the pinned release."
         }
+    } finally {
+        $ProgressPreference = $previousProgressPreference
     }
-    return $cachedTool
+    return $download
 }
 
 function Get-ArchiveFacts {
@@ -617,10 +671,19 @@ if ($artifactType -eq "apk") {
     }
 } else {
     $java = (Get-Command java -ErrorAction Stop).Source
-    $bundletool = Get-Bundletool
-    $manifestOutput = @(& $java -jar $bundletool dump manifest "--bundle=$artifact" --module=base 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "bundletool could not inspect the AAB manifest: $($manifestOutput -join [Environment]::NewLine)"
+    $toolDirectory = if ([string]::IsNullOrWhiteSpace($BundletoolPath)) { New-PrivateToolDirectory } else { $null }
+    try {
+        $bundletool = Get-Bundletool -PrivateDirectory $toolDirectory.FullName
+        $manifestOutput = @(& $java -jar $bundletool dump manifest "--bundle=$artifact" --module=base 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "bundletool could not inspect the AAB manifest: $($manifestOutput -join [Environment]::NewLine)"
+        }
+        $resources = @(& $java -jar $bundletool dump resources "--bundle=$artifact" 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "bundletool could not inspect AAB resources."
+        }
+    } finally {
+        if ($null -ne $toolDirectory) { $toolDirectory.Delete($true) }
     }
     [xml]$manifestXml = $manifestOutput -join [Environment]::NewLine
     $manifest = $manifestXml.DocumentElement
@@ -642,10 +705,6 @@ if ($artifactType -eq "apk") {
         }
     )
     Assert-ExactUsesPermissions -Actual $actualPermissions -Expected $expectedPermissions -Flavor $Flavor
-    $resources = @(& $java -jar $bundletool dump resources "--bundle=$artifact" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "bundletool could not inspect AAB resources."
-    }
     if ($publicFlavor -and (($resources -join [Environment]::NewLine) -match $blockedPublicCodePattern)) {
         throw "Public release AAB contains blocked Gemini, Ads, Billing, or consent SDK resources."
     }

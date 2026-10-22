@@ -855,7 +855,7 @@ internal class ScanViewModel(
     private val savedCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
     private val restoredSafeShareActive = savedStateHandle.remove<Boolean>(SAFE_SHARE_ACTIVE_KEY) == true
     private val storage = ScanStorage(application)
-    private val documentOrientationProcessor = DocumentOrientationProcessor(application)
+    private val documentOrientationProcessor = DocumentOrientationProcessor()
     private val documentActionProcessor = DocumentActionProcessor(application)
     private val safeShareAnalyzer = SafeShareAnalyzer(application)
     private val markTemplateStore = MarkTemplateStore(application)
@@ -1711,16 +1711,12 @@ internal class ScanViewModel(
                             withPreviewHandoff(
                                 load = {
                                     val settings = currentSettings()
-                                    val processingContext = currentCoroutineContext()
-                                    val orientations = documentOrientationProcessor.detect(pageUris)
-                                    currentCoroutineContext().ensureActive()
                                     val cacheBuild =
-                                        storage.cacheScan(
+                                        storage.cacheScannerResult(
                                             pageUris = pageUris,
                                             appearanceSettings = googleScannerAppearanceSettings(),
                                             pdfSizeTarget = settings.pdfSizeTarget,
-                                            pageOrientations = orientations,
-                                            isCancelled = { !processingContext.isActive },
+                                            detectOrientations = documentOrientationProcessor::detect,
                                         )
                                     val cachedScan = cacheBuild.cached
                                     cached = cachedScan
@@ -4344,7 +4340,7 @@ internal class ScanViewModel(
 
     private fun beginVisualMarkTemplateMutation(
         clearDrawingOnSuccess: Boolean = false,
-        operation: () -> String?,
+        operation: suspend () -> String?,
     ) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val editor = current.visualMarkEditor ?: return
@@ -4362,7 +4358,7 @@ internal class ScanViewModel(
         source: MarkEditorSource,
         clearDrawingOnSuccess: Boolean = false,
         failureMessage: UiMessage = UiMessage(R.string.visual_mark_template_failed),
-        operation: () -> String?,
+        operation: suspend () -> String?,
     ) {
         visualMarkTemplateJob?.cancel()
         visualMarkTemplateJob =

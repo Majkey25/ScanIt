@@ -2,6 +2,15 @@
 
 All notable changes are documented here.
 
+## [1.9.7] - 2026-10-22
+
+### Fixed
+- Scanner orientation and caching share one bounded private input snapshot.
+- Signature imports release the template lock while reading, support cancellation, and limit admission when a provider stops responding.
+- Startup removes abandoned private input staging without following symbolic links or deleting unrelated cache files.
+- Release signing rejects files inside the checkout, including paths through symbolic links or junctions.
+- Downloaded release tools use private temporary storage; Windows rejects shared or redirected temporary directory trees.
+
 ## [1.9.6] - 2026-10-13
 
 ### Fixed

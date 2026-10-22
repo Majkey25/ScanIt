@@ -20,6 +20,13 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v1.9.7 Safer file imports
+
+Scanner pages and signature imports use bounded private copies before decoding.
+Cancelled reads release their temporary files, and startup removes unfinished
+imports left by a crash. Signing files and downloaded release tools have stricter
+filesystem boundaries.
+
 ## v1.9.6 Calendar QR compatibility
 
 Calendar QR codes without clock values retain their dates. Wi-Fi QR actions open
@@ -299,8 +306,17 @@ The public distributions share the same app features:
 | GitHub | `com.majkeylab.scanit.github` | APK |
 
 The separate internal debug flavor is not a public release artifact. Release
-signing reads an ignored local `keystore.properties` file; signing keys and
-passwords must never enter Git.
+signing reads `~/.android/scanit/keystore.properties`, or an absolute external path
+set with `-PseliaScanKeystoreProperties=...`. Relative `storeFile` paths resolve
+beside that properties file. Both files must stay outside the checkout and any
+synchronized project directory, with user-only filesystem access. Gradle rejects
+paths that resolve inside the checkout, including through symbolic links. Signing
+keys and passwords must never enter Git.
+The release verifier requires PowerShell 7.3 or newer to create private temporary
+directories for downloaded tools. On Windows, automatic downloads require a
+temporary path whose directory tree cannot be modified by other users. Shared or
+redirected temporary paths fail closed; use `-BundletoolPath` with a trusted local
+JAR instead.
 
 ## Technical choices
 
