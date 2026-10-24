@@ -25,4 +25,24 @@ class DistributionIsolationTest {
         assertFalse(appUi.contains("DistributionBannerAd"))
         assertFalse(appUi.contains("showDistributionInterstitial"))
     }
+
+    @Test
+    fun playPrivacyPageHasNoDonationOrLandingPageLinks() {
+        val policy = File(repository, "docs/play/privacy.html").readText()
+        val links = Regex("""<a\s[^>]*href="([^"]+)"""").findAll(policy)
+            .map { it.groupValues[1] }.toList()
+
+        assertTrue(links.isNotEmpty())
+        links.forEach { link ->
+            assertTrue(link, link == "#main" || link == "mailto:majkeylab@gmail.com" ||
+                listOf("developers.google.com", "support.google.com", "policies.google.com",
+                    "play.google.com", "docs.github.com", "uoou.gov.cz")
+                    .any { host -> link.startsWith("https://$host/") })
+        }
+        assertFalse(policy.contains("buymeacoffee", ignoreCase = true))
+        assertFalse(policy.contains("<script", ignoreCase = true))
+        assertTrue(policy.contains("Google Mobile Ads"))
+        assertTrue(policy.contains("Google Play Billing"))
+        assertTrue(policy.contains("com.majkeylab.scanit"))
+    }
 }
