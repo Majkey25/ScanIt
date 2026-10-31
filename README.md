@@ -20,6 +20,13 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v2.0.1 Lower verification memory
+
+JPEG output checks now decode a bounded preview while validating the full image
+header and dimensions. Saved resolution is unchanged. The
+[2.0.1 GitHub release](https://github.com/Majkey25/ScanIt/releases/tag/v2.0.1)
+is public; see [Play release status](docs/play-store/PLAY_CONSOLE.md) for Google review status.
+
 ## v2.0.0 Unlocked, without ads
 
 Version 2.0.0 is available on GitHub and Google Play. Production, closed Alpha,
@@ -98,7 +105,7 @@ inside the circular preview. The stable edition is still fully unlocked and ad-f
 | Edition | Features | Where to get it |
 | --- | --- | --- |
 | GitHub Full | All tools unlocked. No ads or Premium. Optional Coffee support only. | [Latest stable release](https://github.com/Majkey25/ScanIt/releases/latest) |
-| Google Play Full 2.0.0 | Available in production. All tools unlocked; no ads, Premium or donation link. | [Google Play listing](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
+| Google Play Full | Available in production. All tools unlocked; no ads, Premium or donation link. | [Google Play listing](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
 | Legacy Ads + Premium | Archived 1.9.9 source and binaries. Not the current stable version. | [Labelled prerelease archive](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.9-ads) |
 
 The old `-ads` releases remain **prerelease archives**, never Latest.
@@ -267,7 +274,7 @@ source, release artifacts, and real-device workflows.
 ## Install
 
 Download the
-[SeliaScan 2.0.0 GitHub APK](https://github.com/Majkey25/ScanIt/releases/download/v2.0.0/SeliaScan-v2.0.0-FULL-GITHUB.apk).
+[SeliaScan 2.0.1 GitHub APK](https://github.com/Majkey25/ScanIt/releases/download/v2.0.1/SeliaScan-v2.0.1-FULL-GITHUB.apk).
 SeliaScan supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before

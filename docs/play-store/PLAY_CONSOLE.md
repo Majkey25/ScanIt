@@ -1,4 +1,26 @@
-# Google Play 2.0.0 release
+# Google Play releases
+
+## 2.0.1 dashboard follow-up | October 31, 2026
+
+GitHub stable `v2.0.1` is public. Play production code `59` was submitted for
+review and is running automatic checks. Approval and public availability are
+not yet verified. Managed publishing is off.
+
+* AAB: `SeliaScan-v2.0.1-PLAY-FULL.aab`
+* SHA256: `107eab850defed19b418ce70b4f35be379d66b373f8859b79b86499f7f0f32cb`
+* Source: `7d12587cf30b84c6c666a90487f49c80422ee586`, merged through PR #99.
+* All tools remain free. No Ads, Premium, or Play donation link.
+* Signed release checks, 716 JVM tests, lint and GitHub CI passed.
+* Huawei passed 20 focused image, PDF, signature and stamp tests. A broader run
+  passed 27 of 28; the Czech OCR diacritic failure also occurs on unchanged 2.0.0.
+* Console reports no policy violations or outstanding App Content declarations.
+  Its 2.0.0 DEX scores are 97% optimization, 98% obfuscation and 98% shrinking.
+* Native-symbol warning remains: the four AndroidX graphics-path binaries have
+  no debug sections or symbol table. FULL symbol configuration is already on.
+  The two edge-to-edge recommendations lead into AndroidX compatibility code;
+  replacing it blindly would not remove the deprecated operations.
+
+## 2.0.0 free-edition release history
 
 This checkout builds both fully unlocked editions. Neither contains Ads, consent,
 Billing, Premium, paywalls, or feature locks.
