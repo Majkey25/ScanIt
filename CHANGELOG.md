@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.1] - 2026-10-31
+
+* JPEG output verification decodes a bounded preview instead of a second full-resolution bitmap. Header dimensions and JPEG format are still checked before publication.
+* Saved scans keep their original output resolution. Large odd-sized images and invalid files have device regression coverage.
+
 ## [2.0.0] - 2026-10-31
 
 * Both Google Play and GitHub editions are ad-free with all tools unlocked and no Premium purchase flow.

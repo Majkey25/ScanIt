@@ -11,6 +11,7 @@ import java.util.concurrent.CancellationException
 private const val MAX_RENDER_PIXELS = 12_000_000L
 private const val MAX_RENDER_EDGE = 6_000
 private const val MAX_RENDER_BITMAP_BYTES = MAX_RENDER_PIXELS * 4L
+private const val MAX_VERIFICATION_EDGE = 1_024
 private const val JPEG_QUALITY = 92
 private const val JPEG_MIME_TYPE = "image/jpeg"
 
@@ -373,18 +374,32 @@ private fun correctedLuma(
     return correctShadowLuma(rawLuma, background, shadowStrength)
 }
 
-private fun verifyRenderedJpeg(file: File, expectedWidth: Int, expectedHeight: Int) {
+internal fun verifyRenderedJpeg(file: File, expectedWidth: Int, expectedHeight: Int) {
     if (!file.isFile || file.length() <= 0L) throw IOException("Rendered JPEG is empty")
+    val bounds = readJpegBounds(file)
+    if (bounds.width != expectedWidth || bounds.height != expectedHeight) {
+        throw IOException("Rendered JPEG dimensions are incorrect")
+    }
+    val sampleSize = appearanceDecodeSampleSize(
+        bounds.width,
+        bounds.height,
+        maxPixels = MAX_VERIFICATION_EDGE.toLong() * MAX_VERIFICATION_EDGE,
+        maxEdge = MAX_VERIFICATION_EDGE,
+    )
     val verification =
         BitmapFactory.decodeFile(
             file.path,
             BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
                 inPreferredConfig = Bitmap.Config.RGB_565
                 inScaled = false
             },
         ) ?: throw IOException("Rendered JPEG could not be decoded")
     try {
-        if (verification.width != expectedWidth || verification.height != expectedHeight) {
+        if (
+            verification.width != sampledDimensionUpperBound(expectedWidth, sampleSize) ||
+                verification.height != sampledDimensionUpperBound(expectedHeight, sampleSize)
+        ) {
             throw IOException("Rendered JPEG dimensions are incorrect")
         }
     } finally {
