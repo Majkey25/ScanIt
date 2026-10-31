@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.0] - 2026-10-31
+
+* Both Google Play and GitHub editions are ad-free with all tools unlocked and no Premium purchase flow.
+* Optional Coffee support remains only in the GitHub edition. Previous subscriptions can still be managed in Google Play.
+* Settings now contains the saved signature and stamp library, with drawing, scanning, image import and transparent paper removal.
+* Filled stamp regions and existing transparent ink are preserved. Signature drafts survive rotation.
+* Text-entry dialogs keep their controls reachable above the keyboard.
+* Existing bounded imports, cache limits and recovery protections remain enabled.
+
 All notable changes are documented here.
 
 ## [1.9.8] - 2026-10-22

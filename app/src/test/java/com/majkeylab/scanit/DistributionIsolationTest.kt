@@ -16,7 +16,7 @@ class DistributionIsolationTest {
         assertTrue(build.contains("create(\"github\")"))
         assertTrue(build.contains("create(\"internal\")"))
         assertFalse(build.contains("create(\"beta\")"))
-        assertFalse(build.contains("create(\"play\")"))
+        assertTrue(build.contains("create(\"play\")"))
         assertFalse(build.contains("billingclient"))
         assertFalse(build.contains("ads-mobile-sdk"))
         assertFalse(build.contains("user-messaging-platform"))
@@ -24,6 +24,7 @@ class DistributionIsolationTest {
         assertFalse(appUi.contains("Premium"))
         assertFalse(appUi.contains("DistributionBannerAd"))
         assertFalse(appUi.contains("showDistributionInterstitial"))
+        assertTrue(appUi.contains("if (BuildConfig.ENABLE_DONATIONS)"))
     }
 
     @Test

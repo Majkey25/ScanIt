@@ -356,4 +356,7 @@
     <string name="safe_share_move_down">Mover hacia abajo</string>
     <string name="safe_share_grow">Ampliar área</string>
     <string name="safe_share_shrink">Reducir área</string>
+    <string name="visual_mark_library_hint">Dibuja, importa o escanea una firma o un sello en papel sin texto. Revisa la tinta en la vista previa gris antes de usarla. Las plantillas se guardan solo en este dispositivo. Puedes añadir varias al mismo documento.</string>
+    <string name="free_release_subscription_notice">Todas las funciones son gratuitas. Actualizar la aplicación no cancela una suscripción existente de Google Play. Si te suscribiste antes, gestiona o cancela la suscripción en Google Play.</string>
+    <string name="previous_subscriptions">Gestionar suscripciones anteriores</string>
 </resources>

@@ -39,6 +39,9 @@ $tasks = @(
     ":app:lintInternalDebug"
     ":app:assembleInternalDebug"
     ":app:assembleInternalDebugAndroidTest"
+    ":app:lintPlayRelease"
+    ":app:assemblePlayRelease"
+    ":app:bundlePlayRelease"
     ":app:lintGithubRelease"
     ":app:assembleGithubRelease"
     ":app:bundleGithubRelease"
@@ -81,6 +84,11 @@ try {
         -SignedPath "app/build/outputs/apk/github/release/app-github-release.apk" `
         -UnsignedPath "app/build/outputs/apk/github/release/app-github-release-unsigned.apk"
     & $verify internal "app/build/outputs/apk/internal/debug/app-internal-debug.apk" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath
+    $playApk = Get-BuiltReleaseApk `
+        -SignedPath "app/build/outputs/apk/play/release/app-play-release.apk" `
+        -UnsignedPath "app/build/outputs/apk/play/release/app-play-release-unsigned.apk"
+    & $verify play $playApk -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
+    & $verify play "app/build/outputs/bundle/playRelease/app-play-release.aab" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
     & $verify github $githubApk -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
     & $verify github "app/build/outputs/bundle/githubRelease/app-github-release.aab" -AllowUnsigned:$AllowUnsigned -BundletoolPath $BundletoolPath -ExpectedRevision $expectedRevision
 } finally {

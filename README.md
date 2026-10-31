@@ -20,6 +20,25 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v2.0.0 Free on Google Play and GitHub
+
+Both current editions have no ads, no Premium purchases, and all document tools
+unlocked. The Google Play edition has no donation link. The GitHub edition keeps
+an optional Buy Me a Coffee link, which does not unlock anything.
+
+Save multiple signatures and stamps in Settings, draw them, import an image, or
+scan them on paper. Paper removal runs on the device and saves transparent ink.
+Check the preview before use, especially for shadows or textured paper.
+Text-entry dialogs now scroll above the keyboard.
+
+If you previously bought a monthly subscription, updating the app does not
+automatically cancel it. Manage it in Google Play under Payments and subscriptions.
+
+The old monetized edition is preserved as the labelled
+[Ads + Premium prerelease archive](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.9-ads),
+including its source ZIP. It is separate from the current stable release and is
+not recommended for new installations.
+
 ## v1.9.8 Bounded document cache
 
 Imports and document edits share one cache write limit, including temporary
@@ -75,13 +94,13 @@ inside the circular preview. The stable edition is still fully unlocked and ad-f
 
 | Edition | Features | Where to get it |
 | --- | --- | --- |
-| Full / No Ads | All tools unlocked. No ads, Premium, or purchases. Optional Buy Me a Coffee donation only. | [Latest stable GitHub release](https://github.com/Majkey25/ScanIt/releases/latest) |
-| Ads + Premium | Free access modes, ads, and monthly or lifetime Premium through Google Play. | [Google Play](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) for eligible testers |
+| GitHub Full | All tools unlocked. No ads or Premium. Optional Coffee support only. | [Latest stable release](https://github.com/Majkey25/ScanIt/releases/latest) |
+| Google Play Full | All tools unlocked. No ads, Premium or donation link. | [Google Play](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
+| Legacy Ads + Premium | Archived 1.9.9 source and binaries. Not the current stable version. | [Labelled prerelease archive](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.9-ads) |
 
-The `-ads` GitHub releases are separately labeled **prerelease archives** of the
-Play build, never the Latest release. Use Google Play for installation and
-purchases. The public repository contains the fully unlocked edition; the Play
-source is maintained separately and its APK/AAB are backed up in those archives.
+The old `-ads` releases remain **prerelease archives**, never Latest. Current
+Google Play and GitHub builds use this fully unlocked source. The archived
+monetized source is supplied as a separate ZIP in the 1.9.9 archive.
 
 ## v1.9.0 update
 

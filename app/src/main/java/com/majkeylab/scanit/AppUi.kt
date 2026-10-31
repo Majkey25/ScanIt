@@ -132,15 +132,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-private const val PRIVACY_POLICY_URL =
-    "https://majkey25.github.io/ScanIt/privacy.html"
+private val PRIVACY_POLICY_URL =
+    if (BuildConfig.FLAVOR == "play") "https://majkey25.github.io/ScanIt/play/privacy.html"
+    else "https://majkey25.github.io/ScanIt/privacy.html"
 private const val THIRD_PARTY_NOTICES_URL =
     "https://majkey25.github.io/ScanIt/third-party-notices.txt"
 private const val SOURCE_CODE_URL = "https://github.com/Majkey25/ScanIt"
 internal const val SUPPORT_URL = "https://www.buymeacoffee.com/majkey"
 
 @Composable
-private fun dialogContentMaxHeight(): Dp =
+internal fun dialogContentMaxHeight(): Dp =
     with(LocalDensity.current) {
         (LocalWindowInfo.current.containerSize.height * 0.55f).toDp()
     }.coerceAtLeast(180.dp)
@@ -221,6 +222,7 @@ internal fun ScanItApp(
     onApplyVisualMark: () -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showVisualMarkLibrary by rememberSaveable { mutableStateOf(false) }
     val resultCacheId = (state as? ScreenState.Result)?.scan?.cached?.baseName
     var fileDetailsExpanded by rememberSaveable(resultCacheId) { mutableStateOf(false) }
     val backAction =
@@ -235,6 +237,7 @@ internal fun ScanItApp(
         val manualCleanupEditor = (state as? ScreenState.Result)?.manualCleanupEditor
         val documentActionState = (state as? ScreenState.Result)?.documentActionState
         when {
+            showVisualMarkLibrary -> showVisualMarkLibrary = false
             backAction == AppBackAction.CancelSafeShare -> onCancelSafeShare()
             !documentActionDismissAllowed(documentActionState) -> Unit
             manualCleanupEditor != null -> onCloseManualCleanup()
@@ -294,12 +297,15 @@ internal fun ScanItApp(
                 onScan = onScanVisualMark,
                 onApply = onApplyVisualMark,
             )
+        } else if (showVisualMarkLibrary) {
+            VisualMarkLibraryScreen(onClose = { showVisualMarkLibrary = false })
         } else if (showSettings) {
             SettingsScreen(
                 settings = settings,
                 language = language,
                 defaultEmailSubjects = defaultEmailSubjects,
                 onClose = closeSettings,
+                onOpenVisualMarkLibrary = { showVisualMarkLibrary = true },
                 onSave = onSaveSettings,
                 onLanguageChange = onLanguageChange,
                 onPdfFolderSelected = onPdfFolderSelected,
@@ -1417,6 +1423,8 @@ private fun DocumentActionStateDialog(
         onDismissRequest = {
             if (documentActionDismissAllowed(state)) onDismiss()
         },
+        modifier = if (findReady) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier,
+        properties = DialogProperties(decorFitsSystemWindows = !findReady),
         title = { Text(title) },
         text = {
             when (state) {
@@ -1521,44 +1529,44 @@ private fun DocumentActionStateDialog(
                                 }
                             }
                         DocumentActionOutput.FindReady ->
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                OutlinedTextField(
-                                    value = query,
-                                    onValueChange = { value ->
-                                        if (value.length <= MAX_FIND_QUERY_CHARACTERS) query = value
-                                    },
-                                    label = { Text(stringResource(R.string.search_document)) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = maxContentHeight),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                item {
+                                    OutlinedTextField(
+                                        value = query,
+                                        onValueChange = { value ->
+                                            if (value.length <= MAX_FIND_QUERY_CHARACTERS) query = value
+                                        },
+                                        label = { Text(stringResource(R.string.search_document)) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                                 if (query.isNotEmpty() && matches.isEmpty()) {
-                                    Text(stringResource(R.string.no_matches_found))
+                                    item { Text(stringResource(R.string.no_matches_found)) }
                                 } else {
-                                    LazyColumn(
-                                        modifier = Modifier.heightIn(max = maxContentHeight),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        itemsIndexed(matches) { index, match ->
-                                            Surface(
-                                                onClick = { onSelectMatch(match) },
-                                                shape = MaterialTheme.shapes.small,
-                                                border =
-                                                    BorderStroke(
-                                                        1.dp,
-                                                        MaterialTheme.colorScheme.outlineVariant,
-                                                    ),
-                                                modifier =
-                                                    Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                                            ) {
-                                                Text(
-                                                    stringResource(
-                                                        R.string.match_page,
-                                                        index + 1,
-                                                        match.page + 1,
-                                                    ),
-                                                    modifier = Modifier.padding(16.dp),
-                                                )
-                                            }
+                                    itemsIndexed(matches) { index, match ->
+                                        Surface(
+                                            onClick = { onSelectMatch(match) },
+                                            shape = MaterialTheme.shapes.small,
+                                            border =
+                                                BorderStroke(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outlineVariant,
+                                                ),
+                                            modifier =
+                                                Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    R.string.match_page,
+                                                    index + 1,
+                                                    match.page + 1,
+                                                ),
+                                                modifier = Modifier.padding(16.dp),
+                                            )
                                         }
                                     }
                                 }
@@ -2754,6 +2762,8 @@ private fun PdfSizeTargetDialog(
     val choices: List<PdfSizeTarget?> = PdfSizeTarget.presets + null
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(stringResource(R.string.pdf_size)) },
         text = {
             Column(
@@ -2935,6 +2945,8 @@ private fun ImageSizeDialog(
             selectedCustom != current.customMaxDimension
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(stringResource(R.string.image_size)) },
         text = {
             Column(
@@ -3499,6 +3511,7 @@ private fun SettingsScreen(
     language: AppLanguage,
     defaultEmailSubjects: Set<String>,
     onClose: () -> Unit,
+    onOpenVisualMarkLibrary: () -> Unit,
     onSave: (AppSettings, (Boolean) -> Unit) -> Unit,
     onLanguageChange: (AppLanguage) -> Unit,
     onPdfFolderSelected: (Uri, Int, (Result<UiMessage?>) -> Unit) -> Unit,
@@ -3660,19 +3673,26 @@ private fun SettingsScreen(
         val customKilobytes = parseCustomPdfKilobytes(customPdfSizeInput, customPdfSizeUnit)
         AlertDialog(
             onDismissRequest = { customPdfSizeDialogOpen = false },
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+            properties = DialogProperties(decorFitsSystemWindows = false),
             title = { Text(stringResource(R.string.pdf_size_custom_title)) },
             text = {
-                CustomPdfSizeInput(
-                    value = customPdfSizeInput,
-                    onValueChange = { customPdfSizeInput = it },
-                    unit = customPdfSizeUnit,
-                    onUnitChange = { nextUnit ->
-                        val value = customKilobytes
-                        customPdfSizeUnit = nextUnit
-                        customPdfSizeInput = formatCustomPdfSizeInput(value, nextUnit)
-                    },
-                    valid = customKilobytes != null,
-                )
+                Column(
+                    modifier = Modifier.heightIn(max = dialogContentMaxHeight())
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    CustomPdfSizeInput(
+                        value = customPdfSizeInput,
+                        onValueChange = { customPdfSizeInput = it },
+                        unit = customPdfSizeUnit,
+                        onUnitChange = { nextUnit ->
+                            val value = customKilobytes
+                            customPdfSizeUnit = nextUnit
+                            customPdfSizeInput = formatCustomPdfSizeInput(value, nextUnit)
+                        },
+                        valid = customKilobytes != null,
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -3824,6 +3844,14 @@ private fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            }
+            item {
+                OutlinedButton(
+                    onClick = onOpenVisualMarkLibrary,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    ActionButtonContent(R.drawable.ic_signature, R.string.saved_visual_marks)
+                }
             }
             item {
                 SettingsCategoryHeader(
@@ -4072,28 +4100,30 @@ private fun SettingsScreen(
                 }
             }
             item { HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp)) }
-            item {
-                settingsError?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
-                Button(
-                    onClick = {
-                        Toast.makeText(context, supportNotice, Toast.LENGTH_SHORT).show()
-                        uriHandler.openUri(SUPPORT_URL)
-                    },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                    border = BorderStroke(1.dp, Color(0xFF111111)),
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFFDD00),
-                            contentColor = Color(0xFF111111),
-                        ),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_coffee),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(stringResource(R.string.support_scanit))
+            settingsError?.let { error -> item { Text(error.resolve(), color = MaterialTheme.colorScheme.error) } }
+            if (BuildConfig.ENABLE_DONATIONS) {
+                item {
+                    Button(
+                        onClick = {
+                            Toast.makeText(context, supportNotice, Toast.LENGTH_SHORT).show()
+                            uriHandler.openUri(SUPPORT_URL)
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                        border = BorderStroke(1.dp, Color(0xFF111111)),
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFFDD00),
+                                contentColor = Color(0xFF111111),
+                            ),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_coffee),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(stringResource(R.string.support_scanit))
+                    }
                 }
             }
             item { Spacer(Modifier.height(8.dp)) }
@@ -4147,6 +4177,21 @@ private fun SettingsScreen(
                         }
                         if (appInfoExpanded) {
                             HorizontalDivider()
+                            if (BuildConfig.FLAVOR == "play") {
+                                Text(
+                                    stringResource(R.string.free_release_subscription_notice),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        uriHandler.openUri("https://play.google.com/store/account/subscriptions")
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                ) {
+                                    ActionButtonContent(R.drawable.ic_restore, R.string.previous_subscriptions)
+                                }
+                            }
                             TextButton(
                                 onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) },
                                 modifier = Modifier.fillMaxWidth(),

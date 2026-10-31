@@ -39,8 +39,9 @@ android {
         minSdk = 29
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 54
-        versionName = "1.9.8"
+        versionCode = 58
+        versionName = "2.0.0"
+        buildConfigField("boolean", "ENABLE_DONATIONS", "false")
     }
 
     signingConfigs {
@@ -87,12 +88,17 @@ android {
 
     flavorDimensions += "distribution"
     productFlavors {
+        create("play") {
+            dimension = "distribution"
+        }
         create("github") {
             dimension = "distribution"
+            buildConfigField("boolean", "ENABLE_DONATIONS", "true")
             applicationIdSuffix = ".github"
         }
         create("internal") {
             dimension = "distribution"
+            buildConfigField("boolean", "ENABLE_DONATIONS", "true")
             applicationIdSuffix = ".internal"
             versionNameSuffix = "-internal"
         }
@@ -100,6 +106,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     bundle {
@@ -117,6 +124,7 @@ android {
 androidComponents {
     beforeVariants { variantBuilder ->
         variantBuilder.enable = variantBuilder.name in setOf(
+            "playRelease",
             "githubRelease",
             "internalDebug",
         )

@@ -891,10 +891,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 54"))
-        assertTrue(build.contains("versionName = \"1.9.8\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"54\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"1.9.8\""))
+        assertTrue(build.contains("versionCode = 58"))
+        assertTrue(build.contains("versionName = \"2.0.0\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"58\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"2.0.0\""))
         assertTrue(rootBuild.contains("version \"9.4.1\""))
         assertTrue(wrapper.contains("gradle-9.8.1-bin.zip"))
         assertTrue(wrapper.contains("dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f"))
@@ -906,14 +906,14 @@ class PureLogicTest {
         assertTrue(build.contains("seliaScanKeystoreProperties"))
         assertTrue(build.contains(".android/scanit/keystore.properties"))
         assertTrue(buildTool.contains("Get-BuiltReleaseApk"))
-        assertTrue(verifier.contains("ValidateSet(\"internal\", \"github\")"))
+        assertTrue(verifier.contains("ValidateSet(\"internal\", \"play\", \"github\")"))
         assertTrue(verifier.contains("Assert-ExactUsesPermissions"))
         assertTrue(verifier.contains("Assert-ArchiveEntryCount"))
         assertTrue(verifier.contains("Add-ScannedArchiveBytes"))
         assertTrue(verifier.contains("legal/LICENSES/MIT.txt"))
         assertTrue(verifier.contains("incomplete MIT license"))
         assertFalse(build.contains("create(\"beta\")"))
-        assertFalse(build.contains("create(\"play\")"))
+        assertTrue(build.contains("create(\"play\")"))
     }
 
     @Test

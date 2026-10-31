@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet("internal", "github")]
+    [ValidateSet("internal", "play", "github")]
     [string]$Flavor,
 
     [Parameter(Mandatory, Position = 1)]
@@ -21,10 +21,10 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "54"
+$expectedVersionCode = "58"
 $expectedMinSdk = "29"
 $expectedTargetSdk = "36"
-$publicFlavor = $Flavor -eq "github"
+$publicFlavor = $Flavor -ne "internal"
 $sdkRootWasExplicit = $PSBoundParameters.ContainsKey("SdkRoot")
 $blockedPublicCodePattern =
     '(?i)(gemini|generativelanguage\.googleapis\.com|com[./]android[./]billingclient|com[./]google[./]android[./](?:gms|libraries)[./]ads|com[./]google[./]android[./]ump|googlemobileads|admob|user-messaging-platform)'
@@ -232,12 +232,15 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "1.9.8-internal"
+        $expectedVersionName = "2.0.0-internal"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionCode = "54"
-        $expectedVersionName = "1.9.8"
+        $expectedVersionName = "2.0.0"
+    }
+    "play" {
+        $expectedPackage = "com.majkeylab.scanit"
+        $expectedVersionName = "2.0.0"
     }
 }
 $expectedPermissions = @(Get-ExpectedUsesPermissions -Flavor $Flavor -Package $expectedPackage)
@@ -545,6 +548,30 @@ function Get-ArchiveFacts {
         $dexPattern = if ($artifactType -eq "apk") { '^classes\d*\.dex$' } else { '^base/dex/classes\d*\.dex$' }
         if (-not ($names | Where-Object { $_ -match $dexPattern })) {
             throw "Archive contains no base DEX file."
+        }
+        if ($publicFlavor -and $artifactType -eq "aab") {
+            $r8Entry = $archive.GetEntry("BUNDLE-METADATA/com.android.tools/r8.json")
+            if ($null -eq $r8Entry -or $r8Entry.Length -lt 1 -or $r8Entry.Length -gt 1MB) {
+                throw "Release bundle must contain bounded R8 optimization metadata."
+            }
+            $r8Reader = [IO.StreamReader]::new($r8Entry.Open())
+            try {
+                $r8 = $r8Reader.ReadToEnd() | ConvertFrom-Json
+            } finally {
+                $r8Reader.Dispose()
+            }
+            foreach ($option in @("isObfuscationEnabled", "isOptimizationsEnabled", "isShrinkingEnabled")) {
+                if ($r8.options.$option -ne $true) {
+                    throw "Release bundle disables R8 option: $option"
+                }
+            }
+            foreach ($stat in @("noObfuscationPercentage", "noOptimizationPercentage", "noShrinkingPercentage")) {
+                $value = $r8.stats.$stat
+                if ($null -eq $value -or [double]::IsNaN([double]$value) -or
+                    [double]$value -lt 0 -or [double]$value -gt 75) {
+                    throw "Release bundle does not meet 25% R8 coverage: $stat=$value"
+                }
+            }
         }
 
         $mapping = $archive.GetEntry("BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map")

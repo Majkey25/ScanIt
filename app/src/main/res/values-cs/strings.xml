@@ -359,4 +359,7 @@
     <string name="safe_share_move_down">Posunout dolů</string>
     <string name="safe_share_grow">Zvětšit oblast</string>
     <string name="safe_share_shrink">Zmenšit oblast</string>
+    <string name="visual_mark_library_hint">Nakreslete, importujte nebo naskenujte podpis či razítko na čistém papíře. Před použitím zkontrolujte inkoust na šedém náhledu. Uložené podpisy zůstávají v tomto zařízení. Do stejného dokumentu můžete postupně přidat více podpisů i razítek.</string>
+    <string name="free_release_subscription_notice">Všechny funkce jsou nyní zdarma. Aktualizace aplikace nezruší dřívější předplatné Google Play. Pokud jste si ho koupili, spravujte nebo zrušte ho v Google Play.</string>
+    <string name="previous_subscriptions">Správa dřívějších předplatných</string>
 </resources>

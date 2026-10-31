@@ -284,7 +284,7 @@ internal fun atomicSaveMarkTemplate(
     }
 }
 
-private fun normalizeMarkBitmap(source: Bitmap): Bitmap {
+internal fun normalizeMarkBitmap(source: Bitmap): Bitmap {
     require(source.width > 0 && source.height > 0) { "Mark bitmap is empty" }
     val (processingWidth, processingHeight) =
         boundedMarkDimensions(source.width, source.height, MARK_DECODE_MAX_SIDE)
@@ -297,10 +297,10 @@ private fun normalizeMarkBitmap(source: Bitmap): Bitmap {
     try {
         val pixels = IntArray(processing.width * processing.height)
         processing.getPixels(pixels, 0, processing.width, 0, 0, processing.width, processing.height)
-        pixels.indices.forEach { index -> pixels[index] = whiteToTransparentArgb(pixels[index]) }
-        val bounds = visiblePixelBounds(processing.width, processing.height, pixels)
+        val ink = extractMarkInk(processing.width, processing.height, pixels)
+        val bounds = visiblePixelBounds(processing.width, processing.height, ink)
             ?: throw IOException("The selected mark has no visible ink")
-        val croppedPixels = cropArgbPixels(processing.width, processing.height, pixels, bounds)
+        val croppedPixels = cropArgbPixels(processing.width, processing.height, ink, bounds)
         val cropped =
             Bitmap.createBitmap(croppedPixels, bounds.width, bounds.height, Bitmap.Config.ARGB_8888)
         val (outputWidth, outputHeight) =

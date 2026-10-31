@@ -323,7 +323,7 @@ internal fun VisualMarkEditorScreen(
 }
 
 @Composable
-private fun VisualMarkTopBar(
+internal fun VisualMarkTopBar(
     closeEnabled: Boolean,
     onClose: () -> Unit,
 ) {
@@ -354,7 +354,7 @@ private fun VisualMarkTopBar(
 }
 
 @Composable
-private fun VisualMarkCreationActions(
+internal fun VisualMarkCreationActions(
     enabled: Boolean,
     onDraw: () -> Unit,
     onImport: () -> Unit,
@@ -384,7 +384,7 @@ private fun VisualMarkCreationActions(
 }
 
 @Composable
-private fun VisualMarkTemplateRow(
+internal fun VisualMarkTemplateRow(
     ids: List<String>,
     selectedId: String?,
     enabled: Boolean,
@@ -437,7 +437,7 @@ private fun VisualMarkTemplateRow(
 }
 
 @Composable
-private fun ownedVisualMarkBitmap(
+internal fun ownedVisualMarkBitmap(
     id: String?,
     maxSide: Int,
     onLoad: suspend (String, Int) -> Bitmap?,
@@ -577,7 +577,7 @@ private fun VisualMarkSlider(
 }
 
 @Composable
-private fun DrawVisualMarkDialog(
+internal fun DrawVisualMarkDialog(
     initialStrokes: List<MarkStroke>,
     message: UiMessage?,
     onDraftChange: (List<MarkStroke>) -> Unit,

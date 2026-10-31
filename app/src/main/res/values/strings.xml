@@ -357,4 +357,7 @@
     <string name="safe_share_move_down">Move down</string>
     <string name="safe_share_grow">Grow area</string>
     <string name="safe_share_shrink">Shrink area</string>
+    <string name="visual_mark_library_hint">Draw, import or scan a signature or stamp on plain paper. Check the ink on the grey preview before use. Saved marks stay on this device. You can add several marks to the same document.</string>
+    <string name="free_release_subscription_notice">All features are now free. Updating the app does not cancel an existing Google Play subscription. If you previously subscribed, manage or cancel it in Google Play.</string>
+    <string name="previous_subscriptions">Manage previous subscriptions</string>
 </resources>

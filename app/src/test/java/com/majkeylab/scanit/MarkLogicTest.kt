@@ -10,6 +10,26 @@ import org.junit.Test
 
 class MarkLogicTest {
     @Test
+    fun solidStampInteriorsStayFilledAndPaperHolesStayTransparent() {
+        val width = 128
+        val height = 96
+        val paper = 0xFFF0E8E0.toInt()
+        for (color in intArrayOf(0xFF444444.toInt(), 0xFFB04040.toInt(), 0xFF4040B0.toInt())) {
+            val pixels = IntArray(width * height) { paper }
+            for (y in 18..77) for (x in 24..103) pixels[y * width + x] = color
+            for (y in 36..59) for (x in 48..79) pixels[y * width + x] = paper
+
+            val ink = extractMarkInk(width, height, pixels)
+
+            for (y in 0 until height) for (x in 0 until width) {
+                val inStamp = y in 18..77 && x in 24..103 && !(y in 36..59 && x in 48..79)
+                if (inStamp) assertTrue("Missing solid ink at $x,$y", ink[y * width + x] ushr 24 >= 64)
+                else assertEquals("Paper remained at $x,$y", 0, ink[y * width + x])
+            }
+        }
+    }
+
+    @Test
     fun pageEdgeCoordinatesStayNormalizedAndRejectLetterboxInput() {
         val edge = normalizedPageMarkPoint(195.47345f, 180f, 320, 180, 512, 1_299)
         assertEquals(MarkPoint(1f, 1f), edge)
@@ -282,14 +302,156 @@ class MarkLogicTest {
     }
 
     @Test
-    fun whiteRemovalUsesStableThresholdsAndKeepsColoredInk() {
-        assertEquals(0x00000000, whiteToTransparentArgb(0xFFFFFFFF.toInt()))
-        assertEquals(0xFF000000.toInt(), whiteToTransparentArgb(0xFF000000.toInt()))
-        assertEquals(0xFFDCEDFF.toInt(), whiteToTransparentArgb(0xFFDCEDFF.toInt()))
-        assertEquals(0x00000000, whiteToTransparentArgb(0xFFF5FAFF.toInt()))
-        assertEquals(0x33F0F5FF, whiteToTransparentArgb(0xFFF0F5FF.toInt()))
-        assertEquals(0xFF3366CC.toInt(), whiteToTransparentArgb(0xFF3366CC.toInt()))
-        assertEquals(0x00000000, whiteToTransparentArgb(0x003366CC))
+    fun blankWhiteGreyAndTintedPaperContainNoInk() {
+        for (paper in intArrayOf(-1, 0xFFF0E4CB.toInt(), 0xFFDCEDFF.toInt(), 0xFF808080.toInt())) {
+            val pixels = IntArray(96 * 64) { paper }
+            val original = pixels.copyOf()
+            val ink = extractMarkInk(96, 64, pixels)
+
+            assertTrue("Blank paper ${paper.toUInt().toString(16)} survived", ink.all { it == 0 })
+            assertArrayEquals(original, pixels)
+            assertNull(visiblePixelBounds(96, 64, ink))
+        }
+    }
+
+    @Test
+    fun unevenTintedPaperAndBroadShadowAreRemovedWithoutBorderNoise() {
+        val width = 192
+        val height = 128
+        val pixels = shadedPaper(width, height)
+        for (y in 0 until height) {
+            for (x in 0 until width / 3) {
+                val index = y * width + x
+                val pixel = pixels[index]
+                pixels[index] = opaqueRgb(
+                    (pixel ushr 16 and 255) - 25,
+                    (pixel ushr 8 and 255) - 25,
+                    (pixel and 255) - 25,
+                )
+            }
+        }
+
+        val ink = extractMarkInk(width, height, pixels)
+
+        assertTrue("Blank shaded paper retained ${ink.count { it != 0 }} pixels", ink.all { it == 0 })
+    }
+
+    @Test
+    fun blackBlueAndRedStrokesAndIsolatedDotsSurviveShadedPaper() {
+        val width = 192
+        val height = 128
+        val pixels = shadedPaper(width, height)
+        val colors = intArrayOf(0xFF000000.toInt(), 0xFF153995.toInt(), 0xFFAE1630.toInt())
+        for ((index, color) in colors.withIndex()) {
+            for (y in 20..100) {
+                for (x in 40 + index * 50..42 + index * 50) pixels[y * width + x] = color
+            }
+        }
+        pixels[8 * width + 16] = colors[0]
+
+        val ink = extractMarkInk(width, height, pixels)
+
+        assertEquals(PixelBounds(16, 8, 143, 101), visiblePixelBounds(width, height, ink))
+        assertEquals(colors[0], ink[8 * width + 16])
+        assertEquals(colors[0], ink[60 * width + 41])
+        val blue = ink[60 * width + 91]
+        assertTrue(blue ushr 24 > 180 && (blue and 255) > (blue ushr 16 and 255) + 100)
+        val red = ink[60 * width + 141]
+        assertTrue(red ushr 24 > 180 && (red ushr 16 and 255) > (red and 255) + 100)
+        for (index in pixels.indices) {
+            if (pixels[index] !in colors) assertEquals("Paper remained at $index", 0, ink[index])
+        }
+    }
+
+    @Test
+    fun paperMattedAntialiasingBecomesColoredAlphaWithoutGreyOrWhiteFringe() {
+        val width = 96
+        val paper = 0xFFE0D0C0.toInt()
+        for (color in intArrayOf(0xFF000000.toInt(), 0xFF0000C0.toInt(), 0xFFC00000.toInt())) {
+            val pixels = IntArray(width * 64) { paper }
+            for ((index, alpha) in listOf(64, 128, 192, 255).withIndex()) {
+                pixels[32 * width + 40 + index] = compositeInk(color, alpha, paper)
+            }
+
+            val ink = extractMarkInk(width, 64, pixels)
+
+            for ((index, alpha) in listOf(64, 128, 192, 255).withIndex()) {
+                val pixel = ink[32 * width + 40 + index]
+                assertEquals(alpha.toDouble(), (pixel ushr 24).toDouble(), 2.0)
+                for (shift in listOf(16, 8, 0)) {
+                    assertEquals((color ushr shift and 255).toDouble(), (pixel ushr shift and 255).toDouble(), 4.0)
+                }
+                val onPaper = compositeInk(pixel, pixel ushr 24, paper)
+                val onDark = compositeInk(pixel, pixel ushr 24, 0xFF182838.toInt())
+                val expectedDark = compositeInk(color, alpha, 0xFF182838.toInt())
+                for (shift in listOf(16, 8, 0)) {
+                    assertEquals(
+                        (pixels[32 * width + 40 + index] ushr shift and 255).toDouble(),
+                        (onPaper ushr shift and 255).toDouble(),
+                        2.0,
+                    )
+                    assertEquals((expectedDark ushr shift and 255).toDouble(), (onDark ushr shift and 255).toDouble(), 2.0)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun existingTransparencyPreservesWhitePaleInkAndAntialiasedEdgesExactly() {
+        for (transparent in intArrayOf(0x00ABCDEF, 0x803366CC.toInt())) {
+            val pixels = intArrayOf(transparent, -1, 0xFFF0E4CB.toInt(), 0x20406080, 0xFF000000.toInt(), 0x7FFFFFFF)
+
+            assertArrayEquals(pixels, extractMarkInk(3, 2, pixels))
+        }
+    }
+
+    @Test
+    fun onePixelNeutralStrokesSurviveShadingWithCleanRgbAndNoPaperResidue() {
+        val width = 192
+        val height = 128
+        val pixels = shadedPaper(width, height)
+        for (y in 16..111) {
+            val x = 48 + y / 4
+            pixels[y * width + x] = compositeInk(0xFF000000.toInt(), 48, pixels[y * width + x])
+        }
+
+        val ink = extractMarkInk(width, height, pixels)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val pixel = ink[y * width + x]
+                if (y in 16..111 && x == 48 + y / 4) {
+                    assertTrue("Thin neutral stroke lost at ($x,$y)", pixel ushr 24 in 40..64)
+                    for (shift in listOf(16, 8, 0)) {
+                        assertTrue("Paper RGB remained at ($x,$y)", (pixel ushr shift and 255) <= 8)
+                    }
+                } else {
+                    assertEquals("Paper remained at ($x,$y)", 0, pixel)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun neutralInkAtTheExistingVisibilityLimitSurvives() {
+        val pixels = IntArray(9 * 9) { -1 }
+        pixels[40] = 0xFFEFEFEF.toInt()
+
+        val ink = extractMarkInk(9, 9, pixels)
+
+        assertEquals(0x10000000, ink[40])
+        assertEquals(PixelBounds(4, 4, 5, 5), visiblePixelBounds(9, 9, ink))
+    }
+
+    @Test
+    fun inkExtractionRejectsInvalidOrUnboundedImages() {
+        assertThrows(IllegalArgumentException::class.java) { extractMarkInk(0, 1, intArrayOf()) }
+        assertThrows(IllegalArgumentException::class.java) { extractMarkInk(2, 2, IntArray(3)) }
+        assertThrows(IllegalArgumentException::class.java) {
+            extractMarkInk(MARK_DECODE_MAX_SIDE + 1, 1, IntArray(MARK_DECODE_MAX_SIDE + 1))
+        }
+        assertArrayEquals(intArrayOf(0), extractMarkInk(1, 1, intArrayOf(-1)))
+        assertArrayEquals(intArrayOf(0xFF000000.toInt()), extractMarkInk(1, 1, intArrayOf(0xFF000000.toInt())))
     }
 
     @Test
@@ -318,15 +480,17 @@ class MarkLogicTest {
     }
 
     @Test
-    fun whiteRemovalThenCropRetainsOnlyColoredInk() {
+    fun paperRemovalThenCropRetainsOnlyColoredInk() {
         val converted =
-            whiteToTransparentArgb(
+            extractMarkInk(
+                3,
+                2,
                 intArrayOf(
                     0xFFFFFFFF.toInt(),
                     0xFFFF0000.toInt(),
                     0xFFFFFFFF.toInt(),
                     0xFFFFFFFF.toInt(),
-                    0xFFF0F5FF.toInt(),
+                    0xFF0000FF.toInt(),
                     0xFFFFFFFF.toInt(),
                 ),
             )
@@ -334,7 +498,7 @@ class MarkLogicTest {
 
         assertEquals(PixelBounds(1, 0, 2, 2), bounds)
         assertArrayEquals(
-            intArrayOf(0xFFFF0000.toInt(), 0x33F0F5FF),
+            intArrayOf(0xFFFF0000.toInt(), 0xFF0000FF.toInt()),
             cropArgbPixels(3, 2, converted, bounds!!),
         )
     }
@@ -373,6 +537,24 @@ class MarkLogicTest {
                 }
             }
         }
+    }
+
+    private fun shadedPaper(width: Int, height: Int): IntArray =
+        IntArray(width * height) { index ->
+            val x = index % width
+            val y = index / width
+            val shade = 120 + 80 * x / (width - 1) + 30 * y / (height - 1)
+            val noise = (x * 13 + y * 7) % 5 - 2
+            opaqueRgb(shade + noise, shade - 8 + noise, shade - 16 + noise)
+        }
+
+    private fun opaqueRgb(red: Int, green: Int, blue: Int): Int =
+        (255 shl 24) or (red shl 16) or (green shl 8) or blue
+
+    private fun compositeInk(color: Int, alpha: Int, paper: Int): Int {
+        fun channel(shift: Int): Int =
+            ((color ushr shift and 255) * alpha + (paper ushr shift and 255) * (255 - alpha) + 127) / 255
+        return opaqueRgb(channel(16), channel(8), channel(0))
     }
 
     private fun assertRotatedBounds(
