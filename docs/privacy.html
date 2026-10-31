@@ -26,13 +26,14 @@
 
   <main id="main" class="policy" tabindex="-1">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-10-05</p>
+    <p class="updated">Last updated: 2026-10-31</p>
+    <p>From version 2.0.0, both current editions are ad-free with all tools unlocked. Neither includes advertising, consent or Billing SDKs. Older Google Play versions are described in the legacy section below. Updating does not automatically cancel an existing subscription.</p>
 
     <p>This policy describes the public SeliaScan Android app and this SeliaScan website. Contact the maintainer at <a href="mailto:majkeylab@gmail.com">majkeylab@gmail.com</a> with privacy questions. Do not email private documents or credentials.</p>
     <p>Matěj Teplý, publishing as Majkey, maintains SeliaScan and is responsible for support correspondence received at that address.</p>
 
     <div class="notice">
-      <strong>Short version:</strong> scanning, OCR and cleanup run on-device. Selected sharing, storage, printing and speech services have their own data handling. The stable GitHub edition has no accounts, ads, Billing, first-party analytics, maintainer-operated document server, or generative-AI client. The separately maintained Google Play edition contains Google advertising, consent, and Play Billing SDKs but does not send document content to them.
+      Scanning, OCR and cleanup run on-device. Selected sharing, storage, printing and speech services have their own data handling. Current editions have no accounts, ads, Billing, first-party analytics, maintainer-operated document server, or generative-AI client.
     </div>
 
     <h2>Information the app handles locally</h2>
@@ -71,8 +72,8 @@
     <h2>Read all pages</h2>
     <p>Text extraction runs locally. Playback passes the selected document text to your Android text-to-speech engine after you tap Play and confirm the disclosure. That engine or voice may process text online under its own settings and privacy terms. SeliaScan cannot guarantee offline processing by a third-party speech engine. Do not confirm playback of sensitive text unless you trust the selected engine.</p>
 
-    <h2>Google Play edition</h2>
-    <p>The separately maintained Google Play edition uses the <code>com.majkeylab.scanit</code> package and includes Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are not present in the stable GitHub edition. SeliaScan requests consent where required before initializing or loading ads and provides a Privacy options control in App info when Google requires it.</p>
+    <h2>Legacy Google Play versions before 2.0.0</h2>
+    <p>Older Google Play versions use the <code>com.majkeylab.scanit</code> package and include Google Mobile Ads, Google User Messaging Platform, and Google Play Billing. These SDKs are absent from current editions. Older versions request consent where required before initializing or loading ads and provide a Privacy options control in App info when Google requires it.</p>
 
     <p>Google states that its current Mobile Ads SDK automatically collects and shares IP address, product interactions such as app launches, taps, and video views, diagnostic information such as launch time, hangs, and energy use, and device or account identifiers including Android advertising ID and app set ID. Google uses this information for advertising, analytics, and fraud prevention and encrypts it in transit using TLS. See Google's <a href="https://developers.google.com/admob/android/next-gen/privacy/play-data-disclosure">GMA Next-Gen data disclosure</a> and <a href="https://policies.google.com/privacy">Privacy Policy</a>.</p>
 
@@ -82,7 +83,7 @@
     <p>Google Play Billing returns the monthly subscription or lifetime Premium product identifier, purchase state, acknowledgement state, and purchase token needed to buy or restore Premium for the current Google Play account. SeliaScan does not receive payment-card details, does not log purchase tokens, and does not persist a local Premium entitlement. Either confirmed product unlocks Document Actions and removes ads. The monthly subscription renews until canceled in Google Play. A pending purchase grants nothing until Google Play confirms it.</p>
 
     <h2>Information SeliaScan does not request</h2>
-    <p>The stable GitHub edition has no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, location access, or notification access. The Google Play edition adds Internet access plus Google advertising, consent, and Play Billing components. Neither edition requests its own camera permission because the scanner uses the Google Play services camera flow, and neither requests broad legacy storage access.</p>
+    <p>Current editions have no account system, advertising SDK, billing SDK, first-party analytics, app-owned Internet access, contact access, local-network access, location access, or notification access. Only older Google Play versions include advertising, consent and Billing components. The scanner uses the Play services camera flow instead of requesting its own camera permission. Neither current edition requests broad legacy storage access.</p>
 
     <h2>Support email and GitHub issues</h2>
     <p>Private support email is used to answer and investigate your request. The retention rule is deletion within 90 days after the case closes. A case closes when resolved, or after 90 days waiting for the requester's reply. Records needed for an actual unresolved refund, dispute or legal preservation duty are retained until that matter is resolved or the applicable statutory period ends; unrelated correspondence follows the 90-day rule. You can request earlier deletion where applicable rights allow it.</p>

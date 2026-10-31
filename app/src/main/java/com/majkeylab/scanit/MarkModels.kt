@@ -18,8 +18,6 @@ internal const val MAX_MARK_WIDTH_FRACTION = 0.8f
 private const val MARK_TEMPLATE_PREFIX = "mark_"
 private const val MARK_TEMPLATE_SUFFIX = ".png"
 private const val MAX_EPOCH_MILLIS_DIGITS = 19
-private const val OPAQUE_PAPER_CHANNEL = 220
-private const val TRANSPARENT_PAPER_CHANNEL = 245
 
 internal data class MarkPoint(
     val x: Float,
@@ -308,30 +306,6 @@ internal fun isValidMarkTemplateId(id: String): Boolean {
         epochMillis.all { it in '0'..'9' } &&
         epochMillis.toLongOrNull() != null
 }
-
-internal fun whiteToTransparentArgb(pixel: Int): Int {
-    val sourceAlpha = pixel ushr 24
-    if (sourceAlpha == 0) return 0
-    val minimumChannel =
-        minOf(
-            pixel ushr 16 and 0xff,
-            pixel ushr 8 and 0xff,
-            pixel and 0xff,
-        )
-    val paperAlpha =
-        when {
-            minimumChannel <= OPAQUE_PAPER_CHANNEL -> 255
-            minimumChannel >= TRANSPARENT_PAPER_CHANNEL -> 0
-            else ->
-                (TRANSPARENT_PAPER_CHANNEL - minimumChannel) * 255 /
-                    (TRANSPARENT_PAPER_CHANNEL - OPAQUE_PAPER_CHANNEL)
-        }
-    val alpha = (sourceAlpha * paperAlpha + 127) / 255
-    return if (alpha == 0) 0 else (alpha shl 24) or (pixel and 0x00ffffff)
-}
-
-internal fun whiteToTransparentArgb(pixels: IntArray): IntArray =
-    IntArray(pixels.size) { index -> whiteToTransparentArgb(pixels[index]) }
 
 internal fun visiblePixelBounds(
     width: Int,

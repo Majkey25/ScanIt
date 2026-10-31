@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -49,6 +52,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import kotlin.math.roundToInt
 
 @Composable
@@ -194,9 +198,11 @@ private fun CustomThemeDialog(appearance: AppAppearanceSettings, onDismiss: () -
     val valid = accentColor != null && lightColor != null && darkColor != null
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(stringResource(R.string.app_theme_customize)) },
         text = {
-            Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(modifier = Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(stringResource(R.string.app_theme_color_hint), style = MaterialTheme.typography.bodySmall)
                 ThemeColorField(stringResource(R.string.app_theme_accent), accent) { accent = it }
                 ThemeColorField(stringResource(R.string.app_theme_light_background), light) { light = it }
