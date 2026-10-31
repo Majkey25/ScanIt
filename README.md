@@ -22,8 +22,9 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 
 ## v2.0.0 Unlocked, without ads
 
-The GitHub release is available now. The Play 2.0.0 submission is pending;
-until that update is published, store installations may still include Ads and Premium.
+The GitHub release is available now. Google Play 2.0.0 was submitted for production
+review on October 31, 2026. Until it is approved and published, store installations
+may still include Ads and Premium.
 
 Both 2.0.0 builds have no ads, no Premium purchases, and all document tools
 unlocked. The Google Play edition has no donation link. The GitHub edition keeps
@@ -98,11 +99,11 @@ inside the circular preview. The stable edition is still fully unlocked and ad-f
 | Edition | Features | Where to get it |
 | --- | --- | --- |
 | GitHub Full | All tools unlocked. No ads or Premium. Optional Coffee support only. | [Latest stable release](https://github.com/Majkey25/ScanIt/releases/latest) |
-| Google Play Full 2.0.0 | Prepared update, not submitted yet. All tools unlocked; no ads, Premium or donation link. | [Google Play listing](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
+| Google Play Full 2.0.0 | Submitted for production review. All tools unlocked; no ads, Premium or donation link. Store availability is not confirmed yet. | [Google Play listing](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
 | Legacy Ads + Premium | Archived 1.9.9 source and binaries. Not the current stable version. | [Labelled prerelease archive](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.9-ads) |
 
 The old `-ads` releases remain **prerelease archives**, never Latest.
-The prepared Google Play build and released GitHub build use this fully unlocked
+The submitted Google Play build and released GitHub build use this fully unlocked
 source. The archived monetized source is supplied as a separate ZIP in the 1.9.9 archive.
 
 ## v1.9.0 update
@@ -364,7 +365,7 @@ JAR instead.
 - Recent scans are temporary working copies, not a permanent document library.
 - Automatic orientation changes require reliable text-line evidence; use the Google review editor for ambiguous pages.
 - Android 17 has no `maxSdk` restriction but has not yet been device-tested.
-- The Play 2.0.0 update has not been submitted. The last verified production version is 1.9.9 with Ads + Premium.
+- The Play 2.0.0 update is awaiting production review. The last verified store version is 1.9.9 with Ads + Premium.
 - Visual marks do not verify identity, authorization, or document integrity.
 - The repository does not contain production signing material.
 

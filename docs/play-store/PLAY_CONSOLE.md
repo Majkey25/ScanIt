@@ -10,12 +10,15 @@ Billing, Premium, paywalls, or feature locks.
 
 ## Submission status
 
-The GitHub 2.0.0 release is public. Its prepared Play AAB has not been submitted.
-The last verified Play production version is 1.9.9 with Ads + Premium.
+The GitHub 2.0.0 release is public. The exact Play AAB below was submitted to
+production on October 31, 2026. Console confirmed `Probíhá kontrola změn` for
+`58 | 2.0.0 Free full edition`, with a full rollout and managed publishing off.
+Approval and store availability are not confirmed yet. The last verified store
+version is 1.9.9 with Ads + Premium.
 Do not describe the free Play update as approved or available until Console and
 the store confirm those states.
 
-## Exact prepared artifact
+## Exact submitted artifact
 
 * File: `SeliaScan-v2.0.0-PLAY-FULL.aab`
 * Version: `2.0.0`, code `58`
@@ -27,6 +30,17 @@ Upload only the Play AAB to the existing `com.majkeylab.scanit` listing.
 The GitHub package is different and cannot update that listing.
 Signed artifact checks passed for provenance, certificate, version, permissions,
 R8 metadata, alignment, and absence of Ads/Billing/UMP.
+
+The old monthly base plan was deactivated on October 31 and Console confirmed
+`Neaktivní`. This prevents new subscriptions; it does not cancel existing renewals.
+See [Google's base-plan guidance](https://support.google.com/googleplay/android-developer/answer/140504?hl=en).
+
+The release-specific Advertising ID check was resolved with Console's
+`Vydat bez oprávnění` control. No AD_ID permission was added. The older monetized
+test tracks still require follow-up, so do not remove their disclosures before
+replacing those artifacts. Data safety covers all currently distributed versions,
+including closed testing; see [Google's disclosure guidance](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en).
+The remaining release warning concerns missing third-party native debug symbols.
 
 ## Before sending for review
 
