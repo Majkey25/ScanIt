@@ -2,9 +2,10 @@
 
 ## 2.0.1 dashboard follow-up | October 31, 2026
 
-GitHub stable `v2.0.1` is public. Play production code `59` was submitted for
-review and is running automatic checks. Approval and public availability are
-not yet verified. Managed publishing is off.
+GitHub stable `v2.0.1` is public. Google Play approved and published code `59`
+to production and closed Alpha on October 31, 2026 at 14:45 Budapest time,
+with full rollout to all 178 targeted countries. Internal testing published the
+same AAB at 14:34. Console confirms availability in all three tracks.
 
 * AAB: `SeliaScan-v2.0.1-PLAY-FULL.aab`
 * SHA256: `107eab850defed19b418ce70b4f35be379d66b373f8859b79b86499f7f0f32cb`
@@ -15,6 +16,10 @@ not yet verified. Managed publishing is off.
   passed 27 of 28; the Czech OCR diacritic failure also occurs on unchanged 2.0.0.
 * Console reports no policy violations or outstanding App Content declarations.
   Its 2.0.0 DEX scores are 97% optimization, 98% obfuscation and 98% shrinking.
+* The 2.0.1 vitals report no longer flags the JPEG verification decoder. Its
+  remaining bitmap recommendation points to tiled image export, which explicitly
+  sets sampling and enforces tile and total allocation limits. Export resolution
+  was preserved rather than reduced to suppress that recommendation.
 * Native-symbol warning remains: the four AndroidX graphics-path binaries have
   no debug sections or symbol table. FULL symbol configuration is already on.
   The two edge-to-edge recommendations lead into AndroidX compatibility code;
@@ -35,7 +40,7 @@ Billing, Premium, paywalls, or feature locks.
 The GitHub 2.0.0 release is public. Google Play approved and published
 `58 | 2.0.0 Free full edition` on October 31, 2026 at 12:35 Budapest time.
 Console confirms full production rollout to all 178 targeted countries. The
-public store also reports version 2.0.0 and its free-edition release notes.
+public store also reported version 2.0.0 and its free-edition release notes.
 Internal testing published at 12:38 and closed Alpha at 12:48, using the exact
 same AAB. Older monetized bundles are inactive.
 

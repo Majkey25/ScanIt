@@ -25,12 +25,12 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 JPEG output checks now decode a bounded preview while validating the full image
 header and dimensions. Saved resolution is unchanged. The
 [2.0.1 GitHub release](https://github.com/Majkey25/ScanIt/releases/tag/v2.0.1)
-is public; see [Play release status](docs/play-store/PLAY_CONSOLE.md) for Google review status.
+is public. Google Play production, closed Alpha and internal testing now all
+distribute version code 59. See [release details](docs/play-store/PLAY_CONSOLE.md).
 
 ## v2.0.0 Unlocked, without ads
 
-Version 2.0.0 is available on GitHub and Google Play. Production, closed Alpha,
-and internal testing all distribute the same free Play build, version code 58.
+Version 2.0.0 was published on GitHub and Google Play.
 
 Both 2.0.0 builds have no ads, no Premium purchases, and all document tools
 unlocked. The Google Play edition has no donation link. The GitHub edition keeps
