@@ -152,6 +152,51 @@ class BitmapImageProcessingDeviceTest {
     }
 
     @Test
+    fun largeOddJpegVerificationPreservesFullResolutionOutput() {
+        val source = temporaryFolder.newFile("odd-source.jpg")
+        val bitmap = Bitmap.createBitmap(3_001, 3_997, Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(Color.WHITE)
+            source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it)) }
+        } finally {
+            bitmap.recycle()
+        }
+        val original = imageDigest(source)
+        val destination = File(temporaryFolder.root, "odd-rendered.jpg")
+        val rendered = ScanAppearanceRenderer.renderJpeg(
+            source,
+            destination,
+            ScanAppearance(ScanColorMode.Natural, 0, 0),
+        )
+        assertEquals(3_001, rendered.width)
+        assertEquals(3_997, rendered.height)
+        assertEquals(1, rendered.sourceSampleSize)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(destination.path, bounds)
+        assertEquals(3_001, bounds.outWidth)
+        assertEquals(3_997, bounds.outHeight)
+        verifyRenderedJpeg(destination, 3_001, 3_997)
+        assertThrows(IOException::class.java) { verifyRenderedJpeg(destination, 3_002, 3_997) }
+        assertArrayEquals(original, imageDigest(source))
+        assertNoStagingFiles()
+    }
+
+    @Test
+    fun jpegVerificationRejectsEmptyCorruptAndNonJpegFiles() {
+        val invalid = temporaryFolder.newFile("invalid.jpg")
+        assertThrows(IOException::class.java) { verifyRenderedJpeg(invalid, 16, 16) }
+        invalid.writeText("Not a JPEG")
+        assertThrows(IOException::class.java) { verifyRenderedJpeg(invalid, 16, 16) }
+        val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        try {
+            invalid.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally {
+            bitmap.recycle()
+        }
+        assertThrows(IOException::class.java) { verifyRenderedJpeg(invalid, 16, 16) }
+    }
+
+    @Test
     fun cancellationAfterDecodeSkipsTransformAndPreservesDestination() {
         val source = createSource()
         val destination = temporaryFolder.newFile("cancelled.jpg").apply { writeText("previous") }

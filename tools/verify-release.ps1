@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $androidNamespace = "http://schemas.android.com/apk/res/android"
-$expectedVersionCode = "58"
+$expectedVersionCode = "59"
 $expectedMinSdk = "29"
 $expectedTargetSdk = "36"
 $publicFlavor = $Flavor -ne "internal"
@@ -232,15 +232,15 @@ Assert-ReleasePolicyConfiguration
 switch ($Flavor) {
     "internal" {
         $expectedPackage = "com.majkeylab.scanit.internal"
-        $expectedVersionName = "2.0.0-internal"
+        $expectedVersionName = "2.0.1-internal"
     }
     "github" {
         $expectedPackage = "com.majkeylab.scanit.github"
-        $expectedVersionName = "2.0.0"
+        $expectedVersionName = "2.0.1"
     }
     "play" {
         $expectedPackage = "com.majkeylab.scanit"
-        $expectedVersionName = "2.0.0"
+        $expectedVersionName = "2.0.1"
     }
 }
 $expectedPermissions = @(Get-ExpectedUsesPermissions -Flavor $Flavor -Package $expectedPackage)
