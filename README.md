@@ -22,10 +22,10 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
 
 ## v2.0.0 Unlocked, without ads
 
-The GitHub release is available now. The Play2.0.0 submission is pending;
+The GitHub release is available now. The Play 2.0.0 submission is pending;
 until that update is published, store installations may still include Ads and Premium.
 
-Both current editions have no ads, no Premium purchases, and all document tools
+Both 2.0.0 builds have no ads, no Premium purchases, and all document tools
 unlocked. The Google Play edition has no donation link. The GitHub edition keeps
 an optional Buy Me a Coffee link, which does not unlock anything.
 
