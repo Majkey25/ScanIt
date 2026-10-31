@@ -1,42 +1,44 @@
 # Reddit release announcement draft
 
-Publish only after the Google Play production listing is publicly available.
+Draft only. Publish after version 2.0.0 is available on Google Play and GitHub,
+and after checking the community's current promotion rules. Do not include this
+instruction in the post.
 
 ## Title
 
-I built SeliaScan for people who just want to scan and email a document
+I removed ads and paywalls from SeliaScan. The full scanner is now free.
 
 ## Body
 
-Hi everyone — this is my third update about the scanner app I have been building.
-It is now called **SeliaScan**, and version 1.8.0 is the release I finally feel
-comfortable calling finished.
+I'm the developer of SeliaScan, the Android document scanner I shared here before.
+I took ads and Premium out of version 2.0.0. There is no choice between watching
+ads and losing features anymore.
 
-The goal is simple: photograph a document, let the app crop and clean it up,
-then send the PDF without digging through folders.
+Scanning, OCR, document signing, stamps, cleanup, redaction, printing, and PDF
+size and image format controls are all unlocked.
 
-SeliaScan also has multi-page scans, Recent scans, OCR, QR/barcode detection,
-read-aloud, permanent brush or straight-line redaction, local smart/manual
-cleanup, PDF and image size controls, signatures/stamps, printing, and automatic
-saving to Gallery or a selected folder. Document processing stays on-device.
+This update also adds a saved signature and stamp library in Settings. You can
+draw a mark, import an image, or scan it on paper. Paper removal runs on-device
+and saves transparent ink instead of a white rectangle. Check the preview before
+applying a photographed mark, especially with shadows or textured paper.
+Text-entry dialogs now scroll above the keyboard.
 
-There are two editions:
+Google Play and GitHub both have all features unlocked. There are no ads,
+Premium purchases, or paywalls. The GitHub version is open source under MIT
+and has an optional Buy Me a Coffee link. Donating unlocks nothing.
+The Play version has no donation button.
 
-- **Google Play:** easiest installation. The free sponsored mode shows restrained
-  ads and unlocks the standard editing tools; Document Actions remain Premium.
-  A no-ads free mode is also available, with editing limited to scan and share.
-  Premium removes ads and unlocks everything.
-- **GitHub:** fully unlocked, no ads, no Premium, no paywalls. It is open source
-  under MIT for people comfortable installing an APK directly.
+If you had a monthly subscription before this change, updating won't cancel it
+automatically. Please manage it in Google Play under Payments and subscriptions.
 
 GitHub release:
-https://github.com/Majkey25/ScanIt/releases/tag/v1.8.0
+https://github.com/Majkey25/ScanIt/releases/latest
 
 Google Play:
 https://play.google.com/store/apps/details?id=com.majkeylab.scanit
 
-If you test it, I would especially value feedback about high-resolution scans,
-rotation, saving on older Android devices, and sharing to different mail apps.
+Android 10 or newer. The scanner needs Google Play services. I'd appreciate bug
+reports, especially about high-resolution scans or saving on older phones.
 Please never attach a private document to a bug report.
 
 ## Suggested gallery order

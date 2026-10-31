@@ -20,9 +20,12 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
-## v2.0.0 Free on Google Play and GitHub
+## v2.0.0 Unlocked, without ads
 
-Both current editions have no ads, no Premium purchases, and all document tools
+The GitHub release is available now. The Play 2.0.0 submission is pending;
+until that update is published, store installations may still include Ads and Premium.
+
+Both 2.0.0 builds have no ads, no Premium purchases, and all document tools
 unlocked. The Google Play edition has no donation link. The GitHub edition keeps
 an optional Buy Me a Coffee link, which does not unlock anything.
 
@@ -95,12 +98,12 @@ inside the circular preview. The stable edition is still fully unlocked and ad-f
 | Edition | Features | Where to get it |
 | --- | --- | --- |
 | GitHub Full | All tools unlocked. No ads or Premium. Optional Coffee support only. | [Latest stable release](https://github.com/Majkey25/ScanIt/releases/latest) |
-| Google Play Full | All tools unlocked. No ads, Premium or donation link. | [Google Play](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
+| Google Play Full 2.0.0 | Prepared update, not submitted yet. All tools unlocked; no ads, Premium or donation link. | [Google Play listing](https://play.google.com/store/apps/details?id=com.majkeylab.scanit) |
 | Legacy Ads + Premium | Archived 1.9.9 source and binaries. Not the current stable version. | [Labelled prerelease archive](https://github.com/Majkey25/ScanIt/releases/tag/v1.9.9-ads) |
 
-The old `-ads` releases remain **prerelease archives**, never Latest. Current
-Google Play and GitHub builds use this fully unlocked source. The archived
-monetized source is supplied as a separate ZIP in the 1.9.9 archive.
+The old `-ads` releases remain **prerelease archives**, never Latest.
+The prepared Google Play build and released GitHub build use this fully unlocked
+source. The archived monetized source is supplied as a separate ZIP in the 1.9.9 archive.
 
 ## v1.9.0 update
 
@@ -264,13 +267,12 @@ source, release artifacts, and real-device workflows.
 ## Install
 
 Download the
-[latest stable GitHub APK](https://github.com/Majkey25/ScanIt/releases/latest/download/app-github-release.apk).
-SeliaScan v1.9.3 supports Android 10 and newer.
+[SeliaScan 2.0.0 GitHub APK](https://github.com/Majkey25/ScanIt/releases/download/v2.0.0/SeliaScan-v2.0.0-FULL-GITHUB.apk).
+SeliaScan supports Android 10 and newer.
 
 Google Play services may download the scanner and recognition modules before
-their first use. This repository builds only the full no-ads GitHub edition and
-declares no app-owned Internet permission. The separately maintained Google Play
-edition is not built from this checkout.
+their first use. This repository builds the full GitHub and Google Play editions.
+Neither requests app-owned Internet access. Only GitHub includes optional Coffee support.
 
 Requirements for the current public code:
 
@@ -317,11 +319,12 @@ Also see the [security policy](SECURITY.md) and [third-party notices](THIRD_PART
 
 ## Build
 
-JDK 17 and Android SDK 36 are required.
+JDK 17 and Android SDK 37 are required.
 
 ```powershell
 .\gradlew.bat :app:testInternalDebugUnitTest :app:lintInternalDebug :app:assembleInternalDebug
 .\gradlew.bat :app:lintGithubRelease :app:assembleGithubRelease :app:bundleGithubRelease
+.\gradlew.bat :app:lintPlayRelease :app:assemblePlayRelease :app:bundlePlayRelease
 ```
 
 The public distributions share the same app features:
@@ -329,6 +332,7 @@ The public distributions share the same app features:
 | Distribution | Application ID | Artifact |
 |---|---|---|
 | GitHub | `com.majkeylab.scanit.github` | APK |
+| Google Play | `com.majkeylab.scanit` | AAB |
 
 The separate internal debug flavor is not a public release artifact. Release
 signing reads `~/.android/scanit/keystore.properties`, or an absolute external path
@@ -360,7 +364,7 @@ JAR instead.
 - Recent scans are temporary working copies, not a permanent document library.
 - Automatic orientation changes require reliable text-line evidence; use the Google review editor for ambiguous pages.
 - Android 17 has no `maxSdk` restriction but has not yet been device-tested.
-- Google Play publication is still in testing; do not describe the app as a production Play release yet.
+- The Play 2.0.0 update has not been submitted. The last verified production version is 1.9.9 with Ads + Premium.
 - Visual marks do not verify identity, authorization, or document integrity.
 - The repository does not contain production signing material.
 
