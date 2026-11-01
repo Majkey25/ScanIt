@@ -20,6 +20,21 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v2.0.2 Signature gestures
+
+Place signatures and stamps directly on the scan: drag with one finger, then
+pinch and turn with two fingers. The document stays visible, Apply stays at the
+bottom, and Reset restores the starting position. Screen readers have equivalent
+movement, size and rotation actions.
+
+Gallery scanning keeps crop and filters without Google's automatic ML cleanup;
+local cleanup remains in Actions. Signature PNGs handle tinted paper and faint
+ink more accurately, with one fewer large pixel copy. Sharing keeps renamed file
+names, and a revoked PDF folder grant falls back to Downloads.
+
+The app remains free, without ads or Premium locks. Paper removal assumes plain
+paper with a blank margin. OCR can miss accents; check extracted text before use.
+
 ## v2.0.1 Lower verification memory
 
 JPEG output checks now decode a bounded preview while validating the full image

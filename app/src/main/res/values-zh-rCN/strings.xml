@@ -196,6 +196,10 @@
     <string name="saved_visual_marks">已保存的签名和印章</string>
     <string name="no_saved_visual_marks">尚未保存签名或印章。</string>
     <string name="draw_visual_mark">绘制</string>
+    <string name="add_visual_mark">添加签名或印章</string>
+    <string name="reset_visual_mark">重置位置</string>
+    <string name="visual_mark_limit">已保存 %1$d 个签名和印章。请先删除一个再添加。</string>
+    <string name="visual_mark_placement_summary">大小 %1$d%%，旋转 %2$d°，水平位置 %3$d%%，垂直位置 %4$d%%</string>
     <string name="import_visual_mark">导入图像</string>
     <string name="scan_visual_mark">扫描纸张</string>
     <string name="delete_visual_mark">删除所选项</string>
@@ -203,6 +207,10 @@
     <string name="vertical_position">垂直位置</string>
     <string name="visual_mark_size">大小</string>
     <string name="visual_mark_rotation">旋转</string>
+    <string name="visual_mark_enlarge">放大签名或印章</string>
+    <string name="visual_mark_reduce">缩小签名或印章</string>
+    <string name="visual_mark_rotate_left">向左旋转</string>
+    <string name="visual_mark_rotate_right">向右旋转</string>
     <string name="manual_position">手动定位</string>
     <string name="apply_visual_mark">应用到第 %1$d 页</string>
     <string name="visual_mark_working">正在处理…</string>
@@ -354,7 +362,7 @@
     <string name="safe_share_move_down">向下移动</string>
     <string name="safe_share_grow">扩大区域</string>
     <string name="safe_share_shrink">缩小区域</string>
-    <string name="visual_mark_library_hint">在空白纸上绘制、导入或扫描签名或印章。使用前请在灰色预览背景上检查墨迹。已保存的模板仅保留在此设备上。您可以在同一文档中逐次添加多个签名和印章。</string>
+    <string name="visual_mark_library_hint">扫描或导入签名和印章时，请使用空白纸并保留少量空白边缘。棋盘格表示透明区域，使用前请检查墨迹。已保存的模板仅保留在此设备上。</string>
     <string name="free_release_subscription_notice">所有功能现已免费。更新应用不会自动取消现有的 Google Play 订阅。如果您之前订阅过，请在 Google Play 中管理或取消订阅。</string>
     <string name="previous_subscriptions">管理以前的订阅</string>
 </resources>

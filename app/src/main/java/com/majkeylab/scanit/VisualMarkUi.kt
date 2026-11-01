@@ -20,7 +20,9 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,27 +32,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -81,16 +87,22 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
@@ -126,10 +138,6 @@ internal fun VisualMarkEditorScreen(
         rememberSaveable(source.cacheId, source.entryId, source.pageIndex) {
             mutableStateOf(false)
         }
-    var manualPositionExpanded by
-        rememberSaveable(source.cacheId, source.entryId, source.pageIndex) {
-            mutableStateOf(false)
-        }
     val selectedBitmap =
         ownedVisualMarkBitmap(editor.selectedTemplateId, MARK_PREVIEW_SIZE, onLoadTemplate)
     val importLauncher =
@@ -140,42 +148,74 @@ internal fun VisualMarkEditorScreen(
     Scaffold(
         contentWindowInsets = WindowInsets.safeDrawing,
         topBar = { VisualMarkTopBar(!editor.applying, onClose) },
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            item {
-                VisualMarkPreview(
-                    page = result.thumbnail,
-                    mark = selectedBitmap,
-                    placement = editor.placement,
-                    enabled = selectedBitmap != null && !editor.busy,
-                    onPlacementChange = onPlacementChange,
-                )
-                if (selectedBitmap != null) {
-                    Text(
-                        stringResource(R.string.drag_visual_mark_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+        bottomBar = {
+            Surface {
+                Column {
+                    editor.message?.takeIf { editor.drawingStrokes == null }?.let { message ->
+                        Text(message.resolve(), color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 16.dp).semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            })
+                    }
+                    if (editor.busy) {
+                        Row(Modifier.padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Text(stringResource(R.string.visual_mark_working),
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        }
+                    }
+                    if (selectedBitmap != null && !editor.busy) {
+                        Text(
+                            stringResource(R.string.drag_visual_mark_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    }
+                    Button(
+                        onClick = onApply,
+                        enabled = selectedBitmap != null && !editor.busy,
+                        modifier = Modifier.fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 48.dp),
+                    ) {
+                        Icon(painterResource(R.drawable.ic_check), null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.apply_visual_mark, source.pageIndex + 1))
+                    }
                 }
             }
-            item {
-                VisualMarkCreationActions(
-                    enabled = !editor.busy && editor.templateIds.size < MAX_MARK_TEMPLATES,
-                    onDraw = onBeginDrawing,
-                    onImport = { importLauncher.launch(arrayOf("image/*")) },
-                    onScan = onScan,
-                )
-            }
-            item {
-                Text(stringResource(R.string.saved_visual_marks), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+        },
+    ) { padding ->
+        val controls: @Composable (Modifier) -> Unit = { modifier ->
+            Column(
+                modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.saved_visual_marks),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                    )
+                    VisualMarkCreationActions(
+                        enabled = !editor.busy && editor.templateIds.size < MAX_MARK_TEMPLATES,
+                        onDraw = onBeginDrawing,
+                        onImport = { importLauncher.launch(arrayOf("image/*")) },
+                        onScan = onScan, compact = true,
+                    )
+                    if (editor.selectedTemplateId != null) {
+                        IconButton(onClick = { showDeleteConfirmation = true }, enabled = !editor.busy) {
+                            Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete_visual_mark))
+                        }
+                    }
+                }
                 if (editor.templateIds.isEmpty()) {
                     Text(
                         stringResource(R.string.no_saved_visual_marks),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
@@ -187,105 +227,43 @@ internal fun VisualMarkEditorScreen(
                         onLoad = onLoadTemplate,
                     )
                 }
-                if (editor.selectedTemplateId != null) {
-                    TextButton(
-                        onClick = { showDeleteConfirmation = true },
-                        enabled = !editor.busy,
-                    ) {
-                        ActionButtonContent(R.drawable.ic_delete, R.string.delete_visual_mark)
+                if (editor.templateIds.size >= MAX_MARK_TEMPLATES) {
+                    Text(stringResource(R.string.visual_mark_limit, MAX_MARK_TEMPLATES),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (selectedBitmap != null) {
+                    TextButton(onClick = { onPlacementChange(MarkPlacement()) }, enabled = !editor.busy) {
+                        ActionButtonContent(R.drawable.ic_restore, R.string.reset_visual_mark)
                     }
                 }
-            }
-            item {
-                OutlinedButton(
-                    onClick = { manualPositionExpanded = !manualPositionExpanded },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(stringResource(R.string.manual_position))
-                        Icon(
-                            painterResource(R.drawable.ic_expand_more),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-                if (manualPositionExpanded) {
-                    VisualMarkSlider(
-                        stringResource(R.string.horizontal_position),
-                        editor.placement.centerX,
-                        selectedBitmap != null && !editor.busy,
-                        0f..1f,
-                    ) { onPlacementChange(editor.placement.copy(centerX = it)) }
-                    VisualMarkSlider(
-                        stringResource(R.string.vertical_position),
-                        editor.placement.centerY,
-                        selectedBitmap != null && !editor.busy,
-                        0f..1f,
-                    ) { onPlacementChange(editor.placement.copy(centerY = it)) }
-                    VisualMarkSlider(
-                        stringResource(R.string.visual_mark_size),
-                        editor.placement.widthFraction,
-                        selectedBitmap != null && !editor.busy,
-                        MIN_MARK_WIDTH_FRACTION..MAX_MARK_WIDTH_FRACTION,
-                    ) { onPlacementChange(editor.placement.copy(widthFraction = it)) }
-                    VisualMarkSlider(
-                        stringResource(R.string.visual_mark_rotation),
-                        editor.placement.rotationDegrees,
-                        selectedBitmap != null && !editor.busy,
-                        -180f..180f,
-                        asDegrees = true,
-                    ) { onPlacementChange(editor.placement.copy(rotationDegrees = it)) }
-                }
-            }
-            editor.message?.takeIf { editor.drawingStrokes == null }?.let { message ->
-                item {
-                    Text(
-                        message.resolve(),
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    )
-                }
-            }
-            if (editor.busy) {
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(stringResource(R.string.visual_mark_working))
-                    }
-                }
-            }
-            item {
                 Text(
                     stringResource(R.string.visual_mark_disclaimer),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            item {
-                Button(
-                    onClick = onApply,
+        }
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            val controlsMaxHeight = maxHeight * 0.55f
+            val preview: @Composable (Modifier) -> Unit = { modifier ->
+                VisualMarkPreview(
+                    page = result.thumbnail, mark = selectedBitmap, placement = editor.placement,
                     enabled = selectedBitmap != null && !editor.busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_check),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.apply_visual_mark, source.pageIndex + 1))
+                    onPlacementChange = onPlacementChange, modifier = modifier,
+                )
+            }
+            val toolsWidth = (maxWidth * 0.45f).coerceIn(240.dp, 320.dp)
+            if (maxWidth >= 480.dp && maxWidth > maxHeight) {
+                Row(Modifier.fillMaxSize()) {
+                    preview(Modifier.weight(1f).fillMaxSize().padding(8.dp))
+                    controls(Modifier.width(toolsWidth).fillMaxSize())
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    preview(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp))
+                    controls(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight))
                 }
             }
-            item { Spacer(Modifier.height(4.dp)) }
         }
     }
 
@@ -359,25 +337,39 @@ internal fun VisualMarkCreationActions(
     onDraw: () -> Unit,
     onImport: () -> Unit,
     onScan: () -> Unit,
+    compact: Boolean = false,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(
-            Triple(R.drawable.ic_signature, R.string.draw_visual_mark, onDraw),
-            Triple(R.drawable.ic_image, R.string.import_visual_mark, onImport),
-            Triple(R.drawable.ic_camera, R.string.scan_visual_mark, onScan),
-        ).forEach { (icon, label, action) ->
-            OutlinedButton(
-                onClick = action,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Icon(
-                    painter = painterResource(icon),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        if (compact) {
+            IconButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.size(48.dp)) {
+                Icon(painterResource(R.drawable.ic_add), stringResource(R.string.add_visual_mark))
+            }
+        } else OutlinedButton(
+            onClick = { expanded = true }, enabled = enabled,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics {
+                if (enabled) {
+                    if (expanded) collapse { expanded = false; true }
+                    else expand { expanded = true; true }
+                }
+            },
+        ) {
+            ActionButtonContent(R.drawable.ic_signature, R.string.add_visual_mark)
+            Spacer(Modifier.width(8.dp))
+            Icon(painterResource(R.drawable.ic_expand_more), null, Modifier.size(20.dp))
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            listOf(
+                Triple(R.drawable.ic_camera, R.string.scan_visual_mark, onScan),
+                Triple(R.drawable.ic_image, R.string.import_visual_mark, onImport),
+                Triple(R.drawable.ic_signature, R.string.draw_visual_mark, onDraw),
+            ).forEach { (icon, label, action) ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    leadingIcon = { Icon(painterResource(icon), null) },
+                    onClick = { expanded = false; action() },
+                    modifier = Modifier.heightIn(min = 48.dp),
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(label))
             }
         }
     }
@@ -392,6 +384,7 @@ internal fun VisualMarkTemplateRow(
     onLoad: suspend (String, Int) -> Bitmap?,
 ) {
     LazyRow(
+        modifier = Modifier.selectableGroup(),
         contentPadding = PaddingValues(horizontal = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -419,7 +412,7 @@ internal fun VisualMarkTemplateRow(
             ) {
                 val bitmap = ownedVisualMarkBitmap(id, MARK_THUMBNAIL_SIZE, onLoad)
                 Box(
-                    modifier = Modifier.width(84.dp).height(64.dp).padding(6.dp),
+                    modifier = Modifier.width(84.dp).height(64.dp).markTransparencyBackground().padding(6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     bitmap?.let {
@@ -466,14 +459,51 @@ private fun VisualMarkPreview(
     placement: MarkPlacement,
     enabled: Boolean,
     onPlacementChange: (MarkPlacement) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG) }
+    val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG or AndroidPaint.FILTER_BITMAP_FLAG) }
+    val outlinePaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+        }
+    }
     val description = stringResource(R.string.visual_mark_preview)
+    val placementDescription = stringResource(R.string.visual_mark_placement_summary,
+        (placement.widthFraction * 100).roundToInt(), placement.rotationDegrees.roundToInt(),
+        (placement.centerX * 100).roundToInt(), (placement.centerY * 100).roundToInt())
     val currentPlacement by rememberUpdatedState(placement)
     val currentOnPlacementChange by rememberUpdatedState(onPlacementChange)
+    val currentPage by rememberUpdatedState(page)
+    val currentMark by rememberUpdatedState(mark)
+    val currentEnabled by rememberUpdatedState(enabled)
+    fun adjust(panX: Float = 0f, panY: Float = 0f, sizeDelta: Float = 0f, rotation: Float = 0f): Boolean {
+        val pageBitmap = currentPage ?: return false
+        val markBitmap = currentMark ?: return false
+        if (!currentEnabled) return false
+        val current = currentPlacement
+        currentOnPlacementChange(transformMarkPlacement(
+            pageWidth = pageBitmap.width.toFloat(), pageHeight = pageBitmap.height.toFloat(),
+            markWidth = markBitmap.width, markHeight = markBitmap.height,
+            placement = current, panX = panX * pageBitmap.width, panY = panY * pageBitmap.height,
+            zoom = (current.widthFraction + sizeDelta)
+                .coerceIn(MIN_MARK_WIDTH_FRACTION, MAX_MARK_WIDTH_FRACTION) / current.widthFraction,
+            rotationDegrees = rotation,
+        ))
+        return true
+    }
+    val accessibleActions = listOf(
+        CustomAccessibilityAction(stringResource(R.string.safe_share_move_left)) { adjust(panX = -0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.safe_share_move_right)) { adjust(panX = 0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.safe_share_move_up)) { adjust(panY = -0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.safe_share_move_down)) { adjust(panY = 0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.visual_mark_enlarge)) { adjust(sizeDelta = 0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.visual_mark_reduce)) { adjust(sizeDelta = -0.02f) },
+        CustomAccessibilityAction(stringResource(R.string.visual_mark_rotate_left)) { adjust(rotation = -5f) },
+        CustomAccessibilityAction(stringResource(R.string.visual_mark_rotate_right)) { adjust(rotation = 5f) },
+    )
     Canvas(
         modifier =
-            Modifier.fillMaxWidth().height(420.dp)
+            modifier
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .pointerInput(page, mark, enabled) {
                     val pageBitmap = page ?: return@pointerInput
@@ -488,6 +518,7 @@ private fun VisualMarkPreview(
                             val zoom = event.calculateZoom()
                             val rotation = event.calculateRotation()
                             if (pan != Offset.Zero || zoom != 1f || rotation != 0f) {
+                                if (size.width <= 0 || size.height <= 0) return@awaitEachGesture
                                 val scale =
                                     min(
                                         size.width.toFloat() / pageBitmap.width,
@@ -511,9 +542,14 @@ private fun VisualMarkPreview(
                         } while (event.changes.any { it.pressed })
                     }
                 }
-                .semantics { contentDescription = description },
+                .semantics {
+                    contentDescription = description
+                    if (mark != null) stateDescription = placementDescription
+                    if (enabled && page != null && mark != null) customActions = accessibleActions
+                },
     ) {
         val pageBitmap = page ?: return@Canvas
+        if (size.width <= 0f || size.height <= 0f) return@Canvas
         val scale = min(size.width / pageBitmap.width, size.height / pageBitmap.height)
         val pageWidth = pageBitmap.width * scale
         val pageHeight = pageBitmap.height * scale
@@ -541,6 +577,17 @@ private fun VisualMarkPreview(
                     RectF(left + rect.left, top + rect.top, left + rect.right, top + rect.bottom),
                     paint,
                 )
+                if (enabled) {
+                    // A two-tone outline stays visible on the document in either app theme.
+                    for (pass in 0..1) {
+                        outlinePaint.color = if (pass == 0) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                        outlinePaint.strokeWidth = (if (pass == 0) 3.dp else 1.dp).toPx()
+                        canvas.drawRect(
+                            left + rect.left, top + rect.top, left + rect.right, top + rect.bottom,
+                            outlinePaint,
+                        )
+                    }
+                }
             } finally {
                 canvas.restoreToCount(saveCount)
             }
@@ -548,32 +595,18 @@ private fun VisualMarkPreview(
     }
 }
 
-@Composable
-private fun VisualMarkSlider(
-    label: String,
-    value: Float,
-    enabled: Boolean,
-    valueRange: ClosedFloatingPointRange<Float>,
-    asDegrees: Boolean = false,
-    onValueChange: (Float) -> Unit,
-) {
-    val displayedValue =
-        if (asDegrees) {
-            stringResource(R.string.visual_mark_degrees, value.roundToInt())
-        } else {
-            stringResource(R.string.visual_mark_percent, (value * 100).roundToInt())
+internal fun Modifier.markTransparencyBackground(): Modifier = drawBehind {
+    val tile = 8.dp.toPx()
+    drawRect(Color.White)
+    for (row in 0 until kotlin.math.ceil(size.height / tile).toInt()) {
+        for (column in 0 until kotlin.math.ceil(size.width / tile).toInt()) {
+            if ((row + column) % 2 == 0) {
+                drawRect(Color(0xFFE0E0E0), Offset(column * tile, row * tile),
+                    androidx.compose.ui.geometry.Size(min(tile, size.width - column * tile),
+                        min(tile, size.height - row * tile)))
+            }
         }
-    Text(stringResource(R.string.visual_mark_slider_value, label, displayedValue))
-    Slider(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        valueRange = valueRange,
-        modifier = Modifier.fillMaxWidth().semantics {
-            contentDescription = label
-            stateDescription = displayedValue
-        },
-    )
+    }
 }
 
 @Composable
@@ -597,11 +630,13 @@ internal fun DrawVisualMarkDialog(
     val description = stringResource(R.string.draw_visual_mark_accessibility)
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+        modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 640.dp).fillMaxWidth(),
         title = { Text(stringResource(R.string.draw_visual_mark_title)) },
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier.heightIn(max = dialogContentMaxHeight()).verticalScroll(rememberScrollState()),
             ) {
                 Text(stringResource(R.string.draw_visual_mark_hint))
                 message?.let {
@@ -616,7 +651,7 @@ internal fun DrawVisualMarkDialog(
                         Modifier.fillMaxWidth()
                             .aspectRatio(DRAWN_MARK_WIDTH.toFloat() / DRAWN_MARK_HEIGHT)
                             .background(Color.White)
-                            .border(1.dp, Color.Gray)
+                            .border(1.dp, MaterialTheme.colorScheme.outline)
                             .semantics { contentDescription = description }
                             .focusable()
                             .onSizeChanged { drawingSize = it }
@@ -669,10 +704,11 @@ internal fun DrawVisualMarkDialog(
                                 }
                             },
                 ) {
+                    val strokeWidth = DRAWN_MARK_STROKE_WIDTH * size.width / DRAWN_MARK_WIDTH
                     strokes.forEach { stroke ->
                         val points = stroke.map { Offset(it.x * size.width, it.y * size.height) }
                         if (points.size == 1) {
-                            drawCircle(Color.Black, 3f, points.single())
+                            drawCircle(Color.Black, strokeWidth / 2f, points.single())
                         } else if (points.isNotEmpty()) {
                             val path = Path().apply {
                                 moveTo(points.first().x, points.first().y)
@@ -683,12 +719,13 @@ internal fun DrawVisualMarkDialog(
                             drawPath(
                                 path,
                                 Color.Black,
-                                style = Stroke(6f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+                                style = Stroke(strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
                             )
                         }
                     }
                 }
-                Row {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(
                         onClick = {
                             strokes.removeLastOrNull()?.let { pointCount -= it.size }
@@ -712,7 +749,7 @@ internal fun DrawVisualMarkDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = { onSave(strokes.toMarkStrokes()) },
                 enabled = strokes.isNotEmpty(),
             ) {

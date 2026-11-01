@@ -9,18 +9,23 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -41,7 +46,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -125,32 +136,64 @@ internal fun VisualMarkLibraryScreen(onClose: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Text(stringResource(R.string.saved_visual_marks), style = MaterialTheme.typography.titleLarge)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.saved_visual_marks),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f).semantics { heading() },
+                    )
+                    if (selected != null) {
+                        IconButton(onClick = { confirmDelete = true }, enabled = !busy) {
+                            Icon(
+                                painterResource(R.drawable.ic_delete),
+                                stringResource(R.string.delete_visual_mark),
+                            )
+                        }
+                    }
+                }
                 Text(stringResource(R.string.visual_mark_library_hint), style = MaterialTheme.typography.bodyMedium)
             }
             item {
                 Box(
-                    Modifier.fillMaxWidth().height(180.dp).background(Color(0xffd0d0d0)),
+                    Modifier.fillMaxWidth().heightIn(min = 180.dp).markTransparencyBackground(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    preview?.let {
-                        Image(it.asImageBitmap(), stringResource(R.string.saved_visual_marks),
-                            Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit)
+                    if (preview != null) {
+                        Image(preview.asImageBitmap(), stringResource(R.string.saved_visual_marks),
+                            Modifier.fillMaxWidth().height(180.dp).padding(16.dp), contentScale = ContentScale.Fit)
+                    } else if (!busy) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_signature), null,
+                                Modifier.size(40.dp), tint = Color.DarkGray,
+                            )
+                            Text(
+                                stringResource(
+                                    if (ids.isEmpty()) R.string.no_saved_visual_marks
+                                    else R.string.visual_mark_preview,
+                                ),
+                                color = Color.DarkGray,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
-                    if (busy) CircularProgressIndicator()
+                    if (busy) CircularProgressIndicator(color = Color.DarkGray)
                 }
             }
             item {
-                if (ids.isEmpty()) Text(stringResource(R.string.no_saved_visual_marks))
-                else VisualMarkTemplateRow(ids, selected, !busy, { selected = it }, load)
-                if (selected != null) {
-                    TextButton(onClick = { confirmDelete = true }, enabled = !busy) {
-                        ActionButtonContent(R.drawable.ic_delete, R.string.delete_visual_mark)
-                    }
-                }
+                if (ids.isNotEmpty()) VisualMarkTemplateRow(ids, selected, !busy, { selected = it }, load)
             }
             item {
-                message?.let { Text(it.resolve(), color = MaterialTheme.colorScheme.error) }
+                message?.let {
+                    Text(
+                        it.resolve(), color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
                 VisualMarkCreationActions(
                     enabled = !busy && ids.size < MAX_MARK_TEMPLATES,
                     onDraw = { drawing = emptyList(); drawingOpen = true },
@@ -188,6 +231,10 @@ internal fun VisualMarkLibraryScreen(onClose: () -> Unit) {
                         }
                     },
                 )
+                if (ids.size >= MAX_MARK_TEMPLATES) {
+                    Text(stringResource(R.string.visual_mark_limit, MAX_MARK_TEMPLATES),
+                        style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }

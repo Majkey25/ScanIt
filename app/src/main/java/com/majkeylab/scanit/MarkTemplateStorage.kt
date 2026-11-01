@@ -300,9 +300,11 @@ internal fun normalizeMarkBitmap(source: Bitmap): Bitmap {
         val ink = extractMarkInk(processing.width, processing.height, pixels)
         val bounds = visiblePixelBounds(processing.width, processing.height, ink)
             ?: throw IOException("The selected mark has no visible ink")
-        val croppedPixels = cropArgbPixels(processing.width, processing.height, ink, bounds)
         val cropped =
-            Bitmap.createBitmap(croppedPixels, bounds.width, bounds.height, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(
+                ink, bounds.top * processing.width + bounds.left, processing.width,
+                bounds.width, bounds.height, Bitmap.Config.ARGB_8888,
+            )
         val (outputWidth, outputHeight) =
             boundedMarkDimensions(cropped.width, cropped.height, MARK_OUTPUT_MAX_SIDE)
         if (outputWidth == cropped.width && outputHeight == cropped.height) return cropped

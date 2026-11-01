@@ -11,7 +11,7 @@ import java.io.File
 
 internal const val DRAWN_MARK_WIDTH = 1_024
 internal const val DRAWN_MARK_HEIGHT = 384
-private const val DRAWN_MARK_STROKE_WIDTH = 12f
+internal const val DRAWN_MARK_STROKE_WIDTH = 12f
 
 internal fun renderDrawnMark(strokes: List<MarkStroke>): Bitmap {
     val scaled = scaleNormalizedMarkStrokes(strokes, DRAWN_MARK_WIDTH, DRAWN_MARK_HEIGHT)

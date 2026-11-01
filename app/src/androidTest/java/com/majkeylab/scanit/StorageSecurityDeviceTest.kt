@@ -38,6 +38,35 @@ class StorageSecurityDeviceTest {
     fun provisionalSafImageRecoveryRequiresExactBytes() = provisionalSafRecovery(false)
 
     @Test
+    fun revokedSafGrantFallsBackToDownloadsWithoutCreatingProviderOutput() =
+        withScan(1) { context, storage, cached ->
+            withTree(context, SecurityProviderMode.Stable) { tree ->
+                val resolver = context.contentResolver
+                resolver.releasePersistableUriPermission(tree, SECURITY_RW)
+                assertFalse(resolver.persistedUriPermissions.any { it.uri == tree })
+                val expected = fingerprint(cached.pdf)
+                val saved = storage.savePdf(cached, "SeliaScanSecurityTest", tree.toString())
+                rememberMedia(cached)
+                assertNull(saved.treeUri)
+                assertEquals(UiMessage(R.string.saf_fallback_warning), saved.warning)
+                val output = checkNotNull(outputs(cached).pdf)
+                assertEquals(saved.uri.toString(), output.uri)
+                assertEquals(MediaOutputCollection.Downloads, parseMediaItemAddress(output.uri)?.collection)
+                assertEquals(expected, output.outputFingerprint())
+                assertEquals(expected, fingerprint(context, saved.uri, expected.byteLength))
+
+                val repeated = storage.savePdf(cached, "SeliaScanSecurityTest", tree.toString())
+                rememberMedia(cached)
+                assertEquals("Retry must reuse the saved PDF", saved.uri, repeated.uri)
+                assertEquals(output, outputs(cached).pdf)
+                assertEquals("Missing grant must fail before provider creation",
+                    0, fixtureCall(context, "fixture_stats").getInt("created"))
+                assertFalse(File(cached.pdf.parentFile, PROVISIONAL_OUTPUT_CREATE_FILE_NAME).exists())
+                assertEquals(expected, fingerprint(cached.pdf))
+            }
+        }
+
+    @Test
     fun unknownSafCreateRetainsMarkerAndDoesNotFallBackToDownloads() =
         withScan(1) { context, storage, cached ->
             withTree(context, SecurityProviderMode.Stable) { tree ->

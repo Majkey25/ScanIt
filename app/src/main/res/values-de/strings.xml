@@ -197,6 +197,10 @@
     <string name="saved_visual_marks">Gespeicherte Unterschriften und Stempel</string>
     <string name="no_saved_visual_marks">Noch keine Unterschrift und kein Stempel gespeichert.</string>
     <string name="draw_visual_mark">Zeichnen</string>
+    <string name="add_visual_mark">Unterschrift oder Stempel hinzufügen</string>
+    <string name="reset_visual_mark">Platzierung zurücksetzen</string>
+    <string name="visual_mark_limit">Du hast %1$d gespeicherte Unterschriften und Stempel. Lösche einen, um einen weiteren hinzuzufügen.</string>
+    <string name="visual_mark_placement_summary">Größe %1$d %%, Drehung %2$d°, horizontale Position %3$d %%, vertikale Position %4$d %%</string>
     <string name="import_visual_mark">Bild importieren</string>
     <string name="scan_visual_mark">Papier scannen</string>
     <string name="delete_visual_mark">Auswahl löschen</string>
@@ -204,6 +208,10 @@
     <string name="vertical_position">Vertikale Position</string>
     <string name="visual_mark_size">Größe</string>
     <string name="visual_mark_rotation">Drehung</string>
+    <string name="visual_mark_enlarge">Unterschrift oder Stempel vergrößern</string>
+    <string name="visual_mark_reduce">Unterschrift oder Stempel verkleinern</string>
+    <string name="visual_mark_rotate_left">Nach links drehen</string>
+    <string name="visual_mark_rotate_right">Nach rechts drehen</string>
     <string name="manual_position">Manuelle Position</string>
     <string name="apply_visual_mark">Auf Seite %1$d anwenden</string>
     <string name="visual_mark_working">Verarbeitung…</string>
@@ -355,7 +363,7 @@
     <string name="safe_share_move_down">Nach unten verschieben</string>
     <string name="safe_share_grow">Bereich vergrößern</string>
     <string name="safe_share_shrink">Bereich verkleinern</string>
-    <string name="visual_mark_library_hint">Zeichnen, importieren oder scannen Sie eine Unterschrift oder einen Stempel auf leerem Papier. Prüfen Sie die Tinte vor der Verwendung in der grauen Vorschau. Gespeicherte Vorlagen bleiben auf diesem Gerät. Sie können mehrere Vorlagen in dasselbe Dokument einfügen.</string>
+    <string name="visual_mark_library_hint">Scanne oder importiere die Unterschrift oder den Stempel auf leerem Papier mit einem kleinen freien Rand. Das Schachbrettmuster zeigt transparente Bereiche. Prüfe die Tinte vor der Verwendung. Gespeicherte Vorlagen bleiben auf diesem Gerät.</string>
     <string name="free_release_subscription_notice">Alle Funktionen sind jetzt kostenlos. Das App-Update kündigt kein bestehendes Google Play-Abo. Falls Sie ein Abo abgeschlossen haben, verwalten oder kündigen Sie es in Google Play.</string>
     <string name="previous_subscriptions">Frühere Abos verwalten</string>
 </resources>
