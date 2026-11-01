@@ -1,12 +1,19 @@
 package com.majkeylab.scanit
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.net.Uri
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +25,146 @@ import org.junit.rules.TemporaryFolder
 
 class VisualMarkRenderingDeviceTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    private val markBackgrounds = listOf(
+        "yellow" to Color.rgb(255, 230, 80),
+        "offwhite" to Color.rgb(246, 240, 224),
+        "dark" to Color.rgb(24, 40, 56),
+    )
+
+    @Test
+    fun savedPhotographsAndJpegImportsKeepInkAndPaperHolesOnColoredPages() = runBlocking {
+        withIsolatedMarkStore { store, root ->
+            val papers = listOf(
+                "white" to Color.WHITE,
+                "offwhite" to Color.rgb(240, 228, 203),
+                "tinted" to Color.rgb(220, 237, 255),
+            )
+            for ((paperName, paper) in papers) {
+                for ((stampName, stamp) in listOf("blue" to Color.BLUE, "red" to Color.RED)) {
+                    val name = "$paperName-$stampName"
+                    val photo = photographedMark(paper, stamp)
+                    try {
+                        val original = bitmapPixels(photo)
+                        withSavedMark(store, store.save(photo)) { saved ->
+                            assertPhotoComposites(saved, root, "$name-save")
+                            assertPhotographedMark(saved, stamp, jpeg = false)
+                        }
+                        assertFalse(photo.isRecycled)
+                        assertArrayEquals(original, bitmapPixels(photo))
+
+                        val jpeg = File(root, "$name-input.jpg")
+                        try {
+                            jpeg.outputStream().use {
+                                assertTrue(photo.compress(Bitmap.CompressFormat.JPEG, 90, it))
+                            }
+                            val encoded = jpeg.readBytes()
+                            withSavedMark(store, store.import(Uri.fromFile(jpeg))) { imported ->
+                                assertPhotoComposites(imported, root, "$name-jpeg-import")
+                                assertPhotographedMark(imported, stamp, jpeg = true)
+                            }
+                            assertArrayEquals(encoded, jpeg.readBytes())
+                        } finally {
+                            assertTrue(jpeg.delete() || !jpeg.exists())
+                        }
+                    } finally {
+                        photo.recycle()
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun savedAndImportedTransparentPngPreservesWhitePaleAndAntialiasedInk() = runBlocking {
+        withIsolatedMarkStore { store, root ->
+            val source = Bitmap.createBitmap(32, 24, Bitmap.Config.ARGB_8888)
+            val png = File(root, "transparent-input.png")
+            try {
+                for (y in 4..19) for (x in 4..27) {
+                    source.setPixel(x, y, when (x) {
+                        in 4..7 -> Color.WHITE
+                        in 8..11 -> Color.argb(128, 240, 228, 204)
+                        in 12..15 -> Color.argb(64, 0, 0, 192)
+                        in 16..19 -> Color.TRANSPARENT
+                        in 20..23 -> Color.BLACK
+                        else -> Color.argb(MARK_VISIBLE_ALPHA, 0, 0, 0)
+                    })
+                }
+                val expected = IntArray(24 * 16)
+                source.getPixels(expected, 0, 24, 4, 4, 24, 16)
+                withSavedMark(store, store.save(source)) { saved ->
+                    assertTransparentMark(saved, expected, root, "transparent-save")
+                    withSavedMark(store, store.save(saved)) { again ->
+                        assertTransparentMark(again, expected, root, "transparent-resave")
+                    }
+                }
+                source.outputStreamToPng(png)
+                val encoded = png.readBytes()
+                withSavedMark(store, store.import(Uri.fromFile(png))) { imported ->
+                    assertTransparentMark(imported, expected, root, "transparent-import")
+                }
+                assertArrayEquals(encoded, png.readBytes())
+                assertFalse(source.isRecycled)
+            } finally {
+                source.recycle()
+                assertTrue(png.delete() || !png.exists())
+            }
+        }
+    }
+
+    @Test
+    fun savedPngKeepsLowPaperChannelsBrightStampColorAndFaintPencil() {
+        withIsolatedMarkStore { store, _ ->
+            val cases = listOf(
+                0xFF104080.toInt() to Color.BLACK,
+                0xFF001080.toInt() to 0xFF200040.toInt(),
+                0xFFFFFF00.toInt() to Color.BLUE,
+                0xFF808080.toInt() to 0xFFFF6464.toInt(),
+                0xFFE0D0C0.toInt() to 0xFFD2C3B4.toInt(),
+            )
+            for ((paper, ink) in cases) {
+                val source = Bitmap.createBitmap(96, 64, Bitmap.Config.ARGB_8888)
+                try {
+                    source.eraseColor(paper)
+                    val canvas = Canvas(source)
+                    val paint = Paint().apply { color = Color.BLACK }
+                    canvas.drawRect(24f, 16f, 72f, 48f, paint)
+                    paint.color = paper
+                    canvas.drawRect(28f, 20f, 68f, 44f, paint)
+                    paint.color = ink
+                    canvas.drawRect(32f, 24f, 36f, 28f, paint)
+                    withSavedMark(store, store.save(source)) { saved ->
+                        assertEquals(48, saved.width)
+                        assertEquals(32, saved.height)
+                        assertEquals("Paper/hole retained alpha", 0, Color.alpha(saved.getPixel(24, 16)))
+                        val decodedInk = saved.getPixel(9, 9)
+                        assertTrue("Saved ink disappeared", Color.alpha(decodedInk) >= MARK_VISIBLE_ALPHA)
+                        if (ink == 0xFFD2C3B4.toInt()) assertEquals(MARK_VISIBLE_ALPHA, Color.alpha(decodedInk))
+                        val composite = Bitmap.createBitmap(48, 32, Bitmap.Config.ARGB_8888)
+                        try {
+                            composite.eraseColor(paper)
+                            Canvas(composite).drawBitmap(saved, 0f, 0f, null)
+                            assertEquals(paper, composite.getPixel(24, 16))
+                            val reconstructed = composite.getPixel(9, 9)
+                            for (shift in listOf(16, 8, 0)) {
+                                assertEquals(
+                                    "Saved PNG clipped channel $shift on ${Integer.toHexString(paper)}",
+                                    (ink ushr shift and 255).toDouble(),
+                                    (reconstructed ushr shift and 255).toDouble(),
+                                    2.0,
+                                )
+                            }
+                        } finally {
+                            composite.recycle()
+                        }
+                    }
+                } finally {
+                    source.recycle()
+                }
+            }
+        }
+    }
 
     @Test
     fun largeSolidStampKeepsItsInteriorAndTransparentLetterHole() {
@@ -275,6 +422,199 @@ class VisualMarkRenderingDeviceTest {
             }
         }
     }
+
+    private inline fun withIsolatedMarkStore(block: (MarkTemplateStore, File) -> Unit) {
+        val base = InstrumentationRegistry.getInstrumentation().targetContext
+        check(base.packageName == "com.majkeylab.scanit.internal") {
+            "Mark device tests may only target the isolated internal app"
+        }
+        val root = Files.createTempDirectory(base.cacheDir.toPath(), "mark-alpha-qa-").toFile()
+        val context = object : ContextWrapper(base) {
+            override fun getApplicationContext(): Context = this
+            override fun getCacheDir(): File = root
+            override fun getNoBackupFilesDir(): File = root
+        }
+        // Keep only this run's QA composites for later inspection; never use the user's mark store.
+        println("MARK_ALPHA_QA_DIR=${root.absolutePath}")
+        block(MarkTemplateStore(context), root)
+    }
+
+    private inline fun withSavedMark(store: MarkTemplateStore, id: String, block: (Bitmap) -> Unit) {
+        try {
+            val loaded = requireNotNull(store.load(id)) { "Saved mark $id could not be decoded" }
+            try {
+                assertTrue("Stored PNG lost its alpha channel", loaded.hasAlpha())
+                block(loaded)
+            } finally {
+                loaded.recycle()
+            }
+        } finally {
+            assertTrue("Own test mark $id was not deleted", store.delete(id))
+        }
+    }
+
+    private fun photographedMark(paper: Int, stamp: Int): Bitmap {
+        // Model smooth lighting on plain paper, not arbitrary texture or isolated interior shadows.
+        val paperPixels = IntArray(192 * 128) { index ->
+            val shade = 8 * (index % 192) / 191 + 4 * (index / 192) / 127
+            Color.rgb(Color.red(paper) - shade, Color.green(paper) - shade, Color.blue(paper) - shade)
+        }
+        val bitmap = Bitmap.createBitmap(192, 128, Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(paperPixels, 0, 192, 0, 0, 192, 128)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+        canvas.drawRect(40f, 20f, 48f, 100f, paint)
+        paint.alpha = 128
+        canvas.drawRect(48f, 20f, 52f, 100f, paint)
+        paint.alpha = 48
+        canvas.drawRect(60f, 88f, 84f, 92f, paint)
+        paint.alpha = 255
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f
+        canvas.drawPath(Path().apply {
+            moveTo(44f, 60f)
+            quadTo(66f, 22f, 76f, 60f)
+            quadTo(66f, 90f, 88f, 60f)
+        }, paint)
+        paint.style = Paint.Style.FILL
+        paint.color = stamp
+        canvas.drawRect(104f, 20f, 152f, 100f, paint)
+        bitmap.setPixels(paperPixels, 40 * 192 + 116, 192, 116, 40, 24, 40)
+        return bitmap
+    }
+
+    private fun assertPhotographedMark(mark: Bitmap, stamp: Int, jpeg: Boolean) {
+        if (jpeg) {
+            // Allow JPEG ringing around the known ink bounds, not a retained 192 x 128 paper rectangle.
+            assertTrue("JPEG mark width was ${mark.width}", mark.width in 112..128)
+            assertTrue("JPEG mark height was ${mark.height}", mark.height in 80..96)
+        } else {
+            assertEquals(112, mark.width)
+            assertEquals(80, mark.height)
+            val edge = mark.getPixel(9, 8)
+            assertTrue("Antialias alpha was ${Color.alpha(edge)}", Color.alpha(edge) in 126..130)
+            assertTrue("Paper RGB remained in antialias ink", maxRgb(edge) <= 4)
+            val pencil = mark.getPixel(30, 70)
+            assertTrue("Faint pencil disappeared", Color.alpha(pencil) in 40..56)
+            assertTrue("Paper RGB remained in faint pencil", maxRgb(pencil) <= 12)
+        }
+        val stampPixel = mark.getPixel(mark.width * 11 / 14, mark.height * 4 / 25)
+        assertTrue("Stamp interior became transparent", Color.alpha(stampPixel) >= 192)
+        if (stamp == Color.BLUE) {
+            assertTrue(Color.blue(stampPixel) >= 200 && Color.red(stampPixel) <= 48 && Color.green(stampPixel) <= 48)
+        } else {
+            assertTrue(Color.red(stampPixel) >= 200 && Color.blue(stampPixel) <= 48 && Color.green(stampPixel) <= 48)
+        }
+        var antialiasPixels = 0
+        for (y in 0 until mark.height) for (x in 0 until mark.width / 5) {
+            val pixel = mark.getPixel(x, y)
+            if (Color.alpha(pixel) in 64..192) {
+                assertTrue("Light matte at $x,$y: ${Integer.toHexString(pixel)}", maxRgb(pixel) <= if (jpeg) 48 else 4)
+                antialiasPixels++
+            }
+        }
+        assertTrue("Antialiased signature edge disappeared", antialiasPixels >= 32)
+        var pencilPixels = 0
+        for (y in mark.height * 4 / 5 until mark.height * 19 / 20) {
+            for (x in mark.width / 5 until mark.width * 2 / 5) {
+                val pixel = mark.getPixel(x, y)
+                if (Color.alpha(pixel) in 24..72 && maxRgb(pixel) <= 64) pencilPixels++
+            }
+        }
+        assertTrue("Faint pencil did not survive storage/import", pencilPixels >= 8)
+    }
+
+    private fun assertPhotoComposites(mark: Bitmap, root: File, name: String) {
+        val paperPoints = listOf(mark.width * 5 / 14 to mark.height / 10, mark.width * 11 / 14 to mark.height / 2)
+        for ((backgroundName, background) in markBackgrounds) {
+            withQaComposite(mark, background, root, "$name-$backgroundName") { composite ->
+                assertEquals(background, composite.getPixel(0, 0))
+                for ((x, y) in paperPoints) {
+                    assertEquals("Paper/hole at $x,$y retained alpha", 0, Color.alpha(mark.getPixel(x, y)))
+                    assertEquals("Paper rectangle on $backgroundName", background, composite.getPixel(x + 16, y + 16))
+                }
+                val page = Bitmap.createBitmap(composite.width, composite.height, Bitmap.Config.ARGB_8888)
+                val source = File(root, "$name-$backgroundName-page.jpg")
+                val destination = File(root, "$name-$backgroundName-rendered.jpg")
+                try {
+                    page.eraseColor(background)
+                    source.outputStream().use { assertTrue(page.compress(Bitmap.CompressFormat.JPEG, 100, it)) }
+                    val original = source.readBytes()
+                    renderMarkedSourceJpeg(
+                        source, destination, mark,
+                        MarkPlacement(centerX = 0.5f, centerY = 0.5f, widthFraction = mark.width.toFloat() / page.width),
+                        isCancelled = { false },
+                    )
+                    assertArrayEquals(original, source.readBytes())
+                    val rendered = requireNotNull(BitmapFactory.decodeFile(destination.path))
+                    try {
+                        rendered.outputStreamToPng(File(root, "$name-$backgroundName-rendered.png"))
+                        assertEquals(composite.width, rendered.width)
+                        assertEquals(composite.height, rendered.height)
+                        val stampPoint = mark.width * 11 / 14 to mark.height * 4 / 25
+                        // Check known interiors with JPEG tolerance; do not require a lossless JPEG page.
+                        for ((x, y) in paperPoints + stampPoint) {
+                            val expected = composite.getPixel(x + 16, y + 16)
+                            val actual = rendered.getPixel(x + 16, y + 16)
+                            for (shift in listOf(16, 8, 0)) {
+                                assertEquals(
+                                    "$name on $backgroundName at $x,$y, channel $shift",
+                                    (expected ushr shift and 255).toDouble(),
+                                    (actual ushr shift and 255).toDouble(),
+                                    24.0,
+                                )
+                            }
+                        }
+                    } finally {
+                        rendered.recycle()
+                    }
+                } finally {
+                    page.recycle()
+                    assertTrue(source.delete() || !source.exists())
+                    assertTrue(destination.delete() || !destination.exists())
+                }
+            }
+        }
+    }
+
+    private fun assertTransparentMark(mark: Bitmap, expected: IntArray, root: File, name: String) {
+        assertEquals(24, mark.width)
+        assertEquals(16, mark.height)
+        assertArrayEquals(expected, bitmapPixels(mark))
+        for ((backgroundName, background) in markBackgrounds) {
+            withQaComposite(mark, background, root, "$name-$backgroundName") { composite ->
+                assertEquals(background, composite.getPixel(30, 24))
+                for (x in listOf(1, 5, 9, 17, 21)) {
+                    val ink = expected[8 * 24 + x]
+                    val actual = composite.getPixel(x + 16, 24)
+                    for (shift in listOf(16, 8, 0)) {
+                        val alpha = Color.alpha(ink)
+                        val expectedChannel =
+                            ((ink ushr shift and 255) * alpha + (background ushr shift and 255) * (255 - alpha) + 127) / 255
+                        assertEquals("$name on $backgroundName at $x, channel $shift", expectedChannel.toDouble(), (actual ushr shift and 255).toDouble(), 1.0)
+                    }
+                }
+            }
+        }
+    }
+
+    private inline fun withQaComposite(mark: Bitmap, background: Int, root: File, name: String, check: (Bitmap) -> Unit) {
+        val composite = Bitmap.createBitmap(mark.width + 32, mark.height + 32, Bitmap.Config.ARGB_8888)
+        try {
+            composite.eraseColor(background)
+            Canvas(composite).drawBitmap(mark, 16f, 16f, null)
+            composite.outputStreamToPng(File(root, "$name.png"))
+            check(composite)
+        } finally {
+            composite.recycle()
+        }
+    }
+
+    private fun Bitmap.outputStreamToPng(file: File) {
+        file.outputStream().use { assertTrue(compress(Bitmap.CompressFormat.PNG, 100, it)) }
+    }
+
+    private fun maxRgb(pixel: Int): Int = maxOf(Color.red(pixel), Color.green(pixel), Color.blue(pixel))
 
     private fun bitmapPixels(bitmap: Bitmap): IntArray =
         IntArray(bitmap.width * bitmap.height).also {

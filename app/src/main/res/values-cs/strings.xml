@@ -201,6 +201,10 @@
     <string name="saved_visual_marks">Uložené podpisy a razítka</string>
     <string name="no_saved_visual_marks">Zatím není uložen žádný podpis ani razítko.</string>
     <string name="draw_visual_mark">Nakreslit</string>
+    <string name="add_visual_mark">Přidat podpis nebo razítko</string>
+    <string name="reset_visual_mark">Obnovit umístění</string>
+    <string name="visual_mark_limit">Máte uložených %1$d podpisů a razítek. Před přidáním dalšího některý smažte.</string>
+    <string name="visual_mark_placement_summary">Velikost %1$d %%, otočení %2$d°, vodorovná poloha %3$d %%, svislá poloha %4$d %%</string>
     <string name="import_visual_mark">Importovat obrázek</string>
     <string name="scan_visual_mark">Skenovat papír</string>
     <string name="delete_visual_mark">Smazat vybraný</string>
@@ -208,6 +212,10 @@
     <string name="vertical_position">Svislá poloha</string>
     <string name="visual_mark_size">Velikost</string>
     <string name="visual_mark_rotation">Otočení</string>
+    <string name="visual_mark_enlarge">Zvětšit podpis nebo razítko</string>
+    <string name="visual_mark_reduce">Zmenšit podpis nebo razítko</string>
+    <string name="visual_mark_rotate_left">Otočit doleva</string>
+    <string name="visual_mark_rotate_right">Otočit doprava</string>
     <string name="manual_position">Ruční umístění</string>
     <string name="apply_visual_mark">Použít na stránku %1$d</string>
     <string name="visual_mark_working">Pracuji…</string>
@@ -359,7 +367,7 @@
     <string name="safe_share_move_down">Posunout dolů</string>
     <string name="safe_share_grow">Zvětšit oblast</string>
     <string name="safe_share_shrink">Zmenšit oblast</string>
-    <string name="visual_mark_library_hint">Nakreslete, importujte nebo naskenujte podpis či razítko na čistém papíře. Před použitím zkontrolujte inkoust na šedém náhledu. Uložené podpisy zůstávají v tomto zařízení. Do stejného dokumentu můžete postupně přidat více podpisů i razítek.</string>
+    <string name="visual_mark_library_hint">Podpis či razítko skenujte nebo importujte na čistém papíře s malým prázdným okrajem. Šachovnice označuje průhledná místa. Před použitím zkontrolujte inkoust. Uložené podpisy zůstávají v tomto zařízení.</string>
     <string name="free_release_subscription_notice">Všechny funkce jsou nyní zdarma. Aktualizace aplikace nezruší dřívější předplatné Google Play. Pokud jste si ho koupili, spravujte nebo zrušte ho v Google Play.</string>
     <string name="previous_subscriptions">Správa dřívějších předplatných</string>
 </resources>

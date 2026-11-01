@@ -428,6 +428,48 @@ class RecentScanTest {
         }
 
     @Test
+    fun preparedImageShareKeepsSavedDisplayNamesAndPrivateFileNames() =
+        withShareRoot { root ->
+            val contents = listOf(byteArrayOf(1, 2, 3), byteArrayOf(4, 5, 6, 7))
+            val names = listOf("Smlouva & kůň #1.jpg", "Smlouva & kůň #2.png")
+            val prepared = prepareImageShareCopies(
+                root,
+                listOf(
+                    savedImage(1, "content://provider/image/1", "image/jpeg", contents[0]).copy(displayName = names[0]),
+                    savedImage(2, "content://provider/image/2", "image/png", contents[1]).copy(displayName = names[1]),
+                ),
+                open = { uri -> ByteArrayInputStream(contents[if (uri.endsWith("/1")) 0 else 1]) },
+            )
+
+            assertEquals(names, prepared.displayNames)
+            assertEquals(listOf("page-01.jpg", "page-02.png"), prepared.files.map(File::getName))
+            prepared.files.forEachIndexed { index, file -> assertArrayEquals(contents[index], file.readBytes()) }
+            validatePreparedImageShare(prepared)
+            assertThrows(IOException::class.java) {
+                validatePreparedImageShare(prepared.copy(displayNames = emptyList()))
+            }
+            assertTrue(cleanupPreparedImageShare(prepared))
+        }
+
+    @Test
+    fun preparedImageShareRejectsUnsafeDisplayNamesBeforeOpeningSources() {
+        for (name in listOf("", ".", "..", "../secret.jpg", "folder/name.jpg", "folder\\name.jpg", "bad\nname.jpg", "x".repeat(256))) {
+            withShareRoot { root ->
+                val output = savedImage(1, "content://provider/image/1", "image/jpeg", byteArrayOf(1))
+                    .copy(displayName = name)
+                assertThrows(IOException::class.java) {
+                    prepareImageShareCopies(
+                        root,
+                        listOf(output),
+                        open = { error("Unsafe name must fail before the source is opened") },
+                    )
+                }
+                assertTrue(root.listFiles().orEmpty().isEmpty())
+            }
+        }
+    }
+
+    @Test
     fun preparedImageShareValidationRejectsFilesOutsideItsPrivateDirectory() =
         withShareRoot { root ->
             val directory =

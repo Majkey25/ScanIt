@@ -4507,7 +4507,10 @@ internal class ScanStorage(
                     it.uri == tree && it.isReadPermission && it.isWritePermission
                 }
         ) {
-            throw IOException("SAF output tree permission is unavailable")
+            throw SafOutputCreationFailure(
+                outputCreated = false,
+                cause = IOException("SAF output tree permission is unavailable"),
+            )
         }
         val sourceFingerprint = fingerprintFile(source)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, rootId)

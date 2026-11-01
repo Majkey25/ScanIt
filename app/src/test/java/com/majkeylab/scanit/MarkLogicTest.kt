@@ -303,7 +303,8 @@ class MarkLogicTest {
 
     @Test
     fun blankWhiteGreyAndTintedPaperContainNoInk() {
-        for (paper in intArrayOf(-1, 0xFFF0E4CB.toInt(), 0xFFDCEDFF.toInt(), 0xFF808080.toInt())) {
+        for (paper in intArrayOf(-1, 0xFFF0E4CB.toInt(), 0xFFDCEDFF.toInt(), 0xFF808080.toInt(),
+            0xFF104080.toInt(), 0xFF001080.toInt(), 0xFFFFFF00.toInt(), 0xFF101010.toInt())) {
             val pixels = IntArray(96 * 64) { paper }
             val original = pixels.copyOf()
             val ink = extractMarkInk(96, 64, pixels)
@@ -444,6 +445,67 @@ class MarkLogicTest {
     }
 
     @Test
+    fun faintNeutralInkAtTheVisibilityLimitSurvivesTintedPaper() {
+        val paper = 0xFFE0D0C0.toInt()
+        val pixels = IntArray(9 * 9) { paper }
+        pixels[40] = compositeInk(0xFF000000.toInt(), MARK_VISIBLE_ALPHA, paper)
+
+        val ink = extractMarkInk(9, 9, pixels)
+
+        // Quantizing black over tinted paper permits one RGB level at alpha 16.
+        assertEquals(0x10010101, ink[40])
+        assertEquals(PixelBounds(4, 4, 5, 5), visiblePixelBounds(9, 9, ink))
+        pixels.indices.filter { it != 40 }.forEach { assertEquals(0, ink[it]) }
+    }
+
+    @Test
+    fun coloredInkWithChannelsBrighterThanPaperRecompositesWithoutClipping() {
+        val width = 96
+        val height = 64
+        for ((paper, color) in listOf(
+            0xFF808080.toInt() to 0xFFFF6464.toInt(),
+            0xFFE0D0C0.toInt() to 0xFFF0C0B0.toInt(),
+            0xFF001080.toInt() to 0xFF200040.toInt(),
+        )) {
+            val pixels = IntArray(width * height) { paper }
+            for (y in 16..47) for (x in 24..71) pixels[y * width + x] = color
+            for (y in 24..39) for (x in 40..55) pixels[y * width + x] = paper
+
+            val ink = extractMarkInk(width, height, pixels)
+
+            for (y in 0 until height) for (x in 0 until width) {
+                val index = y * width + x
+                if (y in 16..47 && x in 24..71 && !(y in 24..39 && x in 40..55)) {
+                    val pixel = ink[index]
+                    assertTrue("Colored ink disappeared at $x,$y", pixel ushr 24 >= MARK_VISIBLE_ALPHA)
+                    val reconstructed = compositeInk(pixel, pixel ushr 24, paper)
+                    for (shift in listOf(16, 8, 0)) {
+                        assertEquals((color ushr shift and 255).toDouble(), (reconstructed ushr shift and 255).toDouble(), 1.0)
+                    }
+                } else {
+                    assertEquals("Paper/hole retained alpha at $x,$y", 0, ink[index])
+                }
+            }
+        }
+    }
+
+    @Test
+    fun thinInkAtPaperEdgesDoesNotContaminateTheMarginEstimate() {
+        val width = 128
+        val height = 96
+        val paper = 0xFFE0D0C0.toInt()
+        val pixels = IntArray(width * height) { paper }
+        for (y in 24..71) pixels[y * width] = 0xFF000000.toInt()
+        pixels[0] = 0xFF000000.toInt()
+
+        val ink = extractMarkInk(width, height, pixels)
+
+        pixels.indices.forEach { index ->
+            assertEquals(if (pixels[index] == paper) 0 else pixels[index], ink[index])
+        }
+    }
+
+    @Test
     fun inkExtractionRejectsInvalidOrUnboundedImages() {
         assertThrows(IllegalArgumentException::class.java) { extractMarkInk(0, 1, intArrayOf()) }
         assertThrows(IllegalArgumentException::class.java) { extractMarkInk(2, 2, IntArray(3)) }
@@ -466,21 +528,7 @@ class MarkLogicTest {
     }
 
     @Test
-    fun cropCopiesExactRowsAndRejectsMismatchedInput() {
-        val pixels = IntArray(12) { it }
-        val bounds = PixelBounds(left = 1, top = 1, right = 4, bottom = 3)
-
-        assertArrayEquals(intArrayOf(5, 6, 7, 9, 10, 11), cropArgbPixels(4, 3, pixels, bounds))
-        assertThrows(IllegalArgumentException::class.java) {
-            cropArgbPixels(4, 3, IntArray(11), bounds)
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            cropArgbPixels(4, 3, pixels, PixelBounds(3, 2, 5, 3))
-        }
-    }
-
-    @Test
-    fun paperRemovalThenCropRetainsOnlyColoredInk() {
+    fun paperRemovalLocatesOnlyColoredInk() {
         val converted =
             extractMarkInk(
                 3,
@@ -498,8 +546,8 @@ class MarkLogicTest {
 
         assertEquals(PixelBounds(1, 0, 2, 2), bounds)
         assertArrayEquals(
-            intArrayOf(0xFFFF0000.toInt(), 0xFF0000FF.toInt()),
-            cropArgbPixels(3, 2, converted, bounds!!),
+            intArrayOf(0, 0xFFFF0000.toInt(), 0, 0, 0xFF0000FF.toInt(), 0),
+            converted,
         )
     }
 

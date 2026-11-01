@@ -100,7 +100,8 @@ internal enum class ScannerPurpose {
 
 internal fun scannerMode(purpose: ScannerPurpose): Int =
     when (purpose) {
-        ScannerPurpose.Document -> GmsDocumentScannerOptions.SCANNER_MODE_FULL
+        // Keep gallery imports out of Google's automatic ML cleanup; cleanup remains in Actions.
+        ScannerPurpose.Document -> GmsDocumentScannerOptions.SCANNER_MODE_BASE_WITH_FILTER
         ScannerPurpose.VisualMark -> GmsDocumentScannerOptions.SCANNER_MODE_BASE
     }
 
@@ -997,7 +998,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 try {
                     withContext(Dispatchers.IO) {
                         val scan = viewModel.recentScanForShare(action) ?: return@withContext null
-                        pdfShareIntent(this@MainActivity, scan.cached, settings)
+                        pdfShareIntent(this@MainActivity, scan, settings)
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation
@@ -1098,7 +1099,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun shareCurrentScan(
-        createIntent: (Context, CachedScan, AppSettings) -> Intent,
+        createIntent: (Context, SavedScan, AppSettings) -> Intent,
     ) {
         val result = viewModel.state.value as? ScreenState.Result
         val scan = result?.scan
@@ -1108,7 +1109,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
         val settings = viewModel.currentSettings()
         try {
-            val shareIntent = createIntent(this, scan.cached, settings)
+            val shareIntent = createIntent(this, scan, settings)
             if (!launchShareChooser(shareIntent)) {
                 showToast(R.string.share_failed)
             }

@@ -33,6 +33,7 @@ internal data class PreparedImageShare(
     val directory: File,
     val files: List<File>,
     val mimeType: String,
+    val displayNames: List<String> = files.map(File::getName),
 )
 
 internal data class PreparedResultImageShare(
@@ -46,6 +47,7 @@ internal data class PreparedImageSource(
     val mimeType: String?,
     val byteLength: Long?,
     val sha256: String?,
+    val displayName: String? = null,
 )
 
 internal enum class ResultImageShareMode {
@@ -90,10 +92,10 @@ internal fun activeImageShareMimeType(mimeTypes: List<String?>): String {
 
 internal fun pdfShareIntent(
     context: Context,
-    scan: CachedScan,
+    scan: SavedScan,
     settings: AppSettings,
 ): Intent {
-    val uri = shareUri(context, scan.pdf)
+    val uri = shareUri(context, scan.cached.pdf, scan.savedPdfDisplayName ?: scan.cached.pdf.name)
     return Intent(Intent.ACTION_SEND).apply {
         type = PDF_MIME_TYPE
         putExtra(Intent.EXTRA_STREAM, uri)
@@ -134,7 +136,9 @@ internal fun imageShareIntent(
     settings: AppSettings,
 ): Intent {
     validatePreparedImageShare(prepared)
-    val uris = ArrayList(prepared.files.map { shareUri(context, it) })
+    val uris = ArrayList(prepared.files.mapIndexed { index, file ->
+        shareUri(context, file, prepared.displayNames[index])
+    })
     return Intent(
         if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE,
     ).apply {
@@ -161,6 +165,7 @@ private fun validatePreparedImageShareLocked(prepared: PreparedImageShare) {
     val root = prepared.shareRoot.absoluteFile
     val directory = prepared.directory.absoluteFile
     if (prepared.files.isEmpty() || prepared.files.size > MAX_SCAN_PAGES ||
+        prepared.displayNames.size != prepared.files.size || prepared.displayNames.any { !isShareDisplayName(it) } ||
         root.canonicalFile != root || directory.canonicalFile != directory ||
         directory.parentFile != root || !isPreparedImageShareDirectoryName(directory.name) ||
         prepared.files.any {
@@ -225,6 +230,9 @@ internal fun prepareImageShareCopies(
     if (outputs.isEmpty() || outputs.size > MAX_SCAN_PAGES || !isCanonicalUuid(operationId)) {
         throw IOException("Image share request is invalid")
     }
+    if (outputs.any { it.displayName != null && !isShareDisplayName(it.displayName) }) {
+        throw IOException("Saved image share name is invalid")
+    }
     if (outputs.map(PreparedImageSource::page) != outputs.map(PreparedImageSource::page).sorted() ||
         outputs.map(PreparedImageSource::page).distinct().size != outputs.size
     ) {
@@ -257,7 +265,10 @@ internal fun prepareImageShareCopies(
                 copyExactOutput(open(output.uri), target, fingerprints[index], isCancelled)
                 target
             }
-        return prepared.copy(files = files)
+        return prepared.copy(
+            files = files,
+            displayNames = outputs.mapIndexed { index, output -> output.displayName ?: files[index].name },
+        )
     } catch (cancellation: CancellationException) {
         if (!cleanupPreparedImageShare(prepared)) {
             cancellation.addSuppressed(IOException("Prepared image share cleanup failed"))
@@ -272,7 +283,7 @@ internal fun prepareImageShareCopies(
 }
 
 internal fun SavedImageOutput.toPreparedImageSource(): PreparedImageSource =
-    PreparedImageSource(page, uri.toString(), mimeType, byteLength, sha256)
+    PreparedImageSource(page, uri.toString(), mimeType, byteLength, sha256, displayName)
 
 internal fun cleanupPreparedImageShare(prepared: PreparedImageShare): Boolean {
     synchronized(preparedImageShareLock) {
@@ -490,9 +501,13 @@ internal fun Activity.launchShareChooser(
         false
     }
 
-private fun shareUri(context: Context, file: File): Uri {
+private fun isShareDisplayName(value: String): Boolean =
+    isProviderDisplayName(value) && value != "." && value != ".." && '/' !in value && '\\' !in value
+
+private fun shareUri(context: Context, file: File, displayName: String = file.name): Uri {
+    if (!isShareDisplayName(displayName)) throw IOException("Share display name is invalid")
     if (!file.isFile || file.length() <= 0L) {
         throw IOException("Share file is missing or empty")
     }
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file, displayName)
 }

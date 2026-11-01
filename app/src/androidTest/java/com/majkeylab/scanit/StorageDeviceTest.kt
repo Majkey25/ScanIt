@@ -6,6 +6,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import android.os.Bundle
+import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.system.Os
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,6 +30,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StorageDeviceTest {
+    @Test
+    fun fourLargeGalleryPagesPreserveSourcesAndProduceACompletePdf() =
+        withScan(dimensions = JpegDimensions(4000, 3000)) { storage, first ->
+            val source = first.sourcePages.single()
+            val original = fileFingerprint(source)
+            val started = SystemClock.elapsedRealtime()
+            var orientationMillis = 0L
+            val build = runBlocking {
+                withContext(Dispatchers.IO) {
+                    storage.cacheScannerResult(
+                        List(4) { Uri.fromFile(source) },
+                        googleScannerAppearanceSettings(),
+                        PdfSizeTarget.Original,
+                    ) { pages ->
+                        assertEquals(4, pages.distinct().size)
+                        val orientationStarted = SystemClock.elapsedRealtime()
+                        DocumentOrientationProcessor().detect(pages).also {
+                            orientationMillis = SystemClock.elapsedRealtime() - orientationStarted
+                        }
+                    }
+                }
+            }
+            val imported = storage.activateProvisionalCacheEntry(build.cached)
+            assertEquals(4, imported.pages.size)
+            assertEquals(original, fileFingerprint(source))
+            imported.pages.forEach { page ->
+                assertEquals(JpegDimensions(4000, 3000), readJpegDimensions(page))
+                assertEquals(original, fileFingerprint(page))
+            }
+            ParcelFileDescriptor.open(imported.pdf, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                PdfRenderer(descriptor).use { pdf -> assertEquals(4, pdf.pageCount) }
+            }
+            InstrumentationRegistry.getInstrumentation().sendStatus(0, Bundle().apply {
+                putString("stream", "four12mp totalMs=${SystemClock.elapsedRealtime() - started} orientationMs=$orientationMillis\n")
+            })
+        }
+
     @Test
     fun orientationAndCacheUseOneBoundedPrivateSnapshot() = withScan { storage, first ->
         val source = first.sourcePages.single()
@@ -165,6 +207,67 @@ class StorageDeviceTest {
         }.pageTexts.joinToString("\n")
         assertTrue(text, text.contains("DOCUMENT", ignoreCase = true))
         assertTrue(text, text.contains("12345"))
+    }
+
+    @Test
+    fun renamedPdfAndImagesExposeSavedNamesThroughFileProvider() = withScan(pageCount = 2) { storage, cached ->
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val resolver = context.contentResolver
+        val originals = (cached.sourcePages + cached.pages + cached.pdf).associateWith(::fileFingerprint)
+        storage.savePdf(cached, "SeliaScanQA", null)
+        storage.saveImages(cached, "SeliaScanQA")
+        storage.renamePdfOutput(cached, "Smlouva & kůň #1")
+        val saved = storage.renameImageOutputs(cached, "Obrázek & kůň #2").scan
+        val shareRoot = File(context.cacheDir.canonicalFile, "share")
+        check(shareRoot.isDirectory || shareRoot.mkdir())
+        val directory = Files.createTempDirectory(shareRoot.toPath(), ".share-name-qa-").toFile()
+        val shareContext = object : ContextWrapper(context) {
+            override fun getCacheDir(): File = directory
+        }
+        fun assertSharedOutput(uri: Uri, name: String, expected: OutputFingerprint, mimeType: String) {
+            checkNotNull(resolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null,
+            )).use { row ->
+                assertTrue(row.moveToFirst())
+                assertEquals(name, row.getString(0))
+                assertEquals(expected.byteLength, row.getLong(1))
+                assertFalse(row.moveToNext())
+            }
+            assertEquals(mimeType, resolver.getType(uri))
+            assertEquals(expected, checkNotNull(resolver.openInputStream(uri)).use {
+                readOutputFingerprint(it, expected.byteLength)
+            })
+        }
+        try {
+            val pdf = cached.pdf.copyTo(File(directory, "cached.pdf"))
+            val scan = saved.copy(cached = saved.cached.copy(pdf = pdf))
+            val pdfUri = checkNotNull(pdfShareIntent(context, scan, AppSettings()).clipData?.getItemAt(0)?.uri)
+            assertSharedOutput(pdfUri, checkNotNull(saved.savedPdfDisplayName), originals.getValue(cached.pdf), "application/pdf")
+            val temporaryUri = checkNotNull(pdfShareIntent(
+                context, scan.copy(savedPdfDisplayName = null), AppSettings(),
+            ).clipData?.getItemAt(0)?.uri)
+            assertSharedOutput(temporaryUri, "cached.pdf", originals.getValue(cached.pdf), "application/pdf")
+            assertEquals("cached.pdf", pdf.name)
+
+            val prepared = prepareImageShareCopies(shareContext, saved)
+            try {
+                val clip = checkNotNull(imageShareIntent(context, prepared, AppSettings()).clipData)
+                assertEquals(saved.savedImages.size, clip.itemCount)
+                saved.savedImages.forEachIndexed { index, output ->
+                    assertSharedOutput(
+                        checkNotNull(clip.getItemAt(index).uri), checkNotNull(output.displayName),
+                        checkNotNull(outputFingerprintOrNull(output.byteLength, output.sha256)),
+                        checkNotNull(output.mimeType),
+                    )
+                }
+                assertEquals(listOf("page-01.jpg", "page-02.jpg"), prepared.files.map(File::getName))
+            } finally {
+                assertTrue(cleanupPreparedImageShare(prepared))
+            }
+            originals.forEach { (file, expected) -> assertEquals(expected, fileFingerprint(file)) }
+        } finally {
+            check(directory.deleteRecursively())
+        }
     }
 
     @Test

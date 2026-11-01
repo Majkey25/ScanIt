@@ -330,26 +330,6 @@ internal fun visiblePixelBounds(
     return if (right == 0 || bottom == 0) null else PixelBounds(left, top, right, bottom)
 }
 
-internal fun cropArgbPixels(
-    width: Int,
-    height: Int,
-    pixels: IntArray,
-    bounds: PixelBounds,
-): IntArray {
-    requirePixelArray(width, height, pixels)
-    require(bounds.right <= width && bounds.bottom <= height) { "Crop exceeds the image" }
-    val cropped = IntArray(bounds.width * bounds.height)
-    repeat(bounds.height) { row ->
-        pixels.copyInto(
-            destination = cropped,
-            destinationOffset = row * bounds.width,
-            startIndex = (bounds.top + row) * width + bounds.left,
-            endIndex = (bounds.top + row) * width + bounds.right,
-        )
-    }
-    return cropped
-}
-
 private fun requirePixelArray(
     width: Int,
     height: Int,
