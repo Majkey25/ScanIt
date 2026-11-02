@@ -20,6 +20,19 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v2.0.3 PDF tools
+
+Open PDFs and images from **Recent scans → Document tools**, then use the same
+signature, stamp, cleanup and export tools as camera scans. **PDF to images**
+saves each page as an image; **Images to PDF** combines selected images into a
+PDF. **Open PDF** opens the current scan in a PDF viewer.
+
+Original files stay unchanged. Imported PDFs become flattened scan pages, so
+selectable text, links and digital signatures are not retained. Imports support
+up to 20 pages, 128 MiB per file and 512 MiB per selection. Password-protected
+PDFs must be unlocked before import. Both editions remain free, without ads or
+Premium locks. Only the GitHub edition has the optional Coffee link.
+
 ## v2.0.2 Signature gestures
 
 Place signatures and stamps directly on the scan: drag with one finger, then

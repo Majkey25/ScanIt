@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">SeliaScan</string>
     <string name="try_again">Try again</string>
+    <string name="document_tools">Document tools</string>
+    <string name="open_file">Open file</string>
+    <string name="pdf_to_images">PDF to images</string>
+    <string name="images_to_pdf">Images to PDF</string>
+    <string name="document_import_hint">Originals stay unchanged. Imported PDFs become flattened scan pages without selectable text or links. Open file does not save automatically; conversions save only the chosen format.</string>
+    <string name="opening_file">Opening file…</string>
+    <string name="file_import_failed">Could not open this file. Choose a valid PDF or image.</string>
+    <string name="file_import_password">This PDF is password protected. Open an unprotected copy.</string>
+    <string name="file_import_page_limit">Import up to %1$d pages at a time.</string>
+    <string name="file_import_timeout">Opening the file took too long. Try a smaller file.</string>
+    <string name="file_import_too_large">This file is too large to import. Try a smaller file.</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="pdf_open_failed">Could not open the PDF. Check that a PDF viewer is installed.</string>
     <string name="preview_unavailable">Preview unavailable</string>
     <string name="page_position">Page %1$d of %2$d</string>
     <string name="page_position_short">%1$d of %2$d</string>

@@ -51,6 +51,7 @@ internal fun scannerPageLimit(multipage: Boolean): Int = if (multipage) MAX_SCAN
 private const val LAUNCHED_OUTPUT_TREE_REQUEST_KEY = "launched_output_tree_request"
 private const val LAUNCHED_DOCUMENT_TEXT_EXPORT_REQUEST_KEY =
     "launched_document_text_export_request"
+private const val LAUNCHED_DOCUMENT_IMPORT_KEY = "launched_document_import"
 private const val OUTPUT_TREE_INTENT_FLAGS =
     PDF_TREE_FLAGS or
         Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
@@ -181,6 +182,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val viewModel: ScanViewModel by viewModels()
     private var launchedOutputTreeRequest: OutputChangeRequest? = null
     private var launchedDocumentTextExportRequest: DocumentActionRequest? = null
+    private var launchedDocumentImport: DocumentImportAction? = null
     private var pendingScannerIntent: Pair<Long, IntentSender>? = null
     private val visualMarkPreparationGate = ScannerLaunchGate()
     private var textToSpeech: TextToSpeech? = null
@@ -231,6 +233,14 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             handleDocumentTextExportResult(it)
         }
+    private val documentImportLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            val action = launchedDocumentImport ?: DocumentImportAction.Open
+            launchedDocumentImport = null
+            if (uris.isNotEmpty() && !viewModel.importDocuments(uris, action)) {
+                showToast(R.string.file_import_failed)
+            }
+        }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(localizedLegacyContext(newBase))
@@ -239,6 +249,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        launchedDocumentImport = DocumentImportAction.entries.firstOrNull {
+            it.name == savedInstanceState?.getString(LAUNCHED_DOCUMENT_IMPORT_KEY)
+        }
         launchedOutputTreeRequest =
             decodeOutputTreePickerRequest(
                 savedInstanceState?.getString(LAUNCHED_OUTPUT_TREE_REQUEST_KEY),
@@ -261,6 +274,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 language = currentAppLanguage(),
                 defaultEmailSubjects = defaultEmailSubjects,
                 onScan = ::startScan,
+                onOpenFiles = ::openDocuments,
+                onOpenPdf = ::openCurrentPdf,
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
@@ -380,6 +395,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        launchedDocumentImport?.let { outState.putString(LAUNCHED_DOCUMENT_IMPORT_KEY, it.name) }
         launchedOutputTreeRequest?.let { request ->
             outState.putString(
                 LAUNCHED_OUTPUT_TREE_REQUEST_KEY,
@@ -437,6 +453,29 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     internal fun startScan() {
         viewModel.beginScannerLaunch()
+    }
+
+    private fun openDocuments(action: DocumentImportAction) {
+        if (launchedDocumentImport != null || !viewModel.canImportDocuments()) return
+        launchedDocumentImport = action
+        try {
+            documentImportLauncher.launch(action.mimeTypes)
+        } catch (_: RuntimeException) {
+            launchedDocumentImport = null
+            showToast(R.string.file_import_failed)
+        }
+    }
+
+    private fun openCurrentPdf() {
+        val result = viewModel.state.value as? ScreenState.Result ?: return
+        if (result.resultActionsBlocked) return
+        try {
+            startActivity(Intent.createChooser(pdfViewIntent(this, result.scan), getString(R.string.open_pdf)))
+        } catch (_: RuntimeException) {
+            showToast(R.string.pdf_open_failed)
+        } catch (_: java.io.IOException) {
+            showToast(R.string.pdf_open_failed)
+        }
     }
 
     private fun requestScannerIntent(requestGeneration: Long) {

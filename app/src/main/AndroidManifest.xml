@@ -35,6 +35,12 @@
             android:name=".ShareResultReceiver"
             android:exported="false" />
 
+        <service
+            android:name=".PdfImportService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":pdf_import" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

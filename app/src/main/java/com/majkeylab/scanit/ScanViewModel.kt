@@ -1676,11 +1676,36 @@ internal class ScanViewModel(
         return accepted
     }
 
-    private fun processScanNow(pageUris: List<Uri>): Boolean {
+    fun canImportDocuments(): Boolean =
+        navigationBootstrapComplete && processingJob?.isActive != true &&
+            when (val current = mutableState.value) {
+                is ScreenState.Recent -> !current.deletionInProgress
+                is ScreenState.Failure -> true
+                else -> false
+            }
+
+    fun importDocuments(uris: List<Uri>, action: DocumentImportAction): Boolean {
+        val current = mutableState.value
+        if (current is ScreenState.Result && current.resultActionsBlocked ||
+            current is ScreenState.Recent && current.deletionInProgress
+        ) return false
+        val pages = uris.toList()
+        var accepted = true
+        if (!scannerCallbackGate.submit { accepted = processScanNow(pages, action) }) return false
+        return accepted
+    }
+
+    private fun processScanNow(
+        pageUris: List<Uri>,
+        importAction: DocumentImportAction? = null,
+    ): Boolean {
         if (cleanWhiteboardApplyJob?.isActive == true) return false
         completeScannerLaunch()
         if (!isAcceptedScanPageCount(pageUris.size)) {
-            handleScannerResultFailed(UiMessage(R.string.scanner_result_error))
+            handleScannerResultFailed(
+                if (importAction == null) UiMessage(R.string.scanner_result_error)
+                else UiMessage(R.string.file_import_page_limit, listOf(MAX_SCAN_PAGES)),
+            )
             return false
         }
         if (processingJob?.isActive == true) {
@@ -1695,7 +1720,7 @@ internal class ScanViewModel(
         val generation = beginRouteMutation()
         mutableState.value =
             ScreenState.Processing(
-                UiMessage(R.string.saving_document),
+                UiMessage(if (importAction == null) R.string.saving_document else R.string.opening_file),
                 canNavigateBack = false,
             )
         processingJob =
@@ -1710,18 +1735,30 @@ internal class ScanViewModel(
                             withPreviewHandoff(
                                 load = {
                                     val settings = currentSettings()
+                                    val operation = currentCoroutineContext()
                                     val cacheBuild =
-                                        storage.cacheScannerResult(
+                                        if (importAction == null) storage.cacheScannerResult(
                                             pageUris = pageUris,
                                             appearanceSettings = googleScannerAppearanceSettings(),
                                             pdfSizeTarget = settings.pdfSizeTarget,
                                             detectOrientations = documentOrientationProcessor::detect,
-                                        )
+                                        ) else withImportedDocumentPages(
+                                            getApplication(), pageUris, importAction,
+                                        ) { importedPages ->
+                                            storage.cacheScan(
+                                                importedPages, googleScannerAppearanceSettings(),
+                                                settings.pdfSizeTarget,
+                                                isCancelled = { !operation.isActive },
+                                            )
+                                        }
                                     val cachedScan = cacheBuild.cached
                                     cached = cachedScan
                                     currentCoroutineContext().ensureActive()
                                     PreparedInitialScan(
-                                        settings = settings,
+                                        settings = if (importAction == null) settings else settings.copy(
+                                            saveImages = importAction.saveTarget == SaveNowTarget.Images,
+                                            savePdf = importAction.saveTarget == SaveNowTarget.Pdf,
+                                        ),
                                         build = cacheBuild,
                                         thumbnail =
                                             storage.loadThumbnail(
@@ -1823,7 +1860,7 @@ internal class ScanViewModel(
                         }
                     }
                     throw exception
-                } catch (_: Exception) {
+                } catch (failure: Exception) {
                     if (authorityCommitted) {
                         retainedResult?.let { result ->
                             routeMutationMutex.withLock {
@@ -1856,13 +1893,11 @@ internal class ScanViewModel(
                         if (routeMutationGate.isCurrent(generation)) {
                             mutableState.value =
                                 ScreenState.Failure(
-                                    UiMessage(
-                                        if (cleanupComplete) {
-                                            R.string.document_save_failed
-                                        } else {
-                                            R.string.document_save_partial_failed
-                                        },
-                                    ),
+                                    when {
+                                        !cleanupComplete -> UiMessage(R.string.document_save_partial_failed)
+                                        importAction != null -> documentImportFailureMessage(failure)
+                                        else -> UiMessage(R.string.document_save_failed)
+                                    },
                                 )
                             persistRoute(ROUTE_FAILURE)
                         }
