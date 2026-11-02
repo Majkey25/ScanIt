@@ -20,12 +20,35 @@ SeliaScan is the new product name for ScanIt. The Android package and existing r
   <a href="https://github.com/Majkey25/ScanIt/releases/latest"><img src="docs/play-store/assets/feature-graphic.png" width="100%" alt="SeliaScan document scanner."></a>
 </p>
 
+## v2.1.0 Document editor
+
+Add notes and drawings to scans and imported PDF copies.
+
+Choose **Recent scans → Document tools → Open PDF** to open a page-image copy
+in the editor without saving it to shared storage. For a scan already open,
+choose **Result → Edit**. **Convert** separately offers **PDF to images** and
+**Images to PDF**.
+
+Use **Pen**, **Highlight** and **Text** to add strokes or notes; drag text to
+move it. **Erase** removes whole added strokes or notes, never the scanned
+page. **Undo** and **Redo** change pending annotations. Two fingers pan and zoom.
+**Sign** opens the signature/stamp tools: choose or create a mark, position it
+and apply it together with any pending annotations.
+
+**Save copy** creates a new document with edits flattened into page images.
+The original stays unchanged. PDF import loses selectable text, links, form
+fields and digital signatures. Added signatures and stamps are visual marks
+only, not digital signatures or proof of identity or document integrity.
+
+Both editions remain free, with all tools unlocked and no ads or Premium.
+Only GitHub includes optional Coffee support; Google Play has no donation link.
+
 ## v2.0.3 PDF tools
 
-Open PDFs and images from **Recent scans → Document tools**, then use the same
-signature, stamp, cleanup and export tools as camera scans. **PDF to images**
-saves each page as an image; **Images to PDF** combines selected images into a
-PDF. **Open PDF** opens the current scan in a PDF viewer.
+Use **Recent scans → Document tools → Convert** for **PDF to images**, which
+saves each page as an image, or **Images to PDF**, which combines selected
+images into a PDF. **Open PDF** opens a copy in the editor. On Result,
+**Open in PDF viewer** opens the current scan in an external viewer.
 
 Original files stay unchanged. Imported PDFs become flattened scan pages, so
 selectable text, links and digital signatures are not retained. Imports support

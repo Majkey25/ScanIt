@@ -933,20 +933,20 @@ internal enum class RecentRowAction {
 
 internal enum class ResultEntryAction {
     Rescan,
-    SignOrStamp,
+    Edit,
     Actions,
 }
 
 internal enum class ResultActionDestination {
     Scanner,
-    MarkEditor,
+    Editor,
     DocumentActions,
 }
 
 internal fun resultActionDestination(action: ResultEntryAction): ResultActionDestination =
     when (action) {
         ResultEntryAction.Rescan -> ResultActionDestination.Scanner
-        ResultEntryAction.SignOrStamp -> ResultActionDestination.MarkEditor
+        ResultEntryAction.Edit -> ResultActionDestination.Editor
         ResultEntryAction.Actions -> ResultActionDestination.DocumentActions
     }
 
@@ -1037,6 +1037,11 @@ internal data class VisualMarkEditorState(
     val busy: Boolean = false,
     val applying: Boolean = false,
     val message: UiMessage? = null,
+    val pageAnnotations: List<PageAnnotation>? = null,
+    val annotationUndo: List<List<PageAnnotation>> = emptyList(),
+    val annotationRedo: List<List<PageAnnotation>> = emptyList(),
+    val showMarkTools: Boolean = false,
+    val pageAspectRatio: Float? = null,
 )
 
 internal data class ManualCleanupEditorState(

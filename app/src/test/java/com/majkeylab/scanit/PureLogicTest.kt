@@ -891,10 +891,10 @@ class PureLogicTest {
         val buildTool = File(repository, "tools/build.ps1").readText()
         val wrapper = File(repository, "gradle/wrapper/gradle-wrapper.properties").readText()
 
-        assertTrue(build.contains("versionCode = 61"))
-        assertTrue(build.contains("versionName = \"2.0.3\""))
-        assertTrue(verifier.contains("\$expectedVersionCode = \"61\""))
-        assertTrue(verifier.contains("\$expectedVersionName = \"2.0.3\""))
+        assertTrue(build.contains("versionCode = 62"))
+        assertTrue(build.contains("versionName = \"2.1.0\""))
+        assertTrue(verifier.contains("\$expectedVersionCode = \"62\""))
+        assertTrue(verifier.contains("\$expectedVersionName = \"2.1.0\""))
         assertTrue(rootBuild.contains("version \"9.4.1\""))
         assertTrue(wrapper.contains("gradle-9.8.1-bin.zip"))
         assertTrue(wrapper.contains("dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f"))
@@ -1239,8 +1239,8 @@ class PureLogicTest {
             resultActionDestination(ResultEntryAction.Rescan),
         )
         assertEquals(
-            ResultActionDestination.MarkEditor,
-            resultActionDestination(ResultEntryAction.SignOrStamp),
+            ResultActionDestination.Editor,
+            resultActionDestination(ResultEntryAction.Edit),
         )
         assertEquals(
             ResultActionDestination.DocumentActions,
@@ -1255,11 +1255,11 @@ class PureLogicTest {
     }
 
     @Test
-    fun resultExposesOnlyRescanSignAndActions() {
+    fun resultExposesOnlyRescanEditAndActions() {
         assertEquals(
             listOf(
                 ResultEntryAction.Rescan,
-                ResultEntryAction.SignOrStamp,
+                ResultEntryAction.Edit,
                 ResultEntryAction.Actions,
             ),
             ResultEntryAction.entries,

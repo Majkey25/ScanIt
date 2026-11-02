@@ -209,6 +209,13 @@ internal fun ScanItApp(
     onStopReadAloud: () -> Unit = {},
     onRunSystemAction: (DetectedCodeAction) -> Unit = {},
     onOpenVisualMarkEditor: () -> Unit = {},
+    onOpenDocumentEditor: () -> Unit = {},
+    onCloseDocumentEditor: () -> Unit = {},
+    onUpdateDocumentAnnotations: (List<PageAnnotation>) -> Unit = {},
+    onUndoDocumentAnnotation: () -> Unit = {},
+    onRedoDocumentAnnotation: () -> Unit = {},
+    onOpenEditorMarkTools: () -> Unit = {},
+    onSwitchDocumentEditorPage: (Int) -> Unit = {},
     onCloseVisualMarkEditor: () -> Unit = {},
     onSelectVisualMarkTemplate: (String) -> Unit = {},
     onUpdateVisualMarkPlacement: (MarkPlacement) -> Unit = {},
@@ -223,6 +230,9 @@ internal fun ScanItApp(
     onApplyVisualMark: () -> Unit = {},
     onOpenFiles: (DocumentImportAction) -> Unit = {},
     onOpenPdf: (() -> Unit)? = null,
+    documentImportConfirmation: DocumentImportConfirmation? = null,
+    onConfirmDocumentImport: () -> Unit = {},
+    onDismissDocumentImport: () -> Unit = {},
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showVisualMarkLibrary by rememberSaveable { mutableStateOf(false) }
@@ -282,6 +292,19 @@ internal fun ScanItApp(
                 onClose = onCloseManualCleanup,
                 onStrokesChange = onUpdateManualCleanup,
                 onApply = onApplyManualCleanup,
+            )
+        } else if (state is ScreenState.Result && state.visualMarkEditor?.pageAnnotations != null &&
+            !state.visualMarkEditor.showMarkTools
+        ) {
+            DocumentEditorScreen(
+                result = state, editor = state.visualMarkEditor,
+                onClose = onCloseDocumentEditor,
+                onChange = onUpdateDocumentAnnotations,
+                onUndo = onUndoDocumentAnnotation,
+                onRedo = onRedoDocumentAnnotation,
+                onSignature = onOpenEditorMarkTools,
+                onApply = onApplyVisualMark,
+                onPageChange = onSwitchDocumentEditorPage,
             )
         } else if (state is ScreenState.Result && state.visualMarkEditor != null) {
             VisualMarkEditorScreen(
@@ -387,8 +410,12 @@ internal fun ScanItApp(
                             fileDetailsExpanded = false
                             onOpenVisualMarkEditor()
                         },
+                        onEditDocument = onOpenDocumentEditor,
                     )
             }
+        }
+        documentImportConfirmation?.let { request ->
+            DocumentImportDialog(request.action, onConfirmDocumentImport, onDismissDocumentImport)
         }
     }
 }
@@ -472,6 +499,7 @@ private fun ResultScreen(
     onLoadResultPreview: suspend (File, Int) -> Bitmap?,
     onLoadResultImageDimensions: suspend (List<File>) -> List<Pair<Int, Int>>?,
     onAddVisualMark: () -> Unit,
+    onEditDocument: () -> Unit,
 ) {
     val scan = result.scan
     val pageCount = scan.cached.pages.size
@@ -531,7 +559,7 @@ private fun ResultScreen(
     val onResultEntryAction: (ResultEntryAction) -> Unit = { action ->
         when (resultActionDestination(action)) {
             ResultActionDestination.Scanner -> onNewScan()
-            ResultActionDestination.MarkEditor -> onAddVisualMark()
+            ResultActionDestination.Editor -> onEditDocument()
             ResultActionDestination.DocumentActions -> showDocumentActions = true
         }
     }
@@ -597,14 +625,14 @@ private fun ResultScreen(
                         }
                         OutlinedButton(
                             onClick = {
-                                onResultEntryAction(ResultEntryAction.SignOrStamp)
+                                onResultEntryAction(ResultEntryAction.Edit)
                             },
                             enabled = actionsEnabled && result.canAddVisualMark,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                         ) {
                             ActionButtonContent(
-                                iconRes = R.drawable.ic_signature,
-                                textRes = R.string.add_signature_or_stamp,
+                                iconRes = R.drawable.ic_edit,
+                                textRes = R.string.edit_document,
                             )
                         }
                         OutlinedButton(
@@ -640,15 +668,15 @@ private fun ResultScreen(
                         }
                         OutlinedButton(
                             onClick = {
-                                onResultEntryAction(ResultEntryAction.SignOrStamp)
+                                onResultEntryAction(ResultEntryAction.Edit)
                             },
                             enabled = actionsEnabled && result.canAddVisualMark,
                             modifier = Modifier.weight(1f).heightIn(min = RESULT_ACTION_MIN_HEIGHT_DP.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 3.dp),
                         ) {
                             ResultActionButtonContent(
-                                iconRes = R.drawable.ic_signature,
-                                textRes = R.string.sign_or_stamp,
+                                iconRes = R.drawable.ic_edit,
+                                textRes = R.string.edit_document,
                             )
                         }
                         OutlinedButton(
@@ -693,7 +721,7 @@ private fun ResultScreen(
                     enabled = onOpenPdf != null && actionsEnabled,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 ) {
-                    ActionButtonContent(R.drawable.ic_pdf, R.string.open_pdf)
+                    ActionButtonContent(R.drawable.ic_pdf, R.string.open_pdf_in_viewer)
                 }
             }
             item {
@@ -791,6 +819,9 @@ private fun ResultScreen(
     }
     if (showDocumentActions) {
         DocumentActionPickerDialog(
+            editorAvailable = result.canAddVisualMark,
+            onEditor = { showDocumentActions = false; onEditDocument() },
+            onSignature = { showDocumentActions = false; onAddVisualMark() },
             cleanWhiteboardAvailable = result.canCleanWhiteboard,
             manualCleanupAvailable = manualCleanupAvailable(
                 previewLoading = result.pagePreviewLoading,
@@ -1068,6 +1099,9 @@ private fun ownedResultPreview(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DocumentActionPickerDialog(
+    editorAvailable: Boolean,
+    onEditor: () -> Unit,
+    onSignature: () -> Unit,
     cleanWhiteboardAvailable: Boolean,
     manualCleanupAvailable: Boolean,
     onDismiss: () -> Unit,
@@ -1119,6 +1153,19 @@ private fun DocumentActionPickerDialog(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                item {
+                    Column {
+                        DocumentActionPickerRow(
+                            R.drawable.ic_edit, R.string.document_editor,
+                            R.string.selected_page, editorAvailable, onEditor,
+                        )
+                        DocumentActionPickerRow(
+                            R.drawable.ic_signature, R.string.sign_or_stamp,
+                            R.string.selected_page, editorAvailable, onSignature,
+                        )
+                        HorizontalDivider()
+                    }
+                }
                 documentActionInventory().forEach { section ->
                     val actions =
                         section.actions.filter {
@@ -3216,41 +3263,7 @@ private fun LazyListScope.documentTools(
     enabled: Boolean,
     onOpenFiles: (DocumentImportAction) -> Unit,
 ) {
-    item {
-        Text(
-            stringResource(R.string.document_tools),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.fillMaxWidth().semantics { heading() },
-        )
-    }
-    listOf(
-        Triple(DocumentImportAction.Open, R.drawable.ic_folder, R.string.open_file),
-        Triple(DocumentImportAction.PdfToImages, R.drawable.ic_image, R.string.pdf_to_images),
-        Triple(DocumentImportAction.ImagesToPdf, R.drawable.ic_pdf, R.string.images_to_pdf),
-    ).forEach { (action, iconRes, textRes) ->
-        item {
-            OutlinedButton(
-                onClick = { onOpenFiles(action) },
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            ) {
-                Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(textRes),
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
-    }
-    item {
-        Text(
-            stringResource(R.string.document_import_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+    item { DocumentTools(enabled, onOpenFiles) }
 }
 
 @Composable

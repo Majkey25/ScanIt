@@ -32,6 +32,8 @@ import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -52,6 +54,8 @@ private const val LAUNCHED_OUTPUT_TREE_REQUEST_KEY = "launched_output_tree_reque
 private const val LAUNCHED_DOCUMENT_TEXT_EXPORT_REQUEST_KEY =
     "launched_document_text_export_request"
 private const val LAUNCHED_DOCUMENT_IMPORT_KEY = "launched_document_import"
+private const val PENDING_DOCUMENT_IMPORT_KEY = "pending_document_import"
+private const val PENDING_DOCUMENT_IMPORT_ACTION_KEY = "pending_document_import_action"
 private const val OUTPUT_TREE_INTENT_FLAGS =
     PDF_TREE_FLAGS or
         Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
@@ -237,10 +241,9 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             val action = launchedDocumentImport ?: DocumentImportAction.Open
             launchedDocumentImport = null
-            if (uris.isNotEmpty() && !viewModel.importDocuments(uris, action)) {
-                showToast(R.string.file_import_failed)
-            }
+            if (uris.isNotEmpty()) reviewDocumentImport(uris, action)
         }
+    private var pendingDocumentImport by mutableStateOf<DocumentImportConfirmation?>(null)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(localizedLegacyContext(newBase))
@@ -249,6 +252,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val pendingUris = savedInstanceState?.getStringArrayList(PENDING_DOCUMENT_IMPORT_KEY)
+        val pendingAction = DocumentImportAction.entries.firstOrNull {
+            it.name == savedInstanceState?.getString(PENDING_DOCUMENT_IMPORT_ACTION_KEY)
+        }
+        if (pendingUris != null && pendingAction != null) {
+            pendingDocumentImport = try {
+                DocumentImportConfirmation(pendingUris.map(Uri::parse), pendingAction)
+            } catch (_: IllegalArgumentException) { null }
+        }
         launchedDocumentImport = DocumentImportAction.entries.firstOrNull {
             it.name == savedInstanceState?.getString(LAUNCHED_DOCUMENT_IMPORT_KEY)
         }
@@ -276,6 +288,16 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onScan = ::startScan,
                 onOpenFiles = ::openDocuments,
                 onOpenPdf = ::openCurrentPdf,
+                documentImportConfirmation = pendingDocumentImport,
+                onDismissDocumentImport = { pendingDocumentImport = null },
+                onConfirmDocumentImport = {
+                    pendingDocumentImport?.let { request ->
+                        pendingDocumentImport = null
+                        if (!viewModel.importDocuments(request.uris, request.action)) {
+                            showToast(R.string.file_import_failed)
+                        }
+                    }
+                },
                 onSaveSettings = viewModel::saveSettings,
                 onLanguageChange = ::setAppLanguage,
                 onPdfFolderSelected = viewModel::setPdfTreeUri,
@@ -331,6 +353,13 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 onStopReadAloud = ::stopReadAloud,
                 onRunSystemAction = ::runSystemAction,
                 onOpenVisualMarkEditor = viewModel::openVisualMarkEditor,
+                onOpenDocumentEditor = viewModel::openDocumentEditor,
+                onCloseDocumentEditor = viewModel::closeDocumentEditor,
+                onUpdateDocumentAnnotations = viewModel::updateDocumentAnnotations,
+                onUndoDocumentAnnotation = viewModel::undoDocumentAnnotation,
+                onRedoDocumentAnnotation = viewModel::redoDocumentAnnotation,
+                onOpenEditorMarkTools = viewModel::openEditorMarkTools,
+                onSwitchDocumentEditorPage = viewModel::switchDocumentEditorPage,
                 onCloseVisualMarkEditor = viewModel::closeVisualMarkEditor,
                 onSelectVisualMarkTemplate = viewModel::selectVisualMarkTemplate,
                 onUpdateVisualMarkPlacement = viewModel::updateVisualMarkPlacement,
@@ -395,6 +424,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        pendingDocumentImport?.let {
+            outState.putStringArrayList(PENDING_DOCUMENT_IMPORT_KEY, ArrayList(it.uris.map(Uri::toString)))
+            outState.putString(PENDING_DOCUMENT_IMPORT_ACTION_KEY, it.action.name)
+        }
         launchedDocumentImport?.let { outState.putString(LAUNCHED_DOCUMENT_IMPORT_KEY, it.name) }
         launchedOutputTreeRequest?.let { request ->
             outState.putString(
@@ -456,13 +489,27 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun openDocuments(action: DocumentImportAction) {
-        if (launchedDocumentImport != null || !viewModel.canImportDocuments()) return
+        if (launchedDocumentImport != null || pendingDocumentImport != null || !viewModel.canImportDocuments()) return
         launchedDocumentImport = action
         try {
             documentImportLauncher.launch(action.mimeTypes)
         } catch (_: RuntimeException) {
             launchedDocumentImport = null
             showToast(R.string.file_import_failed)
+        }
+    }
+
+    private fun reviewDocumentImport(uris: List<Uri>, action: DocumentImportAction) {
+        val request = try {
+            DocumentImportConfirmation(uris.toList(), action)
+        } catch (_: IllegalArgumentException) {
+            showToast(R.string.file_import_failed)
+            return
+        }
+        if (action == DocumentImportAction.ImagesToPdf) {
+            if (!viewModel.importDocuments(request.uris, action)) showToast(R.string.file_import_failed)
+        } else {
+            pendingDocumentImport = request
         }
     }
 

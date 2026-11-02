@@ -66,7 +66,7 @@ class FileImportTest {
 
     @Test
     fun pickerTypesAndSaveTargetsMatchEachImportAction() {
-        assertArrayEquals(arrayOf("application/pdf", "image/*"), DocumentImportAction.Open.mimeTypes)
+        assertArrayEquals(arrayOf("application/pdf"), DocumentImportAction.Open.mimeTypes)
         assertArrayEquals(arrayOf("application/pdf"), DocumentImportAction.PdfToImages.mimeTypes)
         assertArrayEquals(arrayOf("image/*"), DocumentImportAction.ImagesToPdf.mimeTypes)
         assertNull(DocumentImportAction.Open.saveTarget)

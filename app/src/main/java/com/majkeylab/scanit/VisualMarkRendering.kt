@@ -46,16 +46,25 @@ internal fun renderDrawnMark(strokes: List<MarkStroke>): Bitmap {
 internal fun renderMarkedSourceJpeg(
     source: File,
     destination: File,
-    mark: Bitmap,
+    mark: Bitmap?,
     placement: MarkPlacement,
     isCancelled: () -> Boolean,
+    annotations: List<PageAnnotation> = emptyList(),
 ) {
-    require(mark.width > 0 && mark.height > 0) { "Mark bitmap is empty" }
+    require(mark == null || mark.width > 0 && mark.height > 0) { "Mark bitmap is empty" }
+    validatePageAnnotations(annotations)
+    val layoutAspectRatio = if (annotations.any { it is PageAnnotation.Text }) {
+        val dimensions = readJpegDimensions(source)
+        dimensions.width.toFloat() / dimensions.height
+    } else null
     ScanAppearanceRenderer.renderJpeg(
         source = source,
         destination = destination,
         appearance = ScanAppearance(ScanColorMode.Color, intensity = 0, shadows = 0),
         transformBitmap = { page ->
+            val canvas = Canvas(page)
+            drawPageAnnotations(canvas, page.width, page.height, annotations, layoutAspectRatio)
+            if (mark == null) return@renderJpeg
             val rect =
                 resolveMarkRect(
                     pageWidth = page.width.toFloat(),
@@ -64,7 +73,6 @@ internal fun renderMarkedSourceJpeg(
                     markHeight = mark.height,
                     placement = placement,
             )
-            val canvas = Canvas(page)
             val saveCount = canvas.save()
             try {
                 canvas.rotate(
