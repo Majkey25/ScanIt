@@ -26,7 +26,7 @@ internal enum class DocumentImportAction {
 
     val mimeTypes: Array<String>
         get() = when (this) {
-            Open -> arrayOf("application/pdf", "image/*")
+            Open -> arrayOf("application/pdf")
             PdfToImages -> arrayOf("application/pdf")
             ImagesToPdf -> arrayOf("image/*")
         }
@@ -37,6 +37,18 @@ internal enum class DocumentImportAction {
             PdfToImages -> SaveNowTarget.Images
             ImagesToPdf -> SaveNowTarget.Pdf
         }
+}
+
+internal data class DocumentImportConfirmation(
+    val uris: List<Uri>,
+    val action: DocumentImportAction,
+) {
+    init {
+        require(uris.size in 1..MAX_SCAN_PAGES) { "Import selection is too large" }
+        require(uris.all { it.scheme == "content" && !it.authority.isNullOrBlank() && it.toString().length <= 4096 }) {
+            "Import URI is invalid"
+        }
+    }
 }
 
 internal fun documentImportFailureMessage(failure: Exception): UiMessage =

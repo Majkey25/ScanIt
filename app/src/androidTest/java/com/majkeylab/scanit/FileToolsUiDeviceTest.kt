@@ -50,7 +50,7 @@ class FileToolsUiDeviceTest {
     private var scans = 0
     private var openedPdfs = 0
     private val actions = listOf(
-        R.string.open_file to DocumentImportAction.Open,
+        R.string.open_pdf to DocumentImportAction.Open,
         R.string.pdf_to_images to DocumentImportAction.PdfToImages,
         R.string.images_to_pdf to DocumentImportAction.ImagesToPdf,
     )
@@ -82,7 +82,7 @@ class FileToolsUiDeviceTest {
     fun deletionAndProcessingPreventImportUntilRecentIsReady() {
         screen.value = ScreenState.Recent(emptyList(), deletionInProgress = true)
         showApp()
-        actions.forEach { (resource, _) ->
+        listOf(R.string.open_pdf, R.string.convert_documents).forEach { resource ->
             tool(resource).assertIsNotEnabled().performTouchInput { click() }
         }
         compose.runOnIdle {
@@ -96,7 +96,7 @@ class FileToolsUiDeviceTest {
             assertTrue(openedActions.isEmpty())
             screen.value = ScreenState.Recent(emptyList())
         }
-        tool(R.string.open_file).assertIsEnabled().performClick()
+        tool(R.string.open_pdf).assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(listOf(DocumentImportAction.Open), openedActions) }
     }
 
@@ -118,10 +118,8 @@ class FileToolsUiDeviceTest {
                 actions.forEach { (resource, _) ->
                     val button = tool(resource).assertIsEnabled().assertHeightIsAtLeast(48.dp)
                     val bounds = button.fetchSemanticsNode().boundsInRoot
-                    val listBounds = compose.onNode(scrollableList).fetchSemanticsNode().boundsInRoot
-                    assertEquals(width, bounds.width, 1f)
-                    assertTrue(bounds.left >= listBounds.left - 1f && bounds.right <= listBounds.right + 1f)
-                    assertTrue(bounds.top >= listBounds.top - 1f && bounds.bottom <= listBounds.bottom + 1f)
+                    assertTrue(bounds.width > 0f)
+                    if (resource == R.string.open_pdf) assertTrue(bounds.width <= width)
                     val layouts = mutableListOf<TextLayoutResult>()
                     compose.onNodeWithText(context.getString(resource), useUnmergedTree = true)
                         .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(layouts)) }
@@ -154,19 +152,19 @@ class FileToolsUiDeviceTest {
         )
         screen.value = result
         showApp()
-        tool(R.string.open_pdf).assertIsNotEnabled().performTouchInput { click() }
+        tool(R.string.open_pdf_in_viewer).assertIsNotEnabled().performTouchInput { click() }
         compose.runOnIdle { pdfOpener.value = { openedPdfs++ } }
-        tool(R.string.open_pdf).assertIsEnabled().performClick()
+        tool(R.string.open_pdf_in_viewer).assertIsEnabled().performClick()
         for (busy in listOf(
             result.copy(outputSaveInProgress = true),
             result.copy(outputChangeInProgress = true),
             result.copy(imageSharePreparationInProgress = true),
         )) {
             compose.runOnIdle { screen.value = busy }
-            tool(R.string.open_pdf).assertIsNotEnabled().performTouchInput { click() }
+            tool(R.string.open_pdf_in_viewer).assertIsNotEnabled().performTouchInput { click() }
         }
         compose.runOnIdle { screen.value = result }
-        tool(R.string.open_pdf).assertIsEnabled().performClick()
+        tool(R.string.open_pdf_in_viewer).assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals(2, openedPdfs)
             assertTrue(openedActions.isEmpty())
@@ -203,6 +201,10 @@ class FileToolsUiDeviceTest {
 
     private fun tool(@StringRes resource: Int): SemanticsNodeInteraction {
         val label = context.getString(resource)
+        if (resource == R.string.pdf_to_images || resource == R.string.images_to_pdf) {
+            tool(R.string.convert_documents).performClick()
+            return compose.onNodeWithText(label).assertIsDisplayed()
+        }
         compose.onNode(scrollableList).performScrollToNode(hasText(label))
         return compose.onNodeWithText(label).assertIsDisplayed()
     }

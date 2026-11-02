@@ -858,6 +858,9 @@ internal class ScanViewModel(
     private val documentActionProcessor = DocumentActionProcessor(application)
     private val safeShareAnalyzer = SafeShareAnalyzer(application)
     private val markTemplateStore = MarkTemplateStore(application)
+    private val annotationDraftStore = AnnotationDraftStore(File(application.filesDir.canonicalFile, "document-editor"))
+    private val annotationDraftMutex = Mutex()
+    private var annotationDraftJob: Job? = null
     private val scannerLaunchGate =
         ScannerLaunchGate(
             ScannerLaunchStage.entries.firstOrNull {
@@ -1846,6 +1849,7 @@ internal class ScanViewModel(
                         if (routeMutationGate.isCurrent(generation)) {
                             try {
                                 publishResult(result)
+                                if (importAction == DocumentImportAction.Open) openDocumentEditor()
                             } finally {
                                 if ((mutableState.value as? ScreenState.Result)?.thumbnail === pendingThumbnail) {
                                     pendingThumbnail = null
@@ -1917,10 +1921,15 @@ internal class ScanViewModel(
         refreshRecentScreen()
     }
 
-    fun selectResultPage(selectedPageIndex: Int) {
+    fun selectResultPage(selectedPageIndex: Int) = loadResultPage(selectedPageIndex, documentEditor = false)
+
+    private fun loadResultPage(selectedPageIndex: Int, documentEditor: Boolean) {
         val current = mutableState.value as? ScreenState.Result ?: return
-        if (current.resultActionsBlocked) return
+        val editor = current.visualMarkEditor
         val pageIndex = resolvedPageIndex(selectedPageIndex, current.scan.cached.pages.size)
+        val samePage = pageIndex == current.selectedPageIndex
+        if (current.resultActionsBlocked && !(documentEditor && editor?.pageAnnotations != null &&
+                (editor.pageAnnotations.isEmpty() || samePage) && !editor.busy)) return
         if (
             pageIndex == current.selectedPageIndex &&
                 (current.thumbnail != null || current.pagePreviewLoading)
@@ -1940,9 +1949,15 @@ internal class ScanViewModel(
                 thumbnail = null,
                 selectedPageIndex = pageIndex,
                 pagePreviewLoading = true,
+                visualMarkEditor = if (documentEditor && samePage) editor?.copy(busy = true)
+                else if (documentEditor) VisualMarkEditorState(
+                    source = MarkEditorSource(current.scan.cached.baseName, checkNotNull(current.scan.cached.entryId), pageIndex),
+                    pageAnnotations = emptyList(), busy = true,
+                ) else current.visualMarkEditor,
             )
         resultPreviewJob =
             viewModelScope.launch {
+                val aspect = if (documentEditor) loadPageAspectRatio(current.scan.cached.pages[pageIndex]) else null
                 withPreviewHandoff(
                     load = {
                         try {
@@ -1970,6 +1985,8 @@ internal class ScanViewModel(
                             latest.copy(
                                 thumbnail = thumbnail,
                                 pagePreviewLoading = false,
+                                visualMarkEditor = if (documentEditor) latest.visualMarkEditor?.copy(busy = false, pageAspectRatio = aspect)
+                                    else latest.visualMarkEditor,
                             )
                         true
                     } else {
@@ -1996,6 +2013,12 @@ internal class ScanViewModel(
                 dimensions.width to dimensions.height
             }
         }
+
+    private suspend fun loadPageAspectRatio(page: File): Float? = try {
+        loadResultImageDimensions(listOf(page)).single().let { (width, height) -> width.toFloat() / height }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (_: Exception) { null }
 
     fun openManualCleanupEditor() {
         val current = mutableState.value as? ScreenState.Result ?: return
@@ -2176,7 +2199,11 @@ internal class ScanViewModel(
             }
     }
 
-    fun openVisualMarkEditor() {
+    fun openVisualMarkEditor() = openPageEditor(annotations = false)
+
+    fun openDocumentEditor() = openPageEditor(annotations = true)
+
+    private fun openPageEditor(annotations: Boolean) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val cached = current.scan.cached
         val entryId = cached.entryId ?: return
@@ -2199,8 +2226,33 @@ internal class ScanViewModel(
             )
         mutableState.value =
             current.copy(
-                visualMarkEditor = VisualMarkEditorState(source = source, busy = true),
+                visualMarkEditor = VisualMarkEditorState(
+                    source = source, busy = true,
+                    pageAnnotations = if (annotations) emptyList() else null,
+                ),
             )
+        if (annotations) {
+            visualMarkTemplateJob?.cancel()
+            visualMarkTemplateJob = viewModelScope.launch {
+                val draft = try {
+                    annotationDraftMutex.withLock {
+                        withContext(Dispatchers.IO) { annotationDraftStore.load() }
+                    }?.takeIf { it.source == source }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    null
+                }
+                val aspect = loadPageAspectRatio(current.scan.cached.pages[source.pageIndex])
+                val latest = mutableState.value as? ScreenState.Result ?: return@launch
+                if (!isVisualMarkSourceCurrent(source)) return@launch
+                val editor = latest.visualMarkEditor ?: return@launch
+                mutableState.value = latest.copy(visualMarkEditor = editor.copy(
+                    busy = false, pageAnnotations = draft?.annotations.orEmpty(), pageAspectRatio = aspect,
+                ))
+            }
+            return
+        }
         startVisualMarkTemplateJob(
             source = source,
             failureMessage = UiMessage(R.string.visual_mark_load_failed),
@@ -2213,7 +2265,90 @@ internal class ScanViewModel(
         visualMarkTemplateJob?.cancel()
         visualMarkScanSource = null
         visualMarkScanSavedState.clearAll()
+        val editor = current.visualMarkEditor
+        mutableState.value = current.copy(visualMarkEditor =
+            if (editor?.pageAnnotations != null) editor.copy(
+                showMarkTools = false, busy = false, drawingStrokes = null, selectedTemplateId = null,
+            ) else null,
+        )
+    }
+
+    fun closeDocumentEditor() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy) return
+        visualMarkTemplateJob?.cancel()
         mutableState.value = current.copy(visualMarkEditor = null)
+        persistAnnotationDraft(null, clearSource = editor.source)
+    }
+
+    fun openEditorMarkTools() {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        if (editor.busy || editor.pageAnnotations == null) return
+        mutableState.value = current.copy(visualMarkEditor = editor.copy(showMarkTools = true, busy = true))
+        startVisualMarkTemplateJob(editor.source, failureMessage = UiMessage(R.string.visual_mark_load_failed)) { null }
+    }
+
+    fun updateDocumentAnnotations(annotations: List<PageAnnotation>) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        val previous = editor.pageAnnotations ?: return
+        if (editor.busy || !isVisualMarkSourceCurrent(editor.source) || previous == annotations) return
+        validatePageAnnotations(annotations)
+        val updated = editor.copy(
+            pageAnnotations = annotations.toList(),
+            annotationUndo = (editor.annotationUndo + listOf(previous)).takeLast(32),
+            annotationRedo = emptyList(), message = null,
+        )
+        mutableState.value = current.copy(visualMarkEditor = updated)
+        persistAnnotationDraft(AnnotationDraft(editor.source, annotations))
+    }
+
+    fun undoDocumentAnnotation() = restoreAnnotationHistory(redo = false)
+
+    fun redoDocumentAnnotation() = restoreAnnotationHistory(redo = true)
+
+    private fun restoreAnnotationHistory(redo: Boolean) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        val annotations = editor.pageAnnotations ?: return
+        val history = if (redo) editor.annotationRedo else editor.annotationUndo
+        if (editor.busy || history.isEmpty() || !isVisualMarkSourceCurrent(editor.source)) return
+        val restored = history.last()
+        mutableState.value = current.copy(visualMarkEditor = editor.copy(
+            pageAnnotations = restored,
+            annotationUndo = if (redo) (editor.annotationUndo + listOf(annotations)).takeLast(32)
+                else history.dropLast(1),
+            annotationRedo = if (redo) history.dropLast(1)
+                else (editor.annotationRedo + listOf(annotations)).takeLast(32),
+            message = null,
+        ))
+        persistAnnotationDraft(AnnotationDraft(editor.source, restored))
+    }
+
+    private fun persistAnnotationDraft(draft: AnnotationDraft?, clearSource: MarkEditorSource? = null) {
+        annotationDraftJob?.cancel()
+        annotationDraftJob = viewModelScope.launch {
+            try {
+                annotationDraftMutex.withLock {
+                    withContext(Dispatchers.IO) {
+                        if (draft != null) annotationDraftStore.save(draft)
+                        else if (annotationDraftStore.load()?.source == clearSource) annotationDraftStore.clear()
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                val current = mutableState.value as? ScreenState.Result ?: return@launch
+                val editor = current.visualMarkEditor ?: return@launch
+                if (draft?.source == editor.source) {
+                    mutableState.value = current.copy(visualMarkEditor = editor.copy(
+                        message = UiMessage(R.string.annotation_draft_failed),
+                    ))
+                }
+            }
+        }
     }
 
     fun selectVisualMarkTemplate(id: String) {
@@ -2376,19 +2511,37 @@ internal class ScanViewModel(
         startVisualMarkTemplateJob(source) { markTemplateStore.import(uri) }
     }
 
-    fun applyVisualMark() {
+    fun switchDocumentEditorPage(pageIndex: Int) {
         val current = mutableState.value as? ScreenState.Result ?: return
         val editor = current.visualMarkEditor ?: return
-        val templateId = editor.selectedTemplateId ?: return
+        if (editor.busy || editor.pageAnnotations == null || pageIndex !in current.scan.cached.pages.indices) return
+        if (pageIndex == current.selectedPageIndex) {
+            if (current.thumbnail == null && !current.pagePreviewLoading) loadResultPage(pageIndex, documentEditor = true)
+            return
+        }
+        if (editor.pageAnnotations.isEmpty()) loadResultPage(pageIndex, documentEditor = true)
+        else applyPageEdits(pageIndex)
+    }
+
+    fun applyVisualMark() = applyPageEdits()
+
+    private fun applyPageEdits(nextPageIndex: Int? = null) {
+        val current = mutableState.value as? ScreenState.Result ?: return
+        val editor = current.visualMarkEditor ?: return
+        val annotations = editor.pageAnnotations
+        val templateId = editor.selectedTemplateId.takeIf { annotations == null || editor.showMarkTools }
         if (
             editor.busy ||
-                templateId !in editor.templateIds ||
+                (templateId == null && (annotations.isNullOrEmpty() || editor.showMarkTools)) ||
+                (templateId != null && templateId !in editor.templateIds) ||
                 !isVisualMarkSourceCurrent(editor.source) ||
                 visualMarkApplyJob?.isActive == true
         ) {
             return
         }
         val source = editor.source
+        val previewPageIndex = nextPageIndex ?: source.pageIndex
+        if (previewPageIndex !in current.scan.cached.pages.indices) return
         val generation = beginRouteMutation(keepVisualMarkEditor = true)
         mutableState.value =
             current.copy(
@@ -2406,25 +2559,35 @@ internal class ScanViewModel(
                 var checkpointCommitted = false
                 var thumbnail: Bitmap? = null
                 var pendingThumbnail: Bitmap? = null
+                var previewAspect: Float? = null
                 var warnings: List<UiMessage> = emptyList()
                 try {
                     val build =
                         withContext(Dispatchers.IO) {
-                            val template = markTemplateStore.load(templateId)
-                                ?: throw IOException("Mark template is unavailable")
+                            val template = templateId?.let {
+                                markTemplateStore.load(it) ?: throw IOException("Mark template is unavailable")
+                            }
                             try {
                                 val coroutineContext = currentCoroutineContext()
-                                storage.createMarkedVariant(
+                                (if (annotations != null) storage.createAnnotatedVariant(
                                     source = current.scan.cached,
                                     selectedPageIndex = source.pageIndex,
+                                    annotations = annotations,
                                     mark = template,
                                     placement = editor.placement,
                                     isCancelled = { !coroutineContext.isActive },
-                                ).also { candidate = it.cached }
+                                ) else storage.createMarkedVariant(
+                                    source = current.scan.cached,
+                                    selectedPageIndex = source.pageIndex,
+                                    mark = checkNotNull(template),
+                                    placement = editor.placement,
+                                    isCancelled = { !coroutineContext.isActive },
+                                )).also { candidate = it.cached }
                             } finally {
-                                template.recycle()
+                                template?.recycle()
                             }
                         }
+                    if (nextPageIndex != null) previewAspect = loadPageAspectRatio(build.cached.pages[previewPageIndex])
                     if (!build.pdf.targetMet) {
                         warnings = listOf(pdfSizeTargetWarning(build.pdf))
                     }
@@ -2432,7 +2595,7 @@ internal class ScanViewModel(
                         withPreviewHandoff(
                             load = {
                                 storage.loadThumbnail(
-                                    build.cached.pages[source.pageIndex],
+                                    build.cached.pages[previewPageIndex],
                                     RESULT_PREVIEW_SIZE,
                                 )
                             },
@@ -2448,6 +2611,7 @@ internal class ScanViewModel(
                         withContext(NonCancellable + Dispatchers.IO) {
                             completeDerivedCandidate(build.cached, warnings)
                         }
+                    if (annotations != null) persistAnnotationDraft(null, clearSource = source)
                     routeMutationMutex.withLock {
                         if (routeMutationGate.isCurrent(generation)) {
                             try {
@@ -2455,7 +2619,14 @@ internal class ScanViewModel(
                                     ScreenState.Result(
                                         scan = saved,
                                         thumbnail = thumbnail,
-                                        selectedPageIndex = source.pageIndex,
+                                        selectedPageIndex = previewPageIndex,
+                                        visualMarkEditor = nextPageIndex?.let {
+                                            VisualMarkEditorState(
+                                                MarkEditorSource(build.cached.baseName, checkNotNull(build.cached.entryId), it),
+                                                pageAnnotations = emptyList(),
+                                                pageAspectRatio = previewAspect,
+                                            )
+                                        },
                                     ),
                                 )
                             } finally {
@@ -2486,6 +2657,7 @@ internal class ScanViewModel(
                             } catch (_: Exception) {
                                 null
                             }
+                        if (recovered != null && annotations != null) persistAnnotationDraft(null, clearSource = source)
                         routeMutationMutex.withLock {
                             if (routeMutationGate.isCurrent(generation) && recovered != null) {
                                 try {
@@ -2493,7 +2665,14 @@ internal class ScanViewModel(
                                         ScreenState.Result(
                                             scan = recovered,
                                             thumbnail = thumbnail,
-                                            selectedPageIndex = source.pageIndex,
+                                            selectedPageIndex = previewPageIndex,
+                                            visualMarkEditor = nextPageIndex?.let {
+                                                VisualMarkEditorState(
+                                                    MarkEditorSource(recovered.cached.baseName, checkNotNull(recovered.cached.entryId), it),
+                                                    pageAnnotations = emptyList(),
+                                                    pageAspectRatio = previewAspect,
+                                                )
+                                            },
                                         ),
                                     )
                                 } finally {
@@ -4040,7 +4219,10 @@ internal class ScanViewModel(
         val savedResultCacheId = savedStateHandle.get<String>(ROUTE_CACHE_ID_KEY)
         val savedPageIndex = savedStateHandle.get<Int>(RESULT_PAGE_INDEX_KEY)
         var pendingThumbnail: Bitmap? = null
+        var annotationDraft: AnnotationDraft? = null
         return try {
+            val pendingText = documentTextExportSavedState.pendingExport()
+            val pendingMark = visualMarkScanSavedState.activeSource()
             val result = withPreviewHandoff(
                 load = {
                     var saved = storage.openSavedScan(cacheId) ?: return@withPreviewHandoff null
@@ -4051,8 +4233,22 @@ internal class ScanViewModel(
                                 initialWarnings = saved.warnings,
                             )
                     }
-                    val pageIndex =
-                        restoredResultPageIndex(
+                    annotationDraft = try {
+                        annotationDraftMutex.withLock { annotationDraftStore.load() }?.takeIf {
+                            it.source.cacheId == saved.cached.baseName && it.source.entryId == saved.cached.entryId &&
+                                it.source.pageIndex in saved.cached.pages.indices
+                        }
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) { null }
+                    val externalPage = pendingText?.request?.takeIf {
+                        it.cacheId == saved.cached.baseName && it.entryId == saved.cached.entryId &&
+                            it.pageIndex in saved.cached.pages.indices
+                    }?.pageIndex ?: pendingMark?.takeIf {
+                        it.cacheId == saved.cached.baseName && it.entryId == saved.cached.entryId &&
+                            it.pageIndex in saved.cached.pages.indices
+                    }?.pageIndex
+                    val pageIndex = externalPage ?: annotationDraft?.source?.pageIndex ?: restoredResultPageIndex(
                             savedCacheId = savedResultCacheId,
                             targetCacheId = cacheId,
                             savedPageIndex = savedPageIndex,
@@ -4072,7 +4268,7 @@ internal class ScanViewModel(
                 recycle = { it.thumbnail?.recycle() },
             )
             pendingThumbnail = result?.thumbnail
-            result?.let { restoreExternalActivityState(it) }.also { pendingThumbnail = null }
+            result?.let { restoreExternalActivityState(it, annotationDraft) }.also { pendingThumbnail = null }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
@@ -4082,7 +4278,7 @@ internal class ScanViewModel(
         }
     }
 
-    private suspend fun restoreExternalActivityState(result: ScreenState.Result): ScreenState.Result {
+    private suspend fun restoreExternalActivityState(result: ScreenState.Result, annotationDraft: AnnotationDraft?): ScreenState.Result {
         val pendingText =
             documentTextExportSavedState.pendingExport()?.takeIf { pending ->
                 pending.request.matches(
@@ -4112,11 +4308,19 @@ internal class ScanViewModel(
             visualMarkScanSavedState.clearAll()
             visualMarkScanSource = null
         }
+        val draft = annotationDraft?.takeIf {
+                pendingText == null &&
+                it.source.isCurrent(result.scan.cached.baseName, result.scan.cached.entryId, result.selectedPageIndex) &&
+                    it.source.pageIndex in result.scan.cached.pages.indices
+            }
+        val aspect = if (draft != null) loadPageAspectRatio(result.scan.cached.pages[result.selectedPageIndex]) else null
         return result.copy(
             documentActionState = pendingText?.let { DocumentActionState.Exporting(it.output) },
             visualMarkEditor =
                 markSource?.takeIf { pendingText == null }
-                    ?.let { VisualMarkEditorState(source = it, busy = true) },
+                    ?.let { VisualMarkEditorState(source = it, busy = true,
+                        pageAnnotations = draft?.annotations, showMarkTools = draft != null, pageAspectRatio = aspect) }
+                    ?: draft?.let { VisualMarkEditorState(source = it.source, pageAnnotations = it.annotations, pageAspectRatio = aspect) },
         )
     }
 
@@ -4528,7 +4732,8 @@ internal class ScanViewModel(
                         editor.copy(
                             busy = false,
                             applying = false,
-                            message = UiMessage(R.string.visual_mark_apply_failed),
+                            message = UiMessage(if (editor.pageAnnotations == null)
+                                R.string.visual_mark_apply_failed else R.string.annotation_apply_failed),
                         ),
                 )
         }

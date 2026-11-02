@@ -2381,6 +2381,76 @@ internal class ScanStorage(
             }
         }
 
+    fun createAnnotatedVariant(
+        source: CachedScan,
+        selectedPageIndex: Int,
+        annotations: List<PageAnnotation>,
+        mark: Bitmap?,
+        placement: MarkPlacement,
+        isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
+    ): CachedScanBuild = storageTransactionLock.withLock {
+        requireCurrentOutputMetadata(source)
+        require(source.entryId != null && selectedPageIndex in source.pages.indices) {
+            "Annotation source is unavailable"
+        }
+        validatePageAnnotations(annotations)
+        require(annotations.isNotEmpty() || mark != null) { "No annotations to apply" }
+        val shareRoot = ensureShareRoot(shareCacheRoot())
+        val baseName = recentScanCache.nextDerivedCacheId(source.lineageCacheId, "edit")
+        val workDirectory = File(shareRoot, ".pending-create-${UUID.randomUUID()}")
+        if (!workDirectory.mkdir()) throw IOException("Pending editor cache directory could not be created")
+        try {
+            // Freeze the visible pages so scan filters cannot recolor newly added ink.
+            val appearanceSettings = googleScannerAppearanceSettings()
+            val sources = writeMarkedSourcePages(
+                sourcePages = source.pages,
+                workDirectory = workDirectory,
+                derivedBaseName = baseName,
+                selectedPageIndex = selectedPageIndex,
+                renderSelectedPage = { input, output ->
+                    renderMarkedSourceJpeg(input, output, mark, placement, isCancelled, annotations)
+                },
+            )
+            val pages = sources.mapIndexed { index, page ->
+                if (isCancelled()) throw CancellationException("Document editing cancelled")
+                File(workDirectory, scanPageFileName(baseName, index + 1)).also {
+                    copyDerivedSourcePage(page, it)
+                }
+            }
+            val pdf = buildScanPdfFromPages(
+                output = File(workDirectory, scanPdfFileName(baseName)),
+                sourcePages = sources,
+                renderedPages = pages,
+                appearance = appearanceSettings.selected(),
+                target = source.pdfSizeTarget,
+                isCancelled = isCancelled,
+            )
+            writeScanAppearanceMetadata(
+                directory = workDirectory,
+                appearanceSettings = appearanceSettings,
+                pdfSizeTarget = source.pdfSizeTarget,
+                lineageCacheId = source.lineageCacheId,
+                parentCacheId = source.baseName,
+                parentEntryId = source.entryId,
+                restoreSettingsOnActivation = false,
+            )
+            initializeOutputMetadata(
+                directory = workDirectory,
+                cacheId = baseName,
+                pageCount = pages.size,
+                createdAtEpochMs = clock.millis(),
+                pdfSizeTarget = source.pdfSizeTarget,
+            )
+            scanCacheOutput(File(workDirectory, PRESERVE_PARENT_CACHE_MARKER)).use { it.fd.sync() }
+            CachedScanBuild(
+                recentScanCache.publishProvisional(workDirectory, File(shareRoot, baseName)), pdf,
+            )
+        } catch (failure: Throwable) {
+            deleteRecursivelyOrSuppress(workDirectory, failure)
+            throw failure
+        }
+    }
+
     fun createManualCleanupVariant(
         source: CachedScan,
         selectedPageIndex: Int,

@@ -248,6 +248,8 @@ internal fun VisualMarkEditorScreen(
             val preview: @Composable (Modifier) -> Unit = { modifier ->
                 VisualMarkPreview(
                     page = result.thumbnail, mark = selectedBitmap, placement = editor.placement,
+                    annotations = editor.pageAnnotations.orEmpty(),
+                    pageAspectRatio = editor.pageAspectRatio,
                     enabled = selectedBitmap != null && !editor.busy,
                     onPlacementChange = onPlacementChange, modifier = modifier,
                 )
@@ -459,6 +461,8 @@ private fun VisualMarkPreview(
     placement: MarkPlacement,
     enabled: Boolean,
     onPlacementChange: (MarkPlacement) -> Unit,
+    annotations: List<PageAnnotation> = emptyList(),
+    pageAspectRatio: Float? = null,
     modifier: Modifier = Modifier,
 ) {
     val paint = remember { AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG or AndroidPaint.FILTER_BITMAP_FLAG) }
@@ -561,6 +565,17 @@ private fun VisualMarkPreview(
             RectF(left, top, left + pageWidth, top + pageHeight),
             paint,
         )
+        if (annotations.isNotEmpty()) {
+            val canvas = drawContext.canvas.nativeCanvas
+            val saved = canvas.save()
+            try {
+                canvas.translate(left, top)
+                canvas.scale(pageWidth / pageBitmap.width, pageHeight / pageBitmap.height)
+                drawPageAnnotations(canvas, pageBitmap.width, pageBitmap.height, annotations, pageAspectRatio)
+            } finally {
+                canvas.restoreToCount(saved)
+            }
+        }
         mark?.let {
             val rect = resolveMarkRect(pageWidth, pageHeight, it.width, it.height, placement)
             val canvas = drawContext.canvas.nativeCanvas
