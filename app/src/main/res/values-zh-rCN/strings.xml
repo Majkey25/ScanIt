@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">SeliaScan</string>
     <string name="try_again">重试</string>
+    <string name="document_tools">文档工具</string>
+    <string name="open_file">打开文件</string>
+    <string name="pdf_to_images">PDF 转图片</string>
+    <string name="images_to_pdf">图片转 PDF</string>
+    <string name="document_import_hint">原始文件保持不变。导入的 PDF 会转换为扫描页面图片，不保留可选文本和链接。打开文件不会自动保存；转换操作仅保存所选格式。</string>
+    <string name="opening_file">正在打开文件…</string>
+    <string name="file_import_failed">无法打开此文件。请选择有效的 PDF 或图片。</string>
+    <string name="file_import_password">此 PDF 受密码保护。请打开未加密的副本。</string>
+    <string name="file_import_page_limit">每次最多导入 %1$d 页。</string>
+    <string name="file_import_timeout">打开文件超时。请尝试较小的文件。</string>
+    <string name="file_import_too_large">文件过大，无法导入。请尝试较小的文件。</string>
+    <string name="open_pdf">打开 PDF</string>
+    <string name="pdf_open_failed">无法打开 PDF。请检查是否已安装 PDF 阅读器。</string>
     <string name="preview_unavailable">预览不可用</string>
     <string name="page_position">第 %1$d 页，共 %2$d 页</string>
     <string name="page_position_short">%1$d / %2$d</string>

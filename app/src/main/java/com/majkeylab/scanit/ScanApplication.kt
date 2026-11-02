@@ -1,6 +1,7 @@
 package com.majkeylab.scanit
 
 import android.app.Application
+import android.os.Process
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -11,6 +12,7 @@ private const val PROVIDER_INPUT_DIRECTORY = ".provider-input-staging"
 class ScanApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        if (Process.isIsolated()) return
         // Application startup runs before imports; activity recreation must not clear active work.
         val staging = providerInputStagingDirectory(cacheDir)
         val orphans = staging.listFiles() ?: throw IOException("Input staging could not be listed")

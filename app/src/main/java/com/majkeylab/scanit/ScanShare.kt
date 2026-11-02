@@ -106,6 +106,15 @@ internal fun pdfShareIntent(
     }
 }
 
+internal fun pdfViewIntent(context: Context, scan: SavedScan): Intent {
+    val uri = shareUri(context, scan.cached.pdf, scan.savedPdfDisplayName ?: scan.cached.pdf.name)
+    return Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, PDF_MIME_TYPE)
+        clipData = ClipData.newUri(context.contentResolver, context.getString(R.string.app_name), uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+}
+
 internal fun imageShareIntent(
     context: Context,
     scan: CachedScan,

@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -220,6 +221,8 @@ internal fun ScanItApp(
     onLoadVisualMarkTemplate: suspend (String, Int) -> Bitmap? = { _, _ -> null },
     onScanVisualMark: () -> Unit = {},
     onApplyVisualMark: () -> Unit = {},
+    onOpenFiles: (DocumentImportAction) -> Unit = {},
+    onOpenPdf: (() -> Unit)? = null,
 ) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showVisualMarkLibrary by rememberSaveable { mutableStateOf(false) }
@@ -320,6 +323,7 @@ internal fun ScanItApp(
                         message = state.message.resolve(),
                         onRetry = onScan,
                         onRecent = onRecent,
+                        onOpenFiles = onOpenFiles,
                         onSettings = {
                             fileDetailsExpanded = false
                             showSettings = true
@@ -333,6 +337,7 @@ internal fun ScanItApp(
                         onSharePdf = onShareRecentPdf,
                         onDelete = onDeleteRecent,
                         onLoadThumbnail = onLoadThumbnail,
+                        onOpenFiles = onOpenFiles,
                         onSettings = { showSettings = true },
                     )
                 is ScreenState.Result ->
@@ -346,6 +351,7 @@ internal fun ScanItApp(
                             showSettings = true
                         },
                         onSharePdf = onSharePdf,
+                        onOpenPdf = onOpenPdf,
                         onShareImages = onShareImages,
                         onPrint = onPrint,
                         fileDetailsExpanded = fileDetailsExpanded,
@@ -407,19 +413,22 @@ private fun FailureScreen(
     message: String,
     onRetry: () -> Unit,
     onRecent: () -> Unit,
+    onOpenFiles: (DocumentImportAction) -> Unit,
     onSettings: () -> Unit,
 ) {
     MainScaffold(onRecent, onSettings) { modifier ->
-        Column(
+        LazyColumn(
             modifier = modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(message, color = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                ActionButtonContent(R.drawable.ic_restore, R.string.try_again)
+            item { Text(message, color = MaterialTheme.colorScheme.error) }
+            item {
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    ActionButtonContent(R.drawable.ic_restore, R.string.try_again)
+                }
             }
+            documentTools(enabled = true, onOpenFiles = onOpenFiles)
         }
     }
 }
@@ -432,6 +441,7 @@ private fun ResultScreen(
     onRecent: () -> Unit,
     onSettings: () -> Unit,
     onSharePdf: (() -> Unit)?,
+    onOpenPdf: (() -> Unit)?,
     onShareImages: (() -> Unit)?,
     onPrint: (() -> Unit)?,
     fileDetailsExpanded: Boolean,
@@ -676,6 +686,15 @@ private fun ResultScreen(
                     onShareImages = onShareImages,
                     onPrint = onPrint,
                 )
+            }
+            item {
+                OutlinedButton(
+                    onClick = { onOpenPdf?.invoke() },
+                    enabled = onOpenPdf != null && actionsEnabled,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) {
+                    ActionButtonContent(R.drawable.ic_pdf, R.string.open_pdf)
+                }
             }
             item {
                 FileDetailsHeader(
@@ -3118,6 +3137,7 @@ private fun RecentScreen(
     onSharePdf: (String) -> Unit,
     onDelete: (OutputDeleteRequest) -> Unit,
     onLoadThumbnail: suspend (File) -> Bitmap?,
+    onOpenFiles: (DocumentImportAction) -> Unit,
     onSettings: () -> Unit,
 ) {
     MainScaffold(
@@ -3155,6 +3175,7 @@ private fun RecentScreen(
                     }
                 }
             }
+            documentTools(enabled = !state.deletionInProgress, onOpenFiles = onOpenFiles)
             if (state.scans.isEmpty()) {
                 item { Text(stringResource(R.string.recent_scans_empty)) }
             } else {
@@ -3188,6 +3209,47 @@ private fun RecentScreen(
             }
             item { Spacer(Modifier.height(4.dp)) }
         }
+    }
+}
+
+private fun LazyListScope.documentTools(
+    enabled: Boolean,
+    onOpenFiles: (DocumentImportAction) -> Unit,
+) {
+    item {
+        Text(
+            stringResource(R.string.document_tools),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.fillMaxWidth().semantics { heading() },
+        )
+    }
+    listOf(
+        Triple(DocumentImportAction.Open, R.drawable.ic_folder, R.string.open_file),
+        Triple(DocumentImportAction.PdfToImages, R.drawable.ic_image, R.string.pdf_to_images),
+        Triple(DocumentImportAction.ImagesToPdf, R.drawable.ic_pdf, R.string.images_to_pdf),
+    ).forEach { (action, iconRes, textRes) ->
+        item {
+            OutlinedButton(
+                onClick = { onOpenFiles(action) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) {
+                Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(textRes),
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+    }
+    item {
+        Text(
+            stringResource(R.string.document_import_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

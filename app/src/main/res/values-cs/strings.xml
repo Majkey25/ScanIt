@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">SeliaScan</string>
     <string name="try_again">Zkusit znovu</string>
+    <string name="document_tools">Nástroje pro dokumenty</string>
+    <string name="open_file">Otevřít soubor</string>
+    <string name="pdf_to_images">PDF na obrázky</string>
+    <string name="images_to_pdf">Obrázky do PDF</string>
+    <string name="document_import_hint">Původní soubory se nemění. Importovaná PDF se převedou na obrázky stránek bez označitelného textu a odkazů. Otevření souboru ho automaticky neuloží; převody ukládají pouze zvolený formát.</string>
+    <string name="opening_file">Otevírání souboru…</string>
+    <string name="file_import_failed">Soubor se nepodařilo otevřít. Vyberte platné PDF nebo obrázek.</string>
+    <string name="file_import_password">Toto PDF je chráněné heslem. Otevřete kopii bez ochrany.</string>
+    <string name="file_import_page_limit">Najednou lze importovat nejvýše %1$d stránek.</string>
+    <string name="file_import_timeout">Otevírání souboru trvalo příliš dlouho. Zkuste menší soubor.</string>
+    <string name="file_import_too_large">Soubor je pro import příliš velký. Zkuste menší soubor.</string>
+    <string name="open_pdf">Otevřít PDF</string>
+    <string name="pdf_open_failed">PDF se nepodařilo otevřít. Zkontrolujte, zda máte nainstalovaný prohlížeč PDF.</string>
     <string name="preview_unavailable">Náhled není k dispozici</string>
     <string name="page_position">Stránka %1$d z %2$d</string>
     <string name="page_position_short">%1$d z %2$d</string>
