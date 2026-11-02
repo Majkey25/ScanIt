@@ -5,8 +5,13 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.text.LineBreaker
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import java.util.Locale
+import kotlin.math.ceil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -38,24 +43,45 @@ class DocumentAnnotationRenderingDeviceTest {
     @Test
     fun canonicalLandscapeRatioKeepsNearBoundaryTextOnOneLineAtFullAndSampledSizes() {
         val layoutAspectRatio = 3507f / 2481f
-        val value = "MMMMMMMM"
+        val sampledAspectRatio = 877f / 621f
+        val value = "Line wrap test"
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             typeface = Typeface.DEFAULT
             textLocale = Locale.ROOT
-            textSize = 1_000f
+            textSize = 40f
         }
-        // The full layout allows 636 units; the rounded preview allows only 635 without its source ratio.
-        val text = PageAnnotation.Text(value, 0.55f, 0.15f, 635.25f / paint.measureText(value), Color.BLUE)
+        val boundary = ceil(paint.measureText(value).toDouble()).toInt()
+        // Move the anchor across a measured integer boundary without rescaling rounded glyph advances.
+        val x = 1f - boundary / ((layoutAspectRatio + sampledAspectRatio) * 500f)
+        val canonicalWidth = ((1f - x) * layoutAspectRatio * 1_000f).toInt()
+        val legacyWidth = ((1f - x) * sampledAspectRatio * 1_000f).toInt()
+        fun layout(width: Int): StaticLayout = StaticLayout.Builder.obtain(value, 0, value.length, paint, width)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setTextDirection(TextDirectionHeuristics.FIRSTSTRONG_LTR)
+            .setIncludePad(false)
+            .setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE)
+            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE)
+            .build()
+        assertEquals(boundary, canonicalWidth)
+        assertEquals(boundary - 1, legacyWidth)
+        val canonicalLayout = layout(canonicalWidth)
+        assertEquals("Canonical native layout must fit one line", 1, canonicalLayout.lineCount)
+        assertEquals("Legacy native layout must wrap", 2, layout(legacyWidth).lineCount)
+        val text = PageAnnotation.Text(value, x, 0.15f, paint.textSize / 1_000f, Color.BLUE)
         val fullBounds = checkNotNull(pageAnnotationTextBounds(text, 3507f, 2481f, layoutAspectRatio))
         val sampledBounds = checkNotNull(pageAnnotationTextBounds(text, 877f, 621f, layoutAspectRatio))
         val legacySampledBounds = checkNotNull(pageAnnotationTextBounds(text, 877f, 621f))
         assertTrue("Fixture must cross the sampled wrap boundary", legacySampledBounds.height() > sampledBounds.height() * 1.5f)
-        assertEquals(fullBounds.width() / 2481f, sampledBounds.width() / 621f, 0.00001f)
+        // The sampled page can clip a fraction of a layout unit at its rounded right edge.
+        assertEquals(minOf(fullBounds.width() / 2481f, (1f - x) * 877f / 621f), sampledBounds.width() / 621f, 0.00001f)
         assertEquals(fullBounds.height() / 2481f, sampledBounds.height() / 621f, 0.00001f)
         val renderedBands = listOf(3507 to 2481, 877 to 621).map { (width, height) ->
             val bounds = checkNotNull(pageAnnotationTextBounds(text, width.toFloat(), height.toFloat(), layoutAspectRatio))
             assertEquals(text.x, bounds.left / width, 0.00001f)
             assertEquals(text.y, bounds.top / height, 0.00001f)
+            assertEquals(minOf(
+                canonicalLayout.getLineRight(0) / 1_000f, (1f - x) * width / minOf(width, height),
+            ), bounds.width() / minOf(width, height), 0.00001f)
             assertEquals(setOf(0), annotationsAtPoint(
                 listOf(text), AnnotationPoint(bounds.centerX() / width, bounds.centerY() / height),
                 width.toFloat(), height.toFloat(), 0f, layoutAspectRatio,
