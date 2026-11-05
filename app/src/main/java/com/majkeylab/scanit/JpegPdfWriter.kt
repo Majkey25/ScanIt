@@ -18,6 +18,22 @@ internal data class JpegPdfPage(
     val physicalHeightPixels: Int = height,
 )
 
+internal data class JpegPdfPrintLayout(
+    val pageWidth: Int,
+    val pageHeight: Int,
+    val contentLeft: Int,
+    val contentTop: Int,
+    val contentWidth: Int,
+    val contentHeight: Int,
+) {
+    init {
+        require(pageWidth > 0 && pageHeight > 0) { "Print paper dimensions must be positive" }
+        require(contentLeft >= 0 && contentTop >= 0 && contentWidth > 0 && contentHeight > 0 &&
+            contentWidth <= pageWidth - contentLeft && contentHeight <= pageHeight - contentTop
+        ) { "Print content must fit inside the paper" }
+    }
+}
+
 internal object JpegPdfWriter {
     fun write(
         output: File,
@@ -35,7 +51,7 @@ internal object JpegPdfWriter {
         try {
             scanCacheOutput(staging.toFile()).use { file ->
                 BufferedOutputStream(file).use { stream ->
-                    writeJpegPdf(JpegPdfOutput(stream), pages, isCancelled)
+                    writeJpegPdf(JpegPdfOutput(stream), pages.size, isCancelled) { pages[it] }
                     stream.flush()
                     file.fd.sync()
                 }
@@ -53,6 +69,18 @@ internal object JpegPdfWriter {
             }
         }
     }
+
+    fun writeForPrint(
+        output: OutputStream,
+        pageCount: Int,
+        layout: JpegPdfPrintLayout,
+        isCancelled: () -> Boolean,
+        renderPage: (Int) -> JpegPdfPage,
+    ) {
+        writeJpegPdf(JpegPdfOutput(output), pageCount, isCancelled, layout) { index ->
+            renderPage(index).also(::validateJpegPage)
+        }
+    }
 }
 
 internal fun publishStagedFileNoReplace(
@@ -64,10 +92,13 @@ internal fun publishStagedFileNoReplace(
 
 private fun writeJpegPdf(
     output: JpegPdfOutput,
-    pages: List<JpegPdfPage>,
+    pageCount: Int,
     isCancelled: () -> Boolean,
+    printLayout: JpegPdfPrintLayout? = null,
+    pageAt: (Int) -> JpegPdfPage,
 ) {
-    val objectCount = jpegPdfObjectCount(pages.size)
+    val objectCount = jpegPdfObjectCount(pageCount)
+    throwIfJpegPdfCancelled(isCancelled)
     val offsets = LongArray(Math.addExact(objectCount, 1))
     output.ascii("%PDF-1.4\n")
     output.write(
@@ -83,12 +114,14 @@ private fun writeJpegPdf(
     output.objectStart(JPEG_CATALOG_OBJECT, offsets)
     output.ascii("<< /Type /Catalog /Pages $JPEG_PAGES_OBJECT 0 R >>\nendobj\n")
     output.objectStart(JPEG_PAGES_OBJECT, offsets)
-    val kids = pages.indices.joinToString(" ") { "${jpegPageObject(it)} 0 R" }
-    output.ascii("<< /Type /Pages /Kids [$kids] /Count ${pages.size} >>\nendobj\n")
-    pages.forEachIndexed { index, page ->
+    val pageIndexes = 0 until pageCount
+    val kids = pageIndexes.joinToString(" ") { "${jpegPageObject(it)} 0 R" }
+    output.ascii("<< /Type /Pages /Kids [$kids] /Count $pageCount >>\nendobj\n")
+    pageIndexes.forEach { index ->
         throwIfJpegPdfCancelled(isCancelled)
-        writeJpegPage(output, offsets, index, page, isCancelled)
+        writeJpegPage(output, offsets, index, pageAt(index), isCancelled, printLayout)
     }
+    throwIfJpegPdfCancelled(isCancelled)
 
     val xrefOffset = output.bytesWritten
     output.ascii("xref\n0 ${objectCount + 1}\n")
@@ -106,14 +139,15 @@ private fun writeJpegPage(
     index: Int,
     page: JpegPdfPage,
     isCancelled: () -> Boolean,
+    printLayout: JpegPdfPrintLayout?,
 ) {
     val pageObject = jpegPageObject(index)
     val imageObject = pageObject + 1
     val imageLengthObject = pageObject + 2
     val contentObject = pageObject + 3
     val contentLengthObject = pageObject + 4
-    val pageWidth = pdfPointsAt300Dpi(page.physicalWidthPixels)
-    val pageHeight = pdfPointsAt300Dpi(page.physicalHeightPixels)
+    val pageWidth = printLayout?.pageWidth?.toString() ?: pdfPointsAt300Dpi(page.physicalWidthPixels)
+    val pageHeight = printLayout?.pageHeight?.toString() ?: pdfPointsAt300Dpi(page.physicalHeightPixels)
     output.objectStart(pageObject, offsets)
     output.ascii(
         "<< /Type /Page /Parent $JPEG_PAGES_OBJECT 0 R " +
@@ -143,7 +177,17 @@ private fun writeJpegPage(
     output.objectStart(contentObject, offsets)
     output.ascii("<< /Length $contentLengthObject 0 R >>\nstream\n")
     val contentStart = output.bytesWritten
-    output.ascii("q\n$pageWidth 0 0 $pageHeight 0 0 cm\n/Im0 Do\nQ\n")
+    if (printLayout == null) {
+        output.ascii("q\n$pageWidth 0 0 $pageHeight 0 0 cm\n/Im0 Do\nQ\n")
+    } else {
+        val placement = fitRect(page.width, page.height, printLayout.contentWidth, printLayout.contentHeight)
+        val width = (placement.right - placement.left).toBigDecimal().toPlainString()
+        val height = (placement.bottom - placement.top).toBigDecimal().toPlainString()
+        val x = (printLayout.contentLeft + placement.left).toBigDecimal().toPlainString()
+        // PDF measures vertical coordinates from the bottom of the sheet.
+        val y = (printLayout.pageHeight - printLayout.contentTop - placement.bottom).toBigDecimal().toPlainString()
+        output.ascii("q\n1 g\n0 0 $pageWidth $pageHeight re f\n$width 0 0 $height $x $y cm\n/Im0 Do\nQ\n")
+    }
     val contentLength = output.bytesWritten - contentStart
     output.ascii("endstream\nendobj\n")
     output.numberObject(contentLengthObject, contentLength, offsets)
@@ -179,25 +223,26 @@ private fun validateJpegPages(
     jpegPdfObjectCount(pages.size)
     pages.forEach { page ->
         throwIfJpegPdfCancelled(isCancelled)
-        require(page.width > 0 && page.height > 0) { "Page dimensions must be positive" }
-        require(page.physicalWidthPixels > 0 && page.physicalHeightPixels > 0) {
-            "Physical page dimensions must be positive"
-        }
-        require(
-            page.width <= MAX_ORIGINAL_IMAGE_DIMENSION &&
-                page.height <= MAX_ORIGINAL_IMAGE_DIMENSION,
-        ) {
-            "Page dimensions exceed the PDF bound"
-        }
-        require(
-            page.physicalWidthPixels <= MAX_ORIGINAL_IMAGE_DIMENSION &&
-                page.physicalHeightPixels <= MAX_ORIGINAL_IMAGE_DIMENSION,
-        ) { "Physical page dimensions exceed the PDF bound" }
-        require(page.width.toLong() * page.height <= MAX_ORIGINAL_IMAGE_PIXELS) {
-            "Page pixel count exceeds the PDF bound"
-        }
-        require(page.file.isFile && page.file.length() > 0L) { "JPEG page is missing or empty" }
+        validateJpegPage(page)
     }
+}
+
+private fun validateJpegPage(page: JpegPdfPage) {
+    require(page.width > 0 && page.height > 0) { "Page dimensions must be positive" }
+    require(page.physicalWidthPixels > 0 && page.physicalHeightPixels > 0) {
+        "Physical page dimensions must be positive"
+    }
+    require(page.width <= MAX_ORIGINAL_IMAGE_DIMENSION && page.height <= MAX_ORIGINAL_IMAGE_DIMENSION) {
+        "Page dimensions exceed the PDF bound"
+    }
+    require(
+        page.physicalWidthPixels <= MAX_ORIGINAL_IMAGE_DIMENSION &&
+            page.physicalHeightPixels <= MAX_ORIGINAL_IMAGE_DIMENSION,
+    ) { "Physical page dimensions exceed the PDF bound" }
+    require(page.width.toLong() * page.height <= MAX_ORIGINAL_IMAGE_PIXELS) {
+        "Page pixel count exceeds the PDF bound"
+    }
+    require(page.file.isFile && page.file.length() > 0L) { "JPEG page is missing or empty" }
 }
 
 private fun jpegPdfObjectCount(pageCount: Int): Int {
