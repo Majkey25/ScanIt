@@ -2,7 +2,7 @@ buildscript {
     // Keep build-only transitive security overrides aligned.
     configurations.classpath {
         resolutionStrategy.force(
-            "org.apache.commons:commons-lang3:3.20.0",
+            "org.apache.commons:commons-lang3:3.21.0",
             "org.bitbucket.b_c:jose4j:0.9.6",
             "org.bouncycastle:bcpkix-jdk18on:1.86",
             "org.bouncycastle:bcprov-jdk18on:1.86",
