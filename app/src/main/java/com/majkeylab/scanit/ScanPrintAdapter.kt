@@ -1,10 +1,6 @@
 package com.majkeylab.scanit
 
 import android.content.Context
-import android.graphics.BitmapFactory
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
@@ -14,9 +10,9 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.pdf.PrintedPdfDocument
 import java.io.File
-import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.nio.file.Files
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +21,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 internal fun requestedPageIndexes(pageCount: Int, ranges: List<IntRange>): List<Int> {
@@ -158,82 +155,43 @@ internal class ScanPrintAdapter(
         output: OutputStream,
         cancellationSignal: CancellationSignal,
     ) {
+        val jobContext = currentCoroutineContext()
+        val isCancelled = { cancellationSignal.isCanceled || !jobContext.isActive }
+        if (isCancelled()) throw CancellationException()
         val document = PrintedPdfDocument(context, printAttributes)
-        try {
-            val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-            selectedPages.forEach { pageIndex ->
-                currentCoroutineContext().ensureActive()
-                if (cancellationSignal.isCanceled) throw CancellationException()
-                val source = pages[pageIndex]
-                if (!source.isFile || source.length() <= 0L) {
-                    throw IOException("Print page is missing or empty")
-                }
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(source.path, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                    throw IOException("Print page dimensions could not be read")
-                }
-                val bitmap =
-                    BitmapFactory.decodeFile(
-                        source.path,
-                        BitmapFactory.Options().apply {
-                            inSampleSize = pdfPageSampleSize(bounds.outWidth, bounds.outHeight)
-                        },
-                    ) ?: throw IOException("Print page could not be decoded")
-                try {
-                    val page = document.startPage(pageIndex)
-                    try {
-                        val content = page.info.contentRect
-                        val placement =
-                            fitRect(bitmap.width, bitmap.height, content.width(), content.height())
-                        page.canvas.drawColor(Color.WHITE)
-                        page.canvas.drawBitmap(
-                            bitmap,
-                            null,
-                            RectF(
-                                content.left + placement.left,
-                                content.top + placement.top,
-                                content.left + placement.right,
-                                content.top + placement.bottom,
-                            ),
-                            paint,
-                        )
-                    } finally {
-                        document.finishPage(page)
-                    }
-                } finally {
-                    bitmap.recycle()
-                }
-            }
-            currentCoroutineContext().ensureActive()
-            if (cancellationSignal.isCanceled) throw CancellationException()
-            // Android's native PDF writer can clear a Java stream exception.
-            var writeFailure: IOException? = null
-            val checkedOutput = object : FilterOutputStream(output) {
-                override fun write(value: Int) {
-                    try {
-                        writeFailure?.let { throw it }
-                        out.write(value)
-                    } catch (failure: IOException) {
-                        writeFailure = failure
-                        throw failure
-                    }
-                }
-
-                override fun write(bytes: ByteArray, offset: Int, length: Int) {
-                    try {
-                        writeFailure?.let { throw it }
-                        out.write(bytes, offset, length)
-                    } catch (failure: IOException) {
-                        writeFailure = failure
-                        throw failure
-                    }
-                }
-            }
-            document.writeTo(checkedOutput)
-            writeFailure?.let { throw it }
+        val layout = try {
+            val content = document.pageContentRect
+            JpegPdfPrintLayout(
+                document.pageWidth, document.pageHeight,
+                content.left, content.top, content.width(), content.height(),
+            )
         } finally {
             document.close()
+        }
+        val staging = Files.createTempDirectory(providerInputStagingDirectory(context.cacheDir).toPath(), ".print-").toFile()
+        var failure: Throwable? = null
+        try {
+            val destination = File(staging, "page.jpg")
+            val appearance = ScanAppearance(ScanColorMode.Color, intensity = 0, shadows = 0)
+            // Encode each page independently to keep source metadata out of the printed PDF.
+            JpegPdfWriter.writeForPrint(output, selectedPages.size, layout, isCancelled) { index ->
+                val source = pages[selectedPages[index]]
+                val bounds = readJpegDimensions(source)
+                val rendered = ScanAppearanceRenderer.renderJpeg(
+                    source, destination, appearance,
+                    minimumSampleSize = pdfPageSampleSize(bounds.width, bounds.height),
+                    isCancelled = isCancelled,
+                )
+                JpegPdfPage(destination, rendered.width, rendered.height)
+            }
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            if (!deleteTreeWithoutFollowingLinks(staging)) {
+                val cleanupError = IOException("Print page staging could not be removed")
+                failure?.addSuppressed(cleanupError) ?: throw cleanupError
+            }
         }
     }
 }
