@@ -1,3 +1,72 @@
+SeliaScan Source-Visible Proprietary License
+
+Copyright (c) 2026 Majkey25. All rights reserved.
+
+1. Scope
+
+Original SeliaScan material in the revision introducing this license and later
+revisions is offered under these terms to the extent its rights are controlled
+by Majkey25. Third-party material and contributions whose rights are not
+controlled by Majkey25 remain under their applicable licenses.
+
+2. Official release use
+
+You may download, install, and use unmodified official releases without charge
+for any lawful purpose on devices you own or control. Official releases are
+distributed by Majkey25 through this project's GitHub Releases, Google Play,
+or another channel explicitly identified by Majkey25. This permission does not
+transfer ownership or grant rights to the source code.
+
+3. Source visibility
+
+The source is public for inspection. Except for the official release permission,
+rights granted by applicable law, platform terms, or a separate applicable
+license, no permission is granted to copy, modify, build, distribute, sublicense,
+sell, host, or create derivative works from material covered by these terms.
+Additional permission, including commercial licensing, requires prior written
+authorization from Majkey25.
+
+GitHub's platform-provided viewing and forking rights remain governed by
+GitHub's terms. Mandatory consumer rights, statutory remedies, and software
+interoperability exceptions are not restricted.
+
+4. Earlier grants and third-party rights
+
+This license does not revoke, replace, or narrow any earlier license grant.
+Material previously distributed under the MIT License remains available
+under that license for those historical copies, including their permitted
+redistribution and modification. The prior main-branch revision was:
+https://github.com/Majkey25/ScanIt/tree/cf60bdea8ad5cdd5e7e158525b1ccd8a8d49007e
+
+The exact preceding LICENSE text is retained below for those historical
+materials and any components to which it applies. Its inclusion does not grant
+that license to new original material first published under these proprietary
+terms. Repository statements referring to the former project-wide license
+describe historical licensing and do not extend it to such new material.
+
+Third-party software, models, data, artwork, and other contributions retain
+their own copyrights, licenses, notices, and terms. These proprietary terms
+impose no additional restrictions on rights granted for that material. Where
+applicable, consult the project's third-party notices and component licenses.
+
+5. Names and marks
+
+No trademark or branding rights are granted except to identify an unmodified
+official release accurately. Third-party names and marks belong to their owners.
+
+6. No warranty
+
+THE SOFTWARE AND MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE
+COPYRIGHT HOLDER IS NOT LIABLE FOR CLAIMS, DAMAGES, OR OTHER LIABILITY ARISING
+FROM THE SOFTWARE OR ITS USE. Liability that cannot lawfully be excluded remains.
+
+END OF PROPRIETARY TERMS
+
+Historical and third-party MIT License text follows.
+This section applies only as explained in section 4.
+
 MIT License
 
 Copyright (c) 2026 Majkey25
