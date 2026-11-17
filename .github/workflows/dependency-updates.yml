@@ -1,0 +1,18 @@
+# Replace the placeholder with the published Project-Guard commit SHA. Do not use a moving tag.
+name: Dependency context
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  context:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    uses: Majkey25/Project-Guard/.github/workflows/dependency-context.yml@99c99e6b109fd11f41e0f0af57f24ec786861086
+    # Root owns branch rules and deployment configuration. Do not pass secrets.
