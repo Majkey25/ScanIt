@@ -3,17 +3,17 @@
 SeliaScan's original source is licensed under the MIT License. Third-party
 components keep their own licenses and terms.
 
-The `githubReleaseRuntimeClasspath` graph was inspected for SeliaScan 1.8.0 on
-2026-09-05. Direct runtime dependencies are:
+The `githubReleaseRuntimeClasspath` graph was inspected for SeliaScan 2.1.1 on
+2026-11-17. Direct runtime dependencies are:
 
-- Kotlin standard library 2.4.10.
+- Kotlin standard library 2.4.21.
 - AndroidX Activity Compose 1.13.0.
-- AndroidX Core KTX 1.19.0.
+- AndroidX Core KTX 1.19.1.
 - AndroidX ExifInterface 1.4.2.
-- AndroidX Compose Material 3 1.4.0 and Compose 1.12.0 modules selected by the Compose BOM 2026.08.00.
+- AndroidX Compose Material 3 1.4.0 and Compose 1.12.1 modules selected by the Compose BOM 2026.09.00.
 - AndroidX Lifecycle ViewModel KTX 2.11.0.
 - Google Play services ML Kit Document Scanner 16.0.0.
-- Google Play services ML Kit Text Recognition 19.0.1 and Chinese Text Recognition 16.0.1.
+- Google Play services ML Kit Text Recognition 19.0.2 and Chinese Text Recognition 16.0.2.
 - Google Play services ML Kit Barcode Scanning 18.3.1.
 - Google Play services ML Kit Face Detection 17.1.0.
 
